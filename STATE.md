@@ -32,10 +32,10 @@ arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.
 | Step 0 | Sign-off rulings applied to PLAN.md | LANDED |
 | 0a | Foundation: go.mod, Docker environment, gate scripts and canaries, detlint, orchestration scripts, vendored kb, book site on Pages, CI | LANDED 8205edf (arbitration PASS; 50/50 canaries; adversarial 99 held / 9 narrowed); follow-up c5117c5 (SQLite header in the image so `kb-sync.sh index` works). CI green, site serving the new front page |
 | 0b | Deterministic simulator (internal/env, internal/sim, simtest, cmd/objsim) | LANDED ceb5438, tag `freeze-0b` (API frozen). Reviews FAIL → NITS → NITS closed; adversarial 58 of 60 hold, 1 narrowed, 1 repaired-but-scored-broken; chapter 1 live at book/deterministic-simulation.html; C4 marks sim + env as built |
-| 1 | SWIM gossip membership (internal/gossip) | Opus build running (`01-gossip-build`, worktree `01-gossip`; it is on its own gate runs) |
-| 2 | Reed-Solomon erasure coding and chunk store (internal/erasure, internal/storage) | Built; orchestrator gate green; Neon REVIEW-1 FAIL (4 majors, 4 nits); Astra adversarial written and run by Astra (41 held, 1 broken; harness still UNCOMMITTED in the worktree under agent_work/adversarial/02-erasure/). NEXT: commit the harness, add the broken attack to the repair brief (`agent_work/02-erasure/objstore-p2-02-erasure-repair1.md`), dispatch `02-erasure-repair1` when a builder slot frees |
+| 1 | SWIM gossip membership (internal/gossip) | Built (Opus exit 0, build-stage gate green, result committed). Neon review 1 (`01-gossip-review`) and Astra adversarial (`01-gossip-adversarial`) running in parallel; the one repair round takes both |
+| 2 | Reed-Solomon erasure coding and chunk store (internal/erasure, internal/storage) | Built; gate green; Neon REVIEW-1 FAIL (4 majors, 4 nits); Astra harness committed (41 held, 1 broken — C30 window bound). Repair brief complete (`agent_work/02-erasure/objstore-p2-02-erasure-repair1.md`, includes the broken attack). NEXT: dispatch `02-erasure-repair1` (Opus) at the next free builder slot; tell it its wire-code block is 96–111 (already what it uses) |
 | 3 | Merkle anti-entropy (internal/merkle) | Opus build running (`03-merkle-build`, worktree `03-merkle`; on its gate runs) |
-| 4 | Optimistic concurrency control for metadata (internal/occ) | Built WITH SIBLINGS (now ruled out); Neon REVIEW-1 FAIL (3 majors, 3 nits). The one repair round carries the LWW rework plus the findings: brief /root/briefs/objstore-p2-04-occ-repair1.md (copied to agent_work/04-occ/). NEXT: dispatch `04-occ-repair1` (Opus) when a builder slot frees — it goes FIRST. Astra's first adversarial run was refused by the provider's content filter (exit 1, nothing usable); adversarial is re-briefed AFTER the repair, against the LWW design, in plain testing vocabulary |
+| 4 | Optimistic concurrency control for metadata (internal/occ) | Was built WITH SIBLINGS (ruled out). The one Opus repair round `04-occ-repair1` is RUNNING: LWW rework (one version per key, HLC winner, discards counted and logged) + the 3 review majors + wire codes moved to 128–143. Brief: agent_work/04-occ/objstore-p2-04-occ-repair1.md. AFTER it: gate, Neon re-review, then a FRESH Astra adversarial brief written against the LWW design in plain testing vocabulary (Astra's first run was refused by the provider's content filter; its partial file is parked in /tmp/objstore-p2-scratch/) |
 | 5 | Saga engine and bucket migration (internal/saga) | Opus build running (`05-saga-build`, worktree `05-saga`) |
 | 6 | Integration: node, real runtime, HTTP object API, cmd/objnode | not started (needs 1–5) |
 | 7 | E2E suite, nemesis cycles, fuzz hardening | not started |
@@ -43,16 +43,18 @@ arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.
 
 ## In progress
 
-- Wave B (dispatched 2026-11-21 after the freeze). Alive now: `01-gossip-build`,
-  `03-merkle-build`, `05-saga-build` (cap 3 — repairs count as builders). Queue for the
-  next free slots, in order: `04-occ-repair1`, then `02-erasure-repair1`. Build briefs
-  /root/briefs/objstore-p2-<slug>-build.md (copied into each worktree's agent_work/<slug>/);
-  stage briefs come from agent_work/orch/mkstage.py. Launch form:
-  `agent_work/orch/launch.sh <slug>-<stage> <seat> <worktree> <brief>`.
-- LWW ruling follow-ups still open: README.md and docs/index.md say "siblings" (Neon
-  corrects them — a small prose commit ahead of Chunk 4's landing); mkstage.py's paper list
-  for 04-occ and the chapter brief must present siblings as the road not taken; Chunk 6's
-  brief must use the LWW wording (PLAN 4.2 Chunk 6 is already amended).
+- Wave B. Builder slots (cap 3, repairs count): `04-occ-repair1`, `03-merkle-build`,
+  `05-saga-build`. Queue for the next free slot: `02-erasure-repair1`. Non-builder stages
+  running: `01-gossip-review` (Neon), `01-gossip-adversarial` (Astra). Stage briefs come
+  from agent_work/orch/mkstage.py (run it from inside the chunk's worktree; pass launch.sh
+  ABSOLUTE paths). `agent_work/orch/waitany.sh <secs> <run>...` waits for the first to stop.
+- Wire-code blocks (duplicates are rejected when Chunk 6 joins the tables): gossip 80–95,
+  storage 96–111, merkle 112–127, occ 128–143, saga 144–159. Gossip, storage and merkle
+  already comply; occ moves in its repair; SAGA currently uses 112–114 and 120–123 and
+  must move to 144–159 in its repair or post-adversarial round.
+- LWW ruling follow-ups: README and front page corrected (3e34482). Still to carry: the
+  Chunk 4 chapter brief (mkstage already says siblings are a road not taken), the C4
+  redraw without a sibling component, and Chunk 6's brief (PLAN 4.2 Chunk 6 is amended).
 - Per chunk when its build exits 0 (see the 0b history in agent_work/0b-simulator/ for
   worked examples of every brief): rebase on main if main moved; orchestrator gate
   (`agent_work/gates/gate.sh <slug>`); Neon review (probe first); one Opus repair if
