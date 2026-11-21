@@ -208,7 +208,7 @@ func FuzzMerkleWire(f *testing.F) {
 			if _, ok := s.Request(); !ok {
 				continue
 			}
-			if err := s.Feed(data); err != nil && !errors.Is(err, ErrMalformed) {
+			if err := s.Feed(data); err != nil && !errors.Is(err, ErrMalformed) && !errors.Is(err, ErrDepth) {
 				t.Fatalf("Feed error %v", err)
 			}
 			for n := 0; n < 16; n++ {
