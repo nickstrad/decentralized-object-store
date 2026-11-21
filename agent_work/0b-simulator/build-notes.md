@@ -609,6 +609,12 @@ a deadline past `Horizon` (75.0%, together with the earlier uncovered branches o
 function). The remaining gaps in `Restart` (88.9%), `WipeRejoin` (90.0%), `RunUntil`,
 `exec` and `draw` are the unknown-node and defensive branches listed in the first round.
 
+### REVIEW-3 nit
+
+- What: `scaled(k, -1)` returned `MinInt64` because its guard computed `MinInt64 / -1`, which wraps (reachable via `ScheduleFromBytes` with step -1).
+- Tests: `TestScaledHandlesEveryBoundary` (k = 0; d = 0, ±1, ±2, MinInt64, both sides of each guard) and `TestScheduleFromBytesWithStepMinusOne`, in `internal/sim/bounds_test.go`.
+- Fix: the negative guard in `internal/sim/clock.go` is now `d < -1`; `k * -1` cannot overflow for k >= 0. No exported change, golden digests unchanged.
+
 ### Requests to the orchestrator (this round)
 
 1. Adversarial harness `clock-overflow` (`agent_work/adversarial/0b-simulator/main.go`, attack
