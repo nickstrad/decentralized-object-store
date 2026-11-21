@@ -1,277 +1,435 @@
-# Chunk 4 build notes — optimistic concurrency control for metadata (`internal/occ`)
+# Chunk 4 build notes: optimistic concurrency control for metadata (`internal/occ`)
 
-Builder: Opus 5.5 (fresh seat), branch `chunk/04-occ`, 2026-11-21.
-Spec: PLAN.md 4.2 "Chunk 4", 7.5, 2.2/2.3/2.6, OCC amendment in 9.1; brief
-`agent_work/04-occ/objstore-p2-04-occ-build.md`.
+Branch `chunk/04-occ`. Spec: PLAN.md 4.2 "Chunk 4", 7.5, 2.2/2.3/2.6, and the "LWW ruling"
+in 9.1. The first build (Opus, 2026-11-21) kept concurrent versions as siblings. The owner's
+ruling of the same day replaced siblings with last-writer-wins. The repair round
+(`objstore-p2-04-occ-repair1.md`) rewrote the package to that ruling and fixed the six
+review-1 findings. This file describes the package **as it now is**. The "Repair round"
+section at the end lists what changed and which test proves each point.
 
-History: tests first (`079bab7`, does not compile), then the implementation (`cd718fb`), then
-coverage/benchmark (`3ab2715`), notes, and the oracle fix found by the gate (see `git log`).
+## The design in plain words
+
+Each metadata key has **exactly one version** on every replica. A version is a value or a
+tombstone (a delete), plus the metadata that makes it comparable.
+
+A writer can say what it believes the current version is. `If-Match: <etag>` means "only if
+the key is still at this version". `If-None-Match: *` means "only if the key does not exist
+(or is deleted)". If the belief is wrong, the store refuses the write with
+`ErrPreconditionFailed` and changes nothing. On one replica this check is atomic. Of two
+writers holding the same ETag, exactly one wins.
+
+Across a partition the check cannot see the other side. Both sides accept their writes, and
+both writers get an acknowledgement. When the replicas meet again, **last-writer-wins
+decides**. The version with the larger hybrid logical clock (HLC) stamp wins. The writer's
+node ID breaks ties, and the version ID bytes break any tie that remains (only forged input
+can tie that far). The rule depends on the two versions and nothing else, so every replica
+picks the same winner without coordination, and replicas holding the same versions are
+byte-identical.
+
+**The trade-off:** an acknowledged write can be lost to a concurrent write under partition.
+The system guarantees convergence and a record of the loss, not preservation. Every such loss
+(an *LWW discard*) is counted in a per-node counter, written to a log line naming the key,
+the losing version, its stamp and its writer, and the winning version and its stamp, and
+reported to a callback. A loss can happen, but it is never invisible.
+
+Version vectors stay, but only to *detect* concurrency. When a node replaces the version it
+holds, it asks one question: had the winner's writer seen the loser? If yes, the replacement
+is an ordinary overwrite and nothing was lost. If no, it is a discard and goes on the record.
+
+"Last" means the highest HLC stamp, not the latest in real time. With skewed clocks, a write
+made later in real time can lose to a concurrent write from a node whose clock runs ahead.
+That loss is recorded like any other. A write that *saw* a version always beats it, at any
+skew, because a write takes a stamp strictly above the version it replaces.
 
 ## What was built
 
 | File | Contents |
 |---|---|
-| `errors.go` | sentinels `ErrPreconditionFailed`, `ErrMalformed`, `ErrNotFound`, `ErrConflict`, `ErrQuotaExceeded`, `ErrClockExhausted`, `ErrClockAhead`, `ErrNotReady`; typed `*ConflictError{Key, ETag, Siblings}` (unwraps to `ErrConflict`); wire codes 80–87 (`CodeEntries`, `Codes()` = `env.NewCodeTable(CodeEntries()...)`) |
-| `vv.go` | `Actor{Node, Epoch}`, `Entry`, `VersionVector` (sorted, zero entries dropped) with `Compare` → `Equal/Before/After/Concurrent`, `Descends`, `Join`, `Get` |
-| `hlc.go` | `Stamp{Wall, Logical, Node}` with a total `Compare`; `HLC` over `env.Clock` (`Now`, `Observe`, `Last`), `MaxClockLead = 1h` |
-| `version.go` | `Dot`, `Version` (dot, causal context, tombstone flag, value, HLC stamp, cached `VersionID`), `Descends`, `Supersedes`, `Clock` |
-| `record.go` | `Record` (sibling set, normalized), `ETag`, `ParseETag`, `Record.Merge`, `Covers`, `Live`; `Precondition` (`IfMatch`, `IfNoneMatch`, `Unconditional`, `Holds`) |
-| `scalar.go` | `Scalar` LWW register: highest `Stamp`, then larger value bytes |
-| `doc.go` | `Doc` (records + scalars), `Merge`, `MergeRecord`, `MergeScalar`, `Subset`, `Clone`, `Encode` (canonical, cached), `Digest`, strict `Decode` |
-| `encoding.go` | encoder/decoder primitives (uvarint, zig-zag varint, length-prefixed strings) |
-| `store.go` | `Store`: `Get`, `Put`, `Delete`, `SetScalar`, `Scalar`, `Merge`, `Record`; epoch handling |
-| `quota.go` | `Usage`, `ReadQuota`, `WriteQuota`, `UpdateQuota(key, attempts, recount, fn)`, `AddUsage` |
-| `meta.go` | typed document: `Kind`, key builders (`TagKey`, `ACLKey`, `QuotaKey`, `ObjectKey`, `ManifestKey`, `RouteKey`, `ContentTypeKey`, `BucketPrefix`), `ParseKey`, `Permission`, `ObjectMeta`, typed accessors on `Store`, `RecountObjects` |
+| `errors.go` | sentinels `ErrPreconditionFailed`, `ErrMalformed`, `ErrNotFound`, `ErrQuotaExceeded`, `ErrClockExhausted`, `ErrClockAhead`, `ErrNotReady`; wire codes in the occ block 128–143 (`CodeBlockMin/Max`): 128 precondition, 129 malformed, 130 not found, **131 unassigned** (the retired conflict code), 132 quota, 133 clock exhausted, 134 clock ahead, 135 not ready; `CodeEntries`, `Codes()` |
+| `vv.go` | `Actor{Node, Epoch}`, `Entry`, `VersionVector` (sorted, zero entries dropped), `Compare` → Equal/Before/After/Concurrent, `Descends`, `Join`, `Get` |
+| `hlc.go` | `Stamp{Wall, Logical, Node}` with a total `Compare`, `After` (on `(wall, logical)` only) and an internal `successor`; `HLC` over `env.Clock` (`Now`, `Observe`, `Last`), `MaxClockLead = 1h` |
+| `version.go` | `Dot`, `Version` (dot, causal context, tombstone flag, value, stamp, cached `VersionID`); `Compare` = the LWW total order; `ETag()`; `Descends`/`Supersedes` (event-set inclusion, a linear scan) |
+| `record.go` | `ETag`, `ParseETag`; `Record` (one optional version): `Version`, `Present`, `Live`, `ETag`, `Equal`, `Merge` (the LWW maximum); `Precondition` (`IfMatch`, `IfNoneMatch`, `Unconditional`, `Holds`) |
+| `doc.go` | `Doc` (key → one `Version`, cached sorted keys and encoding): `Record`, `Keys`, `KeysWithPrefix`, `MergeVersion`, `Merge`, `Clone`, `Subset`, `Stamps`, `MaxStamp() (Stamp, bool)`, `Encode`, `Digest`, `Equal`, strict `Decode` |
+| `encoding.go` | encoder and decoder primitives. The decoder counts its work and stops building as soon as an error is set. |
+| `store.go` | `Store` (embeds `Reader`): `Put`, `Delete`, `SetScalar`, `Merge` (returns `(changed, error)`), `EncodeState`; `LWWDiscards`, `DiscardTail`, `Counter`, `Actor`, `HLC`, `Rotations`, `AheadStamps`; `StoreConfig` with `Persist`, `Log`, `OnDiscard`; `Discard{Key, Winner, Loser}` and its log line; the transaction (snapshot, persist, restore); `Reader` (`Get`, `Record`, `Keys`, `Doc` (a copy), `Digest`, `Scalar`) |
+| `quota.go` | `Usage`, `DecodeUsage`, `Reader.ReadQuota`, `Store.WriteQuota`, `UpdateQuota(key, attempts, fn)`, `RecountQuota(key, attempts, recount) (Usage, wrote bool, error)`, `AddUsage` |
+| `meta.go` | typed document: `Kind`, key builders, `ParseKey`, `Permission`, `ObjectMeta`; typed reads on `Reader`, typed writes on `Store` and `Node` (`PutTag`, `PutACL`, `PutObjectMeta`, `PutManifest`, `SetRoute`, `SetContentType`), `Reader.RecountObjects` |
 | `wire.go` | message kinds, client op encoding, `Result` |
-| `node.go` | `Membership` interface (declared here; Chunk 1's gossip implements it later), `StaticMembership`, `Config`, `Node` (`env.Process`), `NewFactory`, `Client` |
+| `node.go` | `Membership`, `StaticMembership`, `Config` (with `Log`, `OnDiscard`), `Node` (`env.Process`): `Reader`, `Record`, `Doc`, `Actor`, `Digest`, `LWWDiscards`, `DiscardTail`, `AheadStamps`, `Stats`; writes `Put`, `Delete`, `SetScalar`, `UpdateQuota`, `RecountQuota` and the typed writes; `NewFactory`, `Client` |
 
-No CRDT type is built. No client replica (OQ-7). Only `internal/occ` was touched (plus this file).
+Only `internal/occ/` and this directory were touched.
 
 ## Design choices and why
 
-**Dotted version vectors, not plain vectors.** Each sibling carries a *dot* (actor, counter) and a
-causal *context* (the version vector of what its writer read). A plain vector cannot say "this
-write by A did not see A's earlier write": an unconditional write by A after A's own blind write
-would get `{A:2}`, which dominates `{A:1}` and would silently drop it. With a dot plus context,
-the event set of a version is `downset(context) ∪ {dot}`, and the blind write's event set is just
-`{(A,2)}`, which is concurrent with `{(A,1)}`.
-`TestUnconditionalWriteStaysConcurrentWithItsOwnEarlierWrite` proves it.
+**One version per key, everywhere.** `Doc` is `map[string]Version`. There is no sibling set
+in memory, in the encoding, or in the API. `Get` returns the value or `ErrNotFound` (absent
+or tombstone; the tombstone's ETag comes back with the error so a caller can recreate with
+`If-Match`).
 
-**Dominance = strict inclusion of event sets.** `w.Supersedes(v)` iff `events(v) ⊊ events(w)`.
-Strict set inclusion is a strict partial order on *any* pair of versions, including hostile
-decoded ones (e.g. two versions whose contexts cover each other's dots: equal event sets, so
-neither supersedes and both are kept). That is what makes `Merge = maximal(union by version ID)`
-commutative, associative, idempotent and total on every decoded state without an error return.
-The honest-run reading is the plan's: `v` is dropped only when a kept version's context covers
-`v`'s dot, which means its writer's ETag covered `v` or a descendant of `v`.
+**The total order (`Version.Compare`).** HLC stamp `(wall, logical, node)`, then version ID
+bytes. The version ID is a SHA-256 over the actor, the dot counter and a hash of
+(context, tombstone flag, stamp, value), so two different versions differ in ID except
+through a SHA-256 collision. The order is therefore total on every pair of decoded versions.
+Merge is the per-key maximum under it: commutative, associative, idempotent and total, with
+no error path. The record's winner is decided by nothing else: not arrival order, not which
+side is local, not version vectors.
 
-**Dot counters are per key**: `max(counter of this actor in the record's dots and contexts) + 1`.
-A conditional write's context is the join of the clocks of every sibling it covered (the record's
-whole sibling set: an ETag names the whole set). The inflation of a dot into a downset (`(A,7)` →
-`{A:7}`) is safe because whole records travel together. A replica holding `(A,7)` also holds A's
-earlier versions of that key, or versions that supersede them.
+**Scalars share the record implementation.** A scalar field (route pointer, content type) is
+an ordinary record written unconditionally (`SetScalar` = `Put(key, v, Unconditional())`).
+Reasons: one merge rule, one encoding, one discard record. A scalar overwritten by a
+concurrent scalar write is a lost write too and now goes on the record like any other. The
+old `Scalar` type, its separate map and its tie-break on value bytes are gone.
 
-**Version ID and ETag.** `VersionID = SHA-256("occ/version/v1" ‖ actor ‖ counter ‖ contentHash)`,
-`contentHash = SHA-256(context ‖ tombstone ‖ stamp ‖ value)`; so a version ID names the whole
-version. `ETag = SHA-256("occ/etag/v1" ‖ n ‖ sorted version IDs)`; the empty record has the zero
-ETag. 32-byte SHA-256 everywhere; an ETag collision between different sibling sets is a SHA-256
-collision.
+**Classification (version vectors detect, they do not decide).** Each version carries a dot
+(actor, counter) and a causal context (the vector of what its writer had seen). Its event set
+is `downset(context) ∪ {dot}`. When a store replaces a version it *holds* (in a merge), it
+tests whether the winner's event set strictly includes the loser's (`Supersedes`):
+- strictly included: an ordinary overwrite; nothing is recorded;
+- anything else (concurrent; equal event sets, which only forged input produces; or the
+  higher-stamped winner causally *below* the loser, also only on forged input): a discard
+  that is counted and logged. In doubt, the store records the loss.
 
-**Preconditions** (`Precondition.Holds`):
-- `If-Match: e` holds iff the record has at least one sibling (tombstones count) and its ETag is
-  `e`. The new version covers every sibling, so a successful conditional write leaves exactly one
-  version (this is also the resolving write).
-- `If-None-Match: *` holds iff the record has no live sibling (absent, or tombstones only); the new
-  version covers the tombstones.
-- none: always holds; the new version covers nothing and is concurrent with every existing
-  sibling (plan: "recorded as concurrent with what it did not read").
-- `Delete` checks the precondition first, then returns `ErrNotFound` if there is no live sibling.
-- A refused write changes nothing (checked in every table row and in the model property).
-- `Get`: no live sibling → `ErrNotFound`; more than one sibling (a tombstone counts) →
-  `*ConflictError`; else the value.
+Only replacements of a held version are classified. When an incoming version loses to what
+the node holds, nothing is recorded on that node: it never held the loser. Its writer's node
+holds the loser until something replaces it, and that replacement is recorded or is an
+overwrite by a writer that saw it. So every loss is on at least one node's record, and the
+same discard is not re-counted each time gossip delivers the loser again. One lost version
+held by several replicas is counted once on each of them. That is why the discard counters
+(events) exceed the number of distinct lost versions in the numbers below.
 
-**Canonical encoding, strict decode.** `Decode` parses, rebuilds the normal form (sorted keys,
-sorted/deduplicated/maximal siblings, normalized vectors) and requires `Encode(result) == input`.
-It also rejects a zero dot counter, a tombstone carrying a value, a flag byte not in {0,1}, an
-empty record, a logical counter above 32 bits, counts larger than the remaining input, and
-trailing bytes. So every decoded state is canonical: `encode∘decode` and `decode∘encode` are
-both the identity, and `Merge(a, a) == a` holds for every decoded `a`. Golden files:
-`testdata/doc-v1.golden`, `state-v1.golden`, `op-v1.golden` (`-update-golden` to rewrite).
+**A write always beats what it replaced (A3).** A local write's context is the held version's
+clock, so the write causally supersedes it. Its stamp is `max(HLC.Now(), successor(held))`,
+where `successor` is `(wall, logical+1)`, carrying into `wall+1` at a full logical counter.
+The node's HLC is *not* moved to that successor. Normally `HLC.Now()` is already above the
+held stamp, because the HLC observed it when it arrived. The successor path matters when the
+held stamp lies more than `MaxClockLead` (1 h) ahead of the local clock (forged or wildly
+skewed) and was refused by `Observe`.
 
-**Actor identity and the wipe hazard (the guarantee).** Actor = `(NodeID, Epoch)`, with `Epoch` a
-non-zero `uint64`. The node stores the epoch in the same checksummed blob as its metadata
-(`occ/state`: `"OCCS" ‖ SHA-256(payload) ‖ uvarint(epoch) ‖ doc`). On `Start`:
-- the blob is intact → reuse its epoch and state;
-- the blob is missing (new node, or wiped) or fails its checksum/decode (bit-rot) → take a fresh
-  epoch drawn from the node's `env.Rand` (`node/<id>` stream). The simulator contract says that
-  stream continues across incarnations, so a wiped-and-rejoined node draws a different value;
-  in the real runtime the stream is randomly seeded;
-- a read error (`ErrIO`) → do not guess. The node stays not ready (every op returns
-  `ErrNotReady`, requests are refused with that code) and retries the load every `LoadRetry`
-  (100 ms), as a named periodic round, until it reads the blob.
+The choice, and why: taking a stamp above the held version keeps every acknowledged write
+from losing to what it replaced, and it keeps the key writable. Refusing the write would let
+one forged far-future stamp lock a key until real time caught up, which at a stamp near the
+end of time is forever. Not moving the node clock confines the damage: a far-future stamp
+*pins only its own key*. Concurrent writes from other nodes to that key keep losing (and are
+recorded) until real time passes the stamp, and every other key on the node keeps normal
+stamps. At the absolute end of the stamp space (`(MaxInt64, MaxUint32)`) there is no
+successor; the write is refused with `ErrClockExhausted` and changes nothing.
 
-Guarantee: a node never issues a dot under an actor whose earlier counters it may have lost.
-Counters are only ever lost together with the blob, and losing the blob forces a new epoch. The
-exception is a collision of two random 64-bit epochs for the same node ID, probability
-≈ k²/2⁶⁵ for k epochs. At counter overflow (a record whose max counter for this actor is
-`MaxUint64`, reachable only through a hostile peer) the store rotates to a fresh epoch before
-writing (`TestEpochRotatesAtCounterOverflow`).
+**Dots are never reused.** The dot counter comes from one per-actor counter, persisted in the
+state blob with the document. A per-key `max+1` would reissue the dot of a write that was
+discarded, and a later write by the same node would then look like a causal successor of
+the discarded write on other replicas. `TestDotsAreNeverReused` shows the counter moving past
+the discarded dot, and that a replica still holding the discarded write records it as a
+discard. A hostile context carrying `MaxUint64` for the node's actor makes the store rotate
+to a fresh epoch before writing.
 
-`TestWipedNodeTakesAFreshEpoch` runs the classic hazard twice. Node A writes `k` twice (`(A,1)`
-then `(A,2)`, which supersedes it) and the write replicates. A is isolated and wiped, then writes
-`k` again with `If-None-Match` (its disk is empty), and the network heals. With epochs the new
-write is a sibling of `(A,2)` on every node. With the test-only switch `hazardReuseEpoch` (epoch
-fixed at 1 on a fresh start) the new write reuses `(A,1)`, is "dominated" by `(A,2)` and vanishes.
-The test requires that loss to happen with the switch on, so the test can see the hazard.
+**Actor epochs and the wipe hazard (A9).** Actor = `(NodeID, Epoch)`. The epoch is stored
+with the state. A node that starts without readable state (new, wiped, or bit-rotted) draws a
+fresh random epoch from its `node/<id>` stream. A read error leaves the node not ready, and
+it retries every `LoadRetry` (100 ms). It never guesses. Without epochs, a wiped node would
+restart its counter under the same actor. Its new writes would then look like causal
+successors of its pre-wipe writes held by other replicas, and the replaced pre-wipe write
+would vanish with no record. `TestWipedNodeTakesAFreshEpoch` builds exactly that, with the
+test switch `hazardReuseEpoch`, and requires the independent loss oracle to *fail* with the
+switch on and pass with it off.
 
-**Durability limit (stated).** A write is acknowledged once it is synced to the writing node's
-disk. If that disk is destroyed (wipe, or bit-rot of the state blob) before the write replicated,
-the write is lost with the disk. That is disk loss, not protocol loss. The DSTs that assert
-no-silent-loss therefore inject crashes, torn crashes, restarts, pauses and read errors, but not
-wipes or bit-rot. The wipe and bit-rot paths are tested separately for the epoch guarantee.
+**HLC observation (finding 2).** `Store.Merge` and the store loader call `Observe` on every
+stamp in the incoming or loaded document, in sorted key order. A stamp beyond the lead is
+refused and counted (`AheadStamps`, one per refused stamp). It does not stop the other stamps
+from being observed. An empty document observes nothing, so a node with negative skew starts
+at its own clock. `MaxStamp` returns `(Stamp, false)` for an empty document and the real
+maximum (negative walls included) otherwise.
 
-**HLC.** `Now()`: if physical time is past the clock's wall, the stamp is `(physical, 0)`;
-otherwise the logical counter goes up by one. `Observe(s)` raises the clock to `s` (wall,
-logical), so the next `Now()` is strictly after every stamp observed.
-- *Skew:* "last writer" means highest HLC, not latest in real time. A node whose clock runs ahead
-  wins a scalar field over a write made later in real time on a slower node. Once the slow node
-  has observed the fast stamp (any merge observes the doc's max stamp), its next write wins
-  (`TestLWWScalarTieBreak/a node whose clock runs ahead ...`).
-- *Far-future stamps:* `Observe` refuses (`ErrClockAhead`) a stamp more than `MaxClockLead`
-  (1 h) ahead of the local physical clock and does not adopt it. The data still merges, and that
-  far-future scalar keeps winning its field until real time passes it. Store and node count these
-  (`AheadStamps`).
-- *Logical overflow:* at `Logical == MaxUint32` the clock carries into the wall (`wall+1`,
-  logical 0). At wall `MaxInt64` with a full counter, `Now` returns `ErrClockExhausted` and the
-  write is refused. That is reachable only if a peer sends a stamp at the end of time while the
-  local clock is also there (refused otherwise by the lead check).
+**Transactions: snapshot and restore (finding 3).** Every store mutation (write, delete,
+scalar, quota write, merge, including inbound pushes, digest replies and deltas) runs as a
+transaction. The store records the previous record of each key it touches, the actor (epoch),
+the dot counter, the rotation count, the HLC state, the ahead count and the discard count.
+It applies the change, encodes the state blob and calls the `Persist` hook (the node's
+`Disk.Write` + `Disk.Sync`). If persist fails, everything listed is restored, and the call
+returns the disk error. Pending discards are published (tail, log line, callback) only after
+the persist succeeded. A failed persist therefore leaves no trace in reads, ETags, later
+preconditions, replication, the counter, the tail or the log. I chose snapshot-and-restore
+over persist-then-install because the document is mutated in place and a copy of it per
+write would cost O(document). The undo log costs O(keys changed). Restoring the HLC is not
+needed for safety (a clock that moved forward is harmless), but it makes "state from before
+the call" exact.
 
-**Scalars (LWW)**, used for the routing pointer and content type: highest `(wall, logical, node)`.
-On a fully equal stamp (impossible between honest nodes) the larger value bytes win, so `Merge`
-stays commutative.
+**Discard record (A5).** `Discard{Key, Winner, Loser}`. The log line (`Discard.String()`) is
+`occ: lww discard key="…" loser=<id> loser_stamp=<wall.logical@node> loser_writer=<node@epoch>
+winner=<id> winner_stamp=<…>`. It is deterministic and holds no wall time. The counter
+(`LWWDiscards`, saturating at `MaxUint64`) is persisted in the local state blob. It survives
+restarts and never enters the replicated document. The last `DiscardTailLen` (64) records are
+kept in a ring for tests and operators. The `Log` sink and the `OnDiscard(key, winner,
+loser)` callback are optional `Config`/`StoreConfig` fields. Both run after the persist, in
+the order the discards were decided.
 
-**Quotas.** `ReadQuota` returns usage plus the precondition to write with (`If-None-Match` if
-absent, else `If-Match` of the read ETag). `WriteQuota` refuses an unconditional write.
-`UpdateQuota` loops up to `attempts` times: read → (on siblings: call the recount hook; the write
-will be the resolving `If-Match`) → `fn` → conditional write. It retries only on
-`ErrPreconditionFailed`, gives up with that error after `attempts`, and with siblings and no hook
-returns `*ConflictError`. Nothing is guessed. `AddUsage` refuses wrap-around
-(`env.ErrInvalidArgument`) and returns `ErrQuotaExceeded` when a growing update passes a non-zero
-limit. `Store.RecountObjects(bucket)` is the hook this package can offer: it sums live
-`ObjectMeta` sizes in a bucket. A conflicted object counts once at its largest live sibling size
-(every sibling's data is still stored); a tombstoned one does not count. Chunk 6 plugs a manifest
-recount into the same hook.
+**ETag.** `ETag(v) = v.ID()`: a deterministic function of the one version, equal on every node
+holding it, different for every different version, including a new version with the same
+value. A tombstone has an ETag. The absent record has the zero ETag, which no `If-Match` can
+match.
+
+**Preconditions (A6).** `If-Match e` holds iff the key has a version (tombstones count) whose
+ETag is `e`. `If-None-Match: *` holds iff the key is absent or a tombstone. A missing
+precondition always holds. `Delete` checks the precondition first, then returns `ErrNotFound`
+if there is nothing live. Any write that passes replaces the held version as its causal
+successor. A refused write changes nothing.
+
+**Canonical encoding, strict and bounded decode.** Document = `"OCC\x02"`, a key count, then
+`(key, version)` pairs in strictly increasing key order. A key repeated (two versions of one
+record) or out of order is rejected at that point, before anything else is built. Context
+entries must be strictly increasing with non-zero counters, checked as they are read, without
+sorting. A dot counter of zero, a tombstone carrying a value, a flag byte outside {0,1}, a
+logical counter above 32 bits, a count larger than the remaining input and trailing bytes are
+all rejected. The decoder stops building as soon as an error is set (no version IDs hashed
+after an error). Finally it requires `Encode(result) == input`, so `encode∘decode` and
+`decode∘encode` are both the identity. State blob = `"OCCS" ‖ SHA-256(payload) ‖ payload`,
+payload = `epoch ‖ counter ‖ discards ‖ document`. Goldens: `testdata/doc-v2.golden`,
+`state-v2.golden`, `op-v1.golden` (the op format is unchanged; its golden bytes changed
+because the ETag inside changed). Rewrite with `-update-golden`.
+
+**Quotas (A8).** `UpdateQuota` = read (usage + the precondition to write with), compute,
+conditional write, retrying only on `ErrPreconditionFailed`, at most `attempts` times; it
+never applies a value computed from a stale read. `WriteQuota` refuses an unconditional
+write. Partition-side updates settle by LWW like any key, so after a heal the stored usage
+can be one side's figure. The discard of the quota key is the signal. The node's `OnDiscard`
+callback names the key, and the integrated node (Chunk 6) calls
+`RecountQuota(key, attempts, recount)` after syncing. `RecountQuota` computes the usage from
+the hook and **writes nothing when the stored usage already equals it**. Without that, nodes
+recounting at the same time would write identical figures as different versions, discard
+each other's, and recount again forever. With it, the second round writes nothing. The quota
+DST shows this on 500 seeds: always exactly 2 rounds. `Reader.RecountObjects(bucket)` sums
+live `ObjectMeta` sizes. It is the recount this package can offer, and Chunk 6 plugs in its
+manifest recount.
 
 **Replicator (`Node`).** Single-threaded, acts only through `env`. Every `Period` (500 ms,
-jittered ±50%) it sends a digest request to a random peer from `Membership.Peers()`. The peer
-answers "match" or its full state. The caller merges, and if its own digest still differs from
-the peer's state digest, it pushes its full state back (push-pull). After every local write the
-node persists (Write + Sync), then sends the changed key as a delta datagram to `Fanout` (2)
-random peers, if the delta fits in `MaxDelta` (60,000 bytes). Datagrams give the duplication and
-reordering exposure; merges are idempotent. Client operations (get, put, delete with
-precondition) arrive as requests (`Client`). Errors go back through `reply(nil, err)` and the
-simulator's code table, so a remote caller sees `*env.RemoteError` that `errors.Is` both the occ
-sentinel and `env.ErrRemote`. Typed fields of `ConflictError` do not cross the wire (code and
-message only).
+jittered ±50%) it sends its digest to a random peer, chosen from the *sorted*,
+de-duplicated `Membership.Peers()`. The peer answers "match" or its full state. The caller
+merges, then pushes its own state back if the digests still differ. After every local write
+the node sends the changed key as a delta datagram to `Fanout` (2) random peers, if it fits
+in `MaxDelta` (60,000 bytes). `Node.Store()` is gone. Readers get a read-only `Reader`, and
+every write goes through a `Node` method that persists (inside the store transaction) and
+broadcasts.
 
 ## Claims and the tests that prove them
 
 | Claim | Test(s) |
 |---|---|
-| Vector `Compare` table incl. epochs, zero entries, duplicates | `TestVersionVectorCompareTable`, `TestVersionVectorBasics` |
-| Vectors are a partial order; `Compare` matches a pointwise model; Concurrent symmetric; Join is the least upper bound | `TestPropVersionVectorPartialOrder` |
-| Every precondition × state row (absent, live, tombstone, two live siblings, live+tombstone) for put and delete; refused writes change nothing; conditional writes supersede what they covered; unconditional ones keep it | `TestConditionalPutTable`, `TestConditionalDeleteTable` |
-| Single replica: success iff the precondition holds against a reference model; sibling sets equal the model's; one set ↔ one ETag | `TestPropCheckAndSetModel` |
-| ETag equal on equal sets regardless of merge order; distinct sets distinct; changes with a new version even with the same value; parse round trip | `TestETagDeterministic` |
-| Concurrent writes become siblings; `Get` returns `*ConflictError`; a stale resolve fails; a resolve naming the ETag collapses them on every replica | `TestResolveCollapsesSiblings` |
-| Blind writes stay concurrent with the writer's own earlier blind write | `TestUnconditionalWriteStaysConcurrentWithItsOwnEarlierWrite` |
-| No silent loss: random conditional/blind writes and deletes, random merges, clock moves, on 2–4 replicas: every acknowledged version is a sibling or is seen by a kept sibling's writer (independent oracle, not the product's dominance), at every step across replicas and after full exchange; replicas converge to identical bytes and ETags; with only conditional writes, a key has at most as many siblings as distinct writing actors; scalars settle on the highest stamp | `TestPropNoSilentLoss`, fuzz `FuzzOCCConditionalWrite` (same property) |
-| Merge commutative, associative, idempotent, keeps every non-dominated sibling (independent event-set oracle), invents nothing, keeps nothing dominated; on honest snapshots and generated hostile states | `TestPropMergeLaws`, fuzz `FuzzOCCMergeLaws` |
+| Vector `Compare` table incl. epochs, zero entries, duplicates; partial order, pointwise model, least upper bound | `TestVersionVectorCompareTable`, `TestVersionVectorBasics`, `TestPropVersionVectorPartialOrder` |
+| Every precondition × state row (absent, live, tombstone) for put and delete; refused writes change nothing; a successful write is the record's one version, causally supersedes and beats the version it replaced, and records no discard | `TestConditionalPutTable`, `TestConditionalDeleteTable` |
+| Single replica against a reference model: success iff the precondition holds; one ETag ↔ one version; a new version never keeps the ETag; no discards on one replica | `TestPropCheckAndSetModel` |
+| ETag is a function of the version: equal across nodes and merge orders, different for different versions with equal values, tombstones carry one, absent is zero, parse round trip | `TestETagDeterministic` |
+| LWW winner: wall, then logical, then node, then version-ID bytes on forged equal stamps; tombstone vs value both ways; the higher stamp wins even when causally below (forged); same answer through `Compare`, `Record.Merge` and `Doc.Merge` in both orders | `TestLWWWinnerTable` |
+| A concurrent replacement is counted, logged (key, loser ID, loser stamp, loser writer, winner ID, winner stamp), kept in the tail and reported to the hook; an incoming loser is not a replacement; re-merging does not re-count; deletes discard puts and the reverse; the counter saturates; the tail is bounded | `TestLWWDiscardCountedAndLogged` |
+| Causal overwrites (conditional and unconditional, across three nodes) are never counted or logged | `TestCausalOverwriteIsNotADiscard`; property `TestPropNoDiscardWithoutConcurrency` |
+| A discarded write's dot is never reissued | `TestDotsAreNeverReused` |
+| Every acknowledged version ends current on all replicas, or seen by a later acknowledged write, or named as a loser in some node's discard log. Checked against an independent seen-set oracle (not the product's classifier) at every step and after full exchange, on 2–4 replicas with random conditional/blind writes, deletes, merges and clock moves; counters equal log entries | `TestPropEveryLossRecorded`, fuzz `FuzzOCCConditionalWrite` (same property) |
+| A write that saw a version beats it (and strictly supersedes it), at any skew up to `sim.MaxSkew`, with forged stamps anywhere in that range | `TestPropCausalWriteAlwaysWins` |
+| Merge laws (commutative, associative, idempotent) and the result is the per-key LWW maximum (independent order in the test), on honest and generated hostile states, including extreme walls and forged equal stamps | `TestPropMergeLaws`, fuzz `FuzzOCCMergeLaws`, `TestMergeIsTotalOnDecodedStates` |
 | Any delivery order with duplicates of full states and deltas → identical bytes, digest and ETags | `TestPropConvergence` |
-| Causally ordered writes never leave siblings | `TestPropSiblingsOnlyWhenConcurrent` |
-| HLC rules incl. backwards physical time, observe, lead limit, carry, exhaustion | `TestHLCRules`; monotonic and after every observed stamp: `TestPropHLCMonotonic` |
-| LWW tie-break order; skew makes a later real-time write lose | `TestLWWScalarTieBreak` |
-| Quota CAS: create, limit, stale read retried, bounded retries, partition siblings resolved only by the hook, unconditional write refused, wrap-around refused, canonical usage | `TestQuotaCheckAndSet`; a write from a stale read never applies, final usage = model: `TestPropQuotaNoStaleApply` |
-| Canonical encoding with golden bytes for doc, state blob and op | `TestCanonicalEncoding` |
-| Malformed decode table (22 rows + every prefix + state blobs + results) all `ErrMalformed` | `TestDecodeMalformedTable` |
-| `Merge` is total and lawful on decoded hostile states (mutual contexts, contexts past their own dot, extreme stamps) | `TestMergeIsTotalOnDecodedStates`; `FuzzOCCDecode` (decode never panics, `encode(decode(b)) == b`, laws with honest and hostile partners; also feeds the bytes to every other decoder) |
-| Typed document keys, accessors, recount | `TestTypedMetadataDocument`, `TestParseKey` |
-| Every code row round-trips; `ConflictError` fields and `errors.As` | `TestErrorCodesRoundTrip` |
-| Crash keeps acknowledged writes and the epoch | `TestNodePersistsAndReloadsItsEpoch` |
-| Wipe → fresh epoch; reuse hazard demonstrated with the switch | `TestWipedNodeTakesAFreshEpoch` |
-| Bit-rotted state → fresh epoch | `TestCorruptStateTakesAFreshEpoch` |
-| Read errors at load → `ErrNotReady` for every op, retry, then load own state | `TestNodeRetriesLoadAfterReadErrors` |
-| Wire: malformed requests/datagrams, not-found, precondition, conflict cross as codes; client delete | `TestNodeWireProtocol` |
-| Clock exhaustion refuses writes; far-future stamps merge but are counted | `TestStoreClockEdges` |
-| DST: 6 nodes / 3 regions, skew ±400 ms, drift ±2,000 ppm, 2% datagram drop, 5% duplication, 3 nemesis phases (crash, torn crash, restart, pause, partitions incl. one-way and region, isolate, link loss, clog, read errors) under a mixed workload (conditional, create, delete, blind, stale If-Match, scalars). Invariant every 250 events: every ack is on some replica, live or durable, or seen by a kept version's writer. After the final heal: converged within `ConvergeBound`, byte-identical state, equal ETags, oracle holds | `TestMultiRegionConvergenceDST` |
-| DST: region c offline for 60 s while both sides write conditionally; after heal every key is exactly the merge of both sides' heads, no offline version dropped, at least one key contested | `TestOfflineRegionDST` |
-| DST: two writers with one ETag. On one node exactly one wins and the other gets `ErrPreconditionFailed` over the wire. Across a partition both win and both survive as siblings on both servers | `TestConditionalWriteRaceDST` |
-| DST: quota under partition; siblings resolved by recount; resolved usage = recount; overshoot ≤ `MaxOvershoot` | `TestQuotaOvershootUnderPartitionDST` |
-| Canary: a merge that drops concurrent siblings is caught | `TestCanaryMergeDropsSibling` (switch `canaryDropConcurrent` via `export_test.go`; the deterministic two-writer case must fail the oracle, and the convergence DST must fail on at least one of `canarySeeds` seeds) |
+| A far-future version: merged and counted, the node clock not moved; a write over it takes a stamp above it and wins; other keys keep normal stamps; the logical carry; at the end of time the write is refused and changes nothing | `TestFarFutureStampPinsOnlyItsKey`, `TestStoreClockEdges` |
+| The HLC observes every in-range stamp even with a far-future stamp on another key; negative skew at start-up; `MaxStamp` reports absence | `TestHLCObservesEveryStamp`; HLC rules and monotonicity: `TestHLCRules`, `TestPropHLCMonotonic`; skew picks the higher clock and the slower node's next write wins: `TestLWWSkewPicksTheHigherClock` |
+| A failed persist leaves no trace (doc, ETag, actor, counter, HLC, ahead count, discard count, tail, log, rotation) for put, delete, scalar, quota update, merge with a discard and a write that rotates the epoch; the same call works once the disk recovers | `TestFailedPersistLeavesNoTrace` (store), `TestNodeFailedPersistLeavesNoTrace` (node: fake `env.Disk` whose `Write`, and separately `Sync`, fails; put, delete, scalar, quota, inbound push; nothing replicates; a later conditional write on the old ETag works) |
+| Quota CAS: create, limit, stale read retried, bounded retries, unconditional write refused, deleted counter, wrap-around refused, canonical usage; a stale read never applies | `TestQuotaCheckAndSet`, `TestPropQuotaNoStaleApply` |
+| Recount writes only when wrong, retries stale reads, reports hook errors, rewrites a corrupt counter; partition-side updates are discarded on the record and identical recounts settle | `TestQuotaRecount` |
+| Canonical encoding with golden bytes | `TestCanonicalEncoding` |
+| Malformed decode table (19 rows incl. a repeated key, the sibling-era magic and the reviewer's 28 KiB shape) + every prefix + state blobs + results → `ErrMalformed` | `TestDecodeMalformedTable` |
+| The reviewer's 400-versions-of-one-key input is rejected at the second version and is a committed `FuzzOCCDecode` seed | `TestReviewerHostileInputIsRejectedEarly` |
+| Decode and merge work is linear: maximum-size (16 MiB) hostile messages, many keys and big contexts, decode in ≤ 4 operations per byte and merge (every key a forged discard) in ≤ 1 operation per byte of both messages; work per byte does not grow from 2 MiB to 16 MiB | `TestHostileMessagesBoundedWork` (1 MiB under `-race`) |
+| Decode never panics, errors are `ErrMalformed`, round trip, laws with honest and hostile partners, store merge never fails | `FuzzOCCDecode` |
+| Typed document keys, accessors, recount; node typed writes are durable and replicate | `TestTypedMetadataDocument`, `TestParseKey`, `TestNodeTypedWritesGoThroughCommit` |
+| Every code in 128–143, no duplicate, 131 unassigned; every code round-trips over the wire | `TestErrorCodesRoundTrip` |
+| Crash keeps acknowledged writes, the epoch and the dot counter; bit-rot → fresh epoch; read errors → not ready, retry, load own state | `TestNodePersistsAndReloadsItsEpoch`, `TestCorruptStateTakesAFreshEpoch`, `TestNodeRetriesLoadAfterReadErrors` |
+| Wipe → fresh epoch, the loss recorded as concurrent; the reuse hazard is visible with the switch | `TestWipedNodeTakesAFreshEpoch` |
+| Wire: malformed requests/datagrams, not-found, precondition failures cross as codes; client get and delete results | `TestNodeWireProtocol` |
+| The peer drawn does not depend on the membership's order | `TestPeerChoiceIgnoresMembershipOrder` |
+| DST, 6 nodes / 3 regions, skew ±400 ms, drift ±2,000 ppm, 2% drop, 5% duplication, 3 nemesis phases (crash, torn crash, restart, pause, partitions incl. one-way and region, isolate, link loss, clog, read errors), mixed workload (conditional, create, delete, blind, stale `If-Match`, scalars). Every 250 events: every-loss-recorded over live and durable states. After the final heal: converged within `ConvergeBound`, byte-identical documents and equal ETags, every acknowledged key holds one version, every-loss-recorded on the final state, counters = hook records = oracle log | `TestMultiRegionConvergenceDST` |
+| DST: region c offline 60 s while both sides write conditionally, two forced contests (c's later write on `k0`, the other side's on `k1`); every offline write wins, is superseded by a write that saw it, or is recorded as discarded; both kinds occur on every seed; c's later write on `k0` wins | `TestOfflineRegionDST` |
+| DST: two writers with one ETag. On one node exactly one wins, the other gets `ErrPreconditionFailed` over the wire, and no discard is recorded. Across a partition both are acknowledged, after the heal both servers hold the same single version (one of the two), and the other's discard is on a server's record | `TestConditionalWriteRaceDST` |
+| DST: quota under partition; a quota-key discard is recorded (the scenario really contested it); recounts driven by those discards settle (no node pending, a further recount writes nothing); every node's stored usage = the recount; overshoot ≤ `MaxOvershoot` | `TestQuotaOvershootUnderPartitionDST` |
+| Canary: a discard that is neither counted nor logged fails the deterministic two-writer case and the convergence DST | `TestCanaryDiscardNotRecorded` (switch `canaryUnrecordedDiscard`) |
+| Canary: a merge that keeps the local version (arrival-order winner) fails the merge laws and the convergence DST | `TestCanaryMergePrefersLocal` (switch `canaryMergePrefersLocal`) |
 
-## Named bounds (constants in `dst_test.go`) and measured values
+## Named bounds and measured values
 
-| Constant | Value | Measured (500 seeds, `DST_SEEDS=500`, base 1) |
+Measured with `DST_SEEDS=500` (base 1) in the dev container on the shared 4-core droplet
+(load average about 6 during the runs).
+
+| Constant | Value | Measured |
 |---|---|---|
-| `ConvergeBound` (multi-region, from the final heal; offline and quota, from the heal) | 15 s | multi-region: p50 2.35 s, p99 4.48 s, max 5.14 s. Offline region: p50 0.71 s, p99 1.40 s, max 1.68 s |
-| `invariantEvery` (no-silent-loss across live and durable states) | 250 events | multi-region runs ≈ 850–1,200 events. The invariant also runs once more on the converged state |
+| `ConvergeBound` (from the final heal) | 15 s | multi-region p50 2.29 s, p99 4.41 s, max 5.16 s; offline region p50 0.76 s, p99 1.56 s, max 2.22 s; quota p50 0.49 s, max 1.35 s |
+| `invariantEvery` | 250 events | multi-region runs 835–1,199 events, offline 2,231–2,415 |
 | `raceConverge` | 10 s | passes on every seed |
-| `MaxOvershoot = (quotaWriters-1) × quotaLimit` | 3,000 bytes (4 writers, limit 1,000) | overshoot distribution: 1,000 ×150, 1,100 ×170, 1,200 ×110, 1,300 ×40, 1,400 ×19, 1,500 ×6, 1,600 ×3, 1,700 ×2. It is never below 1,000 because each side of the 2-way partition fills the limit on its own. Anything above that comes from nodes on the same side checking stale views before they sync. I first wrote the bound per side (1 × limit) and the DST broke it on seed 1 (1,200). The honest bound is per independently checking writer |
-| `canarySeeds` | 3 | the sibling-dropping merge fails the convergence DST on 3 of 3 seeds (and the deterministic two-writer case) |
-| workload | 150 ops multi-region / 200 ops offline / 60 quota ops | multi-region acks ≈ 68–100, refused ≈ 13–35 per seed (sample of 40) |
+| `MaxOvershoot = (quotaWriters-1) × quotaLimit` | 3,000 bytes (4 writers, limit 1,000) | see below |
+| `maxRecountRounds` | 6 | always 2 (round 1 writes the recount, round 2 writes nothing) |
+| `canarySeeds` | 3 | each canary fails the convergence DST on 3 of 3 seeds |
 
-**Sibling counts.**
-- *Multi-region DST* (6 writers, conditional + blind writes, 4 keys). The per-run maximum is
-  sampled at each invariant check: distribution over 500 seeds {2: 11, 3: 85, 4: 225, 5: 130,
-  6: 39, 7: 8, 8: 2}; max 8, which is above the 6 writers because blind writes add siblings.
-  Per key after convergence (2,000 keys): {1: 1,051, 2: 519, 3: 261, 4: 118, 5: 40, 6: 10, 7: 1}.
-- *Offline-region DST* (6 writers, conditional writes only). Per-run max {1: 2, 2: 452, 3: 44,
-  4: 2}. Per key after heal {2: 1,629, 3: 348, 4: 20, 5: 3}: never above the 6 writers. The rapid
-  property proves the bound for the conditional-only case: siblings ≤ distinct writing actors.
+**Discards per partitioned workload.**
+- *Multi-region DST* (6 writers, partitions and crashes, blind writes and stale `If-Match`
+  included). Of 51,781 acknowledged writes over 500 seeds, 3,959 are current at the end,
+  33,397 were superseded by a later write that saw them, and **14,425 (27.9%) were lost to
+  concurrent writes, each named in a discard log**. Per seed, distinct lost versions
+  p50 36 (min 23, max 55) of p50 104 acknowledged writes. Discard events (sum of the node
+  counters) p50 75, p99 109, max 136. A lost version is counted once on each replica that
+  held it.
+- *Offline-region DST* (conditional writes only). Of 74,466 acknowledged writes, 2,000
+  current, 61,557 superseded, **10,909 (14.6%) recorded as discarded**. Per seed, distinct
+  lost versions p50 24 (12–38), discard events p50 47 (21–76). The offline region's writes:
+  830 ended current and 3,335 were recorded as discarded across the 500 seeds; per seed it
+  won 1–3 keys and lost 2–12 writes.
+- In every seed, counter sum = callback records = oracle log, and no acknowledged write was
+  lost without a record.
 
-**Merge cost** (`BenchmarkMergeDoc`, 10% of keys conflicted, in the dev container on the shared
-4-core droplet): Doc merge (clone + merge) 1e3 records 3.7 ms / 0.72 MB allocated; 1e4 records
-47.8 ms / 6.9 MB. Encode + strict decode: 1e3 records 12.0 ms, 1e4 records 147 ms. Decode
-recomputes every version ID (two SHA-256 per version) and re-encodes for the canonical check;
-that dominates.
+**Quota overshoot** (4 writers, two per side, limit 1,000 bytes, 100-byte objects):
+distribution {1,000: 9, 1,100: 22, 1,200: 63, 1,300: 90, 1,400: 89, 1,500: 82, 1,600: 65,
+1,700: 37, 1,800: 22, 1,900: 14, 2,000: 4, 2,100: 1, 2,200: 1, 2,400: 1}; p50 1,400, max
+2,400. At least 1,000 because each side fills the limit on its own. More comes from two
+nodes on one side updating from the same read before their deltas cross. Those updates now
+settle by LWW, the lower update is lost, and the side under-counts and admits more objects.
+That is why the tail is longer than under siblings (old max 1,700). Quota-key discard events
+per run (heal plus recounts) p50 9, min 3, max 16. After the recounts every node stores the
+true usage.
 
-**Wall times.** Default `go test ./internal/occ` ≈ 2–5 s (whole module `go test ./...` 11 s);
-`-race` 14 s; rapid at 2,000 checks 8 s; `DST_SEEDS=500` for the DST and canary tests 134 s
-(multi-region 57 s, offline 63 s, race 1 s, quota 12 s).
-**Fuzz, 30 s each:** `FuzzOCCConditionalWrite` 78,156 execs; `FuzzOCCMergeLaws` 45,006;
-`FuzzOCCDecode` 164,241. No crasher, nothing added to `testdata/fuzz/`.
+**Merge cost** (`BenchmarkMergeDoc`, 10% of keys written concurrently on both sides, loaded
+droplet). Doc merge (clone + merge) 1e3 records 2.3 ms / 0.21 MB, 1e4 records 22 ms / 2.0 MB.
+Store merge (observe + LWW + classify + undo log, with ~10% discards) 1e3 records 1.0 ms,
+1e4 records 19 ms. Encode + strict decode 1e3 records 8.6 ms, 1e4 records 70 ms; decode
+recomputes two SHA-256 per version and re-encodes for the canonical check, which dominates.
+
+**Hostile-message work** (`TestHostileMessagesBoundedWork`, counted operations). Many keys
+(16,777,138 bytes, about 800,000 keys): decode 31.2 M operations (1.86 per byte), merge with
+every key a forged discard 1.6 M. Big contexts (16,776,993 bytes, 4 keys × about 700,000
+context entries): decode 25.2 M (1.50 per byte), merge 11.2 M. Same ratios at 2 MiB. Wall
+time on the loaded droplet: 27–38 s for the 16 MiB many-keys case (dominated by allocation
+and GC for 800,000 versions), about 3 s for big contexts.
+
+**Wall times** (loaded droplet). `go test ./internal/occ` 31–38 s (the 16 MiB hostile test is
+most of it); `-race` 10 s; rapid at 2,000 checks 37 s; `DST_SEEDS=500` for DST + canaries
+90 s (multi-region 33 s, offline 41 s, race 1.4 s, quota 15 s).
+
+**Fuzz** (loaded droplet). 30 s each: `FuzzOCCConditionalWrite` 6,515 execs,
+`FuzzOCCMergeLaws` 5,336, `FuzzOCCDecode` 247,067. `FuzzOCCDecode` for 120 s (the target
+whose first gate run died with `context deadline exceeded`): 1,335,639 execs, about 11,000
+per second at the end, ended `PASS`. No crasher. The property targets run fewer execs than in the first build because
+their seeds are 32 KiB (so none is skipped) and the corpus grows from them.
 
 ## Uncovered branches
 
-Coverage of `internal/occ`: 97.3% of statements. Uncovered:
-- `Node.persist` error branches and their callers' error returns (`commit`, `Node.Put/Delete/SetScalar/UpdateQuota`, `OnRequest` push): a disk `Write`/`Sync` fails only on a closed env, and a closed env never runs handlers.
-- `Node.commit`: the delta-too-large skip (a delta over 60,000 bytes) and `Send` errors (only `ErrClosed`/`ErrTooLarge`/unknown node).
-- `Node.peers` with nil `Membership`; `onDigestReply` reply-kind and decode-failure branches (an honest peer never sends them); `OnDatagram` before the node is ready.
-- `Node.SetScalar` HLC failure; `Node.EncodeState` for a not-ready node (exercised only if the sim digests during a load retry).
-- `Doc.setRecord` empty-record branch (no caller passes an empty record) and `Doc.Digest` before any `Encode` (both defensive).
-- `ParseKey` / `DecodeObjectMeta` / `decodeOp` paths where a parse succeeds but re-encodes differently; `UpdateQuota`'s generic write-error return (only reachable through a clock exhaustion between read and write).
+Coverage of `internal/occ`: 98.4% of statements. Uncovered:
+- `decodeDoc`: the non-canonical-document failure after a clean parse. Every field is now
+  checked as it is read (strict key order, strict context order, minimal varints are checked
+  by the re-encode only), so a reachable input needs a non-minimal varint inside an
+  otherwise valid document; the malformed table has one at the document level, not inside a
+  version. Kept as the final guard.
+- `Node.onDigestReply` reply-kind and decode-failure branches and the not-ready guard; an
+  honest peer never sends them and replies to a previous incarnation are cancelled.
+- `Node.broadcast`: the delta-too-large skip and `Send` errors.
+- `Node.peers` with nil `Membership`; `Node.OnDatagram` before ready; `Node.EncodeState`
+  for a not-ready node.
+- `ParseKey` / `DecodeObjectMeta` / `decodeOp` non-canonical re-encode branches.
+- `recountQuota`: a non-precondition write error (only a clock exhaustion between read and
+  write).
 
 ## Errors intentionally ignored (`_ =`)
 
-- `node.go` `Node.open`: `_ = n.persist()` of a fresh empty state. If it fails (only on a closed
-  env) the next write persists anyway, and a restart without the blob draws another fresh epoch,
-  which is safe.
-- `node.go` `onDigestReply` and `OnDatagram`: `_ = n.persist()` after merging received state.
-  Merged state is replicated data, not this node's acknowledgement. If it is not durable, a crash
-  returns the node to its previous durable state, which still holds everything it acknowledged.
-  Persist failures are counted in `Stats.DiskErrors`.
+- `node.go` `Node.open`: `_ = n.persist(...)` of the fresh empty state. If it fails, the
+  next write persists the epoch with its data. A restart without a blob draws another fresh
+  epoch, which is safe.
+- `node.go` `Node.OnDatagram`: `_, _ = n.store.Merge(doc)`. A delta that cannot be
+  persisted is rolled back (the transaction restores the state) and counted in
+  `Stats.DiskErrors`. The next digest round brings the data again.
 - Test files use `_, _ =` for writes whose outcome the property does not depend on.
 
 ## Panics added
 
-None. No line was added to `agent_work/gates/panic-allowlist.txt`.
+None. No line added to `agent_work/gates/panic-allowlist.txt`.
 
-## Determinism lint
+## Determinism
 
-`internal/occ` has no findings. Imports are `bytes cmp crypto/sha256 encoding/binary
-encoding/hex errors fmt math math/rand/v2 slices strconv strings time` plus `internal/env`.
-Every map range uses the collect-then-`slices.Sort` shape (`Doc.Keys`, `Doc.ScalarKeys`). No
-floats, and only strings, integers and errors are passed to `fmt`. No exemption is requested.
+No wall clock, goroutines, channels, mutexes or global rand in product code. Every map range
+uses collect-then-sort (`Doc.sortedKeys`, the only one). The undo log is a slice. Imports:
+`bytes cmp crypto/sha256 encoding/binary encoding/hex errors fmt math math/rand/v2 slices
+strconv strings time` plus `internal/env`.
 
 ## Not done, and why
 
-- **Tombstone collection.** 7.5 mentions a retention period. It is not in the Deliverable list,
-  and collecting tombstones safely needs a "everyone has seen it" condition that this package
-  cannot know (membership history), so tombstones are kept forever. Stated as a limit.
-- **Siblings from blind writes are bounded by writes, not writers.** Under conditional writes
-  only, a key holds at most one sibling per writing actor (checked in `TestPropNoSilentLoss`).
-  Each unconditional write adds a sibling until someone resolves the key, because that is the
-  plan's rule ("recorded as concurrent with what it did not read"). The multi-region DST uses
-  blind writes on purpose. Its sibling numbers below include them.
-- Full-state push-pull costs O(document) per mismatched round. Per-key digests or Merkle ranges
-  (Chunk 3) would cut that; not in scope here.
+- **Tombstone collection.** Tombstones are kept forever. Collecting one safely needs "every
+  replica has seen it", which needs membership history this package does not have. Stated
+  as a limit.
+- **Automatic recount scheduling.** The node does not schedule recounts itself. It reports
+  quota-key discards through `OnDiscard` and offers `RecountQuota`. A recount run before the
+  node has the other side's objects would write a wrong figure that nothing would correct.
+  When to recount (after sync) is Chunk 6's decision. The quota DST drives it from the
+  callback after convergence.
+- **A smaller in-memory version.** `Version` is a 150-byte value type. A 16 MiB message of
+  minimal versions costs several hundred MB of allocation to decode and merge. It is linear,
+  but a pointer representation would cut it. Not needed by any bound in the plan.
+- Full-state push-pull still costs O(document) per mismatched round. Merkle ranges
+  (Chunk 3) would cut that; not in scope.
 
 ## Requests to the orchestrator
 
-1. Code rows 80–87 are claimed for `internal/occ`. Chunk 6 builds one table from every chunk's
-   `CodeEntries()`; please check that the other Wave B chunks did not pick overlapping codes.
-2. `Membership` is declared in `internal/occ` (`Peers() []env.NodeID`). Chunk 6 wires gossip's
+1. `internal/occ` now uses codes 128–143 (131 deliberately unassigned). `TestErrorCodesRoundTrip`
+   checks the block.
+2. `Membership` is declared in `internal/occ` (`Peers() []env.NodeID`); Chunk 6 wires gossip's
    live view into it.
+3. Chunk 6: wire `Config.OnDiscard` to (a) metrics and (b) a deferred `RecountQuota` for quota
+   keys, after the node has synced.
+
+## Repair round (2026-11-21): the LWW ruling and review 1
+
+Commits: `ca14baf` (tests first; they target the new API and do not compile against the
+sibling code), `756c26b` (implementation), then a coverage/measurement commit and these notes.
+
+### Owner's ruling (Part A)
+
+| Item | What changed | Proving test(s) |
+|---|---|---|
+| A1 one version per key | `Doc` holds one `Version` per key; `ConflictError`, `ErrConflict`, `IsConflict` and code 83 deleted, and the conflict slot of the new block (131) left unassigned rather than renumbering; `Get` returns the version or `ErrNotFound`; `Decode` rejects a repeated key; `maximal` and the sibling bound do not exist | `TestDecodeMalformedTable` (repeated key, reviewer shape), `TestErrorCodesRoundTrip` |
+| A2 winner is a pure function | `Version.Compare`: stamp, node, version ID; merge = maximum; scalars share the record implementation | `TestLWWWinnerTable`, `TestPropMergeLaws`, `FuzzOCCMergeLaws`, `TestPropConvergence`, `TestCanaryMergePrefersLocal` |
+| A3 causality agrees with the clock | stamp = `max(HLC, successor(held))`, the node clock not moved; refused only at the end of time (`ErrClockExhausted`) | `TestPropCausalWriteAlwaysWins`, `TestFarFutureStampPinsOnlyItsKey`, CAS tables |
+| A4 vectors only detect | `Supersedes` decides causal vs discard; equal event sets and causally-below winners (forged) are discards | `TestLWWWinnerTable` (causally-below row), `TestCausalOverwriteIsNotADiscard`, `TestPropNoDiscardWithoutConcurrency` |
+| A5 every discard counted and logged | saturating persisted counter, deterministic log line via `Log` sink, 64-entry ring tail, `OnDiscard` callback, all published after persist | `TestLWWDiscardCountedAndLogged`, `TestPropEveryLossRecorded`, DSTs (counter = hook = oracle), `TestCanaryDiscardNotRecorded`, `TestFailedPersistLeavesNoTrace` |
+| A6 preconditions unchanged | as before, against one version; an unconditional write is a causal overwrite | CAS tables, `TestPropCheckAndSetModel`, `TestETagDeterministic`, `TestConditionalWriteRaceDST` |
+| A7 deletes compete | tombstones are versions under the same order | `TestLWWWinnerTable`, `TestLWWDiscardCountedAndLogged` (delete vs put both ways) |
+| A8 quotas | check-and-set unchanged; recount driven by quota-key discards; `RecountQuota` writes nothing when right | `TestQuotaCheckAndSet`, `TestQuotaRecount`, `TestPropQuotaNoStaleApply`, `TestQuotaOvershootUnderPartitionDST` |
+| A9 wipe epoch | unchanged guarantee; the test now writes three times after the wipe so a reused actor makes the replacement of `(A,2)` look causal, and the independent oracle sees the unrecorded loss with the switch on | `TestWipedNodeTakesAFreshEpoch` |
+
+Renamed or replaced tests: `TestPropNoSilentLoss` → `TestPropEveryLossRecorded`;
+`TestPropSiblingsOnlyWhenConcurrent` → `TestPropNoDiscardWithoutConcurrency`;
+`TestCanaryMergeDropsSibling` → `TestCanaryDiscardNotRecorded` + `TestCanaryMergePrefersLocal`;
+`TestResolveCollapsesSiblings` and `TestUnconditionalWriteStaysConcurrentWithItsOwnEarlierWrite`
+deleted (no siblings); `TestLWWScalarTieBreak` → `TestLWWWinnerTable` +
+`TestLWWSkewPicksTheHigherClock`.
+
+### Review findings (Part B)
+
+| Finding | Fix | Proving test(s) |
+|---|---|---|
+| 1 quadratic work on hostile input | (a) the decoder returns before hashing or building once an error is set, and checks key and context order as it reads; (b) `descends` is a two-pointer scan, O(\|a\|+\|b\|); (c) the sibling path is deleted, and a key repeated in a message is rejected at the repeat; (d) `checkLaws` deduplicates keys and compares one version per key | `TestHostileMessagesBoundedWork` (16 MiB, operation counts, linear from 2 to 16 MiB), `TestReviewerHostileInputIsRejectedEarly` (the 28 KiB shape is the seed `testdata/fuzz/FuzzOCCDecode/reviewer-28k-multi-version`), `FuzzOCCDecode` (asserts ≤ 4 operations per byte on every input) |
+| 2 HLC observation | observe every stamp in key order; count each refused stamp; empty observes nothing; `MaxStamp` returns `(Stamp, bool)`. Reconciled with A3: a write over an unobserved far-future stamp takes its successor without moving the clock | `TestHLCObservesEveryStamp` (both reviewer reproductions), `TestFarFutureStampPinsOnlyItsKey` |
+| 3 failed persist leaves a trace | snapshot-and-restore transaction in `Store` covering doc keys, epoch, dot counter, HLC, discard count, ahead count; discards published after persist; the node passes its persist as the hook, so pushes, deltas and digest replies roll back too | `TestFailedPersistLeavesNoTrace`, `TestNodeFailedPersistLeavesNoTrace` |
+| 4 fuzz seeds skipped | seeds are 32 KiB (one zero-filled, three PCG-filled); verified `go test -v -run '^Fuzz'` shows no SKIP | (all `Fuzz*/seed#N` pass) |
+| 5 mutable store handed out | `Node.Store()` removed; `Node.Reader()` is read-only; typed writes on `Node` | `TestNodeTypedWritesGoThroughCommit` |
+| 6 peers and quota contest | `peers()` sorts and de-duplicates; the quota DST fails unless a quota-key discard was recorded before the recount | `TestPeerChoiceIgnoresMembershipOrder`, `TestQuotaOvershootUnderPartitionDST` |
+
+### API changes
+
+Removed: `ConflictError`, `ErrConflict`, `CodeConflict`, `IsConflict`, `Scalar` (type),
+`Record.Siblings/Live() []Version/IDs/Covers/Len`, `NewRecord(vs...)` (now one version),
+`Doc.MergeRecord/MergeScalar/ScalarKeys/Scalar`, `Node.Store()`, the `recount` argument of
+`UpdateQuota`. Changed: `Store.Merge` returns `(bool, error)`; `SetScalar`/`SetRoute`/
+`SetContentType` return `Version`; `Doc.MaxStamp` returns `(Stamp, bool)`; codes moved to
+128–143; document magic `OCC\x02`; state blob payload gained the dot counter and the
+discard count. Added: `Version.Compare/ETag`, `Record.Version/Present/Live/Merge`,
+`Doc.MergeVersion/Stamps`, `Stamp.After`, `Discard`, `DiscardTailLen`, `StoreConfig.{Counter,
+Discards, Persist, Log, OnDiscard}`, `Config.{Log, OnDiscard}`, `LWWDiscards`, `DiscardTail`,
+`Store.Counter`, `Reader`, `RecountQuota`, node typed writes, `CodeBlockMin/Max`.
+
+### Chosen not to do
+
+- The node does not schedule recounts itself (see "Not done").
+- An incoming loser is not recorded on the node that rejects it (see "Classification"); the
+  loss is recorded where the loser was held.
 
 ## Gate and commands
 
@@ -281,33 +439,10 @@ All through `docker compose run --rm dev` unless noted.
 |---|---|
 | `gofmt -l .` | empty |
 | `go vet ./...`, `go build ./...` | clean |
-| `go test -count=1 -cover ./...` | ok; `internal/occ` 97.3% |
-| `go test -race -count=1 ./internal/occ` | ok, 14 s |
-| `go test -count=1 ./internal/occ -rapid.checks=2000` | ok, 8 s |
-| `go test ./internal/occ -run '^$' -fuzz '^<T>$' -fuzztime 30s -fuzzminimizetime 5s` | `FuzzOCCConditionalWrite` 78,156 execs, `FuzzOCCMergeLaws` 45,006, `FuzzOCCDecode` 164,241; no crasher (before the gate run below) |
-| `DST_SEEDS=500 go test -count=1 -v -run 'DST\|Canary' ./internal/occ` | ok, 134 s |
-| `go test -run '^$' -bench BenchmarkMergeDoc -benchmem ./internal/occ` | numbers above |
-
-**First gate run** (`agent_work/gates/gate.sh 04-occ` on `2e861d2`): `overall=fail`. G3's
-`FuzzOCCDecode` found an input: a decoded scalar stamped before the epoch (negative wall).
-The test oracle `checkLaws` treated a scalar missing on one side as the zero `Scalar`, which
-sorts above a negative stamp. So the oracle expected the zero value to win, while the product
-(correctly) keeps the only present scalar. G4 and G5 failed only because they replayed that
-committed crasher. Fixed in the oracle (presence respected). The crasher stays under
-`testdata/fuzz/FuzzOCCDecode/3133d79c9e91e633` as a regression, and
-`TestMergeIsTotalOnDecodedStates` gained the pre-epoch case. Product code unchanged.
-
-**Final gate run** on `b1d2b0d5ec7301e05d62aefd32a80241145b55ee` (clean tree):
-`gate: overall=pass counts_for_landing=true`.
-
-| Gate | Result |
-|---|---|
-| G0 tools, gofmt, vet, build, detlint, panics, deps, comments (baseline `ceb5438`), selfcontained | pass |
-| G1 unit + coverage | pass; `internal/occ` 97.3%, `internal/sim` 95.4% |
-| G2 rapid 2,000 checks (seed 195518468058227) | pass, 82 s (2 packages) |
-| G3 fuzz 30 s | pass; `FuzzOCCDecode` 99,762 execs, `FuzzOCCConditionalWrite` 8,459, `FuzzOCCMergeLaws` 4,535 (the shared machine was loaded; the standalone runs above were faster), `FuzzSimSchedule` 11,638 |
-| G4 race | pass, 45 s |
-| G5 500 seeds (base 195518468058227) | pass; `internal/occ` 192 s |
-| G6 docker | pass |
-
-The result files under `agent_work/04-occ/gates/` are left uncommitted, as the brief asks.
+| `go test -count=1 -cover ./internal/occ` | ok, 98.4% |
+| `go test -count=1 -race ./internal/occ` | ok, 10 s |
+| `go test -count=1 ./internal/occ -rapid.checks=2000` | ok, 37 s |
+| `DST_SEEDS=500 go test -count=1 -v -run 'DST\|Canary' ./internal/occ` | ok, 90 s (quota re-run after the reporting change: ok, 11 s) |
+| `go test ./internal/occ -run '^$' -fuzz '^<T>$' -fuzztime 30s -fuzzminimizetime 5s` | `FuzzOCCConditionalWrite` 6,515 execs, `FuzzOCCMergeLaws` 5,336, `FuzzOCCDecode` 247,067; no crasher |
+| `go test ./internal/occ -run '^$' -fuzz '^FuzzOCCDecode$' -fuzztime 120s -fuzzminimizetime 5s` | 1,335,639 execs, `PASS`, ended cleanly |
+| `go test -run '^$' -bench BenchmarkMergeDoc -benchmem -benchtime 20x ./internal/occ` | numbers above |
