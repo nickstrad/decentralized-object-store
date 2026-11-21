@@ -128,7 +128,12 @@ func twoNodes(t *testing.T, mut func(*sim.Config)) *harness {
 	return newHarness(t, cfg, spec("a", "r1"), spec("b", "r1"))
 }
 
-func mustNil(t *testing.T, err error) {
+type fataler interface {
+	Helper()
+	Fatal(args ...any)
+}
+
+func mustNil(t fataler, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)

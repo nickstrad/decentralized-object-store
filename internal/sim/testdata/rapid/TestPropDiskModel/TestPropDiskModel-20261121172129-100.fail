@@ -1,0 +1,46 @@
+# 2026/11/21 17:21:29.966039 [TestPropDiskModel] [rapid] draw seed: 0
+# 2026/11/21 17:21:29.966075 [TestPropDiskModel] [rapid] draw action: "append"
+# 2026/11/21 17:21:29.966079 [TestPropDiskModel] [rapid] draw name: "c/d"
+# 2026/11/21 17:21:29.966083 [TestPropDiskModel] [rapid] draw data: []byte{0x0}
+# 2026/11/21 17:21:29.966095 [TestPropDiskModel] [rapid] draw action: "sync"
+# 2026/11/21 17:21:29.966099 [TestPropDiskModel] [rapid] draw name: "c/d"
+# 2026/11/21 17:21:29.966106 [TestPropDiskModel] [rapid] draw action: "append"
+# 2026/11/21 17:21:29.966107 [TestPropDiskModel] [rapid] draw name: "c/d"
+# 2026/11/21 17:21:29.966109 [TestPropDiskModel] [rapid] draw data: []byte{}
+# 2026/11/21 17:21:29.966116 [TestPropDiskModel] [rapid] draw action: "bitrot"
+# 2026/11/21 17:21:29.966118 [TestPropDiskModel] [rapid] draw name: "c/d"
+# 2026/11/21 17:21:29.966128 [TestPropDiskModel] [rapid] draw action: "crashTorn"
+# 2026/11/21 17:21:29.966131 [TestPropDiskModel] torn c/d = "\x01", written "\x00" durable "\x01"
+# 
+v0.4.8#4051647758204180008
+0x0
+0x0
+0x0
+0x1084210842108
+0x0
+0x0
+0x38e38e38e38e4
+0x2
+0x5555555555555
+0x0
+0x0
+0x0
+0x1084210842108
+0x6b74f03291620
+0x6
+0x38e38e38e38e4
+0x2
+0x1084210842108
+0x0
+0x0
+0x38e38e38e38e4
+0x2
+0x0
+0x1084210842108
+0x0
+0x1
+0x1f2b5a0e61c3a6
+0x0
+0x1084210842108
+0x38e38e38e38e4
+0x3

@@ -159,6 +159,8 @@ type unseeded struct {
 	e env.Env
 }
 
+func (u *unseeded) Unwrap() env.Process { return u.Process }
+
 func (u *unseeded) OnDatagram(from env.NodeID, msg []byte) {
 	if rand.IntN(4) == 0 {
 		_ = u.e.Net.Send(from, msg)
@@ -171,6 +173,8 @@ type mapOrder struct {
 	e     env.Env
 	peers map[env.NodeID]bool
 }
+
+func (m *mapOrder) Unwrap() env.Process { return m.Process }
 
 func (m *mapOrder) OnDatagram(from env.NodeID, msg []byte) {
 	for id := range m.peers {

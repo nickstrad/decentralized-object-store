@@ -184,9 +184,9 @@ func TestPropHealedNetworkDelivers(t *testing.T) {
 			var err error
 			switch rapid.IntRange(0, 6).Draw(t, "kind") {
 			case 0:
-				s.Partition([]env.NodeID{a}, []env.NodeID{b})
+				mustNil(t, s.Partition([]env.NodeID{a}, []env.NodeID{b}))
 			case 1:
-				s.PartitionOneWay([]env.NodeID{a}, []env.NodeID{b})
+				mustNil(t, s.PartitionOneWay([]env.NodeID{a}, []env.NodeID{b}))
 			case 2:
 				err = s.Isolate(a)
 			case 3:
@@ -285,9 +285,9 @@ func TestPropNemesisRespectsBudget(t *testing.T) {
 }
 
 type diskModelBlob struct {
-	written, durable       []byte
-	wExists, dExists       bool
-	dirty, appendOnly      bool
+	written, durable  []byte
+	wExists, dExists  bool
+	dirty, appendOnly bool
 }
 
 type diskMachine struct {
@@ -435,7 +435,8 @@ func TestPropDiskModel(t *testing.T) {
 					}
 					if b.dirty && b.appendOnly && b.wExists {
 						got, ok := m.s.Disk("a").Peek(n)
-						if !ok || len(got) < len(b.durable) || !bytes.HasPrefix(b.written, got) {
+						if !ok || len(got) < len(b.durable) || !bytes.Equal(got[:len(b.durable)], b.durable) ||
+							!bytes.HasPrefix(b.written[len(b.durable):], got[len(b.durable):]) {
 							t.Fatalf("torn %s = %q, written %q durable %q", n, got, b.written, b.durable)
 						}
 						b.durable = append([]byte{}, got...)

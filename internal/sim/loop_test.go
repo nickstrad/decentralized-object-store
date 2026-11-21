@@ -136,15 +136,17 @@ func TestConvergedReturnsNil(t *testing.T) {
 
 type panicky struct{ env.Env }
 
-func (p *panicky) Start()                                      {}
-func (p *panicky) OnDatagram(env.NodeID, []byte)               { panic("boom in node") }
-func (p *panicky) OnRequest(env.NodeID, []byte, env.Reply)     {}
-func (p *panicky) EncodeState() []byte                         { return nil }
-func newPanicky(e env.Env) env.Process                         { return &panicky{e} }
-func (p *panicky) send(to env.NodeID) error                    { return p.Net.Send(to, []byte("x")) }
-func asPanicky(s *sim.Sim, id env.NodeID) *panicky             { return s.Process(id).(*panicky) }
-func addPanicky(t *testing.T, s *sim.Sim, id env.NodeID)       { mustNil(t, s.AddNode(sim.NodeSpec{ID: id}, newPanicky)) }
-func startAll(t *testing.T, s *sim.Sim)                        { mustNil(t, s.RunUntil(s.Now())) }
+func (p *panicky) Start()                                  {}
+func (p *panicky) OnDatagram(env.NodeID, []byte)           { panic("boom in node") }
+func (p *panicky) OnRequest(env.NodeID, []byte, env.Reply) {}
+func (p *panicky) EncodeState() []byte                     { return nil }
+func newPanicky(e env.Env) env.Process                     { return &panicky{e} }
+func (p *panicky) send(to env.NodeID) error                { return p.Net.Send(to, []byte("x")) }
+func asPanicky(s *sim.Sim, id env.NodeID) *panicky         { return s.Process(id).(*panicky) }
+func addPanicky(t *testing.T, s *sim.Sim, id env.NodeID) {
+	mustNil(t, s.AddNode(sim.NodeSpec{ID: id}, newPanicky))
+}
+func startAll(t *testing.T, s *sim.Sim) { mustNil(t, s.RunUntil(s.Now())) }
 func expectPanic(t *testing.T, err error, node env.NodeID) {
 	t.Helper()
 	var pe *sim.PanicError

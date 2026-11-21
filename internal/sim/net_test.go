@@ -89,20 +89,20 @@ func TestDatagramFaults(t *testing.T) {
 					t.Fatal("no reordering")
 				}
 			}},
-		{"an asymmetric partition drops the blocked direction", nil, func(h *harness) { h.s.PartitionOneWay([]env.NodeID{"a"}, []env.NodeID{"b"}) }, "a", "b", 5,
+		{"an asymmetric partition drops the blocked direction", nil, func(h *harness) { mustNil(t, h.s.PartitionOneWay([]env.NodeID{"a"}, []env.NodeID{"b"})) }, "a", "b", 5,
 			func(t *testing.T, got []gotDatagram) {
 				if len(got) != 0 {
 					t.Fatalf("got %d", len(got))
 				}
 			}},
-		{"an asymmetric partition lets the other direction flow", nil, func(h *harness) { h.s.PartitionOneWay([]env.NodeID{"a"}, []env.NodeID{"b"}) }, "b", "a", 5,
+		{"an asymmetric partition lets the other direction flow", nil, func(h *harness) { mustNil(t, h.s.PartitionOneWay([]env.NodeID{"a"}, []env.NodeID{"b"})) }, "b", "a", 5,
 			func(t *testing.T, got []gotDatagram) {
 				if len(got) != 5 {
 					t.Fatalf("got %d", len(got))
 				}
 			}},
 		{"a symmetric partition drops both directions", nil, func(h *harness) {
-			h.s.Partition([]env.NodeID{"a"}, []env.NodeID{"b"})
+			mustNil(t, h.s.Partition([]env.NodeID{"a"}, []env.NodeID{"b"}))
 			sendN(t, h, "b", "a", 3)
 		}, "a", "b", 5,
 			func(t *testing.T, got []gotDatagram) {
@@ -141,7 +141,7 @@ func TestDatagramFaults(t *testing.T) {
 				}
 			}},
 		{"heal restores a partitioned link", nil, func(h *harness) {
-			h.s.Partition([]env.NodeID{"a"}, []env.NodeID{"b"})
+			mustNil(t, h.s.Partition([]env.NodeID{"a"}, []env.NodeID{"b"}))
 			mustNil(t, h.s.SetLinkLoss("a", "b", 1_000_000))
 			h.s.HealNet()
 		}, "a", "b", 5,
@@ -262,10 +262,10 @@ func TestRequestResponse(t *testing.T) {
 	}{
 		{"a request gets its reply after a round trip", nil, time.Second, "echo:q", nil, env.Time(2 * time.Millisecond), 1},
 		{"a lost request times out", func(h *harness) {
-			h.s.PartitionOneWay([]env.NodeID{"a"}, []env.NodeID{"b"})
+			mustNil(t, h.s.PartitionOneWay([]env.NodeID{"a"}, []env.NodeID{"b"}))
 		}, time.Second, "", env.ErrTimeout, env.Time(time.Second), 0},
 		{"a lost response times out the same way although the server ran", func(h *harness) {
-			h.s.PartitionOneWay([]env.NodeID{"b"}, []env.NodeID{"a"})
+			mustNil(t, h.s.PartitionOneWay([]env.NodeID{"b"}, []env.NodeID{"a"}))
 		}, time.Second, "", env.ErrTimeout, env.Time(time.Second), 1},
 		{"a crashed server refuses the connection", func(h *harness) {
 			mustNil(t, h.s.Crash("b"))

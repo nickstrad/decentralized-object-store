@@ -101,7 +101,7 @@ func TestClockSkewAndDrift(t *testing.T) {
 		{"a negative skew shifts local time back", -500, 0, 1_000_000, 999_500, 1000, 1_001_000},
 		{"a fast clock gains drift ppm", 0, 100_000, 1_000_000, 1_100_000, 1100, 1_001_000},
 		{"a slow clock loses drift ppm", 0, -100_000, 1_000_000, 900_000, 900, 1_001_000},
-		{"a fast clock rounds timer delays up", 0, 300_000, 0, 0, 10, 8},
+		{"a fast clock rounds timer delays up", 0, 30_000, 0, 0, 100, 98},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
