@@ -44,7 +44,10 @@ func score(key string, id env.NodeID) uint64 {
 }
 
 func sortedMembers(ms Membership) ([]Member, error) {
-	members := ms.Members()
+	if ms == nil {
+		return nil, fmt.Errorf("storage: placement: no membership: %w", ErrInvalid)
+	}
+	members := slices.Clone(ms.Members())
 	slices.SortFunc(members, func(a, b Member) int { return cmp.Compare(a.ID, b.ID) })
 	for i, m := range members {
 		if m.ID == "" {

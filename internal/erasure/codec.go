@@ -25,7 +25,7 @@ func (c *Codec) ShardSize(dataLen int) int {
 	if dataLen <= 0 {
 		return 0
 	}
-	return (dataLen + c.k - 1) / c.k
+	return (dataLen-1)/c.k + 1
 }
 
 func (c *Codec) Split(data []byte) [][]byte {

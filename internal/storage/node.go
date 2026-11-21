@@ -56,14 +56,17 @@ func (c Config) withDefaults() Config {
 }
 
 type NodeStats struct {
-	Served    uint64
-	Refused   uint64
-	Requests  uint64
-	PutsDone  uint64
-	PutsFail  uint64
-	GetsDone  uint64
-	GetsFail  uint64
-	Datagrams uint64
+	Served              uint64
+	Refused             uint64
+	Requests            uint64
+	PutsDone            uint64
+	PutsFail            uint64
+	GetsDone            uint64
+	GetsFail            uint64
+	Datagrams           uint64
+	PutAwaitingPeak     uint64
+	PutOutstanding      uint64
+	PutOutstandingBytes uint64
 }
 
 type Node struct {
@@ -122,7 +125,7 @@ func (n *Node) serve(req []byte) ([]byte, error) {
 func (n *Node) EncodeState() []byte {
 	s := n.stats
 	var b []byte
-	for _, v := range []uint64{s.Served, s.Refused, s.Requests, s.PutsDone, s.PutsFail, s.GetsDone, s.GetsFail, s.Datagrams} {
+	for _, v := range []uint64{s.Served, s.Refused, s.Requests, s.PutsDone, s.PutsFail, s.GetsDone, s.GetsFail, s.Datagrams, s.PutAwaitingPeak, s.PutOutstanding, s.PutOutstandingBytes} {
 		b = binary.AppendUvarint(b, v)
 	}
 	return b
@@ -145,6 +148,7 @@ type putOp struct {
 	next     int
 	inflight int
 	acked    int
+	stopped  bool
 	finished bool
 	stripes  []putStripe
 }
@@ -201,12 +205,15 @@ func (op *putOp) finish(err error) {
 }
 
 func (op *putOp) fill() {
-	for !op.finished && op.inflight < op.n.cfg.Window && op.next < len(op.stripes) {
+	for !op.finished && !op.stopped && op.inflight < op.n.cfg.Window && op.next < len(op.stripes) {
 		i := op.next
 		op.next++
 		op.inflight++
+		op.n.stats.PutAwaitingPeak = max(op.n.stats.PutAwaitingPeak, uint64(op.inflight))
 		if err := op.launch(i); err != nil {
-			op.finish(err)
+			op.stopped = true
+			op.n.later(func() { op.finish(err) })
+			return
 		}
 	}
 }
@@ -228,9 +235,14 @@ func (op *putOp) launch(i int) error {
 		man.Stripes[i].Shards[idx] = ShardRef{Node: nodes[idx], Checksum: BlobChecksum(blob)}
 	}
 	for idx, blob := range blobs {
-		id := man.ShardID(i, idx)
 		target := nodes[idx]
-		n.request(target, EncodeShardRequest(OpPutShard, id, blob), func(_ []byte, err error) {
+		req := EncodeShardRequest(OpPutShard, man.ShardID(i, idx), blob)
+		size := uint64(len(req))
+		n.stats.PutOutstanding++
+		n.stats.PutOutstandingBytes += size
+		n.request(target, req, func(_ []byte, err error) {
+			n.stats.PutOutstanding--
+			n.stats.PutOutstandingBytes -= size
 			op.reply(i, idx, target, err)
 		})
 	}
@@ -248,7 +260,7 @@ func (op *putOp) reply(i, idx int, target env.NodeID, err error) {
 	} else {
 		st.errs = append(st.errs, fmt.Errorf("shard %d on %s: %w", idx, target, err))
 	}
-	if op.finished {
+	if op.finished || op.stopped {
 		return
 	}
 	done := st.replies == op.n.codec.N()
@@ -275,6 +287,7 @@ type GetResult struct {
 
 type getOp struct {
 	n        *Node
+	codec    *erasure.Codec
 	man      *Manifest
 	cb       func(GetResult, error)
 	res      GetResult
@@ -305,9 +318,10 @@ func (n *Node) Get(man *Manifest, cb func(GetResult, error)) {
 		n.later(func() { op.finish(fmt.Errorf("storage: get: nil manifest: %w", ErrInvalid)) })
 		return
 	}
+	op.codec = n.codec
 	err := man.Validate()
 	if err == nil && (man.Layout.K != n.codec.K() || man.Layout.M != n.codec.M()) {
-		err = fmt.Errorf("storage: get: object coded k=%d m=%d, node k=%d m=%d: %w", man.Layout.K, man.Layout.M, n.codec.K(), n.codec.M(), ErrInvalid)
+		op.codec, err = man.Layout.Codec()
 	}
 	if err != nil {
 		n.later(func() { op.finish(err) })
@@ -351,10 +365,10 @@ func (op *getOp) fill() {
 		op.next++
 		op.inflight++
 		st := &op.stripes[i]
-		st.exp = expectFor(op.n.codec, op.man.Version, uint32(i), op.man.Layout.StripeLen(op.man.Size, i))
-		st.payloads = make([][]byte, op.n.codec.N())
-		st.attempts = make([]int, op.n.codec.N())
-		for j := 0; j < op.n.codec.K(); j++ {
+		st.exp = expectFor(op.codec, op.man.Version, uint32(i), op.man.Layout.StripeLen(op.man.Size, i))
+		st.payloads = make([][]byte, op.codec.N())
+		st.attempts = make([]int, op.codec.N())
+		for j := 0; j < op.codec.K(); j++ {
 			op.fetch(i)
 		}
 	}
@@ -399,7 +413,7 @@ func (op *getOp) reply(i, idx int, from env.NodeID, blob []byte, err error, want
 		if transient(err) && st.attempts[idx] < MaxShardAttempts {
 			st.retry = append(st.retry, idx)
 		}
-		if st.tried < op.n.codec.N() {
+		if st.tried < op.codec.N() {
 			op.fetch(i)
 			return
 		}
@@ -408,11 +422,11 @@ func (op *getOp) reply(i, idx int, from env.NodeID, blob []byte, err error, want
 	}
 	st.payloads[idx] = payload
 	st.good++
-	if st.good < op.n.codec.K() {
+	if st.good < op.codec.K() {
 		op.checkExhausted(i)
 		return
 	}
-	data, derr := decodeVerified(op.n.codec, uint32(i), st.exp.length, st.payloads, st.causes)
+	data, derr := decodeVerified(op.codec, uint32(i), st.exp.length, st.payloads, st.causes)
 	if derr != nil {
 		op.finish(fmt.Errorf("stripe %d: %w", i, derr))
 		return
@@ -431,7 +445,7 @@ func (op *getOp) reply(i, idx int, from env.NodeID, blob []byte, err error, want
 
 func (op *getOp) checkExhausted(i int) {
 	st := &op.stripes[i]
-	if st.pending > 0 || st.waiting || st.tried < op.n.codec.N() {
+	if st.pending > 0 || st.waiting || st.tried < op.codec.N() {
 		return
 	}
 	if len(st.retry) > 0 {
@@ -440,7 +454,7 @@ func (op *getOp) checkExhausted(i int) {
 		return
 	}
 	cause := errors.Join(append([]error{ErrUnavailable}, st.causes...)...)
-	op.finish(fmt.Errorf("stripe %d: %d of %d shards verified, need %d: %w", i, st.good, op.n.codec.N(), op.n.codec.K(), cause))
+	op.finish(fmt.Errorf("stripe %d: %d of %d shards verified, need %d: %w", i, st.good, op.codec.N(), op.codec.K(), cause))
 }
 
 func (op *getOp) retry(i int) {

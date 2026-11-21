@@ -130,7 +130,7 @@ func StripeGroup(_ env.NodeID, blob string) string {
 }
 
 func validShape(k, m, index int) error {
-	if k < 1 || m < 0 || k+m > erasure.MaxShards {
+	if k < 1 || m < 0 || k > erasure.MaxShards || m > erasure.MaxShards-k {
 		return fmt.Errorf("k=%d m=%d", k, m)
 	}
 	if index < 0 || index >= k+m {
@@ -205,6 +205,9 @@ func DecodeShard(blob []byte) (ShardHeader, []byte, error) {
 	}
 	if err := validShape(h.K, h.M, h.Index); err != nil {
 		return bad(err.Error())
+	}
+	if h.PayloadLen > MaxStripeSize {
+		return bad(fmt.Sprintf("payload length %d over %d", h.PayloadLen, MaxStripeSize))
 	}
 	if h.PayloadLen != len(blob)-HeaderSize {
 		return bad(fmt.Sprintf("payload length %d, blob carries %d", h.PayloadLen, len(blob)-HeaderSize))

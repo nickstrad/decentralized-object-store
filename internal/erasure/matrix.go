@@ -1,6 +1,9 @@
 package erasure
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 const MaxShards = 256
 
@@ -28,6 +31,9 @@ func NewMatrix(rows [][]byte) (Matrix, error) {
 }
 
 func Identity(n int) Matrix {
+	if n <= 0 || n > math.MaxInt/n {
+		return Matrix{}
+	}
 	m := newMatrix(n, n)
 	for i := 0; i < n; i++ {
 		m.data[i*n+i] = 1
@@ -62,6 +68,9 @@ func (m Matrix) Equal(o Matrix) bool {
 func (m Matrix) Mul(o Matrix) (Matrix, error) {
 	if m.cols != o.rows {
 		return Matrix{}, fmt.Errorf("erasure: multiply %dx%d by %dx%d: %w", m.rows, m.cols, o.rows, o.cols, ErrInvalidConfig)
+	}
+	if m.rows > 0 && o.cols > math.MaxInt/m.rows {
+		return Matrix{}, fmt.Errorf("erasure: multiply %dx%d by %dx%d: product too large: %w", m.rows, m.cols, o.rows, o.cols, ErrInvalidConfig)
 	}
 	p := newMatrix(m.rows, o.cols)
 	for i := 0; i < m.rows; i++ {
@@ -133,7 +142,7 @@ func swapRows(m Matrix, a, b int) {
 }
 
 func validConfig(k, m int) error {
-	if k < 1 || m < 0 || k+m > MaxShards {
+	if k < 1 || m < 0 || k > MaxShards || m > MaxShards-k {
 		return fmt.Errorf("erasure: k=%d m=%d: need k >= 1, m >= 0, k+m <= %d: %w", k, m, MaxShards, ErrInvalidConfig)
 	}
 	return nil

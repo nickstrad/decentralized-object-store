@@ -79,6 +79,9 @@ func (s *ChunkStore) Put(id ShardID, blob []byte) error {
 	switch {
 	case err == nil:
 		if bytes.Equal(old, blob) {
+			if err := s.disk.Sync(name); err != nil {
+				return fmt.Errorf("storage: put shard %s: sync: %w", name, err)
+			}
 			return nil
 		}
 		if _, _, verr := verifyFor(id, old); verr == nil {
@@ -102,12 +105,15 @@ func (s *ChunkStore) Delete(id ShardID) error {
 	}
 	name := id.BlobName()
 	if err := s.disk.Delete(name); err != nil {
-		if errors.Is(err, env.ErrNotFound) {
-			return fmt.Errorf("storage: delete shard %s: %w", name, errors.Join(ErrNotFound, err))
+		if !errors.Is(err, env.ErrNotFound) {
+			return fmt.Errorf("storage: delete shard %s: %w", name, err)
 		}
-		return fmt.Errorf("storage: delete shard %s: %w", name, err)
+		if serr := s.disk.Sync(name); serr != nil && !errors.Is(serr, env.ErrNotFound) {
+			return fmt.Errorf("storage: delete shard %s: sync: %w", name, serr)
+		}
+		return fmt.Errorf("storage: delete shard %s: %w", name, errors.Join(ErrNotFound, err))
 	}
-	if err := s.disk.Sync(name); err != nil {
+	if err := s.disk.Sync(name); err != nil && !errors.Is(err, env.ErrNotFound) {
 		return fmt.Errorf("storage: delete shard %s: sync: %w", name, err)
 	}
 	return nil

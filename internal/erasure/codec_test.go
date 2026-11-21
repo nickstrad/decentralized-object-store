@@ -543,7 +543,7 @@ func TestDecodingIsTotalOnHostileShards(t *testing.T) {
 func TestShardSizeAtTheIntLimit(t *testing.T) {
 	for _, k := range []int{1, 2, 4, 255, 256} {
 		codec := mustCodec(t, k, 0)
-		for _, size := range []int{math.MaxInt, math.MaxInt - 1, math.MaxInt - k + 1, math.MaxInt - k + 2} {
+		for _, size := range []int{math.MaxInt, math.MaxInt - 1, math.MaxInt - k + 1, math.MaxInt - k/2} {
 			want := (size-1)/k + 1
 			if got := codec.ShardSize(size); got != want || got <= 0 {
 				t.Fatalf("k=%d ShardSize(%d) = %d, want %d", k, size, got, want)
