@@ -1,0 +1,57 @@
+VERDICT: NITS
+
+All seven repair items (1–7) are FIXED and item 8 is CORRECTLY NARROWED, every regression test is non-vacuous against `110bd69`, no BLOCKER or MAJOR was introduced, `agent_work/0b-simulator/frozen-api.txt` matches `go doc -all` byte-for-byte with only the two documented minimal constant additions (`sim.MaxSkew`, `sim.Horizon`) and zero signature changes, the four moved `testdata/golden.txt` rows are accounted for by item 8(a), the chosen bounds leave ample headroom for later protocol chunks, and the exported API is ready to freeze. One non-blocking NIT remains in the new `scaled` helper for `d == -1`.
+
+## Repair-round items
+
+| Item | Status | Evidence |
+|---|---|---|
+| 1 (`read-count-overflow`, `whole-read-overflow-budget`, counter audit) | FIXED | `internal/sim/disk.go:334-347` saturates `failAny` and `failReads[name]` via `addSat` at `math.MaxInt` while rejecting `count <= 0`; `internal/sim/process.go:60-62,94-96,109-111,120` rejects `Restart`/`WipeRejoin` and skips `HealAll` boot at `n.inc == math.MaxUint32`. `TestReadFaultCountsSaturate` (`bounds_test.go:13-58`) and `TestIncarnationCounterNeverWraps` (`bounds_test.go:60-85`) both fail on `110bd69` (unchecked `+=` wraps to `MinInt`, clearing `Read` errors and hiding damage from `Budget{}.Check`; `boot` wraps `n.inc` to `0`). |
+| 2 (`nemesis-callback-panic`, user callback audit) | FIXED | `internal/sim/sim.go:567-578` wraps both `e.nemesis.fire(e)` and `s.Apply(*e.fault)` in `s.guard(-1, ...)` returning `dispFailed` on panic; all simulator-reachable user callbacks (`Factory`, `Process` methods, `AfterFunc`, `Request` cb, `At`, `Workload`, invariants, convergence predicate, `EncodeState`, `Budget.GroupOf`) are now guarded. `TestPanicInABudgetCallbackFailsTheRun` (`loop_test.go:186-212`) fails on `110bd69` for all four fault kinds (`bit-rot`, `read-error`, `wipe-disk`, `crash`) because `GroupOf` panics escape `RunUntilQuiet` with `s.Err() == nil`. |
+| 3 (`huge-latency-range`, `Range` & duration audit) | FIXED | `internal/sim/net.go:83,96,105` draws `r.Min + time.Duration(s.netRand.Uint64N(uint64(r.Max-r.Min)+1))` (overflow-free for all `0 <= Min <= Max <= MaxInt64`, identical draws to `Int64N` for previously valid ranges) and uses `later`; `sim.go:359-362,386,499-501,517,533-535`, `fault.go:204`, `nemesis.go:161-163,185-191,221` saturate time sums, drop events past `Horizon`, and reject nemesis schedules passing `Horizon`. `TestHugeLatencyIsDrawnWithoutOverflow`, `TestLatencyBeyondTheHorizonIsNeverDelivered`, and `TestVirtualTimeSaturatesAtTheHorizon` (`bounds_test.go:87-198`) fail on `110bd69` (`Int64N` panics on `MaxInt64+1`, times wrap negative, overflowing nemesis configs are accepted). |
+| 4 (`clock-overflow`, skew bound & horizon) | FIXED | `internal/sim/sim.go:20-21,240-242` exports `MaxSkew = 1 << 61` (~73 y) and `Horizon = 1 << 62` (~146 y) and rejects `|Skew| > MaxSkew` in `AddNode` (and `AddCluster`) with `env.ErrInvalidArgument`; with `0 <= global <= 2^62` and `|drift| <= 100_000` ppm, `local(g)` stays in `[-2.77e18, +7.38e18]` and monotonic. `TestSkewIsBoundedSoLocalTimeNeverOverflows` (`bounds_test.go:200-238`) fails on `110bd69` where `AddNode` accepted unbounded skew. |
+| 5 (`timer-duration-clamp`) | FIXED | `internal/sim/clock.go:16-33,76`, `handle.go:66`, `sim.go:359-362` remove the silent `1<<62` clamp in `toGlobal`, saturate `q > math.MaxInt64` (with `hi <= 499_999 < 900_000 <= den`, so `bits.Div64` cannot overflow), use `later`, and skip queueing events with `e.at > Horizon` while setting `e.hi = -1` so `Stop()` still returns `true` once. `TestTimersBeyondTheHorizonNeverFire` (`bounds_test.go:240-279`) fails on `110bd69`, where `AfterFunc(Horizon+1)` and `Request(..., MaxInt64)` both clamped to `Horizon` and fired early. |
+| 6 (`cli-failure-report`) | FIXED | `cmd/objsim/main.go:20,32,60-63,68-94` prints `objsim: <err>`, `event log tail (n of N):` (2-space indented, up to 20 lines), `panic stack:` for `*sim.PanicError`, and a final `REPLAY: <cmd> -scenario <name> -seed <n>` line (mapping `/go-build` binaries to `go run ./cmd/objsim` and shell-quoting spaces). `TestFailingScenarioPrintsTheLogTailAndReplay` (`cmd/objsim/main_test.go:93-134`) fails to compile on `110bd69` (`run` lacked `prog`), and `110bd69` emitted neither log tail nor `REPLAY:`. |
+| 7 (REVIEW-2 NIT 1: whole-node `FaultReadError` ambush) | FIXED | `internal/sim/nemesis.go:353-363` targets a single existing blob from `disk.stored()` via `n.index` (skipping if empty) whenever `n.cfg.Budget.GroupOf != nil`, leaving `GroupOf == nil` whole-node behaviour unchanged. `TestBudgetGroupLimit/a nemesis read error never ambushes a blob written after it` (`nemesis_test.go:262-286`) fails on `110bd69` (whole-node read errors pass `Allows` on empty disks then violate `b.Check` once shards are written); `TestPropNemesisRespectsBudget` (`prop_test.go:255-375`) now also writes new `shard/<k>` groups every 50–400 ms during chaos. |
+| 8 (`network-nemesis-dynamic-blobs`) | CORRECTLY NARROWED | `Nemesis.index` (`nemesis.go:241-251`) unconditionally consumes exactly one `Uint64` from `nemRand` for every `k` including `k == 0` with no rejection-sampling loop; `FaultBitRot` and grouped `FaultReadError` always draw through `index`, and no other fault branch or nemesis-owned state (`up`, `paused`, `clogged`) depends on disk inventory or disk-fault outcomes (verified across all 18 `FaultKind`s and `Budget.Allows`). `TestPropNemesisTimingIgnoresInventory` (`prop_test.go:811-870`) has real failure power: it compares two runs of one seed with randomized initial/periodic disk writes over ~160 steps across all `ChaosKinds` and lifted/active/grouped budgets, checking `len`, `At`, and `Fault.Encode()` with only `Blob` cleared — failing immediately on `110bd69` whenever one side hits `FaultBitRot` on an empty disk. Narrowed wording in `build-notes.md:450` matches the brief verbatim. |
+
+## New findings
+
+### 1. [NIT] `scaled(k, -1)` in `internal/sim/clock.go` wraps `math.MinInt64 / -1` and saturates to `math.MinInt64`
+- **Where:** `internal/sim/clock.go:45-56` (specifically line 52)
+- **What is wrong:** `scaled(k int64, d time.Duration)` checks `if d < 0 && k > math.MinInt64/int64(d)` to guard against negative multiplication overflow. In Go two's-complement arithmetic, `math.MinInt64 / int64(-1)` overflows to `math.MinInt64` (negative). Thus for `d == -1` and any positive `k` (such as `k = 1..15` from `ScheduleFromBytes`), `k > math.MinInt64` evaluates to `true`, so `scaled(k, -1)` returns `math.MinInt64` instead of `-k`.
+- **Reproduction:**
+  ```go
+  s := sim.New(sim.Config{Seed: 1})
+  _ = s.AddNode(sim.NodeSpec{ID: "a"}, newPanicky)
+  sched := s.ScheduleFromBytes([]byte{1, 0, 0, 0}, 100, -1)
+  // sched[0].At is -9223372036854775808 (math.MinInt64), expected 99.
+  ```
+- **Smallest fix:** No API change. Change `clock.go:52` from `if d < 0 && k > math.MinInt64/int64(d)` to `if d < -1 && k > math.MinInt64/int64(d)` (`k * (-1)` cannot overflow `int64` for any `k >= 0`).
+
+### 2. [NOTE] Freeze check, golden digests, bounds for later chunks, and determinism hygiene
+- **Where:** `agent_work/0b-simulator/frozen-api.txt`, `internal/sim/testdata/golden.txt`, `internal/sim/sim.go:19-21`, `internal/sim/nemesis.go:185-191`, `internal/sim/net.go:39-49`
+- **Detail:**
+  - **Exported API / freeze check:** `diff` of `frozen-api.txt` against `git show 110bd69:agent_work/0b-simulator/frozen-api.txt` shows zero signature changes and only two additions in `internal/sim`: `MaxSkew = time.Duration(1 << 61)` and `Horizon = env.Time(1 << 62)`, both documented under "API changes" in `build-notes.md:513-525`. `go doc -all` across `./internal/env`, `./internal/sim`, and `./internal/sim/simtest` matches `frozen-api.txt` byte-for-byte. No further interface changes are needed before freezing for Wave B.
+  - **Golden digests:** Only four rows (`20/3`, `50/1`, `50/2`, `100/1`) in `internal/sim/testdata/golden.txt` changed, with stated cause in `build-notes.md:527-538`: item 8(a) consumes one `nemRand` draw when `FaultBitRot` hits an empty `rotTargets()` list, whereas `Uint64N` in `latency` and the power-of-2 / `Mul64` fast path in `index` preserve all non-empty draws.
+  - **Bounds for later chunks:** `Horizon = 2^62 ns` (~146.2 years), `MaxSkew = 2^61 ns` (~73.1 years), `MaxDriftPPM = 100_000` (10%), non-negative latency `Range` up to `MaxInt64`, positive `Request` timeouts, and `MaxUint32` incarnations do not reject any sane configuration needed by Chunks 2–7. (`StartNemesis` conservatively checks `Start + Phases*(Chaos+Heal) <= Horizon`, rejecting a single-phase config with `Chaos == Horizon` and `Heal > 0`, which is immaterial at 146 years.)
+  - **Determinism hygiene:** Only stdlib `math` and `math/bits` were added to `internal/sim` imports (`path/filepath`, `strings` in `cmd/objsim`); zero floats, comments, or new `panic(` calls in product code; `agent_work/gates/` untouched; all map iterations in `internal/sim` go through `sortedKeys`.
+- **Reproduction:** N/A (verification note).
+- **Smallest fix:** None.
+
+## Verification: run vs. read
+- **Verified by running (inside Docker `dev` container only, via `docker compose run --rm -T dev ...`):**
+  - `gofmt -l .` (empty) and `go vet ./...` (clean).
+  - `go test -count=1 ./...` (all packages passed: `cmd/objsim` 0.12 s, `internal/env` 0.01 s, `internal/sim` 5.23 s, `internal/sim/simtest` 0.06 s).
+  - `go test -race -count=1 ./...` (all packages passed; `internal/sim` 31.78 s).
+  - `DST_SEEDS=50 go test -count=1 ./internal/sim/...` (passed; `internal/sim` 17.77 s, `simtest` 0.02 s).
+  - `go test -count=1 ./internal/sim -rapid.checks=2000` (passed in 55.60 s, covering all rapid properties including `TestPropNemesisRespectsBudget` and `TestPropNemesisTimingIgnoresInventory`).
+  - `go test -v -count=1` on all new/updated regression tests across `./cmd/objsim` and `./internal/sim`, plus `TestGoldenDigests` and `TestReplayAcrossProcesses` (all subtests executed and passed).
+  - `go doc -all` across `./internal/env`, `./internal/sim`, `./internal/sim/simtest` diffed against `agent_work/0b-simulator/frozen-api.txt` (exact match).
+  - `go list -f '{{.ImportPath}}: {{.Imports}}'` across `./internal/env`, `./internal/sim`, `./internal/sim/simtest`, `./internal/sim/simtoy`, `./cmd/objsim` (confirmed allowed stdlib imports).
+  - Read-only `git log`, `git diff 110bd69..HEAD`, and `git show 110bd69:<file>` inspections.
+- **Verified by reading (and static grep):**
+  - Read `REVIEW-2.md`, `objstore-p2-0b-repair2.md`, `build-notes.md`, `frozen-api.txt`, `ATTACKS.md`, `RESULTS.md`, `agent_work/adversarial/0b-simulator/main.go` (lines 780–814), the full `110bd69..HEAD` diff, and full current files `internal/sim/{clock,disk,nemesis,net,process,sim,fault,handle,queue,log}.go`, `internal/sim/simtest/determinism.go`, and `cmd/objsim/main.go`.
+  - Verified regression-test non-vacuity by reading `git show 110bd69:<file>` for each touched product file (read-only review; did not check out `110bd69`, run the adversarial harness which writes tracked evidence files, or modify code).
+  - Audited `Nemesis.fire`/`draw`/`index`/`Budget.Allows` line-by-line for inventory-independent draw counts and arithmetic bounds on `local`, `toGlobal`, `later`, `scaled`, `addSat`, `latency`, and `withinHorizon`.
+  - Static grep for `float32`/`float64`, `//`, `/*`, `panic(`, and `for ... range` across `internal/` and `cmd/`.
