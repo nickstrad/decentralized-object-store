@@ -1,0 +1,124 @@
+{
+  "chunk": "04-occ",
+  "sha": "299a1a98b8ceded68b5a61024a7b27752e4740a8",
+  "stage": "build",
+  "comment_baseline": "9508d35b7a1c17b75270b3a95716dbfa03c3775a",
+  "started": "2026-11-21T21:30:38Z",
+  "finished": "2026-11-21T21:38:06Z",
+  "go_version": "go version go1.26.11 linux/amd64",
+  "image_id": "sha256:cab0b0a92dd08e86cbe20d13eb3319e3ca0e7d954f9ae84dfaecf41d6a5d1c0a",
+  "in_container": true,
+  "partial": false,
+  "dirty_tree": false,
+  "seed_from_sha": 45741847918798,
+  "fuzz_seconds": 30,
+  "overall": "pass",
+  "counts_for_landing": true,
+  "checks": [
+    {
+      "gate": "G0",
+      "check": "tools",
+      "status": "pass",
+      "seconds": 2,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "gofmt",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "vet",
+      "status": "pass",
+      "seconds": 1,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "build",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "detlint",
+      "status": "pass",
+      "seconds": 3,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "panics",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "deps",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "comments",
+      "status": "pass",
+      "seconds": 1,
+      "note": "comments compared with baseline 9508d35b7a1c17b75270b3a95716dbfa03c3775a"
+    },
+    {
+      "gate": "G0",
+      "check": "selfcontained",
+      "status": "pass",
+      "seconds": 6,
+      "note": ""
+    },
+    {
+      "gate": "G1",
+      "check": "unit",
+      "status": "pass",
+      "seconds": 8,
+      "note": ""
+    },
+    {
+      "gate": "G2",
+      "check": "property",
+      "status": "pass",
+      "seconds": 83,
+      "note": "rapid seed 45741847918798, 2000 checks, 2 packages"
+    },
+    {
+      "gate": "G3",
+      "check": "fuzz",
+      "status": "pass",
+      "seconds": 133,
+      "note": "4 fuzz targets, 30s each"
+    },
+    {
+      "gate": "G4",
+      "check": "race",
+      "status": "pass",
+      "seconds": 32,
+      "note": ""
+    },
+    {
+      "gate": "G5",
+      "check": "dst",
+      "status": "pass",
+      "seconds": 179,
+      "note": "500 seeds from base 45741847918798"
+    },
+    {
+      "gate": "G6",
+      "check": "docker",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    }
+  ]
+}
