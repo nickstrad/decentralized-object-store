@@ -10,6 +10,8 @@ Status: Phase 1 COMPLETE (2026-11-21) — PLAN.md committed and pushed.
 STOPPED at the hard gate: waiting for Nick's sign-off on the plan. Nothing
 is running. No product code exists. Do not dispatch builders. The initial
 C4 diagram set is landed in docs/c4/ and waits for Nick's buy-in (see Done).
+The kickoff review site is LIVE on GitHub Pages; Nick reviews the plan and
+the C4 set there: https://nickstrad.github.io/decentralized-object-store/
 
 Seats (Nick, 2026-11-20, this project only): Fable orchestrates; Opus
 writes Go code (logic only), a fresh agent and worktree per chunk,
@@ -40,13 +42,21 @@ Done:
   repeat commands and model notes: docs/c4/README.md. Marker:
   /root/runs/objstore-c4-done.txt (status COMPLETE).
 
+- 2026-11-21: kickoff review site LIVE on GitHub Pages (bb2fbb5; workflow
+  run 44918441797, build and deploy success, first attempt). Verified 200:
+  the site root, plan.html, c4/index.html, c4/01-system-context.html,
+  c4/02-container.html, c4/model.json; all 9 Mermaid diagrams draw in
+  headless Chromium against the live site. Contents and the scaffold
+  status: "Facts a resuming agent needs". Marker:
+  /root/runs/objstore-pages-done.txt.
+
 In progress:
 - Nothing running.
 
 Next steps (only after Nick's ruling arrives as a follow-up brief file):
 1. Apply Nick's answers to PLAN.md section 9 (open questions) and any edits.
-2. Phase 2, Wave A: Chunk 0a (foundation tooling, kb vendoring, Pages
-   scaffold + workflow, CI) and Chunk 0b (DST simulator, Opus) — PLAN.md 4.2.
+2. Phase 2, Wave A: Chunk 0a (foundation tooling, kb vendoring, the full
+   Pages site replacing the kickoff scaffold, CI) and Chunk 0b (DST simulator, Opus) — PLAN.md 4.2.
 3. Wave B: Chunks 1–5 concurrently after the env/simtest interface freeze.
 4. Chunks 6, 7, 8 in order.
 
@@ -87,9 +97,7 @@ Facts a resuming agent needs:
   c4/model.json. One external dependency: mermaid.js 11 from the jsDelivr
   CDN draws the Mermaid blocks. This is a scaffold with no written prose;
   Chunk 0 supersedes it with the full book site (Neon writes the prose).
-  Live status: see the last line of this entry. Not yet recorded in the
-  README.
-  Deploy check: PENDING first workflow run.
+  Verified live 2026-11-21 (see Done). Not yet recorded in the README.
 - Run opencode and codex headless with stdin closed (`</dev/null`).
 - Vendored kb, go.mod, gate scripts: not created yet (Chunk 0a).
 
