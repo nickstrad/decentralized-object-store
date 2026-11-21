@@ -205,10 +205,8 @@ func TestFieldAxiomsExhaustivePairs(t *testing.T) {
 }
 
 func FuzzGF256(f *testing.F) {
-	f.Add([]byte{})
-	f.Add(make([]byte, 24))
-	f.Add([]byte{1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0})
-	f.Add([]byte{0xff, 0, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0, 0, 0, 0, 0, 0xff, 0, 0, 0, 0, 0, 0, 0})
-	f.Add([]byte{0x80, 0, 0, 0, 0, 0, 0, 0, 0x02, 0, 0, 0, 0, 0, 0, 0, 0x1d, 0, 0, 0, 0, 0, 0, 0})
+	for _, seed := range gf256FuzzSeeds() {
+		f.Add(seed)
+	}
 	f.Fuzz(rapid.MakeFuzz(propFieldAxioms))
 }

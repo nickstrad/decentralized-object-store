@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"testing"
 
@@ -38,6 +39,11 @@ func TestNewConfigTable(t *testing.T) {
 		{"k=1 m=255 is valid", 1, 255, nil},
 		{"k+m=257 is rejected", 129, 128, erasure.ErrInvalidConfig},
 		{"k=257 m=0 is rejected", 257, 0, erasure.ErrInvalidConfig},
+		{"k=MaxInt m=1 overflows k+m and is rejected", math.MaxInt, 1, erasure.ErrInvalidConfig},
+		{"k=1 m=MaxInt overflows k+m and is rejected", 1, math.MaxInt, erasure.ErrInvalidConfig},
+		{"k=m=2^62 wraps k+m negative and is rejected", 1 << 62, 1 << 62, erasure.ErrInvalidConfig},
+		{"k=m=MaxInt is rejected", math.MaxInt, math.MaxInt, erasure.ErrInvalidConfig},
+		{"k=257 m=-1 is rejected", 257, -1, erasure.ErrInvalidConfig},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -499,13 +505,9 @@ func propErasureCoding(t *rapid.T) {
 }
 
 func FuzzErasureCoding(f *testing.F) {
-	f.Add([]byte{})
-	for _, n := range []int{8, 16, 32, 64, 128} {
-		f.Add(make([]byte, n))
-		ff := bytes.Repeat([]byte{0xff}, n)
-		f.Add(ff)
+	for _, seed := range codingFuzzSeeds() {
+		f.Add(seed)
 	}
-	f.Add([]byte{0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0})
 	f.Fuzz(rapid.MakeFuzz(propErasureCoding))
 }
 
@@ -533,6 +535,18 @@ func TestDecodingIsTotalOnHostileShards(t *testing.T) {
 			if !errors.Is(err, erasure.ErrShardCount) && !errors.Is(err, erasure.ErrShardSize) &&
 				!errors.Is(err, erasure.ErrTooFewShards) && !errors.Is(err, erasure.ErrParityMismatch) {
 				t.Fatalf("input %d: error %v is not one of the package sentinels", i, err)
+			}
+		}
+	}
+}
+
+func TestShardSizeAtTheIntLimit(t *testing.T) {
+	for _, k := range []int{1, 2, 4, 255, 256} {
+		codec := mustCodec(t, k, 0)
+		for _, size := range []int{math.MaxInt, math.MaxInt - 1, math.MaxInt - k + 1, math.MaxInt - k + 2} {
+			want := (size-1)/k + 1
+			if got := codec.ShardSize(size); got != want || got <= 0 {
+				t.Fatalf("k=%d ShardSize(%d) = %d, want %d", k, size, got, want)
 			}
 		}
 	}

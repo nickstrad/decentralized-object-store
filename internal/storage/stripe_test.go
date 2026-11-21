@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"math"
 	"math/rand/v2"
 	"slices"
 	"testing"
@@ -31,6 +32,9 @@ func TestLayoutTable(t *testing.T) {
 		{"k+m=257 is ErrInvalid", storage.Layout{K: 129, M: 128, StripeSize: 1024}, 1, 0, 0, storage.ErrInvalid},
 		{"stripe smaller than k is ErrInvalid", storage.Layout{K: 4, M: 2, StripeSize: 3}, 1, 0, 0, storage.ErrInvalid},
 		{"stripe over the limit is ErrInvalid", storage.Layout{K: 4, M: 2, StripeSize: storage.MaxStripeSize + 1}, 1, 0, 0, storage.ErrInvalid},
+		{"k=MaxInt m=1 overflows k+m and is ErrInvalid", storage.Layout{K: math.MaxInt, M: 1, StripeSize: 1024}, 1, 0, 0, storage.ErrInvalid},
+		{"k=m=2^62 wraps k+m and is ErrInvalid", storage.Layout{K: 1 << 62, M: 1 << 62, StripeSize: 1024}, 1, 0, 0, storage.ErrInvalid},
+		{"m=MaxInt is ErrInvalid", storage.Layout{K: 4, M: math.MaxInt, StripeSize: 1024}, 1, 0, 0, storage.ErrInvalid},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -49,7 +49,7 @@ func BenchmarkReconstructAllMissing1MiBStripe(b *testing.B) {
 	codec, shards := benchStripe(b)
 	b.SetBytes(1 << 20)
 	for b.Loop() {
-		shards[1], shards[3] = nil, nil
+		shards[1], shards[4] = nil, nil
 		if err := codec.Reconstruct(shards); err != nil {
 			b.Fatal(err)
 		}

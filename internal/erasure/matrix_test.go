@@ -2,6 +2,7 @@ package erasure_test
 
 import (
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/nickstrad/decentralized-object-store/internal/erasure"
@@ -243,4 +244,26 @@ func TestMDSAtTheFieldLimit(t *testing.T) {
 		mixed = append(mixed, i)
 	}
 	checkSubmatrixInvertible(t, cm, mixed)
+}
+
+func TestIdentityOfNonPositiveOrHugeSizeIsEmpty(t *testing.T) {
+	for _, n := range []int{0, -1, -2, math.MinInt, math.MaxInt, 1 << 32} {
+		id := erasure.Identity(n)
+		if r, c := id.Dims(); r != 0 || c != 0 {
+			t.Fatalf("Identity(%d) has dims %dx%d, want 0x0", n, r, c)
+		}
+		if rows := id.Rows(); len(rows) != 0 {
+			t.Fatalf("Identity(%d).Rows() has %d rows", n, len(rows))
+		}
+		inv, err := id.Invert()
+		if err != nil {
+			t.Fatalf("Identity(%d).Invert(): %v", n, err)
+		}
+		if !inv.Equal(id) {
+			t.Fatalf("Identity(%d).Invert() is not empty", n)
+		}
+	}
+	if r, c := erasure.Identity(3).Dims(); r != 3 || c != 3 {
+		t.Fatalf("Identity(3) has dims %dx%d", r, c)
+	}
 }

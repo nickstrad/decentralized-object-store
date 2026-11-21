@@ -1,0 +1,23 @@
+# 2026/11/21 22:38:38.669142 [TestPropChunkStoreModel] [rapid] draw action: "unsynced write"
+# 2026/11/21 22:38:38.669179 [TestPropChunkStoreModel] [rapid] draw id: storage.ShardID{Bucket:"m", Version:0x1, Stripe:0x1, Index:0x1}
+# 2026/11/21 22:38:38.669201 [TestPropChunkStoreModel] [rapid] draw payload: []byte{}
+# 2026/11/21 22:38:38.669278 [TestPropChunkStoreModel] [rapid] draw action: "put"
+# 2026/11/21 22:38:38.669281 [TestPropChunkStoreModel] [rapid] draw id: storage.ShardID{Bucket:"m", Version:0x1, Stripe:0x1, Index:0x1}
+# 2026/11/21 22:38:38.669289 [TestPropChunkStoreModel] [rapid] draw payload: []byte{}
+# 2026/11/21 22:38:38.669299 [TestPropChunkStoreModel] {m 0000000000000001 1 1} is not durable with the acknowledged bytes (present false)
+# 
+v0.4.8#15188859174966045060
+0x1084210842108
+0x6b74f03291620
+0x5
+0x0
+0x1
+0x0
+0x0
+0x1084210842108
+0x38e38e38e38e4
+0x2
+0x0
+0x1
+0x0
+0x0

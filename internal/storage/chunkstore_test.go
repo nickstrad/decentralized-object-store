@@ -3,6 +3,7 @@ package storage_test
 import (
 	"bytes"
 	"errors"
+	"maps"
 	"slices"
 	"testing"
 
@@ -267,12 +268,45 @@ func mustNil(t testing.TB, err error) {
 	}
 }
 
+type chunkModel struct {
+	written, durable map[storage.ShardID][]byte
+	rotW, rotD       map[storage.ShardID]bool
+}
+
+func (m *chunkModel) has(id storage.ShardID) bool {
+	_, ok := m.written[id]
+	return ok
+}
+
+func (m *chunkModel) setBoth(id storage.ShardID, p []byte) {
+	m.written[id], m.durable[id] = p, p
+	delete(m.rotW, id)
+	delete(m.rotD, id)
+}
+
+func (m *chunkModel) dropBoth(id storage.ShardID) {
+	delete(m.written, id)
+	delete(m.durable, id)
+	delete(m.rotW, id)
+	delete(m.rotD, id)
+}
+
+func (m *chunkModel) clean(id storage.ShardID) bool {
+	w, okW := m.written[id]
+	d, okD := m.durable[id]
+	return okW && okD && bytes.Equal(w, d) && !m.rotW[id] && !m.rotD[id]
+}
+
+func (m *chunkModel) crash() {
+	m.written = maps.Clone(m.durable)
+	m.rotW = maps.Clone(m.rotD)
+}
+
 func TestPropChunkStoreModel(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
-		s, node, d := simDisk(t)
-		st := storage.NewChunkStore(d)
-		model := map[storage.ShardID][]byte{}
-		rotted := map[storage.ShardID]bool{}
+		rd := newRestartableDisk(rt)
+		st := storage.NewChunkStore(rd.disk)
+		m := &chunkModel{written: map[storage.ShardID][]byte{}, durable: map[storage.ShardID][]byte{}, rotW: map[storage.ShardID]bool{}, rotD: map[storage.ShardID]bool{}}
 		ids := make([]storage.ShardID, 0, 8)
 		for v := 1; v <= 2; v++ {
 			for idx := 0; idx < 4; idx++ {
@@ -281,23 +315,37 @@ func TestPropChunkStoreModel(t *testing.T) {
 		}
 		genID := rapid.SampledFrom(ids)
 		genPayload := rapid.SampledFrom([][]byte{{}, {1}, []byte("two"), []byte("payload four")})
+		durableIs := func(rt *rapid.T, id storage.ShardID, want []byte) {
+			got, ok := rd.s.Disk(rd.id).PeekDurable(id.BlobName())
+			if want == nil {
+				if ok {
+					rt.Fatalf("%v is durable after a call that reported it absent", id)
+				}
+				return
+			}
+			if !ok || !bytes.Equal(got, shardFor(rt, id, want)) {
+				rt.Fatalf("%v is not durable with the acknowledged bytes (present %v)", id, ok)
+			}
+		}
 		rt.Repeat(map[string]func(*rapid.T){
 			"put": func(rt *rapid.T) {
 				id := genID.Draw(rt, "id")
 				p := genPayload.Draw(rt, "payload")
 				err := st.Put(id, shardFor(rt, id, p))
-				prev, ok := model[id]
+				prev, ok := m.written[id]
 				switch {
-				case !ok || rotted[id]:
+				case !ok || m.rotW[id]:
 					if err != nil {
 						rt.Fatalf("put %v: %v", id, err)
 					}
-					model[id] = p
-					delete(rotted, id)
+					m.setBoth(id, p)
+					durableIs(rt, id, p)
 				case bytes.Equal(prev, p):
 					if err != nil {
 						rt.Fatalf("idempotent put %v: %v", id, err)
 					}
+					m.setBoth(id, p)
+					durableIs(rt, id, p)
 				default:
 					if !errors.Is(err, storage.ErrExists) {
 						rt.Fatalf("conflicting put %v: %v", id, err)
@@ -307,38 +355,61 @@ func TestPropChunkStoreModel(t *testing.T) {
 			"delete": func(rt *rapid.T) {
 				id := genID.Draw(rt, "id")
 				err := st.Delete(id)
-				if _, ok := model[id]; !ok {
+				if !m.has(id) {
 					if !errors.Is(err, storage.ErrNotFound) {
 						rt.Fatalf("delete of missing %v: %v", id, err)
 					}
-					return
-				}
-				if err != nil {
+				} else if err != nil {
 					rt.Fatalf("delete %v: %v", id, err)
 				}
-				delete(model, id)
-				delete(rotted, id)
+				m.dropBoth(id)
+				durableIs(rt, id, nil)
 			},
 			"rot": func(rt *rapid.T) {
 				id := genID.Draw(rt, "id")
-				if _, ok := model[id]; !ok || rotted[id] {
-					rt.Skip("nothing to rot")
+				if !m.clean(id) {
+					rt.Skip("nothing clean to rot")
 				}
-				if err := s.BitRot(node, id.BlobName()); err != nil {
+				if err := rd.s.BitRot(rd.id, id.BlobName()); err != nil {
 					rt.Fatal(err)
 				}
-				rotted[id] = true
+				m.rotW[id], m.rotD[id] = true, true
+			},
+			"unsynced write": func(rt *rapid.T) {
+				id := genID.Draw(rt, "id")
+				p := genPayload.Draw(rt, "payload")
+				if err := rd.disk.Write(id.BlobName(), shardFor(rt, id, p)); err != nil {
+					rt.Fatal(err)
+				}
+				m.written[id] = p
+				delete(m.rotW, id)
+			},
+			"unsynced delete": func(rt *rapid.T) {
+				id := genID.Draw(rt, "id")
+				if !m.has(id) {
+					rt.Skip("nothing written to delete")
+				}
+				if err := rd.disk.Delete(id.BlobName()); err != nil {
+					rt.Fatal(err)
+				}
+				delete(m.written, id)
+				delete(m.rotW, id)
+			},
+			"crash": func(rt *rapid.T) {
+				rd.crash(rt)
+				st = storage.NewChunkStore(rd.disk)
+				m.crash()
 			},
 			"": func(rt *rapid.T) {
 				for _, id := range ids {
 					_, p, err := st.Get(id)
-					want, ok := model[id]
+					want, ok := m.written[id]
 					switch {
 					case !ok:
 						if !errors.Is(err, storage.ErrNotFound) {
 							rt.Fatalf("get missing %v: %v", id, err)
 						}
-					case rotted[id]:
+					case m.rotW[id]:
 						if !errors.Is(err, storage.ErrCorrupt) {
 							rt.Fatalf("get rotted %v: %v %q", id, err, p)
 						}
@@ -352,17 +423,62 @@ func TestPropChunkStoreModel(t *testing.T) {
 				if err != nil {
 					rt.Fatal(err)
 				}
-				if len(listed) != len(model) {
-					rt.Fatalf("List has %d shards, model %d", len(listed), len(model))
+				if len(listed) != len(m.written) {
+					rt.Fatalf("List has %d shards, model %d", len(listed), len(m.written))
 				}
 				for _, id := range listed {
-					if _, ok := model[id]; !ok {
+					if !m.has(id) {
 						rt.Fatalf("List has %v, not in the model", id)
 					}
 				}
 			},
 		})
 	})
+}
+
+func TestChunkStorePutOfUnsyncedIdenticalBytesIsDurable(t *testing.T) {
+	rd := newRestartableDisk(t)
+	st := storage.NewChunkStore(rd.disk)
+	id := storage.ShardID{Bucket: "b", Version: 1, Stripe: 0, Index: 0}
+	blob := shardFor(t, id, []byte("unsynced"))
+	mustNil(t, rd.disk.Write(id.BlobName(), blob))
+	mustNil(t, st.Put(id, blob))
+	rd.crash(t)
+	st = storage.NewChunkStore(rd.disk)
+	_, p, err := st.Get(id)
+	if err != nil || !bytes.Equal(p, []byte("unsynced")) {
+		t.Fatalf("an acknowledged Put was lost in a crash: %q, %v", p, err)
+	}
+}
+
+func TestChunkStoreSecondPutAfterAFailedSyncIsDurable(t *testing.T) {
+	rd := newRestartableDisk(t)
+	st := storage.NewChunkStore(rd.disk)
+	id := storage.ShardID{Bucket: "b", Version: 1, Stripe: 2, Index: 3}
+	blob := shardFor(t, id, []byte("retried"))
+	mustNil(t, rd.disk.Write(id.BlobName(), blob))
+	mustNil(t, st.Put(id, blob))
+	mustNil(t, st.Put(id, blob))
+	rd.crash(t)
+	if got, ok := rd.s.Disk(rd.id).PeekDurable(id.BlobName()); !ok || !bytes.Equal(got, blob) {
+		t.Fatalf("after two acknowledged Puts and a crash the shard is not durable (present %v)", ok)
+	}
+}
+
+func TestChunkStoreDeleteOfAnUnsyncedRemovalIsDurable(t *testing.T) {
+	rd := newRestartableDisk(t)
+	st := storage.NewChunkStore(rd.disk)
+	id := storage.ShardID{Bucket: "b", Version: 1, Stripe: 0, Index: 1}
+	mustNil(t, st.Put(id, shardFor(t, id, []byte("gone"))))
+	mustNil(t, rd.disk.Delete(id.BlobName()))
+	if err := st.Delete(id); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("Delete after an unsynced removal: %v, want ErrNotFound", err)
+	}
+	rd.crash(t)
+	st = storage.NewChunkStore(rd.disk)
+	if _, _, err := st.Get(id); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("a shard Delete reported absent came back after a crash: %v", err)
+	}
 }
 
 func TestChunkStoreClosedDiskAndBadBuckets(t *testing.T) {

@@ -45,16 +45,17 @@ type dstObject struct {
 }
 
 type dstOutcome struct {
-	putMax, getMax time.Duration
-	gets, ok       int
-	unavailable    int
-	maxRequests    int
-	pending        int
-	targetDamaged  bool
-	fallbacks      int
-	applied        int
-	rejected       int
-	transientOnly  int
+	putMax, getMax  time.Duration
+	gets, ok        int
+	unavailable     int
+	maxRequests     int
+	pending         int
+	targetDamaged   bool
+	fallbacks       int
+	applied         int
+	rejected        int
+	transientOnly   int
+	minDurableAtAck int
 }
 
 type dstMode struct {
@@ -63,7 +64,7 @@ type dstMode struct {
 
 func stripedRun(mode dstMode, outs *[]*dstOutcome) func(seed int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
-		res := &dstOutcome{}
+		res := &dstOutcome{minDurableAtAck: dstK + dstM}
 		*outs = append(*outs, res)
 		codes, err := storage.Codes()
 		s := sim.New(sim.Config{Seed: seed, Codes: codes})
@@ -100,6 +101,20 @@ func stripedRun(mode dstMode, outs *[]*dstOutcome) func(seed int64) *sim.Sim {
 						return
 					}
 					o.man = man
+					for st, ref := range man.Stripes {
+						durable := 0
+						for idx, sh := range ref.Shards {
+							blob, ok := s.Disk(sh.Node).PeekDurable(man.ShardID(st, idx).BlobName())
+							if ok && storage.BlobChecksum(blob) == sh.Checksum {
+								durable++
+							}
+						}
+						if durable < dstK+1 {
+							s.Fail(fmt.Errorf("put %s acknowledged with %d durable shards in stripe %d, want at least k+1=%d", o.key, durable, st, dstK+1))
+							return
+						}
+						res.minDurableAtAck = min(res.minDurableAtAck, durable)
+					}
 					lat := s.Now().Sub(start)
 					res.putMax = max(res.putMax, lat)
 					if lat > dstPutBound {
@@ -233,7 +248,7 @@ func TestStripedPutGetDST(t *testing.T) {
 			name = "budget-lifted"
 		}
 		t.Run(name, func(t *testing.T) {
-			var agg dstOutcome
+			agg := dstOutcome{minDurableAtAck: dstK + dstM}
 			simtest.Sweep(t, func(t *testing.T, seed int64) {
 				var outs []*dstOutcome
 				simtest.RequireDeterministic(t, seed, stripedRun(mode, &outs))
@@ -254,12 +269,13 @@ func TestStripedPutGetDST(t *testing.T) {
 				agg.applied += r.applied
 				agg.rejected += r.rejected
 				agg.transientOnly += r.transientOnly
+				agg.minDurableAtAck = min(agg.minDurableAtAck, r.minDurableAtAck)
 			})
 			if agg.fallbacks == 0 || agg.applied == 0 {
 				t.Fatalf("the faults never reached a read: %d gets fell back, %d faults applied", agg.fallbacks, agg.applied)
 			}
-			t.Logf("MEASURED %s: put max %v (bound %v), get max %v (bound %v), max mean requests per stripe %d (bound %d), gets %d ok %d unavailable %d fell-back %d, faults applied %d rejected-by-budget %d, unavailable-with-transient-cause %d",
-				name, agg.putMax, dstPutBound, agg.getMax, dstGetBound, agg.maxRequests, dstMaxRequests, agg.gets, agg.ok, agg.unavailable, agg.fallbacks, agg.applied, agg.rejected, agg.transientOnly)
+			t.Logf("MEASURED %s: put max %v (bound %v), get max %v (bound %v), max mean requests per stripe %d (bound %d), gets %d ok %d unavailable %d fell-back %d, faults applied %d rejected-by-budget %d, unavailable-with-transient-cause %d, fewest durable shards of a stripe at its PUT ack %d (need %d)",
+				name, agg.putMax, dstPutBound, agg.getMax, dstGetBound, agg.maxRequests, dstMaxRequests, agg.gets, agg.ok, agg.unavailable, agg.fallbacks, agg.applied, agg.rejected, agg.transientOnly, agg.minDurableAtAck, dstK+1)
 		})
 	}
 }

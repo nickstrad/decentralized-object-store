@@ -60,12 +60,17 @@ type putResult struct {
 func put(t testing.TB, s *sim.Sim, n *storage.Node, bucket, key string, data []byte) putResult {
 	t.Helper()
 	var r putResult
+	returned := false
 	n.Put(bucket, key, data, func(man *storage.Manifest, err error) {
 		if r.done {
 			t.Fatal("put callback called twice")
 		}
+		if !returned {
+			t.Fatalf("put callback ran inside the Put call (err %v)", err)
+		}
 		r = putResult{man, err, true}
 	})
+	returned = true
 	mustNil(t, s.RunUntilQuiet())
 	if !r.done {
 		t.Fatal("put never called back")
@@ -82,12 +87,17 @@ type getResult struct {
 func get(t testing.TB, s *sim.Sim, n *storage.Node, man *storage.Manifest) getResult {
 	t.Helper()
 	var r getResult
+	returned := false
 	n.Get(man, func(res storage.GetResult, err error) {
 		if r.done {
 			t.Fatal("get callback called twice")
 		}
+		if !returned {
+			t.Fatalf("get callback ran inside the Get call (err %v)", err)
+		}
 		r = getResult{res, err, true}
 	})
+	returned = true
 	mustNil(t, s.RunUntilQuiet())
 	if !r.done {
 		t.Fatal("get never called back")
@@ -236,8 +246,8 @@ func TestNodeRejectsBadInput(t *testing.T) {
 		t.Fatalf("get of an invalid manifest: %v", g.err)
 	}
 	g = get(t, s, n, sampleManifest(17))
-	if !errors.Is(g.err, storage.ErrInvalid) {
-		t.Fatalf("get of a manifest written with another code: %v", g.err)
+	if !errors.Is(g.err, storage.ErrUnavailable) || !errors.Is(g.err, storage.ErrNotFound) {
+		t.Fatalf("get of a manifest whose shards were never written: %v", g.err)
 	}
 }
 
