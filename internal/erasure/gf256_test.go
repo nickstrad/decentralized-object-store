@@ -7,6 +7,8 @@ import (
 	"pgregory.net/rapid"
 )
 
+// bitwiseMul is an independent shift-and-XOR reference implementation of
+// GF(2^8) multiplication modulo 0x11D.
 func bitwiseMul(a, b byte) byte {
 	x, y := uint16(a), uint16(b)
 	var p uint16
@@ -23,6 +25,8 @@ func bitwiseMul(a, b byte) byte {
 	return byte(p)
 }
 
+// TestGFGoldenProducts proves Mul matches known GF(2^8) products modulo 0x11D
+// in both argument orders.
 func TestGFGoldenProducts(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -52,6 +56,7 @@ func TestGFGoldenProducts(t *testing.T) {
 	}
 }
 
+// TestGFGoldenInverses proves Inv matches known inverses and reports false for 0.
 func TestGFGoldenInverses(t *testing.T) {
 	cases := []struct{ a, inv byte }{{0x01, 0x01}, {0x02, 0x8e}, {0x03, 0xf4}, {0x8e, 0x02}, {0xff, 0xfd}, {0x53, 0x8c}}
 	for _, c := range cases {
@@ -65,6 +70,7 @@ func TestGFGoldenInverses(t *testing.T) {
 	}
 }
 
+// TestGFGoldenExp proves Exp matches known powers of 2 and wraps with period 255.
 func TestGFGoldenExp(t *testing.T) {
 	want := []byte{0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1d, 0x3a}
 	for i, w := range want {
@@ -77,6 +83,8 @@ func TestGFGoldenExp(t *testing.T) {
 	}
 }
 
+// TestGFLogExpAgree proves that Exp enumerates all 255 non-zero field elements,
+// Log inverts Exp on every element, and Log(0) returns false.
 func TestGFLogExpAgree(t *testing.T) {
 	seen := map[byte]bool{}
 	for i := 0; i < 255; i++ {
@@ -95,6 +103,8 @@ func TestGFLogExpAgree(t *testing.T) {
 	}
 }
 
+// TestGFTablesMatchBitwiseExhaustive proves Mul agrees with bitwise
+// multiplication for all 65,536 byte pairs.
 func TestGFTablesMatchBitwiseExhaustive(t *testing.T) {
 	for a := 0; a < 256; a++ {
 		for b := 0; b < 256; b++ {
@@ -105,6 +115,7 @@ func TestGFTablesMatchBitwiseExhaustive(t *testing.T) {
 	}
 }
 
+// TestGFDiv proves Div inverts Mul for every non-zero divisor and returns false for 0.
 func TestGFDiv(t *testing.T) {
 	for a := 0; a < 256; a++ {
 		for b := 1; b < 256; b++ {
@@ -119,6 +130,8 @@ func TestGFDiv(t *testing.T) {
 	}
 }
 
+// TestGFMulAddSlice proves MulAddSlice matches bitwise multiply-XOR for 0, 1,
+// and general coefficients and stops at the shorter slice length.
 func TestGFMulAddSlice(t *testing.T) {
 	src := []byte{0, 1, 2, 0x80, 0xff, 0x53}
 	for _, c := range []byte{0, 1, 2, 0x8e, 0xff} {
@@ -190,10 +203,13 @@ func propFieldAxioms(t *rapid.T) {
 	}
 }
 
+// TestPropFieldAxioms checks all GF(2^8) field axioms over random triples.
 func TestPropFieldAxioms(t *testing.T) {
 	rapid.Check(t, propFieldAxioms)
 }
 
+// TestFieldAxiomsExhaustivePairs checks the field axioms over every (a, b) byte
+// pair with a derived third operand.
 func TestFieldAxiomsExhaustivePairs(t *testing.T) {
 	for a := 0; a < 256; a++ {
 		for b := 0; b < 256; b++ {
@@ -204,6 +220,7 @@ func TestFieldAxiomsExhaustivePairs(t *testing.T) {
 	}
 }
 
+// FuzzGF256 fuzzes the GF(2^8) field axioms on arbitrary byte inputs.
 func FuzzGF256(f *testing.F) {
 	for _, seed := range gf256FuzzSeeds() {
 		f.Add(seed)

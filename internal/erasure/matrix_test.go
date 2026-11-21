@@ -18,6 +18,8 @@ func mustMatrix(t testing.TB, rows [][]byte) erasure.Matrix {
 	return m
 }
 
+// TestMatrixInvert proves Invert satisfies both m*inv=I and inv*m=I (including
+// row swaps) and returns ErrSingular or ErrInvalidConfig on singular or non-square inputs.
 func TestMatrixInvert(t *testing.T) {
 	cases := []struct {
 		name string
@@ -68,6 +70,8 @@ func TestMatrixInvert(t *testing.T) {
 	}
 }
 
+// TestMatrixInvertLeavesInputUnchanged proves Invert, NewMatrix, and Rows do
+// not share mutable backing slices with callers.
 func TestMatrixInvertLeavesInputUnchanged(t *testing.T) {
 	rows := [][]byte{{0, 1}, {1, 1}}
 	m := mustMatrix(t, rows)
@@ -88,6 +92,8 @@ func TestMatrixInvertLeavesInputUnchanged(t *testing.T) {
 	}
 }
 
+// TestNewMatrixRejectsBadShapes proves NewMatrix returns ErrInvalidConfig on
+// empty or ragged row slices.
 func TestNewMatrixRejectsBadShapes(t *testing.T) {
 	cases := []struct {
 		name string
@@ -106,6 +112,8 @@ func TestNewMatrixRejectsBadShapes(t *testing.T) {
 	}
 }
 
+// TestMatrixMulShapes proves Mul computes products, rejects mismatched
+// dimensions, and that Equal and Dims reflect matrix shapes and entries.
 func TestMatrixMulShapes(t *testing.T) {
 	a := mustMatrix(t, [][]byte{{1, 2, 3}})
 	b := mustMatrix(t, [][]byte{{1}, {1}, {1}})
@@ -127,6 +135,8 @@ func TestMatrixMulShapes(t *testing.T) {
 	}
 }
 
+// TestMatrixSelectRows proves SelectRows extracts requested rows in order and
+// returns ErrInvalidConfig on empty or out-of-range indices.
 func TestMatrixSelectRows(t *testing.T) {
 	m := mustMatrix(t, [][]byte{{1, 2}, {3, 4}, {5, 6}})
 	s, err := m.SelectRows([]int{2, 0})
@@ -143,6 +153,8 @@ func TestMatrixSelectRows(t *testing.T) {
 	}
 }
 
+// TestCodingMatrixIsSystematicCauchy proves CodingMatrix(4, 2) equals the
+// exact systematic Cauchy matrix [I; C] and rejects invalid (k, m).
 func TestCodingMatrixIsSystematicCauchy(t *testing.T) {
 	m, err := erasure.CodingMatrix(4, 2)
 	if err != nil {
@@ -162,6 +174,7 @@ func TestCodingMatrixIsSystematicCauchy(t *testing.T) {
 	}
 }
 
+// combinations invokes fn with every k-element subset of [0, n) in lexicographical order.
 func combinations(n, k int, fn func([]int) bool) {
 	idx := make([]int, k)
 	for i := range idx {
@@ -201,6 +214,8 @@ func checkSubmatrixInvertible(t rapid.TB, m erasure.Matrix, rows []int) {
 	}
 }
 
+// TestMDSExhaustiveSmall proves every k-by-k submatrix of CodingMatrix(k, m) is
+// invertible for all 1 <= k <= 6 and 0 <= m <= 6.
 func TestMDSExhaustiveSmall(t *testing.T) {
 	for k := 1; k <= 6; k++ {
 		for m := 0; m <= 6; m++ {
@@ -216,6 +231,8 @@ func TestMDSExhaustiveSmall(t *testing.T) {
 	}
 }
 
+// TestPropMDS proves randomly sampled k-by-k submatrices of CodingMatrix(k, m)
+// are invertible for k, m up to 64.
 func TestPropMDS(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		k := rapid.IntRange(1, 64).Draw(t, "k")
@@ -229,6 +246,8 @@ func TestPropMDS(t *testing.T) {
 	})
 }
 
+// TestMDSAtTheFieldLimit proves all-parity and mixed 128-row submatrices are
+// invertible at the k=128, m=128 field limit.
 func TestMDSAtTheFieldLimit(t *testing.T) {
 	cm, err := erasure.CodingMatrix(128, 128)
 	if err != nil {
@@ -246,6 +265,8 @@ func TestMDSAtTheFieldLimit(t *testing.T) {
 	checkSubmatrixInvertible(t, cm, mixed)
 }
 
+// TestIdentityOfNonPositiveOrHugeSizeIsEmpty proves Identity returns a safe
+// 0x0 matrix instead of panicking for non-positive or overflowing n.
 func TestIdentityOfNonPositiveOrHugeSizeIsEmpty(t *testing.T) {
 	for _, n := range []int{0, -1, -2, math.MinInt, math.MaxInt, 1 << 32} {
 		id := erasure.Identity(n)

@@ -24,6 +24,8 @@ func benchStripe(b *testing.B) (*erasure.Codec, [][]byte) {
 	return codec, shards
 }
 
+// BenchmarkEncode1MiBStripe measures parity encoding throughput on a 1 MiB
+// stripe with k=4, m=2 while reusing parity buffers.
 func BenchmarkEncode1MiBStripe(b *testing.B) {
 	codec, shards := benchStripe(b)
 	b.SetBytes(1 << 20)
@@ -34,6 +36,8 @@ func BenchmarkEncode1MiBStripe(b *testing.B) {
 	}
 }
 
+// BenchmarkReconstructTwoDataShards1MiBStripe measures ReconstructData
+// throughput when two data shards of a 1 MiB (4+2) stripe are missing.
 func BenchmarkReconstructTwoDataShards1MiBStripe(b *testing.B) {
 	codec, shards := benchStripe(b)
 	b.SetBytes(1 << 20)
@@ -45,6 +49,8 @@ func BenchmarkReconstructTwoDataShards1MiBStripe(b *testing.B) {
 	}
 }
 
+// BenchmarkReconstructAllMissing1MiBStripe measures Reconstruct throughput when
+// one data shard and one parity shard of a 1 MiB (4+2) stripe are missing.
 func BenchmarkReconstructAllMissing1MiBStripe(b *testing.B) {
 	codec, shards := benchStripe(b)
 	b.SetBytes(1 << 20)

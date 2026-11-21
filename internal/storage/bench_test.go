@@ -9,6 +9,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// BenchmarkStripedPutGet8MiB and BenchmarkStripedPutGet32MiB measure simulated
+// PUT+GET throughput, peak live heap above baseline, and durable disk usage for
+// 8 MiB and 32 MiB objects on 9 nodes under the default 4+2 layout.
 func BenchmarkStripedPutGet8MiB(b *testing.B)  { benchPutGet(b, 8<<20) }
 func BenchmarkStripedPutGet32MiB(b *testing.B) { benchPutGet(b, 32<<20) }
 

@@ -7,6 +7,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/erasure"
 )
 
+// Default striping parameters (4+2 coding, 1 MiB stripes) and the maximum
+// stripe payload size (64 MiB).
 const (
 	DefaultK          = 4
 	DefaultM          = 2
@@ -14,15 +16,20 @@ const (
 	MaxStripeSize     = 64 << 20
 )
 
+// Layout configures Reed-Solomon parameters (K data, M parity) and the maximum
+// byte length of each object stripe.
 type Layout struct {
 	K, M       int
 	StripeSize int
 }
 
+// DefaultLayout returns the default 4+2 layout with 1 MiB stripes.
 func DefaultLayout() Layout {
 	return Layout{K: DefaultK, M: DefaultM, StripeSize: DefaultStripeSize}
 }
 
+// Validate checks that (K, M) is a valid erasure code and StripeSize is in
+// [K, MaxStripeSize]. It returns ErrInvalid (joined with any erasure error) on failure.
 func (l Layout) Validate() error {
 	if _, err := erasure.New(l.K, l.M); err != nil {
 		return fmt.Errorf("storage: layout: %w", errors.Join(ErrInvalid, err))
@@ -33,6 +40,7 @@ func (l Layout) Validate() error {
 	return nil
 }
 
+// Codec validates l and returns the corresponding *erasure.Codec.
 func (l Layout) Codec() (*erasure.Codec, error) {
 	if err := l.Validate(); err != nil {
 		return nil, err
@@ -40,6 +48,8 @@ func (l Layout) Codec() (*erasure.Codec, error) {
 	return erasure.New(l.K, l.M)
 }
 
+// Stripes returns the number of stripes needed for an object of size bytes,
+// or 0 when size <= 0 or l.StripeSize <= 0.
 func (l Layout) Stripes(size int64) int {
 	if size <= 0 || l.StripeSize <= 0 {
 		return 0
@@ -47,6 +57,8 @@ func (l Layout) Stripes(size int64) int {
 	return int((size-1)/int64(l.StripeSize) + 1)
 }
 
+// StripeLen returns the unpadded byte length of stripe i for an object of size
+// bytes, or 0 if i is out of range.
 func (l Layout) StripeLen(size int64, i int) int {
 	if i < 0 || i >= l.Stripes(size) {
 		return 0
@@ -55,6 +67,9 @@ func (l Layout) StripeLen(size int64, i int) int {
 	return int(min(size-lo, int64(l.StripeSize)))
 }
 
+// EncodeStripe splits data into k+m erasure-coded shards and wraps each in a
+// checksummed shard blob for object version v and stripe index stripe. It
+// returns ErrInvalid if len(data) > MaxStripeSize.
 func EncodeStripe(codec *erasure.Codec, v VersionID, stripe uint32, data []byte) ([][]byte, error) {
 	if len(data) > MaxStripeSize {
 		return nil, fmt.Errorf("storage: encode stripe %d: %d bytes over %d: %w", stripe, len(data), MaxStripeSize, ErrInvalid)
@@ -74,6 +89,8 @@ func EncodeStripe(codec *erasure.Codec, v VersionID, stripe uint32, data []byte)
 	return blobs, nil
 }
 
+// shardExpect holds the expected header attributes used to validate every shard
+// belonging to one stripe during decoding.
 type shardExpect struct {
 	k, m      int
 	version   VersionID
@@ -86,6 +103,8 @@ func expectFor(codec *erasure.Codec, v VersionID, stripe uint32, dataLen int) sh
 	return shardExpect{k: codec.K(), m: codec.M(), version: v, stripe: stripe, shardSize: codec.ShardSize(dataLen), length: dataLen}
 }
 
+// verify decodes blob and checks its code shape, identity, payload length, and
+// optional manifest checksum, returning ErrCorrupt on any mismatch.
 func (e shardExpect) verify(index int, blob []byte, want *[32]byte) ([]byte, error) {
 	h, payload, err := DecodeShard(blob)
 	if err != nil {
@@ -117,6 +136,12 @@ func decodeVerified(codec *erasure.Codec, stripe uint32, dataLen int, payloads [
 	return data, nil
 }
 
+// DecodeStripe verifies each non-nil shard blob (and checks it against want[i]
+// when want is non-nil), treats rejected blobs as erasures, and reconstructs
+// the stripe's dataLen bytes. It returns the recovered data, the indices of
+// present blobs that failed verification, and an error (ErrInvalid for bad
+// argument shapes, or ErrUnavailable joined with per-shard causes if fewer than
+// k blobs verified).
 func DecodeStripe(codec *erasure.Codec, v VersionID, stripe uint32, dataLen int, blobs [][]byte, want [][32]byte) ([]byte, []int, error) {
 	n := codec.N()
 	if len(blobs) != n || want != nil && len(want) != n || dataLen < 0 || dataLen > MaxStripeSize {

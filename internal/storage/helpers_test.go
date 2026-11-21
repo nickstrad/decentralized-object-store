@@ -15,6 +15,8 @@ func (idleProcess) OnDatagram(env.NodeID, []byte)           {}
 func (idleProcess) OnRequest(env.NodeID, []byte, env.Reply) {}
 func (idleProcess) EncodeState() []byte                     { return nil }
 
+// simDisk starts a single-node simulator and returns its simulation, node ID,
+// and disk handle for ChunkStore unit tests.
 func simDisk(t testing.TB) (*sim.Sim, env.NodeID, env.Disk) {
 	t.Helper()
 	s := sim.New(sim.Config{Seed: 1})
@@ -36,6 +38,8 @@ func simDisk(t testing.TB) (*sim.Sim, env.NodeID, env.Disk) {
 	return s, id, disk
 }
 
+// restartableDisk wraps a single-node simulator so crash tests can drop
+// unsynced writes and obtain the restarted incarnation's disk handle.
 type restartableDisk struct {
 	s    *sim.Sim
 	id   env.NodeID

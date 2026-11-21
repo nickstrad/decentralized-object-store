@@ -23,6 +23,8 @@ func mustEncodeShard(t testing.TB, h storage.ShardHeader, payload []byte) []byte
 	return b
 }
 
+// TestShardRoundTrip proves EncodeShard and DecodeShard preserve all header
+// fields and payloads and match SHA-256(header[0:32] || payload).
 func TestShardRoundTrip(t *testing.T) {
 	for _, payload := range [][]byte{{}, {1}, bytes.Repeat([]byte{0xab}, 4099)} {
 		h := sampleHeader()
@@ -52,6 +54,8 @@ func TestShardRoundTrip(t *testing.T) {
 	}
 }
 
+// TestShardHeaderGolden pins the exact big-endian 32-byte header layout so
+// accidental wire-format drift is caught.
 func TestShardHeaderGolden(t *testing.T) {
 	blob := mustEncodeShard(t, sampleHeader(), []byte{1, 2, 3})
 	want := []byte{'O', 'S', 'S', 'H', 1, 0, 0, 4, 0, 2, 0, 5, 0, 0, 0, 7, 0, 0, 0, 3,
@@ -61,6 +65,8 @@ func TestShardHeaderGolden(t *testing.T) {
 	}
 }
 
+// TestEncodeShardRejectsBadHeaders proves EncodeShard rejects invalid (K, M, Index)
+// shapes with ErrInvalid while accepting the k+m=256 boundary.
 func TestEncodeShardRejectsBadHeaders(t *testing.T) {
 	cases := []struct {
 		name string
@@ -94,6 +100,9 @@ func resum(b []byte) []byte {
 	return b
 }
 
+// TestDecodeShardMalformedTable proves DecodeShard returns ErrCorrupt for
+// truncated, oversized, bad-magic, bad-version, reserved-byte, invalid-shape,
+// and single-bit-flipped header, payload, or checksum inputs.
 func TestDecodeShardMalformedTable(t *testing.T) {
 	good := mustEncodeShard(t, sampleHeader(), []byte("payload bytes"))
 	edit := func(f func(b []byte) []byte) []byte { return f(append([]byte{}, good...)) }
@@ -126,6 +135,8 @@ func TestDecodeShardMalformedTable(t *testing.T) {
 	}
 }
 
+// TestBlobNames proves BlobName, ParseBlobName, and StripeGroup round-trip
+// canonical shard paths and reject non-canonical or malformed paths.
 func TestBlobNames(t *testing.T) {
 	id := storage.ShardID{Bucket: "photos", Version: 0xfeed, Stripe: 12, Index: 3}
 	name := id.BlobName()
@@ -155,6 +166,8 @@ func TestBlobNames(t *testing.T) {
 	}
 }
 
+// TestBucketNames proves ValidBucket accepts 1..63-byte lowercase names and
+// rejects empty, uppercase, path-containing, or over-length names.
 func TestBucketNames(t *testing.T) {
 	ok := []string{"a", "photos", "my-bucket.2026", "0123456789012345678901234567890123456789012345678901234567890ab"}
 	bad := []string{"", "Photos", "a/b", "a b", "../x", string(make([]byte, 64))}
@@ -170,6 +183,9 @@ func TestBucketNames(t *testing.T) {
 	}
 }
 
+// FuzzShardDecode fuzzes DecodeShard on arbitrary bytes to prove it never
+// panics, rejects bad blobs with ErrCorrupt, and only accepts blobs whose
+// checksum and length match and that re-encode byte-identically.
 func FuzzShardDecode(f *testing.F) {
 	good, err := storage.EncodeShard(sampleHeader(), []byte("payload bytes"))
 	if err != nil {

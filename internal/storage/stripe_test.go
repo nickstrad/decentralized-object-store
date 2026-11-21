@@ -14,6 +14,8 @@ import (
 	"pgregory.net/rapid"
 )
 
+// TestLayoutTable proves Layout.Validate, Codec, Stripes, and StripeLen handle
+// valid, boundary, invalid, and overflowing configurations.
 func TestLayoutTable(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -88,6 +90,8 @@ func encodeStripe(t rapid.TB, codec *erasure.Codec, v storage.VersionID, stripe 
 	return blobs, sums
 }
 
+// TestEncodeDecodeStripe proves EncodeStripe and DecodeStripe round-trip clean
+// and missing-shard stripes and reject wrong slice lengths or fewer than k shards.
 func TestEncodeDecodeStripe(t *testing.T) {
 	codec, err := erasure.New(4, 2)
 	mustNil(t, err)
@@ -130,6 +134,8 @@ func TestEncodeDecodeStripe(t *testing.T) {
 	}
 }
 
+// TestEncodeStripeRejectsOversizedData proves EncodeStripe returns ErrInvalid
+// when data exceeds MaxStripeSize.
 func TestEncodeStripeRejectsOversizedData(t *testing.T) {
 	codec, err := erasure.New(1, 0)
 	mustNil(t, err)
@@ -236,6 +242,10 @@ func propCorruptionBecomesErasure(t *rapid.T) {
 	}
 }
 
+// TestPropCorruptionBecomesErasure proves DecodeStripe detects bit flips,
+// truncation, extension, empty, missing, and swapped shards (by index, stripe,
+// or version), recovers exact bytes for <= m damaged shards, reports every
+// damaged present shard, and returns ErrUnavailable for > m.
 func TestPropCorruptionBecomesErasure(t *testing.T) {
 	rapid.Check(t, propCorruptionBecomesErasure)
 }
@@ -261,6 +271,8 @@ func (r *recordingTB) Skipf(string, ...any)  {}
 func (r *recordingTB) Skip(...any)           {}
 func (r *recordingTB) SkipNow()              {}
 
+// runPlanted runs a rapid property against a recording TB with rapid fail-file
+// output suppressed and reports whether the property failed.
 func runPlanted(t *testing.T, prop func(*rapid.T)) bool {
 	t.Helper()
 	old := flag.Lookup("rapid.nofailfile").Value.String()
@@ -271,6 +283,9 @@ func runPlanted(t *testing.T, prop func(*rapid.T)) bool {
 	return inner.failed
 }
 
+// TestCanaryChecksumSkipBreaksCorruptionProperty plants a bug that skips
+// SHA-256 verification in DecodeShard and proves propCorruptionBecomesErasure
+// passes without the plant and fails with it.
 func TestCanaryChecksumSkipBreaksCorruptionProperty(t *testing.T) {
 	if runPlanted(t, propCorruptionBecomesErasure) {
 		t.Fatal("the property fails without the planted bug")
@@ -289,6 +304,10 @@ func TestCanaryChecksumSkipBreaksCorruptionProperty(t *testing.T) {
 	}
 }
 
+// TestDecodeStripeRejectsForgedShards proves header and manifest-checksum
+// checks reject a self-consistent forged shard, a shard from another code, and
+// a wrong-length shard, and shows that without manifest checksums a forged
+// shard would decode wrong bytes.
 func TestDecodeStripeRejectsForgedShards(t *testing.T) {
 	codec, err := erasure.New(2, 1)
 	mustNil(t, err)

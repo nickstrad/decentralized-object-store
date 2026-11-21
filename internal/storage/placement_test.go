@@ -35,6 +35,9 @@ func regionCounts(ms storage.StaticMembership, placed []env.NodeID) map[env.Regi
 	return out
 }
 
+// TestPlacementTable proves Place chooses distinct members, honors the region
+// cap (at most m when regions allow, even spread otherwise), is deterministic,
+// and returns ErrInvalid or ErrUnavailable on invalid inputs.
 func TestPlacementTable(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -93,6 +96,8 @@ func TestPlacementTable(t *testing.T) {
 	}
 }
 
+// TestPlacementSpreadsLoad proves rendezvous placement over 3,000 stripes on
+// 7/7/6 nodes keeps every node's shard count within [700, 1100].
 func TestPlacementSpreadsLoad(t *testing.T) {
 	ms := members(7, 7, 6)
 	load := map[env.NodeID]int{}
@@ -112,6 +117,8 @@ func TestPlacementSpreadsLoad(t *testing.T) {
 	}
 }
 
+// TestPlacementIgnoresMemberOrder proves reversing the Membership slice yields
+// identical shard placements.
 func TestPlacementIgnoresMemberOrder(t *testing.T) {
 	ms := members(4, 4, 4)
 	rev := slices.Clone(ms)
@@ -128,6 +135,8 @@ func TestPlacementIgnoresMemberOrder(t *testing.T) {
 	}
 }
 
+// TestRegionCap proves RegionCap returns max(m, c*) across balanced, skewed,
+// single-region, m=0, and under-provisioned topologies.
 func TestRegionCap(t *testing.T) {
 	cases := []struct {
 		ms   storage.StaticMembership
@@ -149,6 +158,9 @@ func TestRegionCap(t *testing.T) {
 	}
 }
 
+// TestReplaceKeepsLiveShards proves Replace retains every live holder at its
+// original shard index, fills only departed or duplicate slots within the region
+// cap, and rejects empty or under-sized inputs.
 func TestReplaceKeepsLiveShards(t *testing.T) {
 	ms := members(7, 7, 6)
 	key := storage.StripeKey("b", 5, 0)
@@ -203,6 +215,9 @@ func drawMembership(t *rapid.T, label string) storage.StaticMembership {
 	return members(counts...)
 }
 
+// TestPropPlacementStable proves that when a single-node addition or removal
+// does not change RegionCap, Place swaps at most that node and Replace moves
+// 1 shard on holder removal and 0 on addition.
 func TestPropPlacementStable(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		ms := drawMembership(t, "base")
@@ -277,6 +292,8 @@ func diff(a, b []env.NodeID) []env.NodeID {
 	return out
 }
 
+// TestReplaceWhenTheRegionCapShrinks proves Replace evicts only the minimum
+// shards needed from over-cap regions when a new region lowers RegionCap.
 func TestReplaceWhenTheRegionCapShrinks(t *testing.T) {
 	two := members(5, 5)
 	key := storage.StripeKey("b", 9, 0)

@@ -8,10 +8,14 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// ChunkStore stores verified, immutable shard blobs on an env.Disk.
+// Every read verifies the shard header, checksum, and ShardID match; every
+// successful Put or Delete syncs before returning so its result survives a crash.
 type ChunkStore struct {
 	disk env.Disk
 }
 
+// NewChunkStore returns a ChunkStore backed by d.
 func NewChunkStore(d env.Disk) *ChunkStore { return &ChunkStore{disk: d} }
 
 func matches(id ShardID, h ShardHeader) bool {
@@ -44,6 +48,9 @@ func (s *ChunkStore) read(id ShardID) ([]byte, error) {
 	return blob, nil
 }
 
+// Get reads and verifies shard id, returning its header and payload. It returns
+// ErrInvalid for a bad bucket, ErrNotFound (joined with env.ErrNotFound) if
+// absent, ErrCorrupt if verification fails, or the underlying disk error.
 func (s *ChunkStore) Get(id ShardID) (ShardHeader, []byte, error) {
 	blob, err := s.read(id)
 	if err != nil {
@@ -56,6 +63,8 @@ func (s *ChunkStore) Get(id ShardID) (ShardHeader, []byte, error) {
 	return h, payload, nil
 }
 
+// GetBlob reads and verifies shard id, returning the complete encoded blob.
+// Error semantics match Get.
 func (s *ChunkStore) GetBlob(id ShardID) ([]byte, error) {
 	blob, err := s.read(id)
 	if err != nil {
@@ -67,6 +76,11 @@ func (s *ChunkStore) GetBlob(id ShardID) ([]byte, error) {
 	return blob, nil
 }
 
+// Put verifies blob against id, writes it to disk, and syncs before returning.
+// Identical bytes already on disk are synced and accepted (idempotent); a valid
+// shard with different bytes returns ErrExists; a corrupt existing blob is
+// overwritten (repaired). A malformed or mismatched blob returns ErrCorrupt
+// without writing.
 func (s *ChunkStore) Put(id ShardID, blob []byte) error {
 	if err := id.Validate(); err != nil {
 		return err
@@ -79,6 +93,8 @@ func (s *ChunkStore) Put(id ShardID, blob []byte) error {
 	switch {
 	case err == nil:
 		if bytes.Equal(old, blob) {
+			// Sync even on a match: the existing bytes may only be in the
+			// unsynced written layer after an earlier failed Sync.
 			if err := s.disk.Sync(name); err != nil {
 				return fmt.Errorf("storage: put shard %s: sync: %w", name, err)
 			}
@@ -99,6 +115,9 @@ func (s *ChunkStore) Put(id ShardID, blob []byte) error {
 	return nil
 }
 
+// Delete removes shard id and syncs the removal so it stays deleted across a
+// crash. If the shard is absent from the written layer, Delete still syncs any
+// pending deletion before returning ErrNotFound (joined with env.ErrNotFound).
 func (s *ChunkStore) Delete(id ShardID) error {
 	if err := id.Validate(); err != nil {
 		return err
@@ -108,6 +127,8 @@ func (s *ChunkStore) Delete(id ShardID) error {
 		if !errors.Is(err, env.ErrNotFound) {
 			return fmt.Errorf("storage: delete shard %s: %w", name, err)
 		}
+		// Flush a prior unsynced deletion; env.ErrNotFound from Sync means
+		// nothing existed in the durable layer either.
 		if serr := s.disk.Sync(name); serr != nil && !errors.Is(serr, env.ErrNotFound) {
 			return fmt.Errorf("storage: delete shard %s: sync: %w", name, serr)
 		}
@@ -126,6 +147,7 @@ func (s *ChunkStore) list(prefix string) ([]ShardID, error) {
 	}
 	out := make([]ShardID, 0, len(names))
 	for _, n := range names {
+		// Skip stray or non-canonical entries on disk rather than failing the listing.
 		if id, err := ParseBlobName(n); err == nil {
 			out = append(out, id)
 		}
@@ -133,6 +155,8 @@ func (s *ChunkStore) list(prefix string) ([]ShardID, error) {
 	return out, nil
 }
 
+// List returns all canonical ShardIDs stored under bucket in disk name order.
+// It returns ErrInvalid for an invalid bucket name.
 func (s *ChunkStore) List(bucket string) ([]ShardID, error) {
 	if err := ValidBucket(bucket); err != nil {
 		return nil, err
@@ -140,6 +164,8 @@ func (s *ChunkStore) List(bucket string) ([]ShardID, error) {
 	return s.list(blobPrefix + bucket + "/")
 }
 
+// ListVersion returns all canonical ShardIDs for version v in bucket in disk
+// name order. It returns ErrInvalid for an invalid bucket name.
 func (s *ChunkStore) ListVersion(bucket string, v VersionID) ([]ShardID, error) {
 	if err := ValidBucket(bucket); err != nil {
 		return nil, err

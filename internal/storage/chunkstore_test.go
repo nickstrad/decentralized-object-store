@@ -21,6 +21,9 @@ func shardFor(t rapid.TB, id storage.ShardID, payload []byte) []byte {
 	return b
 }
 
+// TestChunkStoreTable proves ChunkStore Get, GetBlob, Put, and Delete behavior
+// across missing, valid, idempotent, conflicting, bit-rotted, repaired, torn,
+// misnamed, malformed, deleted, and bad-bucket cases.
 func TestChunkStoreTable(t *testing.T) {
 	id := storage.ShardID{Bucket: "b", Version: 9, Stripe: 1, Index: 2}
 	other := storage.ShardID{Bucket: "b", Version: 9, Stripe: 1, Index: 3}
@@ -157,6 +160,8 @@ func TestChunkStoreTable(t *testing.T) {
 	}
 }
 
+// TestChunkStoreWipedDisk proves that after a disk wipe, Get returns
+// ErrNotFound and List returns empty.
 func TestChunkStoreWipedDisk(t *testing.T) {
 	s, node, d := simDisk(t)
 	st := storage.NewChunkStore(d)
@@ -177,6 +182,8 @@ func TestChunkStoreWipedDisk(t *testing.T) {
 	}
 }
 
+// TestChunkStoreWritesAreDurable proves Put and Delete both sync to the
+// durable disk layer before returning.
 func TestChunkStoreWritesAreDurable(t *testing.T) {
 	s, node, d := simDisk(t)
 	st := storage.NewChunkStore(d)
@@ -194,6 +201,8 @@ func TestChunkStoreWritesAreDurable(t *testing.T) {
 	}
 }
 
+// TestChunkStoreIOErrors proves injected disk read errors pass through as
+// env.ErrIO rather than being misclassified as ErrCorrupt or ErrNotFound.
 func TestChunkStoreIOErrors(t *testing.T) {
 	s, node, d := simDisk(t)
 	st := storage.NewChunkStore(d)
@@ -210,6 +219,8 @@ func TestChunkStoreIOErrors(t *testing.T) {
 	}
 }
 
+// TestChunkStoreList proves List and ListVersion return only canonical shard
+// IDs for the requested bucket or version, skip stray entries, and reject bad buckets.
 func TestChunkStoreList(t *testing.T) {
 	_, _, d := simDisk(t)
 	st := storage.NewChunkStore(d)
@@ -306,6 +317,9 @@ func (m *chunkModel) crash() {
 	m.dirty = map[storage.ShardID]bool{}
 }
 
+// TestPropChunkStoreModel checks random sequences of Put, Delete, bit-rot,
+// unsynced disk writes/deletes, and crashes against a two-layer reference model,
+// verifying durability after every Put/Delete and every key after every step.
 func TestPropChunkStoreModel(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		rd := newRestartableDisk(rt)
@@ -442,6 +456,8 @@ func TestPropChunkStoreModel(t *testing.T) {
 	})
 }
 
+// TestChunkStorePutOfUnsyncedIdenticalBytesIsDurable proves Put syncs even
+// when matching bytes already exist in the unsynced written layer.
 func TestChunkStorePutOfUnsyncedIdenticalBytesIsDurable(t *testing.T) {
 	rd := newRestartableDisk(t)
 	st := storage.NewChunkStore(rd.disk)
@@ -457,6 +473,8 @@ func TestChunkStorePutOfUnsyncedIdenticalBytesIsDurable(t *testing.T) {
 	}
 }
 
+// TestChunkStoreSecondPutAfterAFailedSyncIsDurable proves repeated Puts over
+// an initially unsynced write leave the shard durable across a crash.
 func TestChunkStoreSecondPutAfterAFailedSyncIsDurable(t *testing.T) {
 	rd := newRestartableDisk(t)
 	st := storage.NewChunkStore(rd.disk)
@@ -471,6 +489,9 @@ func TestChunkStoreSecondPutAfterAFailedSyncIsDurable(t *testing.T) {
 	}
 }
 
+// TestChunkStoreDeleteOfAnUnsyncedRemovalIsDurable proves Delete syncs a prior
+// unsynced deletion before returning ErrNotFound so the shard does not return
+// after a crash.
 func TestChunkStoreDeleteOfAnUnsyncedRemovalIsDurable(t *testing.T) {
 	rd := newRestartableDisk(t)
 	st := storage.NewChunkStore(rd.disk)
@@ -487,6 +508,8 @@ func TestChunkStoreDeleteOfAnUnsyncedRemovalIsDurable(t *testing.T) {
 	}
 }
 
+// TestChunkStoreClosedDiskAndBadBuckets proves invalid buckets return
+// ErrInvalid and operations on a closed disk return env.ErrClosed.
 func TestChunkStoreClosedDiskAndBadBuckets(t *testing.T) {
 	s, node, d := simDisk(t)
 	st := storage.NewChunkStore(d)

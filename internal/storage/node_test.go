@@ -57,6 +57,8 @@ type putResult struct {
 	done bool
 }
 
+// put runs Node.Put to completion and asserts its callback fires exactly once
+// and never synchronously inside Put.
 func put(t testing.TB, s *sim.Sim, n *storage.Node, bucket, key string, data []byte) putResult {
 	t.Helper()
 	var r putResult
@@ -84,6 +86,8 @@ type getResult struct {
 	done bool
 }
 
+// get runs Node.Get to completion and asserts its callback fires exactly once
+// and never synchronously inside Get.
 func get(t testing.TB, s *sim.Sim, n *storage.Node, man *storage.Manifest) getResult {
 	t.Helper()
 	var r getResult
@@ -107,6 +111,9 @@ func get(t testing.TB, s *sim.Sim, n *storage.Node, man *storage.Manifest) getRe
 
 func smallLayout() storage.Layout { return storage.Layout{K: 4, M: 2, StripeSize: 64} }
 
+// TestNodePutGet proves objects from 0 to 4099 bytes write durably with at most
+// m shards per region and read back byte-identically from every node using k
+// requests per stripe.
 func TestNodePutGet(t *testing.T) {
 	for _, size := range []int{0, 1, 3, 4, 5, 63, 64, 65, 641, 4099} {
 		t.Run(fmt.Sprintf("size=%d", size), func(t *testing.T) {
@@ -153,6 +160,9 @@ func TestNodePutGet(t *testing.T) {
 	}
 }
 
+// TestNodeGetFallsBackToParity proves GET recovers exact bytes via parity when
+// m shards per stripe are bit-rotted and returns an *ObjectError wrapping
+// ErrUnavailable and remote ErrCorrupt causes when m+1 shards are rotted.
 func TestNodeGetFallsBackToParity(t *testing.T) {
 	s, ids, cfg := newCluster(t, 2, 9, 3, smallLayout())
 	data := bytes.Repeat([]byte("0123456789"), 30)
@@ -188,6 +198,9 @@ func TestNodeGetFallsBackToParity(t *testing.T) {
 	}
 }
 
+// TestNodePutUnavailable proves PUT fails with an *ObjectError wrapping
+// ErrUnavailable and env.ErrUnreachable when fewer than k+1 holders are up, and
+// succeeds once k+1 holders are reachable.
 func TestNodePutUnavailable(t *testing.T) {
 	s, ids, cfg := newCluster(t, 3, 6, 3, smallLayout())
 	mustNil(t, s.Crash(ids[4]))
@@ -210,6 +223,8 @@ func TestNodePutUnavailable(t *testing.T) {
 	_ = cfg
 }
 
+// TestNodePutAcksAtQuorum proves PUT acknowledges as soon as k+1 holders reply
+// without waiting for a paused node to time out.
 func TestNodePutAcksAtQuorum(t *testing.T) {
 	s, ids, _ := newCluster(t, 4, 6, 3, smallLayout())
 	mustNil(t, s.Pause(ids[5]))
@@ -224,6 +239,9 @@ func TestNodePutAcksAtQuorum(t *testing.T) {
 	mustNil(t, s.RunUntilQuiet())
 }
 
+// TestNodeRejectsBadInput proves Put and Get reject bad buckets, empty keys,
+// and nil or invalid manifests with ErrInvalid, and return ErrUnavailable
+// wrapping ErrNotFound for an unwritten manifest.
 func TestNodeRejectsBadInput(t *testing.T) {
 	s, ids, _ := newCluster(t, 5, 6, 3, smallLayout())
 	n := nodeOf(t, s, ids[0])
@@ -251,6 +269,8 @@ func TestNodeRejectsBadInput(t *testing.T) {
 	}
 }
 
+// TestNodePutWithTooFewMembers proves Put returns ErrUnavailable (outside the
+// Put call) when membership has fewer than k+m nodes.
 func TestNodePutWithTooFewMembers(t *testing.T) {
 	codes, err := storage.Codes()
 	mustNil(t, err)
@@ -265,6 +285,8 @@ func TestNodePutWithTooFewMembers(t *testing.T) {
 	}
 }
 
+// TestNodePutUnlaunchableStripeLeavesAwaitingPeakZero proves a Put whose first
+// stripe fails placement leaves PutAwaitingPeak and PutOutstanding at zero.
 func TestNodePutUnlaunchableStripeLeavesAwaitingPeakZero(t *testing.T) {
 	codes, err := storage.Codes()
 	mustNil(t, err)
@@ -283,6 +305,8 @@ func TestNodePutUnlaunchableStripeLeavesAwaitingPeakZero(t *testing.T) {
 	}
 }
 
+// TestNodeDetectsContentMismatch proves Node.Get verifies the reassembled
+// object's SHA-256 against Manifest.ContentSHA and returns ErrCorrupt on mismatch.
 func TestNodeDetectsContentMismatch(t *testing.T) {
 	s, ids, _ := newCluster(t, 6, 6, 3, smallLayout())
 	p := put(t, s, nodeOf(t, s, ids[0]), "b", "k", []byte("content"))
@@ -294,6 +318,8 @@ func TestNodeDetectsContentMismatch(t *testing.T) {
 	}
 }
 
+// TestNodeShardProtocol proves OnRequest serves Put, Get, and Delete shard RPCs,
+// surfaces ErrNotFound/ErrExists/ErrCorrupt/ErrInvalid, and handles EncodeState and OnDatagram.
 func TestNodeShardProtocol(t *testing.T) {
 	s, ids, _ := newCluster(t, 7, 3, 1, storage.Layout{K: 1, M: 0, StripeSize: 8})
 	id := storage.ShardID{Bucket: "b", Version: 1, Stripe: 0, Index: 0}
@@ -348,6 +374,8 @@ func TestNodeShardProtocol(t *testing.T) {
 	nodeOf(t, s, ids[1]).OnDatagram(ids[0], []byte("ignored"))
 }
 
+// TestDecodeShardRequest proves EncodeShardRequest/DecodeShardRequest round-trip
+// a put request and reject non-empty bodies on get requests.
 func TestDecodeShardRequest(t *testing.T) {
 	id := storage.ShardID{Bucket: "b", Version: 3, Stripe: 4, Index: 5}
 	req := storage.EncodeShardRequest(storage.OpPutShard, id, []byte("blob"))
@@ -361,6 +389,8 @@ func TestDecodeShardRequest(t *testing.T) {
 	}
 }
 
+// TestConfigValidate proves Config.Validate and NewNode enforce quorum bounds,
+// non-nil membership, valid layout, and non-negative timeout and window values.
 func TestConfigValidate(t *testing.T) {
 	ms := clusterMembers(sim.NodeIDs(6), 3)
 	cases := []struct {
@@ -395,6 +425,9 @@ func TestConfigValidate(t *testing.T) {
 	}
 }
 
+// TestNodeGetRetriesTransientErrors proves GET retries transient env.ErrIO
+// failures after backoff to recover exact bytes and fails with ErrUnavailable
+// wrapping env.ErrIO within MaxShardAttempts when read errors persist.
 func TestNodeGetRetriesTransientErrors(t *testing.T) {
 	s, ids, cfg := newCluster(t, 8, 9, 3, smallLayout())
 	data := []byte("read errors pass; a retry after a backoff finds the shard")
@@ -429,6 +462,8 @@ func TestNodeGetRetriesTransientErrors(t *testing.T) {
 	}
 }
 
+// TestNodeStatsAndStore proves Node.Stats tracks completed puts, gets, and
+// served/issued requests and Node.Store exposes persisted shards.
 func TestNodeStatsAndStore(t *testing.T) {
 	s, ids, _ := newCluster(t, 9, 6, 3, smallLayout())
 	n := nodeOf(t, s, ids[0])

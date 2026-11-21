@@ -27,6 +27,9 @@ func (m *shrinkingMembership) Members() []storage.Member {
 	return m.full.Members()
 }
 
+// TestNodePutPlacementFailureNeverCallsBackInsideTheCall proves that a placement
+// error on stripe 0, 1, or 2 defers the callback out of Put and launches no
+// subsequent stripes.
 func TestNodePutPlacementFailureNeverCallsBackInsideTheCall(t *testing.T) {
 	for _, window := range []int{1, 4} {
 		for _, after := range []int{0, 1, 2} {
@@ -49,6 +52,8 @@ func TestNodePutPlacementFailureNeverCallsBackInsideTheCall(t *testing.T) {
 	}
 }
 
+// TestNodeCallbacksNeverRunInsideTheCall proves every early-return and valid
+// path of Node.Put and Node.Get invokes its callback exactly once after the call returns.
 func TestNodeCallbacksNeverRunInsideTheCall(t *testing.T) {
 	s, ids, _ := newCluster(t, 12, 6, 3, smallLayout())
 	n := nodeOf(t, s, ids[0])
@@ -81,6 +86,9 @@ func TestNodeCallbacksNeverRunInsideTheCall(t *testing.T) {
 	}
 }
 
+// TestNodePutWindowBoundsStripesAwaitingQuorum proves Window caps concurrent
+// stripes awaiting quorum (PutAwaitingPeak == 1) while allowing early acks with
+// one request per stripe still outstanding to a paused holder until RequestTimeout.
 func TestNodePutWindowBoundsStripesAwaitingQuorum(t *testing.T) {
 	const stripeSize = 4
 	for _, stripes := range []int{2, 8, 64} {
@@ -135,6 +143,8 @@ func TestNodePutWindowBoundsStripesAwaitingQuorum(t *testing.T) {
 	}
 }
 
+// TestNodeGetUsesTheManifestLayout proves Node.Get decodes objects written
+// under a different (K, M, StripeSize) layout than the reading node's Config.
 func TestNodeGetUsesTheManifestLayout(t *testing.T) {
 	codes, err := storage.Codes()
 	mustNil(t, err)
@@ -169,6 +179,8 @@ func TestNodeGetUsesTheManifestLayout(t *testing.T) {
 	}
 }
 
+// TestNodePutReleasesTheObjectAtTheAck proves a finished Put drops its
+// reference to the caller's object slice even while late shard requests wait.
 func TestNodePutReleasesTheObjectAtTheAck(t *testing.T) {
 	codes, err := storage.Codes()
 	mustNil(t, err)

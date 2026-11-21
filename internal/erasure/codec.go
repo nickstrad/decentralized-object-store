@@ -1,12 +1,25 @@
+// Package erasure implements systematic Reed-Solomon erasure coding over
+// GF(2^8) using a Cauchy coding matrix.
+//
+// The package is pure computation with no I/O or external dependencies. It
+// corrects up to m erasures at known positions; callers must detect corrupted
+// shards externally (for example by checksum) and pass them as nil slots. A nil
+// slot denotes a missing shard, whereas an empty non-nil slice []byte{} is a
+// present zero-length shard. Valid shapes satisfy k >= 1, m >= 0, and
+// k+m <= MaxShards (256).
 package erasure
 
 import "fmt"
 
+// Codec encodes data into k data and m parity shards and reconstructs missing
+// shards from any k present ones. A Codec is immutable after construction.
 type Codec struct {
 	k, m   int
 	matrix Matrix
 }
 
+// New constructs a Reed-Solomon Codec for k data shards and m parity shards.
+// It returns ErrInvalidConfig unless k >= 1, m >= 0, and k+m <= MaxShards.
 func New(k, m int) (*Codec, error) {
 	cm, err := CodingMatrix(k, m)
 	if err != nil {
@@ -15,25 +28,35 @@ func New(k, m int) (*Codec, error) {
 	return &Codec{k: k, m: m, matrix: cm}, nil
 }
 
+// K returns the number of data shards.
 func (c *Codec) K() int { return c.k }
 
+// M returns the number of parity shards.
 func (c *Codec) M() int { return c.m }
 
+// N returns the total number of shards (k + m).
 func (c *Codec) N() int { return c.k + c.m }
 
+// ShardSize returns the per-shard byte length required to hold dataLen bytes,
+// or 0 when dataLen <= 0.
 func (c *Codec) ShardSize(dataLen int) int {
 	if dataLen <= 0 {
 		return 0
 	}
+	// Subtract before dividing to avoid signed overflow near math.MaxInt.
 	return (dataLen-1)/c.k + 1
 }
 
+// Split divides data into k equal-length data shards (zero-padded in the tail)
+// followed by m zeroed parity shard buffers, all backed by one allocation.
+// For empty data every slot is an empty non-nil slice.
 func (c *Codec) Split(data []byte) [][]byte {
 	size := c.ShardSize(len(data))
 	buf := make([]byte, size*c.N())
 	copy(buf, data)
 	shards := make([][]byte, c.N())
 	for i := range shards {
+		// Full slice expressions prevent appends on one shard from overwriting the next.
 		shards[i] = buf[i*size : (i+1)*size : (i+1)*size]
 	}
 	return shards
@@ -46,6 +69,7 @@ func (c *Codec) checkCount(op string, shards [][]byte) error {
 	return nil
 }
 
+// dataSize validates that all k data shards are present and equal in length.
 func (c *Codec) dataSize(op string, shards [][]byte) (int, error) {
 	size := len(shards[0])
 	for i := 0; i < c.k; i++ {
@@ -59,6 +83,10 @@ func (c *Codec) dataSize(op string, shards [][]byte) (int, error) {
 	return size, nil
 }
 
+// Encode computes the m parity shards in shards[k:k+m] from the k data shards
+// in shards[:k]. Existing parity buffers of the exact shard length are reused
+// in place; nil or wrong-sized parity slots are reallocated. It returns
+// ErrShardCount, or a *ShardError wrapping ErrTooFewShards or ErrShardSize.
 func (c *Codec) Encode(shards [][]byte) error {
 	if err := c.checkCount("encode", shards); err != nil {
 		return err
@@ -83,6 +111,9 @@ func (c *Codec) encodeRow(row int, data [][]byte, dst []byte) {
 	}
 }
 
+// Verify checks that all k+m shards are present, equal in length, and satisfy
+// the coding equations. It returns ErrShardCount, or a *ShardError wrapping
+// ErrTooFewShards, ErrShardSize, or ErrParityMismatch for the first bad shard.
 func (c *Codec) Verify(shards [][]byte) error {
 	if err := c.checkCount("verify", shards); err != nil {
 		return err
@@ -109,10 +140,16 @@ func (c *Codec) Verify(shards [][]byte) error {
 	return nil
 }
 
+// Reconstruct rebuilds all missing (nil) data and parity shards in place from
+// any k present shards of equal length. On error shards is left unmodified. It
+// returns ErrShardCount, ErrTooFewShards, or a *ShardError wrapping ErrShardSize.
 func (c *Codec) Reconstruct(shards [][]byte) error {
 	return c.reconstruct("reconstruct", shards, true)
 }
 
+// ReconstructData rebuilds all missing (nil) data shards in place from any k
+// present shards of equal length, leaving missing parity shards nil. On error
+// shards is left unmodified.
 func (c *Codec) ReconstructData(shards [][]byte) error {
 	return c.reconstruct("reconstruct data", shards, false)
 }
@@ -122,6 +159,8 @@ func (c *Codec) reconstruct(op string, shards [][]byte, parity bool) error {
 		return err
 	}
 	size := -1
+	// Keep the first k present shard indices for decoding while validating all
+	// present shard lengths so mismatches beyond the first k are still caught.
 	present := make([]int, 0, c.k)
 	for i, s := range shards {
 		if s == nil {
@@ -163,6 +202,8 @@ func (c *Codec) reconstruct(op string, shards [][]byte, parity bool) error {
 	return nil
 }
 
+// rebuildData inverts the k-by-k submatrix for the present shard indices and
+// multiplies it by those shards to restore every missing data shard.
 func (c *Codec) rebuildData(op string, shards [][]byte, present []int, size int) error {
 	sub, err := c.matrix.SelectRows(present)
 	if err != nil {
@@ -199,6 +240,10 @@ func countPresent(shards [][]byte) int {
 	return n
 }
 
+// Join concatenates the k data shards and truncates the result to size bytes,
+// stripping Split's tail padding. It returns ErrShardCount, ErrShardSize (if
+// size is outside [0, shardSize*k] or data shards differ in length), or a
+// *ShardError wrapping ErrTooFewShards if any data shard is nil.
 func (c *Codec) Join(shards [][]byte, size int) ([]byte, error) {
 	if err := c.checkCount("join", shards); err != nil {
 		return nil, err

@@ -241,6 +241,11 @@ func stripedRun(mode dstMode, outs *[]*dstOutcome) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestStripedPutGetDST proves deterministic striped PUT/GET on a 20-node,
+// 3-region cluster under bit-rot, disk wipe, and transient read errors:
+// within-budget PUTs ack with at least k+1 durable shards per stripe and GETs
+// return exact bytes (or ErrUnavailable only with an env.ErrIO cause, never
+// wrong bytes); budget-lifted runs with m+1 rotted shards return ErrUnavailable.
 func TestStripedPutGetDST(t *testing.T) {
 	for _, mode := range []dstMode{{lifted: false}, {lifted: true}} {
 		name := "within-budget"
@@ -280,6 +285,8 @@ func TestStripedPutGetDST(t *testing.T) {
 	}
 }
 
+// TestCanaryChecksumSkipFailsStripedDST plants a bug that skips SHA-256
+// verification in DecodeShard and proves the striped DST catches it as ErrCorrupt.
 func TestCanaryChecksumSkipFailsStripedDST(t *testing.T) {
 	restore := storage.PlantSkipChecksum()
 	defer restore()

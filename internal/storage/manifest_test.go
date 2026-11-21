@@ -26,6 +26,8 @@ func sampleManifest(size int64) *storage.Manifest {
 	return man
 }
 
+// TestManifestRoundTrip proves Encode and DecodeManifest preserve all fields
+// and re-encode identically across empty, single-stripe, and multi-stripe sizes.
 func TestManifestRoundTrip(t *testing.T) {
 	for _, size := range []int64{0, 1, 8, 9, 17} {
 		man := sampleManifest(size)
@@ -48,6 +50,8 @@ func TestManifestRoundTrip(t *testing.T) {
 	}
 }
 
+// TestManifestValidate proves Validate and Encode return ErrInvalid for every
+// out-of-range bucket, key, size, layout, stripe count, shard count, or node ID.
 func TestManifestValidate(t *testing.T) {
 	cases := []struct {
 		name string
@@ -77,6 +81,8 @@ func TestManifestValidate(t *testing.T) {
 	}
 }
 
+// TestDecodeManifestMalformedTable proves DecodeManifest returns ErrCorrupt on
+// bad magic/version, truncated or trailing bytes, invalid fields, and non-minimal varints.
 func TestDecodeManifestMalformedTable(t *testing.T) {
 	good, err := sampleManifest(17).Encode()
 	mustNil(t, err)

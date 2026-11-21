@@ -8,6 +8,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// TestCodeTableRoundTrip proves every storage sentinel encodes to an
+// application wire code and decodes back matching both itself and env.ErrRemote.
 func TestCodeTableRoundTrip(t *testing.T) {
 	table, err := storage.Codes()
 	mustNil(t, err)
@@ -33,6 +35,8 @@ func TestCodeTableRoundTrip(t *testing.T) {
 	}
 }
 
+// TestObjectErrorMessage proves ObjectError formats its op, bucket, and key
+// and unwraps to its underlying sentinel.
 func TestObjectErrorMessage(t *testing.T) {
 	err := &storage.ObjectError{Op: "put", Bucket: "b", Key: "dir/k", Err: storage.ErrUnavailable}
 	if got, want := err.Error(), "storage: put b/dir/k: "+storage.ErrUnavailable.Error(); got != want {

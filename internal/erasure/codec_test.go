@@ -21,6 +21,8 @@ func mustCodec(t testing.TB, k, m int) *erasure.Codec {
 	return c
 }
 
+// TestNewConfigTable proves that New accepts all valid (k, m) shapes up to
+// k+m=256 (including m=0) and rejects invalid or overflowing shapes with ErrInvalidConfig.
 func TestNewConfigTable(t *testing.T) {
 	cases := []struct {
 		name string
@@ -61,6 +63,8 @@ func TestNewConfigTable(t *testing.T) {
 	}
 }
 
+// TestEncodeKnownVectors proves Encode produces exact parity bytes matching
+// independently computed vectors, leaves data shards untouched, and passes Verify.
 func TestEncodeKnownVectors(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -102,6 +106,8 @@ func TestEncodeKnownVectors(t *testing.T) {
 	}
 }
 
+// TestEncodeReusesParityBuffers proves Encode overwrites an existing
+// right-sized parity slice in place without reallocating it.
 func TestEncodeReusesParityBuffers(t *testing.T) {
 	codec := mustCodec(t, 2, 1)
 	buf := []byte{9, 9}
@@ -114,6 +120,8 @@ func TestEncodeReusesParityBuffers(t *testing.T) {
 	}
 }
 
+// TestShardErrors proves Encode, Verify, Reconstruct, and ReconstructData
+// return the expected sentinel errors and *ShardError indices on invalid slices.
 func TestShardErrors(t *testing.T) {
 	codec := mustCodec(t, 2, 1)
 	cases := []struct {
@@ -155,6 +163,8 @@ func TestShardErrors(t *testing.T) {
 	}
 }
 
+// TestShardErrorMessage proves ShardError.Error includes the shard index and
+// underlying sentinel text.
 func TestShardErrorMessage(t *testing.T) {
 	err := &erasure.ShardError{Index: 3, Err: erasure.ErrShardSize}
 	if got, want := err.Error(), "erasure: shard 3: "+erasure.ErrShardSize.Error(); got != want {
@@ -162,6 +172,8 @@ func TestShardErrorMessage(t *testing.T) {
 	}
 }
 
+// TestSplitAndJoin proves ShardSize, Split, Encode, and Join round-trip empty,
+// boundary, and prime payload lengths without losing or leaking padding bytes.
 func TestSplitAndJoin(t *testing.T) {
 	codec := mustCodec(t, 4, 2)
 	cases := []struct {
@@ -208,6 +220,8 @@ func TestSplitAndJoin(t *testing.T) {
 	}
 }
 
+// TestJoinErrors proves Join rejects wrong shard counts, missing data shards,
+// mismatched shard lengths, and target sizes outside [0, shardSize*k].
 func TestJoinErrors(t *testing.T) {
 	codec := mustCodec(t, 2, 1)
 	if _, err := codec.Join([][]byte{{1}, {2}}, 2); !errors.Is(err, erasure.ErrShardCount) {
@@ -227,6 +241,8 @@ func TestJoinErrors(t *testing.T) {
 	}
 }
 
+// TestReconstructDataLeavesParityMissing proves ReconstructData restores only
+// missing data shards, leaving missing parity nil until Reconstruct is called.
 func TestReconstructDataLeavesParityMissing(t *testing.T) {
 	codec := mustCodec(t, 4, 2)
 	shards := codec.Split([]byte("systematic reed-solomon"))
@@ -363,10 +379,14 @@ func propRoundTrip(small bool) func(*rapid.T) {
 	}
 }
 
+// TestPropRoundTrip proves systematic encoding and exact reconstruction over
+// random valid (k, m), boundary/random/multi-MB payloads, and up to m erasures.
 func TestPropRoundTrip(t *testing.T) {
 	rapid.Check(t, propRoundTrip(false))
 }
 
+// TestRoundTripMultiMB proves 4+2 encoding and reconstruction recover exact
+// bytes on 1 MiB and 3 MiB + 17 B payloads under data and parity losses.
 func TestRoundTripMultiMB(t *testing.T) {
 	codec := mustCodec(t, 4, 2)
 	r := rand.New(rand.NewPCG(7, 7))
@@ -383,6 +403,8 @@ func TestRoundTripMultiMB(t *testing.T) {
 	}
 }
 
+// TestRoundTripEveryErasureSetSmall exhaustively proves round-trip recovery
+// for every subset of at most m erasures across all 1 <= k <= 5 and 0 <= m <= 4.
 func TestRoundTripEveryErasureSetSmall(t *testing.T) {
 	payload := []byte("every erasure set of size at most m, data and parity alike")
 	for k := 1; k <= 5; k++ {
@@ -462,6 +484,8 @@ func anyDataErased(erased []int, k int) bool {
 	return false
 }
 
+// TestPropFailureBoundary proves that losing more than m shards returns
+// ErrTooFewShards without modifying any shard slot.
 func TestPropFailureBoundary(t *testing.T) {
 	rapid.Check(t, propFailureBoundary)
 }
@@ -504,6 +528,8 @@ func propErasureCoding(t *rapid.T) {
 	}
 }
 
+// FuzzErasureCoding fuzzes encoding, reconstruction, and the > m loss boundary
+// over arbitrary (k, m), payloads up to 64 KiB, and erasure sets.
 func FuzzErasureCoding(f *testing.F) {
 	for _, seed := range codingFuzzSeeds() {
 		f.Add(seed)
@@ -511,10 +537,14 @@ func FuzzErasureCoding(f *testing.F) {
 	f.Fuzz(rapid.MakeFuzz(propErasureCoding))
 }
 
+// TestPropErasureCodingAnyLossSet checks that any erasure set of size <= m
+// reconstructs exact bytes and any set of size > m returns ErrTooFewShards.
 func TestPropErasureCodingAnyLossSet(t *testing.T) {
 	rapid.Check(t, propErasureCoding)
 }
 
+// TestDecodingIsTotalOnHostileShards proves Encode, Verify, Reconstruct, and
+// ReconstructData never panic on malformed shard slices and return package sentinels.
 func TestDecodingIsTotalOnHostileShards(t *testing.T) {
 	codec := mustCodec(t, 3, 2)
 	inputs := [][][]byte{
@@ -540,6 +570,8 @@ func TestDecodingIsTotalOnHostileShards(t *testing.T) {
 	}
 }
 
+// TestShardSizeAtTheIntLimit proves ShardSize does not overflow signed int
+// near math.MaxInt.
 func TestShardSizeAtTheIntLimit(t *testing.T) {
 	for _, k := range []int{1, 2, 4, 255, 256} {
 		codec := mustCodec(t, k, 0)

@@ -1,3 +1,13 @@
+// Package storage implements the local verified chunk store, self-checksummed
+// shard blob format, fixed-size object striping, canonical object manifests,
+// region-aware rendezvous shard placement, and the single-threaded storage Node
+// process.
+//
+// Corruption detection lives here: every shard read and decode verifies the
+// shard header, SHA-256 checksum, and (during object reads) the manifest's
+// per-shard checksum, turning corrupted shards into erasures for package
+// erasure. Node satisfies env.Process with no goroutines, maps, or wall-clock
+// access so it runs identically in the simulator and on a real node loop.
 package storage
 
 import (
@@ -11,6 +21,7 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/erasure"
 )
 
+// Default coordinator timeouts, stripe-window size, and transient-error retry limits.
 const (
 	DefaultRequestTimeout = time.Second
 	DefaultWindow         = 4
@@ -18,6 +29,11 @@ const (
 	RetryBackoff          = 50 * time.Millisecond
 )
 
+// Config configures a storage Node. Zero values for AckQuorum, RequestTimeout,
+// and Window select min(K+1, K+M), DefaultRequestTimeout, and DefaultWindow.
+// Window caps stripes launched and awaiting quorum (Put) or decode (Get); it
+// does not cap shard requests still outstanding to slow holders after a stripe
+// reaches quorum or decodes.
 type Config struct {
 	Layout         Layout
 	Members        Membership
@@ -26,6 +42,8 @@ type Config struct {
 	Window         int
 }
 
+// Validate checks Layout, non-nil Members, AckQuorum in [K, K+M] (or 0 for
+// default), and non-negative RequestTimeout and Window, returning ErrInvalid on failure.
 func (c Config) Validate() error {
 	if err := c.Layout.Validate(); err != nil {
 		return err
@@ -55,6 +73,10 @@ func (c Config) withDefaults() Config {
 	return c
 }
 
+// NodeStats records deterministic operational counters for one Node incarnation,
+// included in Node.EncodeState. PutAwaitingPeak is the peak number of stripes
+// of one Put awaiting quorum simultaneously; PutOutstanding and
+// PutOutstandingBytes track put RPCs still awaiting a reply or timeout.
 type NodeStats struct {
 	Served              uint64
 	Refused             uint64
@@ -69,6 +91,8 @@ type NodeStats struct {
 	PutOutstandingBytes uint64
 }
 
+// Node is an env.Process that serves local shard RPCs from its ChunkStore and
+// coordinates striped erasure-coded Put and Get operations across peers.
 type Node struct {
 	e     env.Env
 	cfg   Config
@@ -77,6 +101,8 @@ type Node struct {
 	stats NodeStats
 }
 
+// NewNode validates cfg and creates a Node backed by e. It returns ErrInvalid
+// if cfg is invalid.
 func NewNode(e env.Env, cfg Config) (*Node, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -88,14 +114,21 @@ func NewNode(e env.Env, cfg Config) (*Node, error) {
 	return &Node{e: e, cfg: cfg.withDefaults(), codec: codec, store: NewChunkStore(e.Disk)}, nil
 }
 
+// Store returns the node's local ChunkStore.
 func (n *Node) Store() *ChunkStore { return n.store }
 
+// Stats returns a snapshot of the node's deterministic counters.
 func (n *Node) Stats() NodeStats { return n.stats }
 
+// Start implements env.Process; Node needs no startup work.
 func (n *Node) Start() {}
 
+// OnDatagram implements env.Process; storage uses request/response RPCs, so
+// datagrams are only counted.
 func (n *Node) OnDatagram(env.NodeID, []byte) { n.stats.Datagrams++ }
 
+// OnRequest implements env.Process by serving OpPutShard, OpGetShard, and
+// OpDeleteShard against the local ChunkStore and invoking reply synchronously.
 func (n *Node) OnRequest(_ env.NodeID, req []byte, reply env.Reply) {
 	resp, err := n.serve(req)
 	if err != nil {
@@ -122,6 +155,8 @@ func (n *Node) serve(req []byte) ([]byte, error) {
 	}
 }
 
+// EncodeState returns a canonical uvarint encoding of n's counters for
+// deterministic state-digest comparison.
 func (n *Node) EncodeState() []byte {
 	s := n.stats
 	var b []byte
@@ -159,6 +194,12 @@ type putStripe struct {
 	errs          []error
 }
 
+// Put erasure-codes data under the node's Config.Layout, places and writes
+// shards stripe by stripe with up to Config.Window stripes awaiting quorum at
+// once, and invokes cb with the resulting Manifest or an *ObjectError.
+// Put succeeds as soon as every stripe reaches AckQuorum durable replies; at
+// most N - AckQuorum requests per stripe may remain outstanding to slow holders
+// until they reply or hit RequestTimeout. cb never runs synchronously inside Put.
 func (n *Node) Put(bucket, key string, data []byte, cb func(*Manifest, error)) {
 	man := &Manifest{
 		Bucket: bucket, Key: key, Size: int64(len(data)),
@@ -195,6 +236,7 @@ func (op *putOp) finish(err error) {
 		return
 	}
 	op.finished = true
+	// Drop the object buffer so late reply closures for slow holders do not pin it.
 	op.data = nil
 	if err != nil {
 		op.n.stats.PutsFail++
@@ -209,6 +251,8 @@ func (op *putOp) fill() {
 	for !op.finished && !op.stopped && op.inflight < op.n.cfg.Window && op.next < len(op.stripes) {
 		i := op.next
 		op.next++
+		// Launch before incrementing inflight so an immediate placement error
+		// does not inflate PutAwaitingPeak; defer finish so cb never runs inside Put.
 		if err := op.launch(i); err != nil {
 			op.stopped = true
 			op.n.later(func() { op.finish(err) })
@@ -280,6 +324,8 @@ func (op *putOp) reply(i, idx int, target env.NodeID, err error) {
 	}
 }
 
+// GetResult carries the reassembled object bytes (nil on error) along with the
+// shard RPC and rejection counts observed during Node.Get.
 type GetResult struct {
 	Data     []byte
 	Requests int
@@ -313,6 +359,14 @@ type getStripe struct {
 	causes   []error
 }
 
+// Get fetches and verifies shards described by man using man.Layout (even if it
+// differs from the node's Config.Layout), decodes up to Config.Window stripes
+// concurrently, verifies the reassembled SHA-256 against man.ContentSHA, and
+// invokes cb with the result or an *ObjectError.
+// Each stripe requests its k data shards first, falls back to parity shards on
+// failure or corruption, and retries transient errors (env.ErrIO, env.ErrTimeout,
+// env.ErrUnreachable) after RetryBackoff up to MaxShardAttempts per shard.
+// Corrupt and missing shards are never retried. cb never runs synchronously inside Get.
 func (n *Node) Get(man *Manifest, cb func(GetResult, error)) {
 	op := &getOp{n: n, man: man, cb: cb}
 	if man == nil {
@@ -444,6 +498,9 @@ func (op *getOp) reply(i, idx int, from env.NodeID, blob []byte, err error, want
 	op.fill()
 }
 
+// checkExhausted schedules a backoff retry batch for transient failures once
+// all n shards have been tried and no requests remain pending, or fails the Get
+// with ErrUnavailable if no retryable shards remain.
 func (op *getOp) checkExhausted(i int) {
 	st := &op.stripes[i]
 	if st.pending > 0 || st.waiting || st.tried < op.codec.N() {

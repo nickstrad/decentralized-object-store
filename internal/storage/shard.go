@@ -13,6 +13,10 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/erasure"
 )
 
+// Shard blob format constants. A shard blob starts with a 64-byte header:
+// bytes 0..3 magic "OSSH", 4 version (1), 5 reserved (0), 6..7 k, 8..9 m,
+// 10..11 index, 12..15 stripe, 16..19 payload length, 20..27 version ID,
+// 28..31 reserved (0), 32..63 SHA-256(bytes 0..31 || payload).
 const (
 	HeaderSize         = 64
 	ShardFormatVersion = 1
@@ -22,16 +26,20 @@ const (
 	blobPrefix         = "shards/"
 )
 
+// plantSkipChecksum is flipped only by canary tests via export_test.go.
 var plantSkipChecksum bool
 
+// VersionID identifies one immutable version of an object.
 type VersionID uint64
 
+// String formats v as 16 lowercase hexadecimal digits in big-endian order.
 func (v VersionID) String() string {
 	var b [8]byte
 	binary.BigEndian.PutUint64(b[:], uint64(v))
 	return hex.EncodeToString(b[:])
 }
 
+// ShardID uniquely names one shard of one stripe of one object version.
 type ShardID struct {
 	Bucket  string
 	Version VersionID
@@ -39,6 +47,7 @@ type ShardID struct {
 	Index   uint16
 }
 
+// ShardHeader holds the decoded metadata fields and checksum of a shard blob.
 type ShardHeader struct {
 	K, M       int
 	Index      int
@@ -48,6 +57,8 @@ type ShardHeader struct {
 	Checksum   [32]byte
 }
 
+// ValidBucket checks that b is 1 to MaxBucketLen bytes of [a-z0-9.-] starting
+// with an ASCII lowercase letter or digit. It returns ErrInvalid otherwise.
 func ValidBucket(b string) error {
 	if len(b) == 0 || len(b) > MaxBucketLen {
 		return fmt.Errorf("storage: bucket %q: length %d outside [1, %d]: %w", b, len(b), MaxBucketLen, ErrInvalid)
@@ -62,14 +73,19 @@ func ValidBucket(b string) error {
 	return nil
 }
 
+// Validate checks that id's bucket name is valid, returning ErrInvalid if not.
 func (id ShardID) Validate() error { return ValidBucket(id.Bucket) }
 
+// versionDir returns the disk prefix "shards/<bucket>/<hh>/<version-hex16>/",
+// where hh is the first byte of SHA-256(bucket + "/" + version-hex16).
 func versionDir(bucket string, v VersionID) string {
 	vh := v.String()
 	sum := sha256.Sum256([]byte(bucket + "/" + vh))
 	return blobPrefix + bucket + "/" + hex.EncodeToString(sum[:1]) + "/" + vh + "/"
 }
 
+// BlobName returns the canonical disk blob name for id:
+// shards/<bucket>/<hh>/<version-hex16>/<stripe>.<index>.
 func (id ShardID) BlobName() string {
 	return versionDir(id.Bucket, id.Version) + strconv.FormatUint(uint64(id.Stripe), 10) + "." + strconv.FormatUint(uint64(id.Index), 10)
 }
@@ -82,6 +98,9 @@ func parseCanonicalUint(s string, bits int) (uint64, bool) {
 	return v, err == nil
 }
 
+// ParseBlobName parses a canonical shard blob name into a ShardID. Non-canonical
+// forms (wrong hash prefix, uppercase hex, leading zeros, invalid bucket) return
+// ErrInvalid.
 func ParseBlobName(name string) (ShardID, error) {
 	bad := func(why string) (ShardID, error) {
 		return ShardID{}, fmt.Errorf("storage: blob name %q: %s: %w", name, why, ErrInvalid)
@@ -115,12 +134,16 @@ func ParseBlobName(name string) (ShardID, error) {
 		return bad("stripe or index is not a canonical number")
 	}
 	id.Stripe, id.Index = uint32(sv), uint16(iv)
+	// Re-deriving BlobName verifies the hh directory hash and canonical formatting.
 	if id.BlobName() != name {
 		return bad("not canonical")
 	}
 	return id, nil
 }
 
+// StripeGroup maps a shard blob name to its stripe group key
+// "<bucket>/<version-hex16>/<stripe>" for fault-budget grouping, or "" if blob
+// is not a canonical shard name.
 func StripeGroup(_ env.NodeID, blob string) string {
 	id, err := ParseBlobName(blob)
 	if err != nil {
@@ -130,6 +153,7 @@ func StripeGroup(_ env.NodeID, blob string) string {
 }
 
 func validShape(k, m, index int) error {
+	// Check bounds before adding to prevent signed overflow on hostile headers.
 	if k < 1 || m < 0 || k > erasure.MaxShards || m > erasure.MaxShards-k {
 		return fmt.Errorf("k=%d m=%d", k, m)
 	}
@@ -139,6 +163,9 @@ func validShape(k, m, index int) error {
 	return nil
 }
 
+// EncodeShard packs h and payload into a self-checksummed shard blob.
+// h.PayloadLen and h.Checksum are ignored and computed from payload. It returns
+// ErrInvalid if (K, M, Index) is invalid or len(payload) > MaxStripeSize.
 func EncodeShard(h ShardHeader, payload []byte) ([]byte, error) {
 	if err := validShape(h.K, h.M, h.Index); err != nil {
 		return nil, fmt.Errorf("storage: encode shard: %v: %w", err, ErrInvalid)
@@ -161,6 +188,8 @@ func EncodeShard(h ShardHeader, payload []byte) ([]byte, error) {
 	return blob, nil
 }
 
+// checksum hashes the 32-byte header fields together with the payload so header
+// tampering is detected even when the payload is intact.
 func checksum(blob []byte) [32]byte {
 	d := sha256.New()
 	_, _ = d.Write(blob[:fieldsSize])
@@ -170,6 +199,8 @@ func checksum(blob []byte) [32]byte {
 	return out
 }
 
+// BlobChecksum returns the 32-byte checksum field stored in blob's header, or
+// the zero array if blob is shorter than HeaderSize. It does not verify the hash.
 func BlobChecksum(blob []byte) [32]byte {
 	var out [32]byte
 	if len(blob) >= HeaderSize {
@@ -178,6 +209,10 @@ func BlobChecksum(blob []byte) [32]byte {
 	return out
 }
 
+// DecodeShard parses and verifies a shard blob, returning its header and a
+// subslice aliasing blob's payload. Any format violation, reserved non-zero
+// byte, invalid shape, length mismatch, payload over MaxStripeSize, or checksum
+// mismatch returns ErrCorrupt.
 func DecodeShard(blob []byte) (ShardHeader, []byte, error) {
 	bad := func(why string) (ShardHeader, []byte, error) {
 		return ShardHeader{}, nil, fmt.Errorf("storage: decode shard: %s: %w", why, ErrCorrupt)
