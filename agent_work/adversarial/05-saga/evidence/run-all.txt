@@ -123,4 +123,4 @@ HELD C20 late-copy-fence: 20 paused-source schedules rejected late two-hop copie
 HELD C20 malformed-store-requests: six malformed field-count, length, opcode and trailing-byte requests were rejected without state changes
 HELD C1 checksummed-length-limits: zero and two oversized declared lengths were rejected even with valid header checksums
 HELD C12 compensating-prefix-recovery: 101 compensating byte prefixes produced identical terminal logs and reverse-order calls on repeated recovery
-SUMMARY held=125 broken=0 setup_errors=0 elapsed_seconds=15
+SUMMARY held=125 broken=0 setup_errors=0 elapsed_seconds=16
