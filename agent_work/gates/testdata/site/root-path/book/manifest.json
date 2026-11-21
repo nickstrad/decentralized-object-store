@@ -1,0 +1,8 @@
+{
+  "title": "Fixture Book",
+  "chapters": [
+    {"n": 1, "slug": "01-alpha", "title": "Alpha", "file": "chapters/01-alpha.md", "status": "draft"},
+    {"n": 2, "slug": "02-beta", "title": "Beta", "file": "chapters/02-beta.md", "status": "draft"}
+  ],
+  "front_matter": []
+}
