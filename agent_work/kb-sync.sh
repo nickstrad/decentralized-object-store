@@ -15,7 +15,7 @@ up=${KB_REPO:-/root/Software/kb}
 sha_file="$repo/agent_work/kb-vendor.sha"
 bin="$repo/.kb/bin/kb"
 
-in_dev() { (cd "$repo" && docker compose run --rm -T dev bash -c "$1"); }
+in_dev() { (cd "$repo" && docker compose build -q dev && docker compose run --rm -T dev bash -c "$1"); }
 build() {
   local sha stamp="$repo/.kb/bin/.built-sha"
   sha=$(cat "$sha_file")
