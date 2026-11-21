@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -254,11 +255,24 @@ func bigContexts(entries int, keys int, counter uint64, wall int64) []byte {
 	return r.b
 }
 
+func raceBuild() bool {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, s := range bi.Settings {
+		if s.Key == "-race" {
+			return s.Value == "true"
+		}
+	}
+	return false
+}
+
 func fitCount(limit, per int) int { return (limit - 64) / per }
 
 func TestHostileMessagesBoundedWork(t *testing.T) {
 	limit := sim.DefaultMaxMessage - 1
-	if raceBuild {
+	if raceBuild() {
 		limit = 1 << 20
 	}
 	perKey := len(manyKeys(2, 0)) - len(manyKeys(1, 0))

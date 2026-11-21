@@ -36,12 +36,12 @@ func (d *Doc) Keys() []string { return slices.Clone(d.sortedKeys()) }
 
 func (d *Doc) sortedKeys() []string {
 	if !d.sorted {
-		d.keys = make([]string, 0, len(d.records))
+		keys := make([]string, 0, len(d.records))
 		for k := range d.records {
-			d.keys = append(d.keys, k)
+			keys = append(keys, k)
 		}
-		slices.Sort(d.keys)
-		d.sorted = true
+		slices.Sort(keys)
+		d.keys, d.sorted = keys, true
 	}
 	return d.keys
 }
