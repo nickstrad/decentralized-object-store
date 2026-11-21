@@ -19,6 +19,7 @@ fi
 only=${1:-.}
 work=$(mktemp -d)
 fake_sha=00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee
+fake_base=0ba5e0000ba5e0000ba5e0000ba5e0000ba5e000
 fake_image=sha256:$(printf 'c%.0s' $(seq 64))
 results='[]'
 rc=0
@@ -33,7 +34,7 @@ fresh() { # fresh <name>: a clean copy of the tree at $work/<name>
 run_gate() { # run_gate <name> <GATE_ONLY> [extra env assignments...]
   local name=$1 only_gates=$2; shift 2
   ( cd "$work/$name" && env GATE_SHA=$fake_sha GATE_DIRTY=false GATE_IMAGE_ID=$fake_image \
-      GATE_BASELINE="$root" GATE_BASE_SHA=canary-source-tree \
+      GATE_BASELINE="$root" GATE_BASE_SHA=$fake_base \
       GATE_ONLY="$only_gates" GATE_OUT="$work/$name.out" "$@" agent_work/gates/gate.sh canary ) > "$work/$name.log" 2>&1
 }
 status_of() { jq -r --arg g "$2" --arg c "$3" '.checks[] | select(.gate==$g and .check==$c) | .status' "$work/$1.out/result.json" 2>/dev/null; }
@@ -343,6 +344,16 @@ if [[ bad-image =~ $only ]]; then
   else record bad-image "an invented image ID" "G6 red" false; fi
   rm -rf "$work/bad-image" "$work/bad-image.out"
 fi
+# A build-stage run whose comment baseline is the gated commit itself certifies nothing:
+# the gate must stop, not pass. A baseline that names no commit must not count.
+if [[ self-baseline =~ $only ]]; then
+  fresh self-baseline; ( cd "$work/self-baseline" && plant_comment )
+  run_gate self-baseline G0 GATE_BASELINE="$work/self-baseline" GATE_BASE_SHA=$fake_sha; grc=$?
+  if [ $grc = 2 ] && [ ! -e "$work/self-baseline.out/result.json" ]; then record self-baseline "a commit used as its own comment baseline" "gate exits 2, no result" true
+  else record self-baseline "a commit used as its own comment baseline" "gate exits 2, no result" false; fi
+  rm -rf "$work/self-baseline" "$work/self-baseline.out"
+fi
+counts unnamed-baseline "a comment baseline that names no commit" false GATE_BASE_SHA=some-directory
 # A misspelt stage must stop the gate, not switch the comment rule off.
 if [[ stage-typo =~ $only ]]; then
   fresh stage-typo; ( cd "$work/stage-typo" && plant_comment )

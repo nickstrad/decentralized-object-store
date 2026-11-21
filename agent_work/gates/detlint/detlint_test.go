@@ -122,7 +122,12 @@ func TestDetlint(t *testing.T) {
 		{name: "maps.Keys iteration", pkgs: []string{"maprange/mapskeys"},
 			want: []string{"maprange/mapskeys/a.go:6: maprange"}},
 		{name: "range assigning to an outer variable leaks the last key", pkgs: []string{"maprange/outervar"},
-			want: []string{"maprange/outervar/a.go:8: maprange"}},
+			want: []string{
+				"maprange/outervar/a.go:8: maprange",
+				"maprange/outervar/a.go:17: maprange",
+				"maprange/outervar/a.go:24: maprange",
+				"maprange/outervar/a.go:33: maprange",
+			}},
 		{name: "collect and sort passes", pkgs: []string{"clean/sorted"}},
 		{name: "comparator sorts do not accept a map range", pkgs: []string{"maprange/comparator"},
 			want: []string{

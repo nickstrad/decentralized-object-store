@@ -562,13 +562,22 @@ func wrappedInSorted(id *ast.Ident, parent ast.Node, stack []ast.Node, info *typ
 // slice variable) immediately followed, as the next statement of the same
 // block, by slices.Sort(s), sort.Strings(s) or sort.Ints(s).
 func orderInsensitive(rs *ast.RangeStmt, parent ast.Node, stack []ast.Node, info *types.Info) bool {
+	// `for k = range m` assigns to a variable that outlives the loop: its
+	// final value is the last key visited, which is map order, whatever the
+	// body does (an empty body included). `for range m` and `for _ = range m`
+	// assign nothing.
+	if rs.Tok == token.ASSIGN {
+		for _, e := range []ast.Expr{rs.Key, rs.Value} {
+			if e == nil {
+				continue
+			}
+			if id, ok := ast.Unparen(e).(*ast.Ident); !ok || id.Name != "_" {
+				return false
+			}
+		}
+	}
 	if len(rs.Body.List) == 0 {
 		return true
-	}
-	// `for k = range m` assigns to a variable that outlives the loop: its
-	// final value is the last key visited, which is map order.
-	if rs.Tok != token.DEFINE {
-		return false
 	}
 	objOf := func(e ast.Expr) types.Object {
 		id, ok := ast.Unparen(e).(*ast.Ident)

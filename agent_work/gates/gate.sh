@@ -11,7 +11,9 @@
 #   GATE_STAGE=build    (default) product Go must be comment-free (pre-prose rule), apart
 #                       from the comments already in the baseline commit (earlier chunks'
 #                       landed prose)
-#   GATE_BASE=<commit>  the baseline for that rule (default: the merge base with main)
+#   GATE_BASE=<commit>  the baseline for that rule (default: the merge base with main); it
+#                       must be a strict ancestor of HEAD, so a build-stage run on main
+#                       itself is refused (exit 2) rather than compared with itself
 #   GATE_STAGE=final    after the prose stage: the comment check is replaced by prose-check.sh
 #   FUZZ_SECONDS=30     per fuzz target in G3
 #   GATE_NO_DOCKER=1    run where you are, without Docker; the result is marked
@@ -20,7 +22,8 @@
 #
 # A result counts for landing only when ALL of these hold: every gate ran and is green, the
 # run was inside the dev container, the commit is a full SHA, the host wrapper saw a clean
-# tree, the stage is valid and the fuzz budget is at least 30 s. The host wrapper supplies
+# tree, the stage is valid, the fuzz budget is at least 30 s and, at the build stage, the
+# comment baseline is a named commit other than the gated one. The host wrapper supplies
 # the commit, the clean-tree flag and the image ID; the file is evidence for an honest
 # operator, not a tamper-proof certificate, and land.sh binds it to the branch tip.
 #
@@ -37,30 +40,57 @@ cd "$root" || exit 2
 in_container=false
 if [ -f /.dockerenv ] && [ "${OBJSTORE_DEV_CONTAINER:-}" = 1 ]; then in_container=true; fi
 
+# The comment baseline of a build-stage run: the product Go of the commit this branch
+# started from, exported to $basedir. Comments that landed with earlier chunks are not this
+# chunk's to answer for; everything the branch itself adds is. The baseline must be a
+# strict ancestor of HEAD: a commit compared with itself would certify its own comments,
+# so a build-stage run on main (or on a branch with no commits yet) is a setup error, not
+# a pass. Needs git history, so it runs wherever git can read the checkout.
+basedir=
+base_sha=none
+prepare_baseline() {
+  local base=${GATE_BASE:-} head ref
+  head=$(git rev-parse --verify -q 'HEAD^{commit}' 2>/dev/null) || {
+    echo "gate: a build-stage run needs git history for its comment baseline, and git cannot read this checkout here." >&2
+    echo "gate: run agent_work/gates/gate.sh from the host checkout (it supplies the baseline to the container)." >&2
+    return 2; }
+  if [ -z "$base" ]; then
+    for ref in main origin/main; do
+      if git rev-parse -q --verify "$ref^{commit}" >/dev/null 2>&1; then base=$(git merge-base HEAD "$ref" 2>/dev/null || true); break; fi
+    done
+  fi
+  [ -n "$base" ] || { echo "gate: no comment baseline: there is no main branch to compare with; set GATE_BASE=<commit>" >&2; return 2; }
+  base_sha=$(git rev-parse --verify -q "$base^{commit}") || { echo "gate: GATE_BASE '$base' is not a commit" >&2; return 2; }
+  if [ "$base_sha" = "$head" ]; then
+    echo "gate: HEAD is its own comment baseline (this is main, or a branch with no commits of its own)." >&2
+    echo "gate: a build-stage run judges a chunk branch against the commit it started from. On main use" >&2
+    echo "gate: GATE_STAGE=final together with ci-prose.sh, or name an earlier commit with GATE_BASE." >&2
+    return 2
+  fi
+  git merge-base --is-ancestor "$base_sha" "$head" || { echo "gate: baseline $base_sha is not an ancestor of HEAD" >&2; return 2; }
+  basedir=$(mktemp -d /tmp/gate-baseline.XXXXXX) || return 2
+  git archive "$base_sha" -- . ':(exclude)kb' ':(exclude)agent_work' | tar -x -C "$basedir" || { echo "gate: cannot export the baseline $base_sha" >&2; return 2; }
+  chmod -R a+rX "$basedir"
+}
+bin=
+trap 'rm -rf "$basedir" "$bin"' EXIT
+
 # ---------------------------------------------------------------- host side
 if [ "$in_container" = false ] && [ "${GATE_NO_DOCKER:-}" != 1 ]; then
   sha=$(git rev-parse HEAD 2>/dev/null || echo unknown)
   dirty=false
   if [ -n "$(git status --porcelain 2>/dev/null | grep -v ' agent_work/[^/]*/gates/' )" ]; then dirty=true; fi
+  mount=()
+  if [ "${GATE_STAGE:-build}" = build ]; then
+    prepare_baseline || exit 2
+    mount=(-v "$basedir:/gate-baseline:ro" -e GATE_BASELINE=/gate-baseline -e GATE_BASE_SHA="$base_sha")
+  fi
   echo "gate: building the dev image (G6)"
   docker compose build -q dev || { echo "gate: image build failed" >&2; exit 2; }
   image_id=$(docker image inspect objstore-dev:local --format '{{.Id}}' 2>/dev/null || echo unknown)
-  # The comment baseline: the product Go of the commit this branch started from. Comments
-  # that landed with earlier chunks are not this chunk's to answer for.
-  basedir=$(mktemp -d /tmp/gate-baseline.XXXXXX)
-  trap 'rm -rf "$basedir"' EXIT
-  base=${GATE_BASE:-}
-  if [ -z "$base" ] && git rev-parse -q --verify main >/dev/null 2>&1; then base=$(git merge-base HEAD main 2>/dev/null || true); fi
-  base_sha=none
-  if [ -n "$base" ]; then
-    base_sha=$(git rev-parse --verify -q "$base^{commit}") || { echo "gate: GATE_BASE '$base' is not a commit" >&2; exit 2; }
-    git archive "$base_sha" -- . ':(exclude)kb' ':(exclude)agent_work' | tar -x -C "$basedir" || { echo "gate: cannot export the baseline $base_sha" >&2; exit 2; }
-  fi
-  chmod -R a+rX "$basedir"
-  docker compose run --rm -T -v "$basedir:/gate-baseline:ro" \
+  docker compose run --rm -T "${mount[@]}" \
     -e GATE_SHA="$sha" -e GATE_DIRTY="$dirty" -e GATE_IMAGE_ID="$image_id" \
     -e GATE_ONLY="${GATE_ONLY:-}" -e GATE_STAGE="${GATE_STAGE:-build}" \
-    -e GATE_BASELINE=/gate-baseline -e GATE_BASE_SHA="$base_sha" \
     -e FUZZ_SECONDS="${FUZZ_SECONDS:-30}" -e GATE_OUT="${GATE_OUT:-}" \
     dev agent_work/gates/gate.sh "$chunk"
   exit $?
@@ -71,6 +101,17 @@ sha=${GATE_SHA:-unknown}
 [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || sha=unknown
 stage=${GATE_STAGE:-build}
 case "$stage" in build|final) ;; *) echo "gate: GATE_STAGE must be build or final, got '$stage'" >&2; exit 2 ;; esac
+# A build-stage run that includes G0 needs the comment baseline. The host wrapper and the
+# canaries hand one in; called directly (inside the container, or with GATE_NO_DOCKER) the
+# gate works it out from git itself, and stops if it cannot.
+if [ "$stage" = build ] && { [ -z "${GATE_ONLY:-}" ] || [[ ",${GATE_ONLY}," == *",G0,"* ]]; }; then
+  if [ -z "${GATE_BASELINE:-}" ]; then
+    prepare_baseline || exit 2
+    GATE_BASELINE=$basedir; GATE_BASE_SHA=$base_sha
+  fi
+  [ -d "$GATE_BASELINE" ] || { echo "gate: GATE_BASELINE is not a directory: $GATE_BASELINE" >&2; exit 2; }
+  [ "${GATE_BASE_SHA:-none}" != "$sha" ] || { echo "gate: the comment baseline is the gated commit itself ($sha); nothing can be certified against itself" >&2; exit 2; }
+fi
 fuzz_seconds=${FUZZ_SECONDS:-30}
 [[ "$fuzz_seconds" =~ ^[0-9]+$ ]] || { echo "gate: FUZZ_SECONDS must be a whole number" >&2; exit 2; }
 dirty=${GATE_DIRTY:-true}
@@ -166,13 +207,8 @@ g0_deps() {
 }
 g0_comments() {
   if [ "$stage" != build ]; then echo "NOTE: stage=$stage, comment rule is checked by prose-check.sh"; return 0; fi
-  if [ -n "${GATE_BASELINE:-}" ]; then
-    [ -d "$GATE_BASELINE" ] || { echo "GATE_BASELINE is not a directory: $GATE_BASELINE"; return 1; }
-    echo "NOTE: comments compared with baseline ${GATE_BASE_SHA:-unnamed}"
-    "$bin/nocomments" -root "$root" -baseline "$GATE_BASELINE"
-  else
-    "$bin/nocomments" -root "$root"
-  fi
+  echo "NOTE: comments compared with baseline ${GATE_BASE_SHA:-unnamed}"
+  "$bin/nocomments" -root "$root" -baseline "$GATE_BASELINE"
 }
 g0_selfcontained() {
   local rc=0 hits
@@ -269,7 +305,8 @@ want G6 && check G6 docker g6_docker
 partial=false; [ -z "${GATE_ONLY:-}" ] || partial=true
 counts=false
 if [ "$overall" = pass ] && [ "$in_container" = true ] && [ "$partial" = false ] && [ "$sha" != unknown ] \
-   && [ "$dirty" = false ] && [ "$fuzz_seconds" -ge 30 ]; then counts=true; fi
+   && [ "$dirty" = false ] && [ "$fuzz_seconds" -ge 30 ] \
+   && { [ "$stage" = final ] || [[ "${GATE_BASE_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; }; then counts=true; fi
 jq -n --arg chunk "$chunk" --arg sha "$sha" --arg stage "$stage" --arg started "$started" \
   --arg finished "$(date -u +%FT%TZ)" --arg go "$(go version)" --arg image "${GATE_IMAGE_ID:-unknown}" \
   --arg overall "$overall" --argjson in_container "$in_container" --argjson partial "$partial" \
@@ -279,6 +316,5 @@ jq -n --arg chunk "$chunk" --arg sha "$sha" --arg stage "$stage" --arg started "
     image_id:$image, in_container:$in_container, partial:$partial, dirty_tree:$dirty,
     seed_from_sha:$seed, fuzz_seconds:$fuzz, overall:$overall, counts_for_landing:$counts,
     checks:$checks}' > "$out/result.json"
-rm -rf "$bin"
 echo "gate: overall=$overall counts_for_landing=$counts -> $out/result.json"
 [ "$overall" = pass ]
