@@ -189,8 +189,9 @@ func storeOf(s *sim.Sim, id env.NodeID) *chunkStore {
 }
 
 type liarConfig struct {
-	depth int
-	known func() []merkle.Entry
+	depth   int
+	known   func() []merkle.Entry
+	wellFed bool
 }
 
 type liar struct {
@@ -238,7 +239,11 @@ func (l *liar) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	}
 	switch req[0] {
 	case tagMerkle:
-		switch l.e.Rand.IntN(8) {
+		pick := l.e.Rand.IntN(8)
+		if l.cfg.wellFed {
+			pick = 7
+		}
+		switch pick {
 		case 0:
 			b := make([]byte, l.e.Rand.IntN(80))
 			for i := range b {

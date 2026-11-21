@@ -2,6 +2,7 @@ package merkle_test
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -522,7 +523,7 @@ func loneLiarRun(seed int64) *sim.Sim {
 		w.s.Fail(err)
 		return remember(w)
 	}
-	if err := w.s.AddNode(sim.NodeSpec{ID: ids[1], Region: "r1"}, liarFactory(liarConfig{depth: w.depth, known: func() []merkle.Entry { return fake }})); err != nil {
+	if err := w.s.AddNode(sim.NodeSpec{ID: ids[1], Region: "r1"}, liarFactory(liarConfig{depth: w.depth, known: func() []merkle.Entry { return fake }, wellFed: true})); err != nil {
 		w.s.Fail(err)
 		return remember(w)
 	}
@@ -560,8 +561,8 @@ func TestLyingPeerDST(t *testing.T) {
 			take(s)
 			st := storeOf(s, s.Nodes()[0])
 			stats := st.w.Stats()
-			if stats.Rejected == 0 {
-				t.Fatalf("no fetched bytes were rejected: %+v", stats)
+			if stats.Rejected == 0 || !errors.Is(st.w.LastErr(), merkle.ErrRejected) {
+				t.Fatalf("no fetched bytes were rejected: %+v, last error %v", stats, st.w.LastErr())
 			}
 			if stats.Repaired != 0 || len(s.Disk(s.Nodes()[0]).Names()) != 0 {
 				t.Fatalf("the liar planted %d chunks", stats.Repaired)
