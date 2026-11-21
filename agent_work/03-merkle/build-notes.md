@@ -218,6 +218,18 @@ round success at 20% per-message loss.
 - `DST_SEEDS=500 DST_SEED_BASE=987654321 go test -count=1 ./internal/merkle` → ok, 400 s.
 - The full gate: see "Gate result" below.
 
+## Gate result
+
+`agent_work/gates/gate.sh 03-merkle` from the host at `5770c682b926aef79ad20f5b0ae4603599ecfb18`
+(the commit before this notes update; the only later change is this file):
+`overall=pass counts_for_landing=true`, clean tree, seed from SHA 96141878409510, comment
+baseline `9508d35`. G0 all pass; G1 unit 19 s (coverage internal/merkle 96.8%, internal/sim
+95.4%); G2 rapid 2,000 checks 105 s; G3 fuzz 3 targets × 30 s pass (`FuzzMerkleWire`,
+`FuzzMerkleDiff`, `FuzzSimSchedule`); G4 race 39 s; G5 500 seeds 274 s; G6 docker pass.
+Two earlier runs failed (at `19f3a93` and `3c0a41e`); what they found and how it was fixed
+is the section "Findings from the first gate runs". Result files are left uncommitted under
+`agent_work/03-merkle/gates/`.
+
 ## Uncovered branches (96.8%; from `go test -coverprofile`, blocks with count 0)
 
 - `diff.go` `Compare`: the `Feed` error break. `Compare` answers with a real `Tree.Answer`,
