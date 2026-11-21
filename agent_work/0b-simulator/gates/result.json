@@ -1,25 +1,25 @@
 {
   "chunk": "0b-simulator",
-  "sha": "f3cdb73fa1c1fb5b0e137f93f894937d7613ba4e",
-  "stage": "build",
-  "comment_baseline": "c5117c52f4125d72dbaeb0e5bd1ecb74a34a562d",
-  "started": "2026-11-21T19:24:37Z",
-  "finished": "2026-11-21T19:24:46Z",
+  "sha": "72de8804ac2e1f41468225f7d8b961942f9da787",
+  "stage": "final",
+  "comment_baseline": "none",
+  "started": "2026-11-21T20:22:42Z",
+  "finished": "2026-11-21T20:26:51Z",
   "go_version": "go version go1.26.11 linux/amd64",
-  "image_id": "sha256:809d4de0ff2a9790792f8b58a38f9a88707e9f90a0bd73f0ff8087179f89cf54",
+  "image_id": "sha256:1d836f1374dc6ff925419433d1c8c8b80e9c46aaccf51ced1f029b346206b6d4",
   "in_container": true,
-  "partial": true,
-  "dirty_tree": true,
-  "seed_from_sha": 268064868245953,
+  "partial": false,
+  "dirty_tree": false,
+  "seed_from_sha": 126300090313774,
   "fuzz_seconds": 30,
   "overall": "pass",
-  "counts_for_landing": false,
+  "counts_for_landing": true,
   "checks": [
     {
       "gate": "G0",
       "check": "tools",
       "status": "pass",
-      "seconds": 1,
+      "seconds": 0,
       "note": ""
     },
     {
@@ -69,13 +69,55 @@
       "check": "comments",
       "status": "pass",
       "seconds": 0,
-      "note": "comments compared with baseline c5117c52f4125d72dbaeb0e5bd1ecb74a34a562d"
+      "note": "stage=final, comment rule is checked by prose-check.sh"
     },
     {
       "gate": "G0",
       "check": "selfcontained",
       "status": "pass",
       "seconds": 5,
+      "note": ""
+    },
+    {
+      "gate": "G1",
+      "check": "unit",
+      "status": "pass",
+      "seconds": 9,
+      "note": ""
+    },
+    {
+      "gate": "G2",
+      "check": "property",
+      "status": "pass",
+      "seconds": 58,
+      "note": "rapid seed 126300090313774, 2000 checks, 1 packages"
+    },
+    {
+      "gate": "G3",
+      "check": "fuzz",
+      "status": "pass",
+      "seconds": 37,
+      "note": "1 fuzz targets, 30s each"
+    },
+    {
+      "gate": "G4",
+      "check": "race",
+      "status": "pass",
+      "seconds": 34,
+      "note": ""
+    },
+    {
+      "gate": "G5",
+      "check": "dst",
+      "status": "pass",
+      "seconds": 103,
+      "note": "500 seeds from base 126300090313774"
+    },
+    {
+      "gate": "G6",
+      "check": "docker",
+      "status": "pass",
+      "seconds": 0,
       "note": ""
     }
   ]
