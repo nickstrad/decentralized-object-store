@@ -21,6 +21,8 @@ state machine that acts only through `env.Clock`, `env.Rand` and `env.Transport`
   - `Members()`: live members (alive or suspect), self included, sorted by ID.
   - `All()`: every retained entry, dead and left ones included, sorted by ID.
   - `Lookup(id)`: any retained entry; unknown or purged → `ErrNotMember`.
+  - `Tombstones()`: the purged verdicts this node still remembers (see "Lifetime of a dead
+    entry"), sorted by ID. Added in the repair round.
   - `Self()`, `Stats()`, `LastError()`, `Closed()`.
   - `Subscribe(fn)`: `fn` is called synchronously, inside the handler that caused the change,
     with `Event{Kind, Member, At}`. Kinds: `EventJoined`, `EventSuspected`, `EventRecovered`
@@ -32,8 +34,10 @@ state machine that acts only through `env.Clock`, `env.Rand` and `env.Transport`
   `NewView`, `Apply`, `Get`, `Remove`, `All`, `Live`, `IDs`, `Len`, `LiveCount`).
 - Wire: `Message{Kind, Seq, Target, Updates}`, `Encode`, `Decode`, `Size`, `UpdateSize`,
   `Kind*` constants, `Version`, `MaxIDLen`, `MaxUpdates`, `MinPacket`.
-- Errors: `ErrMalformed`, `ErrNotMember`, `ErrClosed`, `ErrJoinFailed`; `Codes()` and
-  `CodeTable()` (wire rows `CodeAppMin+16..+19` = 80..83).
+- Errors: `ErrMalformed`, `ErrNotMember`, `ErrClosed`, `ErrJoinFailed`, `ErrViewFull`
+  (repair round); `Codes()` and `CodeTable()` (wire rows `CodeAppMin+16..+20` = 80..84, inside
+  the gossip block 80–95).
+- Bounds (repair round): `MaxTombstones` = 4096, `MaxRelays` = 1024, `MaxSeeds` = 256.
 - `Config` with `WithDefaults`, `Validate`, `SuspicionTimeout(n)`, `RetransmitLimit(n)`.
 
 ### Configuration and defaults (zero means default)
@@ -49,7 +53,8 @@ state machine that acts only through `env.Clock`, `env.Rand` and `env.Transport`
 | `SyncTimeout` | 2 s | request timeout for sync and join |
 | `DeadRetention` | 5 min | dead/left entries kept (for partition heal, 7.7), then purged |
 | `MaxPacket` | 1400 | datagram size budget; min `MinPacket` = 781 (one max header + one max update) |
-| `Seeds` | none | joined at `Start`, and contacted by the heal sync while not live |
+| `Seeds` | none | joined at `Start`, and contacted by the heal sync while not live; at most `MaxSeeds` |
+| `MaxMembers` | `MaxUpdates` (65,535) | view size cap, self included; range 1..`MaxUpdates` (repair round) |
 
 Indirect probing cannot be turned off through `Config` (0 means default 3). The canary
 switch is `WithoutIndirectProbes` in `export_test.go`, so it exists only in test builds.
@@ -103,9 +108,10 @@ dropped at λ⌈log₂N⌉ (`TestPiggybackSelectionAndLimit`).
 caller sends its whole view (`KindSyncReq`), the server merges it and replies with its
 whole merged view (`KindSyncResp`), the caller merges that. `Join` contacts every seed at
 once; `done(nil)` on the first success, else, after all answered,
-`ErrJoinFailed` joined (`errors.Join`) with each seed's cause. Every `SyncInterval` a node
-syncs with one random live member and one random entry from {dead members} ∪ {seeds that are
-not live}; after a partition this is how the halves find each other: the contacted node sees
+`ErrJoinFailed` joined (`errors.Join`) with each seed's cause. Seeds given to `Join` are
+remembered with `Config.Seeds` (repair round). Every `SyncInterval` a node syncs with one
+random live member and one random entry from {dead members in the view} ∪ {dead tombstones}
+∪ {remembered seeds that are not live}; after a partition this is how the halves find each other: the contacted node sees
 itself dead in the request and refutes, the caller sees itself dead in the reply and
 refutes, and refutations spread. While a node knows no live member other than itself and
 has seeds, it re-joins its seeds every probe period, one join at a time (added after DST seed
@@ -138,6 +144,77 @@ returned across the network except as a code from `Codes()`; a remote `ErrClosed
 `env.ErrRemote` (`TestErrors/every sentinel survives the wire code table`). Datagram-path
 failures are never fatal: they are counted in `Stats` and kept in `LastError()`.
 
+## Lifetime of a dead entry (repair round)
+
+One rule serves three needs that pull against each other: forget dead members (bounded
+state, no re-gossip storms), never let old news overturn a verdict or lower an incarnation,
+and still find the other side after a partition longer than the retention.
+
+1. **Verdict.** A dead or left entry enters a node's view when it supersedes what the node
+   holds for that ID (view entry or tombstone). The node's retention clock for it starts
+   then. If the node held the member, the change is queued for gossip as before. If the node
+   never held the ID (a second-hand verdict about a stranger, e.g. learned from a sync), the
+   entry is kept but **not queued**: only sync replies carry it, so a verdict cannot be
+   relayed onward by nodes that never knew the member.
+2. **Retention.** For `DeadRetention` the entry is in the view: `Lookup` returns it, syncs
+   carry it, a packet to that member leads with it, and dead (not left) entries are heal
+   targets.
+3. **Burial.** When the retention expires the entry leaves the view (`Lookup` →
+   `ErrNotMember`, it is never sent again) and becomes a **tombstone**: the exact `Member`
+   value (ID, region, incarnation, state), nothing else. A node holds at most
+   `MaxTombstones` = 4096 tombstones; burying one more evicts the oldest-buried
+   (`Stats.TombstonesEvicted`). A tombstone has no time limit of its own.
+4. **Old news is answered, not accepted.** An update about a tombstoned ID that does not
+   supersede the tombstone:
+   - if it is dead or left (the same or an older verdict, e.g. from a peer whose retention
+     has not expired yet) it is dropped. This is what stops the ping-pong the review found:
+     a node that has buried an entry can never take it back from a slower peer;
+   - if it claims the member alive or suspect (a stale replay, or a wiped node rejoining at
+     a low incarnation), the tombstone's verdict goes back into the view for one more
+     `DeadRetention` (`Stats.Reinstated`; no event, not queued). The node now answers with the
+     verdict: the claimant's sync reply carries it and packets to the member lead with it, so
+     a live owner refutes to verdict + 1. Then it is buried again.
+5. **New life.** An update that supersedes the tombstone (in practice alive at a higher
+   incarnation, i.e. a refutation) removes the tombstone and is applied as a newly joined
+   member (`EventJoined`).
+6. **Heal.** Every `SyncInterval` the heal sync picks one target from {dead entries in the
+   view} ∪ {dead tombstones} ∪ {remembered seeds not live}. Left members are never contacted.
+   Seeds given to `Join` are remembered exactly like `Config.Seeds` (self and duplicates
+   dropped, at most `MaxSeeds` = 256).
+
+**What holds (per node, while the ID's tombstone is held, i.e. fewer than 4096 later burials
+on that node):** the node's record for an ID (view entry, else tombstone) never moves down
+the `Supersedes` order, so its incarnation never decreases and a dead or left verdict is
+overturned only by a higher incarnation. Purge is monotone: once buried, the ID is absent from
+`Lookup` unless a contradicting live claim arrives (then the verdict, not the claim, comes
+back) or a higher incarnation arrives. A dead entry is purged on every survivor and stays
+absent with no periodic re-gossip (`TestDeadEntriesStayPurgedDST`: 5 nodes, crash and leave,
+`DeadRetention` 10 s, sync every 2 s, watched for 3 × `DeadRetention` after the last purge;
+every survivor purges the victim exactly once and reinstates nothing).
+
+**What does not hold:** after a node evicts an ID's tombstone, that node accepts the ID as
+new at any incarnation (a replayed alive(x, 0) would be believed by that node). Each node
+also keeps a verdict about a stranger it learned from a sync for one full retention from when
+it learned it, so a verdict can outlive its first burial by up to one `DeadRetention` per
+node that had never heard of the member; it cannot cycle, because every node that buries it
+then holds a tombstone.
+
+**Partition re-merge (PLAN 7.7, as worded here):** two sides of a partition of any length
+re-merge after the heal if at least one node on either side holds, on the other side, a
+reachable remembered seed (`Config.Seeds` or a seed it gave to `Join`) or a dead tombstone /
+dead view entry of a node that is up. A cluster formed only through `Config.Seeds` and
+`Join` always has a seed edge crossing any cut, so it re-merges while the seed at the end of
+that edge is up; if those seeds are down, the tombstones still connect the sides until each
+side has buried more than 4096 other members since. Without any of these (no live seed across
+the cut and the other side's tombstones evicted) the sides stay apart: SWIM has no other
+address source. Latency: the heal sync picks one candidate uniformly per node per
+`SyncInterval`, so with h heal candidates of which u are up on the other side, a side of m
+nodes makes its first useful contact after about `SyncInterval` × h / (u × m); many long-dead
+tombstones slow the re-merge but do not prevent it. Proved by `TestSWIMLongPartitionHealDST` (partition held until each side has
+buried the other, so longer than `DeadRetention` = 20 s; one variant with the seed across the
+cut, one where the only seed crashed before the cut so only tombstones point across) and
+`TestSWIMPartitionHealDST` (within the retention).
+
 ## Restart with lost state and the same ID — what is guaranteed
 
 A restarted node starts at incarnation 0 with an empty view and joins its seeds. If any
@@ -149,7 +226,11 @@ member still holds an entry for its ID at incarnation i:
 - if that entry is alive at exactly 0 (it crashed and restarted before anyone noticed and
   before it ever refuted anything), nothing needs to change: the new life is indistinguishable
   from the old one and stays at 0.
-If every entry was purged (after `DeadRetention`), alive(0) is accepted as new.
+If the old entry was purged but its tombstone is still held (repair round), the seed answers
+the join's alive(0) by bringing the recorded verdict back into its view and replying with it,
+so the node refutes to the verdict's incarnation + 1 exactly as in the first case. Only if no
+node holds the entry or a tombstone for the ID (each node evicts its oldest tombstone after
+`MaxTombstones` later purges) is alive(0) accepted as new; nothing remembers an older life then.
 Guarantee as tested (`TestSWIMRestartSameIDDST`, both cases, 500 seeds): after a wipe-and-
 rejoin, every node holds the ID as alive within `rejoinBound` (30 s) with an incarnation ≥
 the old entry's, and strictly greater when the old entry was not alive. Not guaranteed:
@@ -181,11 +262,23 @@ rejoin over an entry at `MaxUint32` (see Limits).
 | A paused (falsely suspected) node refutes, is never declared dead, raises its incarnation, all views agree | `TestSWIMRefutationDST` |
 | Restart with lost state and same ID | `TestSWIMRestartSameIDDST` |
 | Join with no reachable seed through the simulator (crashed and unknown seeds) | `TestJoinNoReachableSeedDST` |
-| A dead verdict is never overturned without a higher incarnation (any observer, any scenario); self never suspect/dead; own incarnation monotonic per life | recorder check + invariant in every DST scenario |
+| A dead verdict is never overturned without a higher incarnation (any observer, any scenario, across purges: the recorder keeps every verdict); self never suspect/dead; own incarnation monotonic per life | recorder check + invariant in every DST scenario |
+| Dead/left entries are purged on every survivor exactly once and stay absent for 3 × `DeadRetention` (crash and leave, 5 nodes, sync every 2 s), each survivor keeps a tombstone (repair) | `TestDeadEntriesStayPurgedDST` |
+| Nodes purging at different times never take a buried verdict back from a slower peer (repair) | `TestDeadEntryLifetime/two nodes…` |
+| Old news about a buried member: equal/older verdicts dropped; live claims at or below it bring the verdict back (no event, not gossiped, buried again later); a higher incarnation is a new life; a wiped node at 0 is answered with its verdict and refutes above it; tombstones capped at 4096, oldest evicted, an evicted ID is new again (repair) | `TestDeadEntryLifetime` |
+| Verdicts about members never held are kept but not gossiped (repair) | `TestDeadEntryLifetime/a death learned about an unknown member…` |
+| Partition longer than `DeadRetention` re-merges, via a Join seed across the cut or via tombstones alone (repair) | `TestSWIMLongPartitionHealDST` |
+| Join seeds retried while alone and used by the heal sync; self-only seeds never retried; seed cap (repair) | `TestJoinSeedsAreRemembered` |
+| Relays bounded and O(1) under a ping-req flood (repair) | `TestRelayBounds` |
+| View bounded by `MaxMembers` ≤ `MaxUpdates`; a full view still encodes; packets ≤ `MaxUpdates` entries (repair) | `TestViewBounds` |
+| No callback runs inside the call that registered it; closed-node paths report `ErrClosed` (repair) | `TestCallbacksNeverRunInsideTheRegisteringCall` |
+| Region-mismatch refutation, single self entry in leave packets, codes in 80–95 (repair) | `TestRepairNits` |
+| Every `FuzzViewMergeLaws` seed runs under plain `go test` (repair) | `TestFuzzSeedsRunWithoutSkipping` |
 
 Every DST scenario goes through `simtest.Sweep` + `simtest.RequireDeterministic` (two runs,
-digests compared first), runs its seeds in parallel subtests, and uses the gossip code table
-in `sim.Config.Codes`.
+digests compared first), runs its seeds sequentially (see "Why DST seeds run sequentially";
+the top-level tests run in parallel with each other), and uses the gossip code table in
+`sim.Config.Codes`.
 
 ## Measurements
 
@@ -296,7 +389,7 @@ Individual commands while building:
 - `go test -cover ./internal/gossip` → ok, 97.5%.
 - `DST_SEEDS=500` package run → PASS (numbers above).
 
-## Uncovered branches (97.5%)
+## Uncovered branches (97.5% before the repair; see the repair list below for now)
 
 All are defensive and unreachable through the public API, or reachable only in ways the
 simulator does not produce:
@@ -314,6 +407,14 @@ simulator does not produce:
 - `sendWith` encode error, `syncWith` request encode error, `OnRequest` reply encode
   error: only for a view of more than 65,535 members (the u16 count); messages built by the
   node are otherwise always valid.
+
+Repair round, 97.3% (`go test -cover`): the uncovered statements are `refute` while closed,
+`apply` with an empty ID or invalid state (`Decode` rejects both), the suspicion timer firing
+closed or stale, `nextTarget`'s final return, `onTick`/`onSync` while closed, `piggyback`'s
+lead-does-not-fit and comparator `return 0`, the `sendWith` encode error, the `syncWith`
+encode error (now reported through `AfterFunc(0)`; unreachable since `MaxMembers` ≤
+`MaxUpdates`) and the `OnRequest` reply encode error (same reason). All defensive, reasons as
+above.
 
 ## Errors intentionally ignored (`_ =`)
 
@@ -338,18 +439,102 @@ None. No line added to `agent_work/gates/panic-allowlist.txt`.
   the timeout, as in SWIM; when isolation ends it learns its death from the first packet led
   by its own entry or from a heal sync, and refutes.
 - Sync messages carry the whole view; at most 65,535 members (the u16 count).
-- The heal list is {dead members} ∪ {seeds not live}, sorted and deduplicated; left members
-  are not contacted (they left on purpose).
+- The heal list is {dead members} ∪ {dead tombstones} ∪ {remembered seeds not live}, sorted
+  and deduplicated; left members are not contacted (they left on purpose). Repair round: see
+  "Lifetime of a dead entry" for what is and is not guaranteed after a long partition.
 - `Config.MaxPacket` is assumed equal across the cluster: an inbound packet larger than
   this node's own limit is dropped as malformed.
 
 ## Requests to the orchestrator
 
-- Code table rows: gossip registers `CodeAppMin+16..+19` (80–83) to leave 64–79 free.
-  Chunk 6 builds the node's table from every chunk's `Codes()`; please reserve 80–95 for
-  gossip, and tell the other Wave B builders to pick disjoint blocks (`env.NewCodeTable`
-  rejects duplicates).
+- Code table rows: gossip registers `CodeAppMin+16..+20` (80–84), inside its block 80–95
+  (pinned by `TestRepairNits`).
 - The 500-seed sweep of this package takes about 8–11 minutes on the shared droplet; the
   N=100 convergence sweep is the critical path. If the gate's G5 budget gets tight when all
   Wave B packages land, the N=100 case is the one to move to a separate nightly sweep.
 - No simulator change request. No detlint exemption needed.
+
+## Repair round (review REVIEW-1 FAIL + adversarial run, one repair)
+
+Brief: `objstore-p2-01-gossip-repair1.md`. Every fix has a regression test written first and
+committed failing (`852ef2b`, on top of the API-only stub commit `1943c70`); the
+implementation is `875ce69`, with follow-ups `f28be3f`, `516807a`, `91b4b61`.
+
+### Findings, tests, changes
+
+| Item | Test that now proves it (failed before the fix) | What changed |
+|---|---|---|
+| R1 dead/left entries resurrect after `DeadRetention` | `TestDeadEntryLifetime/two nodes that purge a dead member at different times never resurrect it in each other` (the reviewer's two-harness repro, 50 more sync rounds), `TestDeadEntriesStayPurgedDST` (crash and leave) | tombstone floor; old verdicts dropped; strangers' verdicts not queued; see "Lifetime of a dead entry" |
+| R2 relay state under a ping-req flood | `TestRelayBounds` (10,000 ping-reqs → 1,024 relays held, 8,976 counted in `Stats.RelaysDropped`; pruning on arrival without a tick; no relay when the ping send fails; expiry list ≤ 2 × cap under ack-at-once) | relays in a map keyed by relay sequence (O(1) ack lookup) plus an expiry FIFO compacted at 2 × `MaxRelays`; pruned at every ping-req and tick; `MaxRelays` = 1024; relay kept only if `sendWith` reports the ping sent |
+| R3 view past `MaxUpdates`, piggyback bound, callbacks inside the registering call | `TestViewBounds` (cap 10: 11 refusals, `ErrViewFull`, known members still change, purge frees room; a full 65,535-member view still encodes as a sync and its packets decode; `MaxMembers` range), `TestCallbacksNeverRunInsideTheRegisteringCall` | `Config.MaxMembers` (default and maximum `MaxUpdates`), new IDs and reinstatements refused when full; `take` stops at `MaxUpdates` entries; `syncWith` reports an encode failure through `AfterFunc(0)`; the empty-targets join reports `ErrClosed` if the node left first |
+| R3 hostile-input cost (found while writing the 65,535-member test: 93 s before) | same test, 0.69 s after | queue indexed by ID (enqueue O(1)); rotation insert O(1) (append + swap into a random remaining slot, membership in a set); `View` appends and sorts lazily on the next ordered read, `Remove` is O(1) |
+| C4 `retention-monotonicity`, C23 `stale-replay-after-purge` | `TestDeadEntryLifetime/a stale alive below a purged death brings back the death, never the stale entry` (4 cases incl. both seed-901 repros), `.../an equal or older verdict…dropped`, `.../a higher incarnation after the purge is a new life`, `.../a wiped node rejoining at incarnation 0 is told its purged death and refutes above it`, `.../the tombstones are capped…`, `.../one member buried and reinstated many times…` | the fix, not a narrowed claim: bounded floor of `MaxTombstones` = 4096 per node, oldest evicted; exact guarantee in "Lifetime of a dead entry" |
+| C19 `partition-heal-retained-false`, `default-retention-long-partition` | `TestJoinSeedsAreRemembered`, `TestDeadEntryLifetime/the heal sync contacts a purged dead member but never a purged left one`, `TestSWIMLongPartitionHealDST` (two variants) | seeds given to `Join` remembered like `Config.Seeds`; dead tombstones are heal targets; claim stated in "Lifetime of a dead entry" |
+| R4 refute ignored a region mismatch | `TestRepairNits/a peer holding this node alive at its incarnation in another region is refuted` | `refute` returns early only for alive at own incarnation **and** own region |
+| R5 leave packets carried alive and left self | `TestRepairNits/leave packets carry this node's entry once, as left` | `Leave` enqueues the left self entry (replacing the queued alive one) before sending |
+| R6 fuzz seeds skipped | `TestFuzzSeedsRunWithoutSkipping` runs every `FuzzViewMergeLaws` seed through `rapid.MakeFuzz` and fails if one skips | seeds replaced by five 64–1024-byte patterns that rapid accepts (random-looking bytes are rejected by rapid's draws; zero-heavy and small-valued patterns run) |
+| R7 self-only seeds, join `AfterFunc` after leave, loose assertion | `TestJoinSeedsAreRemembered/a node whose only seed is itself never retries a join`, `TestCallbacksNeverRunInsideTheRegisteringCall/a Join pending when the node leaves reports ErrClosed once`, `TestJoin/no second join…` now asserts exactly 1 | self and duplicates filtered from the seed list at `New`/`Join`; closed check in the deferred callback |
+| R8 notes | this section; "runs its seeds in parallel subtests" corrected; restart section rewritten | — |
+| Wire codes in the gossip block | `TestRepairNits/every gossip wire code lies in the package's block 80 to 95` | `ErrViewFull` → `CodeAppMin+20` = 84 |
+| Also: a join reply arriving after `Leave` | `TestCallbacksNeverRunInsideTheRegisteringCall/a seed reply arriving after Leave reports ErrClosed and merges nothing` | (behaviour unchanged; was uncovered) |
+
+### Numbers re-measured (repair round)
+
+500 seeds (`DST_SEEDS=500`, base 1, plus pinned 33/78/469), inside the dev container, commit
+`93edee0`'s product code (the MEASURE lines were byte-identical between the runs before and
+after the allocation cut, so the numbers below hold for both):
+
+| Measure | Before repair | After repair |
+|---|---|---|
+| Converge N=20, periods min/median/p99/max | 0/8/21/22 | 0/8/21/21 |
+| Converge N=50 | 0/18/27/32 | 1/18/26/29 |
+| Converge N=100 | 10/26/32/33 | 10/26/32/34 (bound 56) |
+| Datagrams per node per period, median/max, N=20/50/100 | 3.25/4.14, 3.02/3.86, 2.91/3.52 | 3.233/4.011, 3.027/3.778, 2.905/3.554 (bound 5.000) |
+| False deaths (1,500 convergence + 500 detection runs) | 0 | 0 |
+| Crash detection N=20, 5% loss, min/median/p99/max | 21.5/23.0/27.0/28.0 s | 21.5/23.0/27.0/28.0 s (bound 40 s) |
+| Partition heal within retention, N=12 | 4.0/6.5/11.0/12.0 s | 4.0/6.5/10.5/11.5 s (bound 60 s) |
+| Long partition heal, seed across the cut (new) | never (C19) | 2.5/7.0/14.5/16.0 s (bound 90 s) |
+| Long partition heal, tombstones only (new) | never | 2.5/12.0/29.0/35.0 s (bound 90 s) |
+| Asymmetric link suspicions / canary suspicions | 0 / 416–537 | 0 / 416–543 (median 492) |
+
+Max ÷ ⌈log₂N⌉ after: 4.2 (N=20), 4.8 (N=50), 4.9 (N=100); `convergeC` = 8 unchanged. The
+small shifts come from the changed random draws of the O(1) rotation insert and from
+verdicts about strangers no longer being re-gossiped.
+
+Wall time and what was done about it. The first 500-seed run after the fixes hit `go test`'s
+default 10-minute timeout with the N=100 convergence sweep at seed 439 of 503 (load ≈ 11):
+every other DST had finished within about 2.5 minutes and one sequential N=100 loop ran alone.
+Two changes, neither touching coverage (same seeds, same assertions):
+1. `TestSWIMConvergenceDST` runs its seeds in 4 shards in parallel (seed mod 4; each shard
+   sequential, each seed's simulation released when its subtest ends, so memory stays at
+   four simulations; a REPLAY line names the shard, and `-seed=N` runs only that shard).
+   Wall time 591 s at load ≈ 12.
+2. Per-seed cost: per-node scratch slices for outgoing piggyback lists and incoming decoded
+   updates, string reuse for known IDs/regions on decode, an early return in `apply`, and
+   no view copies in the sync/indirect-probe scans: about 10% less CPU per N=100 seed
+   (old vs new test binary, same seeds, 3 runs each: user CPU ≈ 23.1 s → 20.7 s).
+   Wall time 352 s at load 6–8.
+Default-seed `go test ./internal/gossip`: 14–15 s (it was 6–10 s; the 65,535-member view test
+and the 8,200-cycle tombstone-backlog test add about 2 s, the new DSTs the rest).
+
+### API changes
+
+Added: `Config.MaxMembers`; `MaxTombstones`, `MaxRelays`, `MaxSeeds`; `Node.Tombstones()`;
+`ErrViewFull`, `CodeViewFull` (84); `Stats.RelaysDropped`, `Stats.ViewFull`,
+`Stats.TombstonesEvicted`, `Stats.Reinstated`. `Config.Validate` refuses more than
+`MaxSeeds` seeds and `MaxMembers` outside 1..`MaxUpdates`. Behaviour changes a caller can
+see: `Join` seeds are remembered; a verdict about a member this node never held is not
+re-gossiped; a stale live claim about a buried member brings the verdict back into the view;
+`EncodeState` now also covers tombstones, the relay count, the seed list and the new counters.
+Test-only (`export_test.go`): `RelayCount`, `RelayBacklog`, `TombBacklog`, `SeedCount`.
+
+### Chosen not to do
+
+- No byte bound on the view: `MaxMembers` bounds the entry count so a sync always fits the
+  wire's u16 count, but 65,535 entries with long IDs and regions encode to more than the
+  simulator's 16 MiB request limit; such a sync fails with `env.ErrTooLarge` and is counted in
+  `Stats.SyncErrors` (nothing bricks; the view stays usable). A deployment with long IDs sets
+  `MaxMembers` lower.
+- No deduplication of ping-reqs by (requester, sequence): the cap and the O(1) ack path bound
+  the work; a duplicated ping-req costs one extra relay slot until it expires.
+- The adversarial harness was not edited (as briefed).
