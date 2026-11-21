@@ -412,7 +412,7 @@ Determinism-lint conformance of what I added: no new imports outside the allowed
 | `agent_work/gates/gate.sh` | does not exist in this worktree; not run |
 
 New code is fully covered (`Disk.affected`, `Disk.stored`, `Budget.damage`, `Budget.Allows`,
-`refsOf`, `Sync`, `disk.crash`, `record`: 100%). The only new uncovered branch is none; `exec`
+`refsOf`, `Sync`, `disk.crash`, `record`: 100%); no new uncovered branch. `exec`
 (98.1%) and `Step` (95.5%) keep the uncovered branches listed in the first round.
 
 ### Requests to the orchestrator (repair round)
