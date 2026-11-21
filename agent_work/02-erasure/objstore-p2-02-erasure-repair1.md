@@ -43,3 +43,19 @@ it must end `overall=pass`. Add a "Repair round" section to
 changed, API changes, numbers that moved, anything you chose not to do and why. Everything
 committed (gate result files may stay uncommitted). Final message: commit list and a
 three-line summary. Do not claim anything you did not run.
+
+## Added after the adversarial pass (Astra, 41 attacks held, 1 broken)
+The harness is committed under `agent_work/adversarial/02-erasure/` (read `ATTACKS.md`;
+you do not edit that directory). One attack is BROKEN and belongs to this round:
+7. C30 `window-pending-stripes` — with `Window=1` and one paused holder, a PUT of 2, 8 and
+   64 stripes leaves 2, 8 and 64 stripes with outstanding requests at the moment the PUT
+   is acknowledged (smallest reproduction: 5 bytes, k=4, m=2, StripeSize=4, seed 220211).
+   Decide what `Window` bounds and make code, tests and build notes agree: either bound
+   the stripes that still have outstanding work (requests in flight, buffers held) —
+   state the memory bound that follows and test it — or keep the behaviour, bound only
+   stripes awaiting their quorum, and say plainly in the build notes what stays
+   outstanding after the acknowledgement, for how long (the request timeout), and what it
+   costs in memory per stripe. A regression test must pin whichever you choose. The
+   orchestrator re-runs `agent_work/adversarial/02-erasure/run-all.sh` after your round;
+   if you keep the behaviour, the attack stays scored as it is and the claim is narrowed
+   in writing — say so in the notes rather than changing the harness.

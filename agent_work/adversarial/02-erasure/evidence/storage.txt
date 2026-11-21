@@ -1,0 +1,15 @@
+HELD C12,C13,C14 shard-flip: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-truncate: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-extend: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-index: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-stripe: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-version: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-forge: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-code: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-length: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C14 shard-parser-mutations: every bit-position byte flip and truncation rejected; 10000 random inputs are total and canonical
+HELD C15,C16 store-model: 1000 modeled operations, all keys and durable bytes checked after each step, then crash
+HELD C15 store-identity-and-isolation: 60 version/bucket namespaces isolated, misnamed writes rejected, wipe exposes joined not-found
+HELD C20 manifest-canonical: six shapes round-trip; every truncation, trailing byte and nonminimal bucket varint rejected
+HELD C20 manifest-hostile-numbers: 20000 magic-prefixed random manifests with oversized varints processed without panic
+HELD C26 wire-and-object-errors: all five sentinels survive direct/wrapped/joined code mapping and ObjectError; all request ops round-trip
