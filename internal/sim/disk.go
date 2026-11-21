@@ -15,6 +15,7 @@ type blob struct {
 	dExists    bool
 	dirty      bool
 	appendOnly bool
+	rot        bool
 }
 
 type Disk struct {
@@ -84,8 +85,7 @@ func (h *handle) Write(name string, data []byte) error {
 	}
 	b := d.get(name)
 	b.data = append(make([]byte, 0, len(data)), data...)
-	b.exists, b.dirty, b.appendOnly = true, true, false
-	delete(d.damaged, name)
+	b.exists, b.dirty, b.appendOnly, b.rot = true, true, false, false
 	return nil
 }
 
@@ -96,7 +96,7 @@ func (h *handle) Append(name string, data []byte) error {
 	}
 	b := d.get(name)
 	if !b.dirty {
-		b.appendOnly = b.dExists
+		b.appendOnly = true
 	}
 	b.data = append(b.data, data...)
 	b.exists, b.dirty = true, true
@@ -114,6 +114,7 @@ func (h *handle) Sync(name string) error {
 	}
 	if !b.exists {
 		delete(d.blobs, name)
+		delete(d.damaged, name)
 		return nil
 	}
 	b.dur = clone(b.data)
@@ -121,6 +122,9 @@ func (h *handle) Sync(name string) error {
 		b.dur = []byte{}
 	}
 	b.dExists, b.dirty, b.appendOnly = true, false, false
+	if !b.rot {
+		delete(d.damaged, name)
+	}
 	return nil
 }
 
@@ -133,8 +137,7 @@ func (h *handle) Delete(name string) error {
 	if b == nil || !b.exists {
 		return fmt.Errorf("sim: disk delete %s on %s: %w", name, h.n.id, env.ErrNotFound)
 	}
-	b.data, b.exists, b.dirty, b.appendOnly = nil, false, true, false
-	delete(d.damaged, name)
+	b.data, b.exists, b.dirty, b.appendOnly, b.rot = nil, false, true, false, false
 	return nil
 }
 
@@ -163,9 +166,12 @@ func (d *Disk) crash(torn bool) {
 			if torn && b.appendOnly && b.exists && len(b.data) > len(b.dur) {
 				keep := len(b.dur) + d.s.diskRand.IntN(len(b.data)-len(b.dur)+1)
 				b.dur = append(clone(b.dur), b.data[len(b.dur):keep]...)
+				if keep > 0 {
+					b.dExists = true
+				}
 			}
 			b.data, b.exists = clone(b.dur), b.dExists
-			b.dirty, b.appendOnly = false, false
+			b.dirty, b.appendOnly, b.rot = false, false, d.damaged[name]
 		}
 		if !b.exists {
 			delete(d.blobs, name)
@@ -173,8 +179,18 @@ func (d *Disk) crash(torn bool) {
 	}
 }
 
-func (d *Disk) wipe() {
+func (d *Disk) stored() []string {
+	var out []string
 	for _, name := range sortedKeys(d.blobs) {
+		if b := d.blobs[name]; b.exists || b.dExists {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func (d *Disk) wipe() {
+	for _, name := range d.stored() {
 		d.damaged[name] = true
 	}
 	d.blobs = map[string]*blob{}
@@ -210,6 +226,7 @@ func (d *Disk) rot(name string) error {
 	b.dur[bit/8] ^= 1 << (bit % 8)
 	if !b.dirty {
 		b.data[bit/8] ^= 1 << (bit % 8)
+		b.rot = true
 	}
 	d.damaged[name] = true
 	return nil

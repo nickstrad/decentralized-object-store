@@ -394,6 +394,9 @@ func TestPropDiskModel(t *testing.T) {
 				if !b.dirty {
 					b.appendOnly = true
 				}
+				if !b.wExists {
+					b.wDamaged = false
+				}
 				b.written = append(append([]byte{}, b.written...), d...)
 				b.wExists, b.dirty = true, true
 			},
@@ -435,7 +438,7 @@ func TestPropDiskModel(t *testing.T) {
 				}
 				for _, b := range m.model {
 					b.written, b.wExists, b.dirty, b.appendOnly = append([]byte{}, b.durable...), b.dExists, false, false
-					b.wDamaged = b.dDamaged
+					b.wDamaged = b.dDamaged && b.dExists
 				}
 				m.restart(t)
 			},
@@ -460,7 +463,7 @@ func TestPropDiskModel(t *testing.T) {
 						}
 					}
 					b.written, b.wExists, b.dirty, b.appendOnly = append([]byte{}, b.durable...), b.dExists, false, false
-					b.wDamaged = b.dDamaged
+					b.wDamaged = b.dDamaged && b.dExists
 				}
 				m.restart(t)
 			},
@@ -498,8 +501,9 @@ func TestPropDiskModel(t *testing.T) {
 				}
 				for _, b := range m.model {
 					if b.wExists || b.dExists {
-						b.dDamaged, b.wDamaged = true, true
+						b.dDamaged = true
 					}
+					b.wDamaged = false
 					b.written, b.wExists, b.durable, b.dExists, b.dirty, b.appendOnly = nil, false, nil, false, false, false
 				}
 			},
