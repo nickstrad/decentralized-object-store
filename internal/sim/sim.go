@@ -552,13 +552,17 @@ func (s *Sim) exec(e *event) disposition {
 		s.guard(-1, "action "+e.label, e.fn)
 		return dispRan
 	case kindFault:
+		disp := dispFailed
 		if e.nemesis != nil {
-			return e.nemesis.fire(e)
+			s.guard(-1, "nemesis "+e.label, func() { disp = e.nemesis.fire(e) })
+			return disp
 		}
-		if err := s.Apply(*e.fault); err != nil {
-			return dispFailed
-		}
-		return dispRan
+		s.guard(-1, "fault "+e.fault.Kind.String(), func() {
+			if s.Apply(*e.fault) == nil {
+				disp = dispRan
+			}
+		})
+		return disp
 	}
 	n := s.nodes[e.node]
 	if e.released {
