@@ -279,6 +279,26 @@ func TestDeadEntryLifetime(t *testing.T) {
 			t.Fatalf("a retained tombstone did not answer the stale alive: %+v %v", m, err)
 		}
 	})
+	t.Run("one member buried and reinstated many times never grows the tombstone backlog past twice the cap", func(t *testing.T) {
+		h := newHarness(t, "self", gossip.Config{DeadRetention: time.Second})
+		h.node.Start()
+		h.deliver("p01", gossipMsg(mem("x", 5, gossip.StateDead)))
+		for i := range 2*gossip.MaxTombstones + 10 {
+			h.clock.advance(2 * time.Second)
+			drainRequests(h)
+			h.net.take()
+			if _, ok := tombstone(h.node, "x"); !ok {
+				t.Fatalf("cycle %d: x not buried", i)
+			}
+			h.deliver("p01", gossipMsg(mem("x", 1, gossip.StateAlive)))
+			if n := gossip.TombBacklog(h.node); n > 2*gossip.MaxTombstones+1 {
+				t.Fatalf("cycle %d: tombstone backlog %d", i, n)
+			}
+		}
+		if n := len(h.node.Tombstones()); n != 0 {
+			t.Fatalf("%d tombstones while x is reinstated", n)
+		}
+	})
 	t.Run("the heal sync contacts a purged dead member but never a purged left one", func(t *testing.T) {
 		h := newHarness(t, "self", gossip.Config{DeadRetention: time.Second})
 		announce(h, "p01")
@@ -334,6 +354,25 @@ func TestJoinSeedsAreRemembered(t *testing.T) {
 		}
 		if healed == 0 {
 			t.Fatal("the heal sync never contacted the join seed")
+		}
+	})
+	t.Run("remembered seeds are capped at MaxSeeds and a longer configured list is refused", func(t *testing.T) {
+		var many []env.NodeID
+		for i := range gossip.MaxSeeds + 10 {
+			many = append(many, env.NodeID(fmt.Sprintf("s%03d", i)))
+		}
+		h := newHarness(t, "self", gossip.Config{})
+		if err := h.node.Join(append(many, many[0], "self"), nil); err != nil {
+			t.Fatal(err)
+		}
+		if n := len(h.net.takeRequests()); n != gossip.MaxSeeds+10 {
+			t.Fatalf("join contacted %d seeds", n)
+		}
+		if n := gossip.SeedCount(h.node); n != gossip.MaxSeeds {
+			t.Fatalf("%d seeds remembered", n)
+		}
+		if err := (gossip.Config{Seeds: many}).WithDefaults().Validate(); !errors.Is(err, env.ErrInvalidArgument) {
+			t.Fatalf("%d configured seeds: %v", len(many), err)
 		}
 	})
 	t.Run("a node whose only seed is itself never retries a join", func(t *testing.T) {
@@ -395,6 +434,21 @@ func TestRelayBounds(t *testing.T) {
 		}
 		if n := gossip.RelayCount(h.node); n != 1 {
 			t.Fatalf("%d relays held", n)
+		}
+	})
+	t.Run("relays answered at once never let the expiry list grow past twice the cap", func(t *testing.T) {
+		h := newHarness(t, "self", gossip.Config{})
+		for i := range 3 * gossip.MaxRelays {
+			h.deliver("p01", gossip.Message{Kind: gossip.KindPingReq, Seq: uint32(i), Target: "victim"})
+			ms := decodeAll(t, h.net.take())
+			h.deliver("victim", gossip.Message{Kind: gossip.KindAck, Seq: ms[0].Seq})
+			h.net.take()
+			if n := gossip.RelayBacklog(h.node); n > 2*gossip.MaxRelays+1 {
+				t.Fatalf("expiry list holds %d entries after %d relays", n, i+1)
+			}
+		}
+		if h.node.Stats().RelaysDropped != 0 || gossip.RelayCount(h.node) != 0 {
+			t.Fatalf("dropped %d, held %d", h.node.Stats().RelaysDropped, gossip.RelayCount(h.node))
 		}
 	})
 	t.Run("a relay whose ping could not be sent is not kept", func(t *testing.T) {

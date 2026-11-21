@@ -6,3 +6,9 @@ func WithoutIndirectProbes(c Config) Config {
 }
 
 func RelayCount(n *Node) int { return len(n.relays) }
+
+func RelayBacklog(n *Node) int { return len(n.relayFIFO) }
+
+func TombBacklog(n *Node) int { return len(n.tombFIFO) }
+
+func SeedCount(n *Node) int { return len(n.seeds) }
