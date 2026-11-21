@@ -229,3 +229,13 @@ func TestCanaryDroppedInvariant(t *testing.T) {
 	run := simtoy.ChaosRun(simtoy.ChaosOptions{Nodes: 20, Configure: sim.PlantDroppedInvariants})
 	requireCanaryCaught(t, run, sim.ErrInvariantNotRun)
 }
+
+func BenchmarkChaos100(b *testing.B) {
+	run := chaos(100)
+	var steps uint64
+	for i := 0; b.Loop(); i++ {
+		s := run(int64(i + 1))
+		steps += s.Steps()
+	}
+	b.ReportMetric(float64(steps)/b.Elapsed().Seconds(), "events/s")
+}

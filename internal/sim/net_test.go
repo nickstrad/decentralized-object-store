@@ -399,3 +399,20 @@ func TestNetworkArgumentErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestUnknownServerErrorArrivesAsErrRemote(t *testing.T) {
+	h := twoNodes(t, nil)
+	h.rec("b").onRequest = func(r *recorder, from env.NodeID, req []byte, reply env.Reply) {
+		reply([]byte("ignored"), errors.New("disk on fire"))
+	}
+	h.rec("a").request("b", "q", time.Second)
+	h.run(time.Second)
+	reps := h.rec("a").replies
+	if len(reps) != 1 || !errors.Is(reps[0].err, env.ErrRemote) || errors.Is(reps[0].err, env.ErrNotFound) || reps[0].reply != "" {
+		t.Fatalf("replies %+v", reps)
+	}
+	var re *env.RemoteError
+	if !errors.As(reps[0].err, &re) || re.Code != env.CodeRemote || re.Msg != "disk on fire" {
+		t.Fatalf("remote error %#v", reps[0].err)
+	}
+}

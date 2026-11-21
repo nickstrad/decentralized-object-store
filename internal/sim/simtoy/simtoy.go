@@ -38,6 +38,7 @@ type Config struct {
 type Node struct {
 	e        env.Env
 	cfg      Config
+	peers    []env.NodeID
 	value    uint64
 	initial  uint64
 	diskErrs int
@@ -116,13 +117,15 @@ func (n *Node) arm() {
 }
 
 func (n *Node) others() []env.NodeID {
-	out := make([]env.NodeID, 0, len(n.cfg.Peers))
-	for _, p := range n.cfg.Peers {
-		if p != n.e.ID {
-			out = append(out, p)
+	if n.peers == nil {
+		n.peers = make([]env.NodeID, 0, len(n.cfg.Peers))
+		for _, p := range n.cfg.Peers {
+			if p != n.e.ID {
+				n.peers = append(n.peers, p)
+			}
 		}
 	}
-	return out
+	return n.peers
 }
 
 func (n *Node) push() {

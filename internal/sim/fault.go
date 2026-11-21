@@ -176,7 +176,7 @@ func (s *Sim) Apply(f Fault) error {
 
 func (s *Sim) InjectAt(t env.Time, f Fault) {
 	fc := f
-	s.schedule(&event{at: t, kind: KindFault, node: -1, peer: -1, fault: &fc})
+	s.schedule(&event{at: t, kind: kindFault, node: -1, peer: -1, fault: &fc})
 }
 
 func (s *Sim) InjectSchedule(sched []TimedFault) env.Time {

@@ -265,7 +265,7 @@ func (s *Sim) boot(n *node) {
 	n.paused = false
 	n.started = false
 	n.handle = &handle{s: s, n: n, inc: n.inc}
-	s.schedule(&event{at: s.now, kind: KindStart, node: n.idx, peer: -1, inc: n.inc})
+	s.schedule(&event{at: s.now, kind: kindStart, node: n.idx, peer: -1, inc: n.inc})
 }
 
 func (s *Sim) node(id env.NodeID) (*node, error) {
@@ -358,7 +358,7 @@ func (s *Sim) schedule(e *event) *event {
 }
 
 func (s *Sim) At(t env.Time, name string, fn func()) {
-	s.schedule(&event{at: t, kind: KindAction, node: -1, peer: -1, label: name, fn: fn})
+	s.schedule(&event{at: t, kind: kindAction, node: -1, peer: -1, label: name, fn: fn})
 }
 
 func (s *Sim) Workload(start env.Time, count int, maxGap time.Duration, fn func(i int)) {
@@ -540,19 +540,19 @@ func (s *Sim) RunUntilConverged(deadline env.Time, converged func() bool) error 
 	return s.err
 }
 
-func (s *Sim) exec(e *event) Disposition {
+func (s *Sim) exec(e *event) disposition {
 	switch e.kind {
-	case KindAction:
+	case kindAction:
 		s.guard(-1, "action "+e.label, e.fn)
-		return DispRan
-	case KindFault:
+		return dispRan
+	case kindFault:
 		if e.nemesis != nil {
 			return e.nemesis.fire(e)
 		}
 		if err := s.Apply(*e.fault); err != nil {
-			return DispFailed
+			return dispFailed
 		}
-		return DispRan
+		return dispRan
 	}
 	n := s.nodes[e.node]
 	if e.released {
@@ -564,61 +564,61 @@ func (s *Sim) exec(e *event) Disposition {
 		}
 	} else if e.kind.stream() && e.peer >= 0 && s.links[e.peer][e.node].relHeld > 0 {
 		s.schedule(e)
-		return DispRequeued
+		return dispRequeued
 	} else if n.relHeld > 0 {
 		s.schedule(e)
-		return DispRequeued
+		return dispRequeued
 	}
 	if e.dead {
-		return DispStale
+		return dispStale
 	}
 	if e.inc != 0 && (e.inc != n.inc || !n.up) {
-		return DispStale
+		return dispStale
 	}
 	if e.peer >= 0 && e.kind.network() {
 		l := &s.links[e.peer][e.node]
 		if l.clogged {
 			l.held = append(l.held, e)
-			return DispClogged
+			return dispClogged
 		}
 	}
 	if !n.up {
-		if e.kind == KindRequest {
+		if e.kind == kindRequest {
 			s.refuse(e)
-			return DispDown
+			return dispDown
 		}
-		return DispDown
+		return dispDown
 	}
-	if n.paused || (!n.started && e.kind != KindStart) {
+	if n.paused || (!n.started && e.kind != kindStart) {
 		n.held = append(n.held, e)
-		return DispHeld
+		return dispHeld
 	}
 	switch e.kind {
-	case KindStart:
+	case kindStart:
 		s.start(n)
-	case KindDatagram:
+	case kindDatagram:
 		from := s.nodes[e.peer].id
 		s.guard(n.idx, "datagram", func() { n.proc.OnDatagram(from, e.payload) })
-	case KindRequest:
+	case kindRequest:
 		s.serve(n, e)
-	case KindResponse, KindRefused, KindTimeout:
+	case kindResponse, kindRefused, kindTimeout:
 		return s.complete(n, e)
-	case KindTimer:
+	case kindTimer:
 		t := e.timer
 		t.ev = nil
 		s.guard(n.idx, "timer", t.fn)
-	case KindLocal:
+	case kindLocal:
 		s.guard(n.idx, "callback", e.fn)
 	}
-	return DispRan
+	return dispRan
 }
 
-func (k Kind) network() bool {
-	return k == KindDatagram || k == KindRequest || k == KindResponse || k == KindRefused
+func (k evKind) network() bool {
+	return k == kindDatagram || k == kindRequest || k == kindResponse || k == kindRefused
 }
 
-func (k Kind) stream() bool {
-	return k == KindRequest || k == KindResponse || k == KindRefused
+func (k evKind) stream() bool {
+	return k == kindRequest || k == kindResponse || k == kindRefused
 }
 
 func (s *Sim) start(n *node) {

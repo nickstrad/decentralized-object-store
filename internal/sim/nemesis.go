@@ -155,8 +155,8 @@ func (s *Sim) StartNemesis(cfg NemesisConfig) (*Nemesis, error) {
 	for i := 0; i < cfg.Phases; i++ {
 		begin := cfg.Start.Add(time.Duration(i) * period)
 		end := begin.Add(cfg.Chaos)
-		s.schedule(&event{at: begin, kind: KindFault, node: -1, peer: -1, nemesis: n, label: "chaos", fault: &Fault{}, until: end})
-		s.schedule(&event{at: end, kind: KindFault, node: -1, peer: -1, nemesis: n, label: "heal", fault: &Fault{Kind: FaultHealAll}})
+		s.schedule(&event{at: begin, kind: kindFault, node: -1, peer: -1, nemesis: n, label: "chaos", fault: &Fault{}, until: end})
+		s.schedule(&event{at: end, kind: kindFault, node: -1, peer: -1, nemesis: n, label: "heal", fault: &Fault{Kind: FaultHealAll}})
 		n.quiet = end
 	}
 	return n, nil
@@ -168,12 +168,12 @@ func (n *Nemesis) History() []NemesisStep {
 	return append([]NemesisStep(nil), n.hist...)
 }
 
-func (n *Nemesis) fire(e *event) Disposition {
+func (n *Nemesis) fire(e *event) disposition {
 	s := n.s
 	if e.label == "heal" {
 		s.HealAll()
 		n.hist = append(n.hist, NemesisStep{At: s.now, Fault: *e.fault, Outcome: OutcomeApplied})
-		return DispRan
+		return dispRan
 	}
 	end := e.until
 	f, ok := n.draw()
@@ -192,15 +192,15 @@ func (n *Nemesis) fire(e *event) Disposition {
 	n.hist = append(n.hist, NemesisStep{At: s.now, Fault: f, Outcome: out})
 	next := s.now.Add(time.Duration(1 + s.nemRand.Int64N(int64(n.cfg.MaxGap))))
 	if next < end {
-		s.schedule(&event{at: next, kind: KindFault, node: -1, peer: -1, nemesis: n, label: "chaos", fault: &Fault{}, until: end})
+		s.schedule(&event{at: next, kind: kindFault, node: -1, peer: -1, nemesis: n, label: "chaos", fault: &Fault{}, until: end})
 	}
 	switch out {
 	case OutcomeApplied:
-		return DispRan
+		return dispRan
 	case OutcomeRejected:
-		return DispRejected
+		return dispRejected
 	}
-	return DispSkipped
+	return dispSkipped
 }
 
 func (n *Nemesis) pick(idx []int) (int, bool) {

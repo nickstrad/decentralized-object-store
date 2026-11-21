@@ -15,8 +15,8 @@ const recordSize = 38
 type record struct {
 	at   env.Time
 	seq  uint64
-	kind Kind
-	disp Disposition
+	kind evKind
+	disp disposition
 	node int
 	peer int
 	hash uint64
@@ -36,19 +36,19 @@ func (r record) bytes() [recordSize]byte {
 	return b
 }
 
-func (s *Sim) record(e *event, disp Disposition) {
+func (s *Sim) record(e *event, disp disposition) {
 	r := record{at: s.now, seq: e.seq, kind: e.kind, disp: disp, node: e.node, peer: e.peer}
 	switch e.kind {
-	case KindDatagram, KindRequest, KindResponse, KindRefused:
+	case kindDatagram, kindRequest, kindResponse, kindRefused:
 		r.hash = fnv64a(e.payload) ^ uint64(e.code)<<56
 		r.aux = e.call
-	case KindTimeout:
+	case kindTimeout:
 		r.aux = e.call
-	case KindStart:
+	case kindStart:
 		r.aux = uint64(e.inc)
-	case KindFault:
+	case kindFault:
 		r.hash = fnv64a(e.fault.Encode())
-	case KindAction:
+	case kindAction:
 		r.hash = fnv64a([]byte(e.label))
 	}
 	b := r.bytes()

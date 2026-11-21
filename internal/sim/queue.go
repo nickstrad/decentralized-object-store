@@ -4,47 +4,47 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
-type Kind uint8
+type evKind uint8
 
 const (
-	KindStart Kind = iota + 1
-	KindDatagram
-	KindRequest
-	KindResponse
-	KindRefused
-	KindTimeout
-	KindTimer
-	KindLocal
-	KindFault
-	KindAction
+	kindStart evKind = iota + 1
+	kindDatagram
+	kindRequest
+	kindResponse
+	kindRefused
+	kindTimeout
+	kindTimer
+	kindLocal
+	kindFault
+	kindAction
 )
 
 var kindNames = [...]string{"?", "start", "datagram", "request", "response", "refused", "timeout", "timer", "local", "fault", "action"}
 
-func (k Kind) String() string {
+func (k evKind) String() string {
 	if int(k) < len(kindNames) {
 		return kindNames[k]
 	}
 	return "?"
 }
 
-type Disposition uint8
+type disposition uint8
 
 const (
-	DispRan Disposition = iota
-	DispStale
-	DispDown
-	DispHeld
-	DispClogged
-	DispRequeued
-	DispRejected
-	DispSkipped
-	DispFailed
+	dispRan disposition = iota
+	dispStale
+	dispDown
+	dispHeld
+	dispClogged
+	dispRequeued
+	dispRejected
+	dispSkipped
+	dispFailed
 )
 
 var dispNames = [...]string{"ran", "stale", "down", "held", "clogged", "requeued", "rejected", "skipped", "failed"}
 
-func (d Disposition) String() string {
+func (d disposition) String() string {
 	if int(d) < len(dispNames) {
 		return dispNames[d]
 	}
@@ -55,7 +55,7 @@ type event struct {
 	at       env.Time
 	seq      uint64
 	hi       int
-	kind     Kind
+	kind     evKind
 	node     int
 	peer     int
 	inc      uint32

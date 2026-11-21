@@ -58,7 +58,7 @@ func (h *handle) AfterFunc(d time.Duration, fn func()) env.Timer {
 
 func (t *timer) arm(d time.Duration) {
 	h := t.h
-	t.ev = h.s.schedule(&event{at: h.s.now.Add(h.n.toGlobal(d)), kind: KindTimer, node: h.n.idx, peer: -1, inc: h.inc, timer: t})
+	t.ev = h.s.schedule(&event{at: h.s.now.Add(h.n.toGlobal(d)), kind: kindTimer, node: h.n.idx, peer: -1, inc: h.inc, timer: t})
 }
 
 func (t *timer) Stop() bool {
@@ -110,7 +110,7 @@ func (h *handle) Request(to env.NodeID, req []byte, timeout time.Duration, cb fu
 	}
 	from := h.n
 	fail := func(err error) {
-		s.schedule(&event{at: s.now, kind: KindLocal, node: from.idx, peer: -1, inc: h.inc, fn: func() { cb(nil, err) }})
+		s.schedule(&event{at: s.now, kind: kindLocal, node: from.idx, peer: -1, inc: h.inc, fn: func() { cb(nil, err) }})
 	}
 	if timeout <= 0 {
 		fail(fmt.Errorf("sim: request %s->%s: timeout %v: %w", from.id, to, timeout, env.ErrInvalidArgument))
@@ -128,8 +128,8 @@ func (h *handle) Request(to env.NodeID, req []byte, timeout time.Duration, cb fu
 	s.nextCall++
 	c := &call{id: s.nextCall, to: ti, cb: cb}
 	from.calls[c.id] = c
-	c.timeout = s.schedule(&event{at: s.now.Add(from.toGlobal(timeout)), kind: KindTimeout, node: from.idx, peer: -1, inc: h.inc, call: c.id})
-	s.sendStream(&event{kind: KindRequest, node: ti, peer: from.idx, peerInc: h.inc, call: c.id, payload: clone(req)})
+	c.timeout = s.schedule(&event{at: s.now.Add(from.toGlobal(timeout)), kind: kindTimeout, node: from.idx, peer: -1, inc: h.inc, call: c.id})
+	s.sendStream(&event{kind: kindRequest, node: ti, peer: from.idx, peerInc: h.inc, call: c.id, payload: clone(req)})
 }
 
 func clone(b []byte) []byte {
@@ -161,31 +161,31 @@ func (s *Sim) serve(n *node, e *event) {
 		if code == env.CodeOK {
 			payload = clone(resp)
 		}
-		s.sendStream(&event{kind: KindResponse, node: caller.idx, peer: n.idx, inc: e.peerInc, call: e.call, payload: payload, code: code, msg: msg})
+		s.sendStream(&event{kind: kindResponse, node: caller.idx, peer: n.idx, inc: e.peerInc, call: e.call, payload: payload, code: code, msg: msg})
 	}
 	s.guard(n.idx, "request", func() { n.proc.OnRequest(caller.id, e.payload, reply) })
 }
 
 func (s *Sim) refuse(e *event) {
-	s.sendStream(&event{kind: KindRefused, node: e.peer, peer: e.node, inc: e.peerInc, call: e.call})
+	s.sendStream(&event{kind: kindRefused, node: e.peer, peer: e.node, inc: e.peerInc, call: e.call})
 }
 
-func (s *Sim) complete(n *node, e *event) Disposition {
+func (s *Sim) complete(n *node, e *event) disposition {
 	c := n.calls[e.call]
 	if c == nil {
-		return DispStale
+		return dispStale
 	}
 	delete(n.calls, e.call)
 	var reply []byte
 	var err error
 	peer := s.nodes[c.to].id
 	switch e.kind {
-	case KindTimeout:
+	case kindTimeout:
 		err = fmt.Errorf("sim: request %s->%s: %w", n.id, peer, env.ErrTimeout)
-	case KindRefused:
+	case kindRefused:
 		s.cancel(c.timeout)
 		err = fmt.Errorf("sim: request %s->%s: connection refused: %w", n.id, peer, env.ErrUnreachable)
-	case KindResponse:
+	case kindResponse:
 		s.cancel(c.timeout)
 		err = s.codes.Decode(e.code, e.msg)
 		if err == nil {
@@ -193,7 +193,7 @@ func (s *Sim) complete(n *node, e *event) Disposition {
 		}
 	}
 	s.guard(n.idx, "reply callback", func() { c.cb(reply, err) })
-	return DispRan
+	return dispRan
 }
 
 func (s *Sim) cancel(e *event) {

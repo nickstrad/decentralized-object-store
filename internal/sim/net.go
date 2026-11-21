@@ -93,7 +93,7 @@ func (s *Sim) sendDatagram(from, to int, msg []byte) {
 		copies = 2
 	}
 	for i := 0; i < copies; i++ {
-		s.schedule(&event{at: s.now.Add(s.latency(from, to)), kind: KindDatagram, node: to, peer: from, payload: clone(msg)})
+		s.schedule(&event{at: s.now.Add(s.latency(from, to)), kind: kindDatagram, node: to, peer: from, payload: clone(msg)})
 	}
 }
 
