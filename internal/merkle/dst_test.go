@@ -63,6 +63,7 @@ type world struct {
 	corruptErr error
 	convergeAt env.Time
 	quietAt    env.Time
+	nem        *sim.Nemesis
 }
 
 func newWorld(s *sim.Sim, depth int) *world {
@@ -99,7 +100,7 @@ func (w *world) converged() bool {
 	}
 	for _, id := range w.honest {
 		d := w.s.Disk(id)
-		if len(d.Damaged()) > 0 {
+		if len(w.damaged(id)) > 0 {
 			return false
 		}
 		for _, k := range w.keys {
@@ -153,7 +154,7 @@ func (w *world) scanRot() error {
 		now := w.s.Now()
 		seen := map[string]bool{}
 		for _, id := range w.honest {
-			for _, b := range w.s.Disk(id).Damaged() {
+			for _, b := range w.damaged(id) {
 				k := string(id) + "|" + b
 				seen[k] = true
 				if _, ok := w.rotFirst[k]; !ok {
@@ -176,6 +177,20 @@ func (w *world) scanRot() error {
 		}
 		return nil
 	}
+}
+
+func (w *world) damaged(id env.NodeID) []string {
+	d := w.s.Disk(id)
+	var out []string
+	for _, name := range d.Damaged() {
+		key := strings.TrimPrefix(name, chunkPrefix)
+		b, ok := d.Peek(name)
+		db, dok := d.PeekDurable(name)
+		if ok != dok || (ok && merkle.Sum(b).String() != key) || (dok && merkle.Sum(db).String() != key) {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 func sortedTimes(m map[string]env.Time) []string {
@@ -307,6 +322,7 @@ func bitRotRun(nemesis bool) func(seed int64) *sim.Sim {
 				return remember(w)
 			}
 			quiet = max(quiet, nem.QuietAt())
+			w.nem = nem
 		}
 		w.quietAt = quiet
 		if err := w.s.RunUntil(quiet); err != nil {
