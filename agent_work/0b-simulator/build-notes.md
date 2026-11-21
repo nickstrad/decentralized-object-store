@@ -420,3 +420,203 @@ New code is fully covered (`Disk.affected`, `Disk.stored`, `Budget.damage`, `Bud
 1. The brief's rapid command `go test ./internal/sim/... -rapid.checks=2000` cannot pass in
    `simtest` (it does not import rapid). Use `go test ./internal/sim -rapid.checks=2000`.
 2. `runtime/debug` exemption for `internal/sim/sim.go` as announced in the repair brief.
+
+## Post-adversarial round (ATTACKS.md: 8 BROKEN, REVIEW-2 NIT 1 → this round)
+
+Builder: Opus 5.5 (fresh seat), same branch, 2026-11-21. Brief:
+`objstore-p2-0b-repair2.md`. All regression tests were committed first in `a577f64`. Each
+one failed on the code before the fixes: I ran the package and saw every new test fail. The
+cmd test failed to compile because `run` did not take the program name yet. The extended
+`TestPropNemesisRespectsBudget` failed only at `-rapid.checks=2000` (after 163 cases: group
+`stripe/6` had 2 damaged blobs with a limit of 1). The fixes follow, one commit per item
+group.
+
+### Items
+
+| # | Attack / finding | Test that proves it (failed before) | What changed (commit) |
+|---|---|---|---|
+| 1 | C4 `read-count-overflow`, `whole-read-overflow-budget` | `TestReadFaultCountsSaturate` (named and whole-node counts past `MaxInt` keep failing reads; the whole-node case stays visible to `Budget{}.Check`; counts `0`, `-1` and `MinInt` are rejected and change nothing) | `FailReads` adds with saturation at `math.MaxInt` (`addSat`). A saturated count means "fail every read until `HealAll`". Non-positive counts were already `ErrInvalidArgument`. (`371a1d3`) |
+| 1 (audit) | incarnation counter (`uint32`) | `TestIncarnationCounterNeverWraps` (restart, wipe-rejoin and HealAll at `MaxUint32`; uses the test-only hook `SetIncarnation`) | `Restart`/`WipeRejoin` return `ErrInvalidArgument` at incarnation `MaxUint32`. `HealAll` leaves such a node down. Without this the counter would wrap to 0, the value that marks incarnation-free events, so stale timers would fire in a new incarnation. (`371a1d3`) |
+| 2 | C6 `nemesis-callback-panic` | `TestPanicInABudgetCallbackFailsTheRun` (a `GroupOf` panic reached through bit-rot, read-error, wipe-disk and crash steps; asserts nothing escapes `RunUntilQuiet`, and both the returned error and `s.Err()` are a `PanicError` with the seed and "nemesis" in the message) | `exec` runs `kindFault` events under `s.guard`: nemesis steps as event `nemesis chaos` / `nemesis heal`, `InjectAt` faults as `fault <kind>`. The guarded step returns `dispFailed`. (`8f42739`) |
+| 3 | C2 `huge-latency-range` | `TestHugeLatencyIsDrawnWithoutOverflow` (ranges `{0,MaxInt64}`, `{MaxInt64-1,MaxInt64}`, `{MaxInt64,MaxInt64}`, `{Horizon,MaxInt64}`, 20 seeds each, datagram plus request), `TestLatencyBeyondTheHorizonIsNeverDelivered`, `TestVirtualTimeSaturatesAtTheHorizon` (RunFor, actions, Workload gaps, `ScheduleFromBytes` with a huge step, nemesis windows) | Latency is drawn as `Min + Uint64N(uint64(Max-Min)+1)`. That is the same value and the same draw count as the old `Int64N` for every range that worked before, and it cannot overflow because `0 <= Min <= Max`. Every time sum saturates instead of wrapping (`later`, `scaled` in `clock.go`): delivery, stream delivery, Workload gap, nemesis gap, `ScheduleFromBytes` step. `StartNemesis` rejects with `ErrInvalidArgument` any config where `Start + Phases*(Chaos+Heal)` passes `Horizon` or `Chaos+Heal` overflows. I chose "drawn without overflow" over "reject at configuration": any non-negative range is legal, and a draw that lands past the horizon is a message that is never delivered. (`21c80f6`) |
+| 4 | C6 `clock-overflow` | `TestSkewIsBoundedSoLocalTimeNeverOverflows` (`AddNode` rejects `±(MaxSkew+1)`, `MaxInt64` and `MinInt64`; four nodes at `±MaxSkew` × `±MaxDriftPPM` read monotonic local time from 0 to `Horizon`) | New `MaxSkew = 2^61 ns` (about 73 years), checked in `AddNode` (and so in `AddCluster`). The bound holds because with \|drift\| ≤ 10 % and global time ≤ `Horizon`, \|local\| ≤ 1.1·2^62 + 2^61 < 2^63. (`21c80f6`) |
+| 5 | C6 `timer-duration-clamp` | `TestTimersBeyondTheHorizonNeverFire` (for drift 0, −100,000 and +100,000 ppm: `AfterFunc(Horizon+1)` and `AfterFunc(MaxInt64)` never fire, `Stop` on such a timer reports it was pending, a `Request` with timeout `MaxInt64` to a partitioned peer never completes, time never passes `Horizon`; a timer due exactly at `Horizon` fires at `Horizon`) | `toGlobal` no longer clamps to 2^62. It saturates at `MaxInt64`, and the sum saturates too. `schedule` does not queue an event due after `Horizon`. (`21c80f6`) |
+| 6 | C7 `cli-failure-report` | `TestFailingScenarioPrintsTheLogTailAndReplay` (a failing scenario registered from the test; 5 cases: installed binary, `=`-form flags, a `go run` temp binary, the default seed, a path with a space; checks stdout digests, the error, "event log tail (20 of 31):", a `t=40 seq=` line, "panic stack:", exactly one REPLAY, and that it is the last line), `TestPassingScenarioPrintsNoReplay` | On failure, objsim prints to stderr, in order: `objsim: <err>`, `event log tail (n of N):` with the last 20 records indented two spaces (simtest's shape), `panic stack:` for a `PanicError`, and last `REPLAY: <cmd> -scenario <name> -seed <n>`. `<cmd>` is `os.Args[0]` shell-quoted, or `go run ./cmd/objsim` when the binary sits in a `go-build` temp dir, which is what `go run` produces. Like simtest's REPLAY, that form assumes the module root as working directory. `run` now takes the program name first (package `main`, not frozen). (`1fed710`) |
+| 7 | REVIEW-2 NIT 1 | `TestBudgetGroupLimit/a nemesis read error never ambushes a blob written after it` (the reviewer's scenario through the nemesis: 30 seeds, read-error-only nemesis on 3 empty nodes, shards written during chaos, `Budget.Check` after every event; also asserts no applied whole-node read error). `TestPropNemesisRespectsBudget` (extended: a wrapper may write a NEW blob `shard/<k>` on every node every 50–400 ms of local time; `GroupOf` maps it to group `stripe/<k>`) | With `Budget.GroupOf != nil`, a nemesis read error names one blob from `disk.stored()` and is skipped when the node stores none. With `GroupOf == nil`, the draws and behaviour are unchanged. (`60ed873`) |
+| 8 | C5 `network-nemesis-dynamic-blobs` | `TestPropNemesisTimingIgnoresInventory` (one seed, two runs whose processes differ only in what they write to disk: 0–3 blobs at start, optional periodic writes; all `ChaosKinds`; budget lifted or drawn with or without groups; every step must have equal `At` and equal `Fault.Encode()` with `Blob` blanked. `Outcome` may differ because the budget reads the disk) | The blob choice for bit-rot and for a named read error draws exactly one `Uint64` from the `nemesis` stream (`Nemesis.index`), even for an empty inventory (then the step is skipped). The mapping is `x & (k-1)` for a power of two and otherwise the high word of `x·k`, which is exactly what `IntN(k)` returns unless `IntN` would resample (probability below k/2^64). This changed golden digests (below). (`60ed873`) |
+
+### The narrowed claim (replaces the "Streams are independent" row's sim-level reading)
+
+The nemesis's schedule — when it acts, on which node, with which kind of fault — depends only on the seed and the nemesis configuration. Which blob a disk fault hits is chosen from the blobs on that node at that instant, so it depends on what the protocol has written.
+
+Two notes on that claim:
+- The other fault fields are also independent of the disk: partition sides, region, peer,
+  link-loss ppm and read-error count. `TestPropNemesisTimingIgnoresInventory` compares every
+  field except `Blob`.
+- The outcome (applied/rejected/skipped) of a DISK fault can depend on the disk, because
+  `Budget.Allows` judges the blobs that fault would hit. No nemesis-owned state depends on a
+  disk-fault outcome. The live, paused and clogged sets change only through process and
+  network faults, and those are judged on `MinLive` and on a damage state that the budget
+  keeps within limits. So the schedule of later steps does not move. The property checks
+  this, because it compares every later step.
+
+The adversarial attack `network-nemesis-dynamic-blobs` stays BROKEN as worded. Its two runs
+choose different blob names (`"received"` vs `"base"`) at step 4, which the narrowed claim
+allows.
+
+### Contract changes for Wave B (amend "Semantics Wave B builders must know")
+
+- **Time horizon.** `sim.Horizon = 2^62 ns` (about 146 years of virtual time). Global time
+  never passes it. `RunUntil`, `RunFor` and `RunUntilConverged` clamp their target or deadline
+  to `Horizon`. An event due after `Horizon` is never queued and never runs: a timer, a
+  request timeout, a datagram or stream delivery whose latency lands past it, an `At`
+  action, an `InjectAt` fault, a nemesis or workload step. So a timer or request timeout
+  beyond the horizon never fires early. It never fires at all, and `Stop` on it returns
+  true. An event due exactly at `Horizon` runs. Time sums saturate and never wrap.
+- **Skew.** `|NodeSpec.Skew| <= sim.MaxSkew` (2^61 ns), else `ErrInvalidArgument` from
+  `AddNode`/`AddCluster`. With `|DriftPPM| <= MaxDriftPPM`, a node's local time is monotonic
+  and within int64 for every global time in `[0, Horizon]`.
+- **Latency.** Any `Range` with `0 <= Min <= Max` is accepted. A draw past the horizon means
+  the message is never delivered. On a stream link it also holds every later stream message
+  on that link behind it (FIFO).
+- **Nemesis.** `StartNemesis` returns `ErrInvalidArgument` if the last heal would come after
+  `Horizon` or if `Chaos+Heal` overflows. Under a group budget (`GroupOf != nil`), read errors
+  are per blob, never whole-node.
+- **Read faults.** `FailReads` counts saturate at `MaxInt`.
+- **Incarnations.** `Restart`/`WipeRejoin` return `ErrInvalidArgument` once a node has used
+  incarnation `MaxUint32`, and `HealAll` leaves it down.
+- **Panics in fault events.** A panic from a caller-supplied callback reached by a fault
+  event (`Budget.GroupOf` via `Allows`) is a `PanicError` with the seed, event
+  `nemesis chaos` or `fault <kind>`. I audited every user-supplied function the simulator
+  calls: `Factory`, the `Process` methods, `AfterFunc` and `Request` callbacks, `At` and
+  `Workload` functions, invariants, convergence predicates, `EncodeState` (in `Digests`), and
+  `GroupOf`. All now run under `guard`. A `Reply` function and `Budget.Allows`/`Check` called
+  directly by a test run in the caller's own context: inside a node handler, action or
+  invariant they are guarded by that event. Called outside the loop, a panic is the caller's.
+- **objsim.** A failing run prints the log tail, the panic stack and a final `REPLAY:` line.
+
+### Overflow audit (items 1, 3: every counter and accumulator)
+
+- `disk.go`: `failAny` and `failReads[name]` saturate (fixed). The `IntN` arguments
+  `len(b.data)-len(b.dur)+1` and `len(b.dur)*8` are bounded by allocated memory.
+- `net.go`/`sim.go`: `relHeld` (link and node) counts held events, bounded by memory.
+  `lastStream` is a time and is set from saturated sums. `seq`, `steps`, `nextCall` and
+  `logTotal` are `uint64` and grow by one per event, bounded by `MaxSteps` (a `uint64`), so
+  they cannot wrap within any run. `inc` is `uint32` and is now bounded (above).
+- `nemesis.go`: the gap `1 + Int64N(MaxGap)` cannot overflow (`MaxGap <= MaxInt64`), and its
+  sum saturates. Phase times are validated. `hist` is bounded by memory.
+- `fault.go`: `ScheduleFromBytes` step times saturate. `Count = 1 + b3%4` is small.
+  `Fault.Count` from a caller goes through `FailReads`.
+- `Range`-typed fields: only `NetConfig.Latency` and `InterRegionLatency`. Both are handled
+  by the overflow-free draw; `Min < 0` or `Max < Min` is still rejected.
+
+### API changes (exported additions only; no signature changed)
+
+- `sim.MaxSkew = time.Duration(1 << 61)`: the skew bound item 4 asks for, the counterpart of
+  `MaxDriftPPM`.
+- `sim.Horizon = env.Time(1 << 62)`: the time horizon the contract now states. Tests and
+  Wave B code need it to reason about "never fires". It replaces the unexported 2^62 clamp
+  that was in `toGlobal`.
+
+`frozen-api.txt` is regenerated. Its only difference from the previous listing is these two
+lines in the `sim` constant block. New behaviour on existing signatures: `Restart` and
+`WipeRejoin` can now return `ErrInvalidArgument`, `StartNemesis` rejects configurations past
+the horizon, and `AddNode` rejects large skew. Test-only addition:
+`SetIncarnation` in `export_test.go`.
+
+### Golden digests
+
+`testdata/golden.txt` changed in `60ed873`, on purpose, because item 8(a) forces it. Rows
+20/3, 50/1, 50/2 and 100/1 changed; rows 20/1, 20/2, 50/3, 100/2 and 100/3 did not. Cause:
+those toy chaos runs bit-rot a node that holds no durable blob. That step now consumes one
+`nemesis` draw where it consumed none. Check: restoring only the "skip without a draw on an
+empty inventory" line (and keeping the new `index` mapping) reproduces the old golden file
+exactly; I ran `TestGoldenDigests` against the old file in that state and it passed. So the
+`index` mapping and the other fixes moved nothing. Items 1–6 do not touch golden: the commit
+before `60ed873` passes `TestGoldenDigests` against the old file. The build-notes claim that
+`objsim -scenario=toy-chaos-100 -seed=3` prints the golden row still holds for that row,
+which did not change. `TestReplaySameProcess` and `TestReplayAcrossProcesses` pass.
+
+### Adversarial harness rerun (`bash agent_work/adversarial/0b-simulator/run-all.sh`, harness unchanged)
+
+`SUMMARY held=58 broken=2 setup_errors=0 elapsed_seconds=17` (was held=52 broken=8). Full
+output: `agent_work/0b-simulator/adversarial-rerun/run-all.txt`. The CLI fixture's failing
+output and its executed REPLAY are kept next to it. Running the harness rewrites its
+tracked evidence files under `agent_work/adversarial/`. I restored them with `git checkout`
+and copied the new output into `adversarial-rerun/` instead, because I may not edit that
+directory.
+
+Remaining BROKEN lines:
+- `BROKEN C5 network-nemesis-dynamic-blobs: seed=1 DropPPM 0 vs 1000000 with OnDatagram writing received changed nemesis step 4: {12ns bit-rot 1 "received" applied} versus {12ns bit-rot 1 "base" applied}`.
+  Expected, as the brief says. The claim is narrowed (above), and the times, kinds and nodes
+  of both histories are equal.
+- `BROKEN C6 clock-overflow: sim: add node 0: skew 9223372036854775807 outside ±2305843009213693952: invalid argument`.
+  This is the fix the brief asks for: skew is bounded at `AddNode`. The harness calls
+  `must(s.AddNode(...))`, so it reports any rejection as BROKEN and cannot score a
+  configuration-time rejection as held. Its own pass condition (local time monotonic or a
+  sim error) can no longer be violated, because no accepted skew can wrap
+  (`TestSkewIsBoundedSoLocalTimeNeverOverflows`). Request to the orchestrator below.
+
+The other six attacks are HELD: `read-count-overflow`, `whole-read-overflow-budget`,
+`nemesis-callback-panic`, `huge-latency-range` (the whole range `[0, MaxInt64]` is now
+drawn and the run ends cleanly), `timer-duration-clamp`, and `cli-failure-report`. In
+`cli-failure-report` the harness executed the printed REPLAY and it reproduced exit 1 and
+both digests.
+
+### Not done, and why
+
+- I did not reject latency ranges at configuration. Drawing without overflow keeps every
+  non-negative range legal and makes `huge-latency-range` hold. A range whose draws land past
+  the horizon just loses those messages, which is the same as an absurdly late delivery.
+- `TestPropNemesisRespectsBudget` finds the old ambush only at 2,000 checks, not at the
+  default 100. G2 runs 2,000, and the deterministic ambush subtest in `TestBudgetGroupLimit`
+  fails at the default count.
+- The rapid fail files written while the new properties failed on the old code were deleted,
+  as in the previous round.
+
+### Gate and commands (this round)
+
+`agent_work/gates/gate.sh 0b-simulator` from the worktree root on the host, run on the clean
+tree at `4ca8e303cd22ce67b772eb8813984c44282de7e5` (all code commits of this round plus the
+frozen-API commit; this notes commit changes only this file):
+`gate: overall=pass counts_for_landing=true`. The result files under
+`agent_work/0b-simulator/gates/` are left uncommitted.
+
+| Gate | Result |
+|---|---|
+| G0 tools, gofmt, vet, build, detlint (15 files in 3 packages; no new allowlist line), panics (no new `panic(`; allowlist untouched), deps, comments (baseline `c5117c5`), selfcontained | pass |
+| G1 unit + coverage floor | pass. objsim 98.0% (was 97.1%), env 97.9%, sim 95.3% (was 95.2%), simtest 95.1%, simtoy 0.0% in-package (exercised from `internal/sim` tests, as before) |
+| G2 rapid, 2,000 checks (seed 84288246893858) | pass, 58 s |
+| G3 `FuzzSimSchedule` 30 s | pass, 13,248 execs, 19 new interesting, no crasher |
+| G4 race | pass, 35 s |
+| G5 500-seed sweep (base 84288246893858) | pass, `internal/sim` 98 s |
+| G6 docker | pass |
+
+Before the gate, also run through `docker compose run --rm dev`: `gofmt -l .` (empty),
+`go vet ./...`, and `go test -count=1 ./...` (all ok) after each fix commit.
+`go test -count=1 ./internal/sim -rapid.checks=2000` was ok in 142 s with the scribbler's
+1 ms cadence. I then raised the minimum cadence to 20 ms, and G2 above took 58 s.
+`TestGoldenDigests -update-golden` was run once, in `60ed873`.
+
+Per-function coverage of the new and changed code (`go tool cover -func`, measured after
+the gate): `addSat`, `FailReads`, `toGlobal`, `withinHorizon`, `StartNemesis`,
+`Nemesis.index`, `latency`, `schedule`, `RunFor`, `AddNode`, `HealAll` and `lastIncarnation`
+are at 100%, and so are objsim's `run`, `report`, `command` and `quote`. New uncovered
+branches: `later`'s negative-overflow return and `scaled`'s negative-saturation return
+(80.0% and 85.7%). Both are reachable only with a negative duration near `MinInt64`, for
+example a negative `ScheduleFromBytes` step. Also uncovered is `RunUntilConverged`'s clamp of
+a deadline past `Horizon` (75.0%, together with the earlier uncovered branches of that
+function). The remaining gaps in `Restart` (88.9%), `WipeRejoin` (90.0%), `RunUntil`,
+`exec` and `draw` are the unknown-node and defensive branches listed in the first round.
+
+### Requests to the orchestrator (this round)
+
+1. Adversarial harness `clock-overflow` (`agent_work/adversarial/0b-simulator/main.go`, attack
+   "clock-overflow"): accept `errors.Is(err, env.ErrInvalidArgument)` from `AddNode` as held.
+   The brief directs a configuration-time bound, and the harness's `must` scores that as
+   BROKEN. I did not edit the harness.
+2. Build notes, main contract and claims table: the sentence "Every draw comes from the
+   `nemesis` stream, only from nemesis-owned state" and the row
+   `TestPropNetworkDrawsDoNotShiftTheNemesis` should be read with the narrowed claim above.
+   That text predates this round. I left it in place and put the corrected contract in this
+   section, which takes precedence.
