@@ -1,6 +1,10 @@
 package sim
 
-import "github.com/nickstrad/decentralized-object-store/internal/env"
+import (
+	"time"
+
+	"github.com/nickstrad/decentralized-object-store/internal/env"
+)
 
 func SetIncarnation(s *Sim, id env.NodeID, inc uint32) {
 	n := s.nodes[s.byID[id]]
@@ -19,3 +23,5 @@ func ReadFaults(d *Disk) ([]string, int) {
 	}
 	return names, d.failAny
 }
+
+func Scaled(k int64, d time.Duration) time.Duration { return scaled(k, d) }

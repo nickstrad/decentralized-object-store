@@ -277,3 +277,46 @@ func TestTimersBeyondTheHorizonNeverFire(t *testing.T) {
 		t.Fatalf("a timer due exactly at the horizon fired at %d", at)
 	}
 }
+
+func TestScaledHandlesEveryBoundary(t *testing.T) {
+	tests := []struct {
+		name string
+		k    int64
+		d    time.Duration
+		want time.Duration
+	}{
+		{"zero k", 0, math.MinInt64, 0},
+		{"zero d", math.MaxInt64, 0, 0},
+		{"one times one", 1, 1, 1},
+		{"max k times one", math.MaxInt64, 1, math.MaxInt64},
+		{"positive saturates", math.MaxInt64/2 + 1, 2, math.MaxInt64},
+		{"positive fits", math.MaxInt64 / 2, 2, math.MaxInt64 - 1},
+		{"one times minus one", 1, -1, -1},
+		{"fifteen times minus one", 15, -1, -15},
+		{"max k times minus one", math.MaxInt64, -1, -math.MaxInt64},
+		{"minus two fits", math.MaxInt64 / 2, -2, -(math.MaxInt64 - 1)},
+		{"minus two reaches min", math.MaxInt64/2 + 1, -2, math.MinInt64},
+		{"minus two saturates", math.MaxInt64/2 + 2, -2, math.MinInt64},
+		{"one times min", 1, math.MinInt64, math.MinInt64},
+		{"two times min saturates", 2, math.MinInt64, math.MinInt64},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sim.Scaled(tc.k, tc.d); got != tc.want {
+				t.Fatalf("scaled(%d, %d) = %d, want %d", tc.k, tc.d, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestScheduleFromBytesWithStepMinusOne(t *testing.T) {
+	s := sim.New(sim.Config{Seed: 1})
+	mustNil(t, s.AddNode(sim.NodeSpec{ID: "a"}, newPanicky))
+	sched := s.ScheduleFromBytes([]byte{1, 0, 0, 0}, 100, -1)
+	if len(sched) != 1 {
+		t.Fatalf("schedule has %d faults, want 1", len(sched))
+	}
+	if sched[0].At != 99 {
+		t.Fatalf("first fault at %d, want 99", sched[0].At)
+	}
+}
