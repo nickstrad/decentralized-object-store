@@ -1,0 +1,124 @@
+{
+  "chunk": "0a-kbfix",
+  "sha": "bfa9193f52e2037c363c5cb6a2d354c0427722cd",
+  "stage": "build",
+  "comment_baseline": "8205edf550c4982f2bbd15002ac46cb82ec5267e",
+  "started": "2026-11-21T19:23:28Z",
+  "finished": "2026-11-21T19:23:39Z",
+  "go_version": "go version go1.26.11 linux/amd64",
+  "image_id": "sha256:6514e92e27f9d1cb4dd4093c2a5446663738cc49a5e2f353684974e6ff100684",
+  "in_container": true,
+  "partial": false,
+  "dirty_tree": false,
+  "seed_from_sha": 210732993958626,
+  "fuzz_seconds": 30,
+  "overall": "pass",
+  "counts_for_landing": true,
+  "checks": [
+    {
+      "gate": "G0",
+      "check": "tools",
+      "status": "pass",
+      "seconds": 1,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "gofmt",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "vet",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "build",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "detlint",
+      "status": "pass",
+      "seconds": 0,
+      "note": "no simulator or protocol packages yet"
+    },
+    {
+      "gate": "G0",
+      "check": "panics",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "deps",
+      "status": "pass",
+      "seconds": 1,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "comments",
+      "status": "pass",
+      "seconds": 0,
+      "note": "comments compared with baseline 8205edf550c4982f2bbd15002ac46cb82ec5267e"
+    },
+    {
+      "gate": "G0",
+      "check": "selfcontained",
+      "status": "pass",
+      "seconds": 5,
+      "note": ""
+    },
+    {
+      "gate": "G1",
+      "check": "unit",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    },
+    {
+      "gate": "G2",
+      "check": "property",
+      "status": "pass",
+      "seconds": 1,
+      "note": "rapid seed 210732993958626, 2000 checks, 1 packages"
+    },
+    {
+      "gate": "G3",
+      "check": "fuzz",
+      "status": "pass",
+      "seconds": 1,
+      "note": "0 fuzz targets, 30s each"
+    },
+    {
+      "gate": "G4",
+      "check": "race",
+      "status": "pass",
+      "seconds": 2,
+      "note": ""
+    },
+    {
+      "gate": "G5",
+      "check": "dst",
+      "status": "pass",
+      "seconds": 0,
+      "note": "no simulator yet"
+    },
+    {
+      "gate": "G6",
+      "check": "docker",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    }
+  ]
+}
