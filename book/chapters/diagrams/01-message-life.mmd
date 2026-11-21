@@ -1,0 +1,9 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph TD
+  SEND[Send datagram] --> DROP[Blocked or dropped?]
+  DROP -->|no| SCHED[Draw latency and queue]
+  DROP -->|yes| GONE[Dropped silently]
+  SCHED --> HOLD[Clogged or paused?]
+  HOLD -->|no| DELIV[Deliver OnDatagram]
+  HOLD -->|yes| WAIT[Held in order]
+  WAIT -->|release| DELIV

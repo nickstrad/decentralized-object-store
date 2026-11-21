@@ -1,0 +1,8 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  SEED[One int64 seed] --> STREAMS[Named PCG streams]
+  STREAMS --> LOOP[Event loop]
+  LOOP --> NET[Network and disk]
+  NET --> PROC[Node state machines]
+  LOOP --> NEM[Nemesis and budget]
+  LOOP --> LOG[Event log and digests]

@@ -1,0 +1,4 @@
+HELD C5 named-stream-draws: 600000 comparisons unchanged by draws on an unrelated stream
+HELD C5 node-stream-isolation: 1000 extra node-0 draws did not shift node-1
+HELD C5 network-nemesis-static: 50 bit-rot schedules unchanged by network drop changes with identical blob inventories
+BROKEN C5 network-nemesis-dynamic-blobs: seed=1 DropPPM 0 vs 1000000 with OnDatagram writing received changed nemesis step 4: {12ns bit-rot 1 "received" applied} versus {12ns bit-rot 1 "base" applied}

@@ -1,6 +1,6 @@
 # C4 Level 1 — System Context
 
-**TARGET architecture — designed 2026-11-21, awaiting Nick's buy-in.**
+**Partly as built.** The DST harness (`internal/sim`, `internal/sim/simtest`, `cmd/objsim`) and the environment interfaces (`internal/env`) exist and match this diagram. Everything else is the target design.
 
 Model: diagram `context` in [model.json](model.json). Source: PLAN.md sections 1, 2.1, 2.7, 7.1.
 

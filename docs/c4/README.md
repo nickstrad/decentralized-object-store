@@ -1,10 +1,15 @@
 # C4 diagrams
 
-**TARGET architecture — designed 2026-11-21, awaiting Nick's buy-in.**
+**Target architecture, updated to as-built as each part lands.**
 
-These diagrams describe the architecture that [PLAN.md](../../PLAN.md) defines. No
-product code exists yet. As chunks land, each diagram is updated to the as-built
-architecture in the same landing.
+| Part | State | Diagrams |
+| --- | --- | --- |
+| DST harness (`internal/sim`, `internal/sim/simtest`, `cmd/objsim`) | built | 1, 3 |
+| Environment interfaces (`internal/env`) | built | 3 |
+| Everything else | target design | 1–9 |
+
+These diagrams describe the architecture that [PLAN.md](../../PLAN.md) defines. As each
+part lands, its diagrams are checked against the code and updated in the same landing.
 
 ## Diagrams
 
@@ -26,7 +31,7 @@ relationships does not stay readable.
 ## Format
 
 - [model.json](model.json) is the C4 model: every element, relationship and diagram.
-  It is a `c4-sdk` bundle, `schemaVersion: 1`. All items have status `planned`.
+  It is a `c4-sdk` bundle, `schemaVersion: 1`. Built elements have status `existing`, the rest `planned`; a diagram showing both is `mixed`.
 - Each diagram file has a Mermaid rendering, a terminal (Unicode) rendering, an
   element table and a numbered relationship table. Edge numbers in the pictures
   match the table rows.

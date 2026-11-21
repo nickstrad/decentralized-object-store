@@ -12,15 +12,15 @@ is `pgregory.net/rapid`, restricted to test files and checked by a gate.
 
 ## Current status
 
-Only the foundation tooling exists today. No storage or protocol code has been
-built yet. Each planned building block lands in its own chunk together with a
-book chapter.
+The foundation tooling and deterministic simulator are built, along with chapter
+1 of the book. No storage or protocol code exists yet. Each remaining building
+block lands in its own chunk together with a book chapter.
 
 | Building block | Status | Scope |
 | --- | --- | --- |
 | Foundation | Built | Docker environment (Go 1.26.11), landing gates (G0–G6), gate canaries, book scaffold, target C4 diagrams, site |
-| Deterministic simulator | Planned (next) | Deterministic simulator for testing under injected faults |
-| SWIM gossip membership | Planned | Failure detection and membership dissemination |
+| Deterministic simulator | Built | Environment interfaces (`internal/env`), single-threaded discrete-event simulator (`internal/sim`), sweep harness (`internal/sim/simtest`), and `cmd/objsim` |
+| SWIM gossip membership | Planned (next) | Failure detection and membership dissemination |
 | Reed-Solomon erasure coding | Planned | 4 data + 2 parity shards across 3 regions |
 | Merkle-tree anti-entropy | Planned | Tree diffing and background repair |
 | OCC metadata | Planned | ETags, conditional writes, version vectors, and concurrent sibling versions |
@@ -43,6 +43,13 @@ Run tests or any command inside the container:
 ```sh
 docker compose run --rm dev go test ./...
 docker compose run --rm dev <command>
+```
+
+Run a 100-node chaos simulation from a fixed seed; the same seed always prints
+the same two replay digests:
+
+```sh
+docker compose run --rm dev go run ./cmd/objsim -scenario toy-chaos-100 -seed 3
 ```
 
 ### Landing gates and canaries
@@ -88,8 +95,9 @@ the owning gate to go red for the right reason.
 - **Site:** [nickstrad.github.io/decentralized-object-store](https://nickstrad.github.io/decentralized-object-store/)
   publishes the front page, the Book, the C4 diagrams, and the plan.
 - **The Book:** [book/manifest.json](book/manifest.json) is the table of
-  contents; chapters live in `book/chapters/`. The book has no chapters yet. The
-  first, on deterministic simulation testing, arrives with the simulator.
+  contents; chapters live in `book/chapters/`. Chapter 1,
+  [Deterministic Simulation Testing](book/chapters/01-deterministic-simulation.md),
+  is published.
 - **C4 diagrams:** [docs/c4/README.md](docs/c4/README.md) holds the C4
   architecture diagrams. They show the target design until each part is built.
 - **Plan and specification:** [PLAN.md](PLAN.md) is the full build and testing

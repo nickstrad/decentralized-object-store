@@ -1,0 +1,4 @@
+HELD C7 simtest-report-fields: seed=23 deliberate panic report checked for seed, both digests, truncated tail, stack and replay command
+HELD C7 simtest-exact-replay: seed=23 executed the printed command verbatim from the module root and compared failure and both digests
+HELD C7 cli-failure-digests: seed=23 copied production CLI with a registered panic scenario exited 1 twice with matching digests
+HELD C7 cli-failure-report: seed=23 production run(-scenario adversarial-fail -seed 23) emitted log-tail=True REPLAY=True; see cli-original.txt and reporting.py fixture

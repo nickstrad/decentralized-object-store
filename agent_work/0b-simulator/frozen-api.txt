@@ -1,0 +1,513 @@
+==================== go doc -all ./internal/env
+package env // import "github.com/nickstrad/decentralized-object-store/internal/env"
+
+
+CONSTANTS
+
+const MaxErrorMessage = 200
+
+VARIABLES
+
+var (
+	ErrTimeout         = errors.New("timeout")
+	ErrUnreachable     = errors.New("unreachable")
+	ErrClosed          = errors.New("closed")
+	ErrTooLarge        = errors.New("too large")
+	ErrRemote          = errors.New("remote error")
+	ErrNotFound        = errors.New("not found")
+	ErrIO              = errors.New("i/o error")
+	ErrInvalidArgument = errors.New("invalid argument")
+)
+
+TYPES
+
+type Clock interface {
+	Now() Time
+	AfterFunc(d time.Duration, fn func()) Timer
+}
+
+type Code uint8
+
+const (
+	CodeOK              Code = 0
+	CodeRemote          Code = 1
+	CodeTimeout         Code = 2
+	CodeUnreachable     Code = 3
+	CodeClosed          Code = 4
+	CodeTooLarge        Code = 5
+	CodeNotFound        Code = 6
+	CodeIO              Code = 7
+	CodeInvalidArgument Code = 8
+	CodeAppMin          Code = 64
+)
+type CodeEntry struct {
+	Code Code
+	Err  error
+}
+
+type CodeTable struct {
+	// Has unexported fields.
+}
+
+func DefaultCodes() *CodeTable
+
+func NewCodeTable(app ...CodeEntry) (*CodeTable, error)
+
+func (t *CodeTable) Decode(code Code, msg string) error
+
+func (t *CodeTable) Encode(err error) (Code, string)
+
+func (t *CodeTable) Entries() []CodeEntry
+
+type Disk interface {
+	Read(name string) ([]byte, error)
+	Write(name string, data []byte) error
+	Append(name string, data []byte) error
+	Sync(name string) error
+	Delete(name string) error
+	List(prefix string) ([]string, error)
+}
+
+type Env struct {
+	ID     NodeID
+	Region Region
+	Clock  Clock
+	Rand   *rand.Rand
+	Net    Transport
+	Disk   Disk
+}
+
+func (e Env) WithClock(c Clock) Env
+
+func (e Env) WithDisk(d Disk) Env
+
+func (e Env) WithNet(t Transport) Env
+
+type NodeID string
+
+type Process interface {
+	Start()
+	OnDatagram(from NodeID, msg []byte)
+	OnRequest(from NodeID, req []byte, reply Reply)
+	EncodeState() []byte
+}
+
+type Region string
+
+type RemoteError struct {
+	Code Code
+	Msg  string
+	// Has unexported fields.
+}
+
+func (e *RemoteError) Error() string
+
+func (e *RemoteError) Unwrap() []error
+
+type Reply func(resp []byte, err error)
+
+type Time int64
+
+func (t Time) Add(d time.Duration) Time
+
+func (t Time) String() string
+
+func (t Time) Sub(u Time) time.Duration
+
+type Timer interface {
+	Stop() bool
+	Reset(d time.Duration) bool
+}
+
+type Transport interface {
+	Send(to NodeID, msg []byte) error
+	Request(to NodeID, req []byte, timeout time.Duration, cb func(reply []byte, err error))
+}
+
+==================== go doc -all ./internal/sim
+package sim // import "github.com/nickstrad/decentralized-object-store/internal/sim"
+
+
+CONSTANTS
+
+const (
+	DefaultMaxDatagram = 65507
+	DefaultMaxMessage  = 16 << 20
+	PPM                = 1_000_000
+)
+const (
+	StreamNet      = "net"
+	StreamDisk     = "disk"
+	StreamNemesis  = "nemesis"
+	StreamWorkload = "workload"
+)
+const (
+	DefaultMaxSteps = 10_000_000
+	DefaultLogCap   = 1 << 20
+	MaxDriftPPM     = 100_000
+	MaxSkew         = time.Duration(1 << 61)
+	Horizon         = env.Time(1 << 62)
+)
+
+VARIABLES
+
+var (
+	ErrStall           = errors.New("sim: stall")
+	ErrQueueEmpty      = errors.New("event queue empty before convergence")
+	ErrBudgetExhausted = errors.New("step budget exhausted")
+	ErrDeadline        = errors.New("deadline passed before convergence")
+	ErrInvariant       = errors.New("sim: invariant violated")
+	ErrInvariantNotRun = errors.New("sim: invariant not run as often as scheduled")
+	ErrUnknownNode     = errors.New("sim: unknown node")
+	ErrUnknownRegion   = errors.New("sim: unknown region")
+	ErrDuplicateNode   = errors.New("sim: duplicate node")
+	ErrNodeDown        = errors.New("sim: node is down")
+	ErrNodeUp          = errors.New("sim: node is up")
+	ErrNotPaused       = errors.New("sim: node is not paused")
+	ErrBudget          = errors.New("sim: fault budget exceeded")
+)
+
+FUNCTIONS
+
+func NewStream(seed int64, label string) *rand.Rand
+func NodeIDs(n int) []env.NodeID
+func NodeStream(id env.NodeID) string
+
+TYPES
+
+type Budget struct {
+	MinLive            int
+	MaxDamagedDisks    int
+	MaxDamagedPerGroup int
+	GroupOf            func(node env.NodeID, blob string) string
+	Lifted             bool
+}
+
+func (b Budget) Allows(s *Sim, f Fault) bool
+
+func (b Budget) Check(s *Sim) error
+
+type Config struct {
+	Seed     int64
+	Net      NetConfig
+	Codes    *env.CodeTable
+	MaxSteps uint64
+	LogCap   int
+}
+
+type Digests struct {
+	Events [32]byte
+	State  [32]byte
+}
+
+func (d Digests) String() string
+
+type Disk struct {
+	// Has unexported fields.
+}
+
+func (d *Disk) Damaged() []string
+
+func (d *Disk) Names() []string
+
+func (d *Disk) Peek(name string) ([]byte, bool)
+
+func (d *Disk) PeekDurable(name string) ([]byte, bool)
+
+type Factory func(e env.Env) env.Process
+
+type Fault struct {
+	Kind   FaultKind
+	Node   env.NodeID
+	Peer   env.NodeID
+	Side   []env.NodeID
+	Other  []env.NodeID
+	Region env.Region
+	Blob   string
+	PPM    uint32
+	Count  int
+}
+
+func (f Fault) Encode() []byte
+
+func (f Fault) String() string
+
+type FaultKind uint8
+
+const (
+	FaultCrash FaultKind = iota + 1
+	FaultCrashTorn
+	FaultRestart
+	FaultPause
+	FaultResume
+	FaultWipeRejoin
+	FaultPartition
+	FaultPartitionOneWay
+	FaultIsolate
+	FaultPartitionRegion
+	FaultLinkLoss
+	FaultClog
+	FaultUnclog
+	FaultHealNet
+	FaultHealAll
+	FaultBitRot
+	FaultWipeDisk
+	FaultReadError
+)
+func ChaosKinds() []FaultKind
+
+func (k FaultKind) String() string
+
+type InvariantError struct {
+	Seed  int64
+	Name  string
+	At    env.Time
+	Steps uint64
+	Err   error
+}
+
+func (e *InvariantError) Error() string
+
+func (e *InvariantError) Unwrap() []error
+
+type Nemesis struct {
+	// Has unexported fields.
+}
+
+func (n *Nemesis) History() []NemesisStep
+
+func (n *Nemesis) QuietAt() env.Time
+
+type NemesisConfig struct {
+	Start  env.Time
+	Phases int
+	Chaos  time.Duration
+	Heal   time.Duration
+	MaxGap time.Duration
+	Kinds  []FaultKind
+	Budget Budget
+}
+
+type NemesisOutcome uint8
+
+const (
+	OutcomeApplied NemesisOutcome = iota + 1
+	OutcomeRejected
+	OutcomeSkipped
+)
+func (o NemesisOutcome) String() string
+
+type NemesisStep struct {
+	At      env.Time
+	Fault   Fault
+	Outcome NemesisOutcome
+}
+
+type NetConfig struct {
+	Latency            Range
+	InterRegionLatency Range
+	DropPPM            uint32
+	DuplicatePPM       uint32
+	MaxDatagram        int
+	MaxMessage         int
+}
+
+func DefaultNetConfig() NetConfig
+
+type NodeSpec struct {
+	ID       env.NodeID
+	Region   env.Region
+	Skew     time.Duration
+	DriftPPM int64
+}
+
+type NodeStatus struct {
+	Known       bool
+	Up          bool
+	Paused      bool
+	Started     bool
+	Incarnation uint32
+}
+
+type PanicError struct {
+	Seed  int64
+	Node  env.NodeID
+	At    env.Time
+	Event string
+	Value any
+	Stack []byte
+}
+
+func (e *PanicError) Error() string
+
+type Range struct {
+	Min time.Duration
+	Max time.Duration
+}
+
+type Scenario struct {
+	Name string
+	Run  func(seed int64) *Sim
+}
+
+type Sim struct {
+	// Has unexported fields.
+}
+
+func New(cfg Config) *Sim
+
+func (s *Sim) AddCluster(ids []env.NodeID, regions int, f Factory) error
+
+func (s *Sim) AddInvariant(name string, every int, fn func() error)
+
+func (s *Sim) AddNode(spec NodeSpec, f Factory) error
+
+func (s *Sim) Apply(f Fault) error
+
+func (s *Sim) At(t env.Time, name string, fn func())
+
+func (s *Sim) BitRot(id env.NodeID, name string) error
+
+func (s *Sim) CheckInvariants() error
+
+func (s *Sim) Clog(from, to env.NodeID) error
+
+func (s *Sim) Crash(id env.NodeID) error
+
+func (s *Sim) CrashTorn(id env.NodeID) error
+
+func (s *Sim) Digests() Digests
+
+func (s *Sim) Disk(id env.NodeID) *Disk
+
+func (s *Sim) Err() error
+
+func (s *Sim) Fail(err error)
+
+func (s *Sim) FailReads(id env.NodeID, name string, count int) error
+
+func (s *Sim) HealAll()
+
+func (s *Sim) HealNet()
+
+func (s *Sim) InjectAt(t env.Time, f Fault)
+
+func (s *Sim) InjectSchedule(sched []TimedFault) env.Time
+
+func (s *Sim) InvariantRuns(name string) uint64
+
+func (s *Sim) Isolate(id env.NodeID) error
+
+func (s *Sim) LiveCount() int
+
+func (s *Sim) LocalTime(id env.NodeID) env.Time
+
+func (s *Sim) LogLen() uint64
+
+func (s *Sim) LogTail(n int) []string
+
+func (s *Sim) LogTruncated() bool
+
+func (s *Sim) Nodes() []env.NodeID
+
+func (s *Sim) Now() env.Time
+
+func (s *Sim) Partition(side, other []env.NodeID) error
+
+func (s *Sim) PartitionOneWay(from, to []env.NodeID) error
+
+func (s *Sim) PartitionRegion(r env.Region) error
+
+func (s *Sim) Pause(id env.NodeID) error
+
+func (s *Sim) Process(id env.NodeID) env.Process
+
+func (s *Sim) Region(id env.NodeID) env.Region
+
+func (s *Sim) Regions() []env.Region
+
+func (s *Sim) Restart(id env.NodeID) error
+
+func (s *Sim) Resume(id env.NodeID) error
+
+func (s *Sim) RunFor(d time.Duration) error
+
+func (s *Sim) RunUntil(t env.Time) error
+
+func (s *Sim) RunUntilConverged(deadline env.Time, converged func() bool) error
+
+func (s *Sim) RunUntilQuiet() error
+
+func (s *Sim) ScheduleFromBytes(data []byte, start env.Time, step time.Duration) []TimedFault
+
+func (s *Sim) Seed() int64
+
+func (s *Sim) SetLinkLoss(from, to env.NodeID, ppm uint32) error
+
+func (s *Sim) StartNemesis(cfg NemesisConfig) (*Nemesis, error)
+
+func (s *Sim) Status(id env.NodeID) NodeStatus
+
+func (s *Sim) Step() (bool, error)
+
+func (s *Sim) Steps() uint64
+
+func (s *Sim) Unclog(from, to env.NodeID) error
+
+func (s *Sim) Verify() error
+
+func (s *Sim) WipeDisk(id env.NodeID) error
+
+func (s *Sim) WipeRejoin(id env.NodeID) error
+
+func (s *Sim) Workload(start env.Time, count int, maxGap time.Duration, fn func(i int))
+
+func (s *Sim) WorkloadRand() *rand.Rand
+
+func (s *Sim) WriteLog(w io.Writer) error
+
+type StallError struct {
+	Seed   int64
+	At     env.Time
+	Steps  uint64
+	Reason error
+}
+
+func (e *StallError) Error() string
+
+func (e *StallError) Unwrap() []error
+
+type TimedFault struct {
+	At    env.Time
+	Fault Fault
+}
+
+==================== go doc -all ./internal/sim/simtest
+package simtest // import "github.com/nickstrad/decentralized-object-store/internal/sim/simtest"
+
+
+CONSTANTS
+
+const (
+	DefaultSeeds    = 3
+	DefaultSeedBase = 1
+	SeedsFile       = "seeds.txt"
+)
+const TailLines = 20
+
+VARIABLES
+
+var ErrNondeterministic = errors.New("simtest: same seed gave different digests")
+
+FUNCTIONS
+
+func CheckDeterministic(seed int64, run func(seed int64) *sim.Sim) (*sim.Sim, error)
+func Cluster(t testing.TB, s *sim.Sim, n, regions int, factory func(ids []env.NodeID) sim.Factory) []env.NodeID
+func PinnedSeeds(dir string) ([]int64, error)
+func ReplayCommand(t testing.TB, seed int64) string
+func Report(t testing.TB, s *sim.Sim)
+func RequireDeterministic(t testing.TB, seed int64, run func(seed int64) *sim.Sim) *sim.Sim
+func RunPattern(name string) string
+func Seed() (int64, bool, error)
+func Seeds(t testing.TB) []int64
+func Sweep(t *testing.T, fn func(t *testing.T, seed int64))

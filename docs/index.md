@@ -5,17 +5,18 @@ alone. It is a learning project, built testing-first. Metadata conflicts are
 handled with optimistic concurrency control rather than CRDTs: concurrent
 versions stay as siblings and are never silently overwritten.
 
-Only the foundation tooling exists today. No storage or protocol code has been
-built yet. Planned building blocks are a deterministic simulator (next to land),
-SWIM gossip membership, Reed-Solomon erasure coding, Merkle-tree anti-entropy,
+The foundation tooling and deterministic simulator are built today. No storage
+or protocol code exists yet. Planned building blocks are SWIM gossip membership
+(next to land), Reed-Solomon erasure coding, Merkle-tree anti-entropy,
 optimistic concurrency control for metadata, Sagas for bucket migration, and an
 end-to-end test suite.
 
 ## How this site is organised
 
 - **[The Book](../book/manifest.json)** grows one chapter per landed chunk.
-  Chapters are published as they land, and none has landed yet. The first
-  chapter, on deterministic simulation testing, arrives with the simulator.
+  Chapter 1,
+  [Deterministic Simulation Testing](../book/chapters/01-deterministic-simulation.md),
+  is published with the simulator.
 - **[C4 diagrams](c4/README.md)** describe the target architecture across
   system, container, and component views. They show the planned design until
   each part is built.
@@ -39,4 +40,11 @@ Run the test suite inside the container:
 
 ```sh
 docker compose run --rm dev go test ./...
+```
+
+Run a 100-node chaos simulation from a fixed seed; the same seed always prints
+the same two replay digests:
+
+```sh
+docker compose run --rm dev go run ./cmd/objsim -scenario toy-chaos-100 -seed 3
 ```

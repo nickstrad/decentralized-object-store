@@ -1,0 +1,3 @@
+HELD C1 custom-replay: 120 custom callback/timer/invariant/restart/wipe schedules replayed twice with equal logs and digests
+HELD C1 separate-process-runtime: 120 custom fingerprints equal across three fresh processes with varied GOMAXPROCS and GOGC
+HELD C1 equal-time-timer-storm: six runs of 10000 timers at one instant gave identical digests

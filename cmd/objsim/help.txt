@@ -1,0 +1,10 @@
+objsim runs a named deterministic simulation scenario from an int64 seed
+and prints its event-log and state SHA-256 digests.
+
+Flags (pass with -):
+scenario  name of the scenario to run (see -list)
+seed      int64 root seed for the run (default 1)
+list      print all registered scenario names and exit
+
+Example:
+  objsim -scenario toy-chaos-100 -seed 3

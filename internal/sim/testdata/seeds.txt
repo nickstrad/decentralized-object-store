@@ -1,0 +1,1 @@
+# seed note — every seed that ever failed a DST scenario in this package; append, never delete

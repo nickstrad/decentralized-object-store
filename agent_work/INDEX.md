@@ -16,6 +16,7 @@ kept permanently under adversarial/ and indexed in their own section.
 | `orch/wait.sh <run> [seconds]` | Wait for a launched stage: 0 on exit 0, 1 on nonzero, 3 when it died with no exit file or was never launched, 4 on deadline; prints the log tail | 0a | Fable orchestrator, 2026-11-21 | |
 | `orch/land.sh <chunk> <branch> <msg-file>` | Merge a chunk to main and push, only on a counted gate result bound to the branch tip, a passing review (or arbitration) and recorded adversarial results; enforces the simulator freeze once tag `freeze-0b` exists | 0a | Fable orchestrator, 2026-11-21 | Arbiter exercised it on throwaway histories: uncounted, unknown-commit, foreign-commit and diff-failure cases all refused |
 | `kb-sync.sh vendor\|index\|status\|search` | Vendor the kb tool into `kb/`, rebuild the in-repo index over `docs/knowledge/`, report drift | 0a | Fable orchestrator, 2026-11-21 | Builds and runs kb inside the dev container; works on a clean clone |
+| `orch/mkbriefs.py <out-dir>` | Generates the build briefs for chunks 1–5 (gossip, erasure, Merkle, OCC, saga) from one template plus per-chunk requirements | Wave B | Fable orchestrator, 2026-11-21 | Wrote five briefs, 2026-11-21 |
 
 ## Gate scripts
 
@@ -45,3 +46,4 @@ The probes are a nested Go module (`probes/phase1/go.mod`), outside the product 
 | Script | Purpose | Chunk | Author seat | What it proved / last result |
 | --- | --- | --- | --- | --- |
 | `adversarial/0a-foundation/run-all.sh` + `a01`–`a07-*.sh`, `harness.py` | 108 attacks on the gate tooling over six published claims: hygiene bypasses, entropy the lint misses, smuggled comments and dependencies, comment-only-diff evasions, forged or partial gate results, publishing private or broken pages | 0a | Astra (gpt-6-astra), run by the orchestrator, 2026-11-21 | Run 1: 62 held, 46 broken. After repair: 99 held, 9 broken, each narrowed in writing and accepted in arbitration (`adversarial/0a-foundation/RESULTS.md`) |
+| `adversarial/0b-simulator/run-all.sh` + `a01`–`a07-*.sh`, `main.go` (nested module), `reporting.py`, `reportfixture/` | 60 attacks on the simulator over seven claims: replay, network fault rates, partition leaks, disk faults and budget, stream independence, loop liveness and arithmetic bounds, failure reporting | 0b | Astra (gpt-6-astra), run by the orchestrator, 2026-11-21 | Run 1: 52 held, 8 broken. After repair: 58 held; 1 narrowed in writing, 1 repaired but still scored broken by its own driver (`adversarial/0b-simulator/RESULTS.md`) |
