@@ -92,8 +92,7 @@ func PinnedSeeds(dir string) ([]int64, error) {
 		if text == "" || strings.HasPrefix(text, "#") {
 			continue
 		}
-		field, _, _ := strings.Cut(text, " ")
-		n, err := strconv.ParseInt(field, 10, 64)
+		n, err := strconv.ParseInt(strings.Fields(text)[0], 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("simtest: %s line %d: %w", SeedsFile, i+1, err)
 		}
@@ -240,9 +239,14 @@ func Report(t testing.TB, s *sim.Sim) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "simulation failed\nseed: %d\nerror: %v\ndigests: %s\nsteps: %d, virtual time: %d\n",
 		s.Seed(), s.Err(), s.Digests(), s.Steps(), s.Now())
-	fmt.Fprintf(&b, "event log tail (%d of %d):\n", min(TailLines, int(s.LogLen())), s.LogLen())
-	for _, line := range s.LogTail(TailLines) {
+	tail := s.LogTail(TailLines)
+	fmt.Fprintf(&b, "event log tail (%d of %d):\n", len(tail), s.LogLen())
+	for _, line := range tail {
 		b.WriteString("  " + line + "\n")
+	}
+	var pe *sim.PanicError
+	if errors.As(s.Err(), &pe) && len(pe.Stack) > 0 {
+		fmt.Fprintf(&b, "panic stack:\n%s\n", strings.TrimRight(string(pe.Stack), "\n"))
 	}
 	if path, err := writeArtifact(t, s); err != nil {
 		fmt.Fprintf(&b, "artifact: %v\n", err)
