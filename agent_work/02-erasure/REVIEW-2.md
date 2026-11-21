@@ -54,3 +54,5 @@ VERDICT: NITS
 - `agent_work/adversarial/02-erasure/ATTACKS.md` and `RESULTS.md`.
 - Full git log and diff for `3ae7e3fb25bf94097b899b42f0a090d4e0847965..HEAD` across `internal cmd agent_work/gates`, plus `git diff --name-only main..HEAD`.
 - All product files in `internal/erasure/` (`gf256.go`, `matrix.go`, `codec.go`, `errors.go`) and `internal/storage/` (`chunkstore.go`, `node.go`, `placement.go`, `shard.go`, `stripe.go`, `manifest.go`, `shardproto.go`, `errors.go`), relevant test files (`dst_test.go`, `node_test.go`, `node_repair_test.go`, `manifest_test.go`), and `internal/sim/disk.go`.
+
+NITS CLOSED (orchestrator, 2026-11-21): nit 1 fixed with a regression test (commits "storage: test that an unlaunchable PUT stripe leaves PutAwaitingPeak at zero" and "storage: count a PUT stripe as awaiting only after it launches"); nit 2 and note 3 corrected in the build notes ("record the REVIEW-2 nit fixes").
