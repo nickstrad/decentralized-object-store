@@ -45,6 +45,20 @@ const (
 
 	restartNodes = 10
 	rejoinBound  = 30 * time.Second
+
+	lifetimeNodes        = 5
+	lifetimeRetention    = 10 * time.Second
+	lifetimeSync         = 2 * time.Second
+	lifetimeEventAt      = env.Time(5 * time.Second)
+	lifetimeVerdictBound = 40 * time.Second
+	lifetimePurgeBound   = lifetimeRetention + 5*time.Second
+	lifetimeWatch        = 3 * lifetimeRetention
+
+	longNodes       = 5
+	longRetention   = 20 * time.Second
+	longPartitionAt = env.Time(10 * time.Second)
+	longPurgeBound  = 120 * time.Second
+	longHealBound   = 90 * time.Second
 )
 
 func ceilLog2(n int) int {
@@ -755,4 +769,193 @@ func TestJoinNoReachableSeedDST(t *testing.T) {
 			t.Fatalf("join error %v, want ErrJoinFailed wrapping env.ErrUnreachable", got)
 		}
 	})
+}
+
+func purgedEverywhere(s *sim.Sim, observers []env.NodeID, subject env.NodeID) bool {
+	for _, id := range observers {
+		n := gnode(s, id)
+		if n == nil {
+			return false
+		}
+		if _, err := n.Lookup(subject); !errors.Is(err, gossip.ErrNotMember) {
+			return false
+		}
+	}
+	return true
+}
+
+func lifetimeRun(leave bool) func(seed int64) *sim.Sim {
+	return func(seed int64) *sim.Sim {
+		c := newCluster(seed, gossip.Config{DeadRetention: lifetimeRetention, SyncInterval: lifetimeSync})
+		c.start(lifetimeNodes)
+		s := c.s
+		victim := c.ids[3+s.WorkloadRand().IntN(lifetimeNodes-3)]
+		others := without(c.ids, victim)
+		if err := s.RunUntil(lifetimeEventAt); err != nil {
+			return s
+		}
+		if !seesLive(s, others, victim) {
+			s.Fail(fmt.Errorf("setup: %s was not a member at every node at %v", victim, lifetimeEventAt))
+			return s
+		}
+		want := gossip.StateDead
+		if leave {
+			want = gossip.StateLeft
+			if err := gnode(s, victim).Leave(); err != nil {
+				s.Fail(err)
+				return s
+			}
+			c.left[victim] = true
+		} else if err := s.Crash(victim); err != nil {
+			s.Fail(err)
+			return s
+		}
+		verdict, ok := poll(s, lifetimeEventAt.Add(lifetimeVerdictBound), func() bool { return seesState(s, others, victim, want) })
+		if !ok {
+			s.Fail(fmt.Errorf("%s not %s at every survivor within %v", victim, want, lifetimeVerdictBound))
+			return s
+		}
+		purged, ok := poll(s, verdict.Add(lifetimePurgeBound), func() bool { return purgedEverywhere(s, others, victim) })
+		if !ok {
+			s.Fail(fmt.Errorf("%s not purged at every survivor within %v of the verdict", victim, lifetimePurgeBound))
+			return s
+		}
+		for s.Now() < purged.Add(lifetimeWatch) {
+			if err := s.RunFor(dstPoll); err != nil {
+				return s
+			}
+			if !purgedEverywhere(s, others, victim) {
+				s.Fail(fmt.Errorf("%s came back into a survivor's view at %v, %v after it was purged everywhere", victim, s.Now(), s.Now().Sub(purged)))
+				return s
+			}
+		}
+		for _, id := range others {
+			st := gnode(s, id).Stats()
+			if st.Purged != 1 || st.Reinstated != 0 {
+				s.Fail(fmt.Errorf("%s purged %d entries and reinstated %d; want exactly one purge of %s", id, st.Purged, st.Reinstated, victim))
+				return s
+			}
+			if m, found := tombstoneOf(gnode(s, id), victim); !found || m.State != want {
+				s.Fail(fmt.Errorf("%s keeps no %s tombstone for %s: %+v", id, want, victim, m))
+				return s
+			}
+		}
+		return s
+	}
+}
+
+func tombstoneOf(n *gossip.Node, id env.NodeID) (gossip.Member, bool) {
+	for _, m := range n.Tombstones() {
+		if m.ID == id {
+			return m, true
+		}
+	}
+	return gossip.Member{}, false
+}
+
+func TestDeadEntriesStayPurgedDST(t *testing.T) {
+	t.Parallel()
+	for _, leave := range []bool{false, true} {
+		name := "after a crash"
+		if leave {
+			name = "after a leave"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			simtest.Sweep(t, func(t *testing.T, seed int64) {
+				simtest.RequireDeterministic(t, seed, lifetimeRun(leave))
+			})
+		})
+	}
+}
+
+func longPartitionRun(seedCrashed bool, out *time.Duration) func(seed int64) *sim.Sim {
+	return func(seed int64) *sim.Sim {
+		c := newCluster(seed, gossip.Config{DeadRetention: longRetention})
+		s := c.s
+		c.ids = sim.NodeIDs(longNodes)
+		c.add(c.ids...)
+		s.At(env.Time(time.Millisecond), "join", func() {
+			for _, id := range c.ids[1:] {
+				if err := gnode(s, id).Join(c.ids[:1], nil); err != nil {
+					s.Fail(err)
+				}
+			}
+		})
+		members := c.ids
+		if seedCrashed {
+			members = c.ids[1:]
+			s.At(env.Time(5*time.Second), "crash-seed", func() {
+				if err := s.Crash(c.ids[0]); err != nil {
+					s.Fail(err)
+				}
+			})
+		}
+		if err := s.RunUntil(longPartitionAt); err != nil {
+			return s
+		}
+		for _, id := range members {
+			if !seesLive(s, members, id) {
+				s.Fail(fmt.Errorf("setup: %s not a member everywhere at %v", id, longPartitionAt))
+				return s
+			}
+		}
+		a, b := members[:len(members)/2], members[len(members)/2:]
+		if err := s.Partition(a, b); err != nil {
+			s.Fail(err)
+			return s
+		}
+		forgotten := func(observers, subjects []env.NodeID) bool {
+			for _, o := range observers {
+				for _, x := range subjects {
+					if !purgedEverywhere(s, []env.NodeID{o}, x) {
+						return false
+					}
+					if _, ok := tombstoneOf(gnode(s, o), x); !ok {
+						return false
+					}
+				}
+			}
+			return true
+		}
+		if _, ok := poll(s, longPartitionAt.Add(longPurgeBound), func() bool { return forgotten(a, b) && forgotten(b, a) }); !ok {
+			s.Fail(fmt.Errorf("the sides did not purge each other within %v", longPurgeBound))
+			return s
+		}
+		healed := s.Now()
+		if healed.Sub(longPartitionAt) <= longRetention {
+			s.Fail(fmt.Errorf("setup: partition of %v is not longer than the retention %v", healed.Sub(longPartitionAt), longRetention))
+			return s
+		}
+		s.HealNet()
+		at, ok := poll(s, healed.Add(longHealBound), func() bool { return agreed(s, members) })
+		if !ok {
+			s.Fail(fmt.Errorf("views did not re-merge within %v of healing a partition longer than DeadRetention", longHealBound))
+			return s
+		}
+		*out = at.Sub(healed)
+		return s
+	}
+}
+
+func TestSWIMLongPartitionHealDST(t *testing.T) {
+	t.Parallel()
+	for _, seedCrashed := range []bool{false, true} {
+		name := "members joined through Join and the seed is across the cut"
+		if seedCrashed {
+			name = "the only seed crashed, so only tombstones point across the cut"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var heal tally
+			t.Cleanup(func() {
+				t.Logf("MEASURE long partition heal ms (%s, N=%d, retention %v, bound %v) %s", name, longNodes, longRetention, longHealBound, heal.summary())
+			})
+			simtest.Sweep(t, func(t *testing.T, seed int64) {
+				var out time.Duration
+				simtest.RequireDeterministic(t, seed, longPartitionRun(seedCrashed, &out))
+				heal.add(out.Milliseconds())
+			})
+		})
+	}
 }

@@ -1,6 +1,7 @@
 package gossip_test
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -79,11 +80,33 @@ func TestPropViewMergeIsCommutative(t *testing.T) {
 	rapid.Check(t, propViewMergeCommutative)
 }
 
+func viewMergeSeeds() [][]byte {
+	return [][]byte{
+		{},
+		{0, 0, 0, 0},
+		{255, 255, 255, 255, 255, 255, 255, 255},
+	}
+}
+
 func FuzzViewMergeLaws(f *testing.F) {
-	f.Add([]byte{})
-	f.Add([]byte{0, 0, 0, 0})
-	f.Add([]byte{255, 255, 255, 255, 255, 255, 255, 255})
+	for _, b := range viewMergeSeeds() {
+		f.Add(b)
+	}
 	f.Fuzz(rapid.MakeFuzz(propViewMergeCommutative))
+}
+
+func TestFuzzSeedsRunWithoutSkipping(t *testing.T) {
+	prop := rapid.MakeFuzz(propViewMergeCommutative)
+	for i, b := range viewMergeSeeds() {
+		skipped := false
+		t.Run(fmt.Sprintf("FuzzViewMergeLaws seed %d of %d bytes", i, len(b)), func(t *testing.T) {
+			defer func() { skipped = t.Skipped() }()
+			prop(t, b)
+		})
+		if skipped {
+			t.Errorf("seed %d (%d bytes) of FuzzViewMergeLaws skips under go test", i, len(b))
+		}
+	}
 }
 
 func propIncarnationMonotonic(t *rapid.T) {

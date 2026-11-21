@@ -549,7 +549,7 @@ func TestJoin(t *testing.T) {
 				n++
 			}
 		}
-		if n > 2 {
+		if n != 1 {
 			t.Fatalf("%d concurrent joins to the seed", n)
 		}
 	})
@@ -764,7 +764,7 @@ func TestErrors(t *testing.T) {
 			t.Fatal(err)
 		}
 		entries := gossip.Codes()
-		if len(entries) != 4 {
+		if len(entries) != 5 {
 			t.Fatalf("%d code entries", len(entries))
 		}
 		for _, e := range entries {
@@ -780,7 +780,7 @@ func TestErrors(t *testing.T) {
 				t.Fatalf("code %d decoded to %v", code, back)
 			}
 		}
-		for _, s := range []error{gossip.ErrMalformed, gossip.ErrNotMember, gossip.ErrClosed, gossip.ErrJoinFailed} {
+		for _, s := range []error{gossip.ErrMalformed, gossip.ErrNotMember, gossip.ErrClosed, gossip.ErrJoinFailed, gossip.ErrViewFull} {
 			if !slices.ContainsFunc(entries, func(e env.CodeEntry) bool { return e.Err == s }) {
 				t.Fatalf("%v has no code", s)
 			}
