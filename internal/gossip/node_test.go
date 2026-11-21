@@ -206,9 +206,12 @@ func TestProbeAndIndirectProbe(t *testing.T) {
 		h, target, _ := setup(t, gossip.Config{})
 		h.clock.advance(gossip.DefaultProbeInterval)
 		h.deliver(target, gossipMsg(mem(string(target), 1, gossip.StateAlive)))
+		h.takeEvents()
 		h.clock.advance(gossip.Config{}.WithDefaults().SuspicionTimeout(6) * 2)
-		if m, _ := lookupState(t, h.node, string(target)); m.State == gossip.StateDead {
-			t.Fatal("refuted member was declared dead")
+		for _, ev := range h.takeEvents() {
+			if ev.Kind == gossip.EventDied && ev.Member.ID == target && ev.Member.Incarnation == 0 {
+				t.Fatal("the suspicion at incarnation 0 killed the member after it refuted")
+			}
 		}
 	})
 	t.Run("the indirect stage can be switched off only by the test switch", func(t *testing.T) {
@@ -506,6 +509,48 @@ func TestJoin(t *testing.T) {
 		reqs[1].cb(nil, env.ErrTimeout)
 		if len(h.node.Members()) != 2 {
 			t.Fatalf("members %+v", h.node.Members())
+		}
+	})
+	t.Run("a node that knows no live member retries its seeds every probe period until one answers", func(t *testing.T) {
+		h := newHarness(t, "self", gossip.Config{Seeds: []env.NodeID{"s1"}})
+		h.node.Start()
+		attempts := 0
+		for range 5 {
+			for _, r := range h.net.takeRequests() {
+				if r.to == "s1" {
+					attempts++
+					r.cb(nil, env.ErrTimeout)
+				}
+			}
+			h.clock.advance(gossip.DefaultProbeInterval)
+		}
+		if attempts < 5 || h.node.Stats().Rejoins < 4 {
+			t.Fatalf("%d join attempts, %d rejoins in 5 periods", attempts, h.node.Stats().Rejoins)
+		}
+		for _, r := range h.net.takeRequests() {
+			r.cb(resp(t, mem("s1", 0, gossip.StateAlive)), nil)
+		}
+		before := h.node.Stats().Rejoins
+		h.clock.advance(5 * gossip.DefaultProbeInterval)
+		for _, r := range h.net.takeRequests() {
+			r.cb(nil, env.ErrTimeout)
+		}
+		if h.node.Stats().Rejoins != before {
+			t.Fatal("rejoined although a live member is known")
+		}
+	})
+	t.Run("no second join starts while one is in flight", func(t *testing.T) {
+		h := newHarness(t, "self", gossip.Config{Seeds: []env.NodeID{"s1"}})
+		h.node.Start()
+		h.clock.advance(5 * gossip.DefaultProbeInterval)
+		n := 0
+		for _, r := range h.net.takeRequests() {
+			if r.to == "s1" {
+				n++
+			}
+		}
+		if n > 2 {
+			t.Fatalf("%d concurrent joins to the seed", n)
 		}
 	})
 	t.Run("a restarted node learns its old entry from the seed and rejoins above it", func(t *testing.T) {

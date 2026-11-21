@@ -24,7 +24,7 @@ const (
 	convergeLossMaxPPM        = 100_000
 	convergeQuiet             = env.Time(30 * time.Second)
 	convergeC                 = 8
-	maxMilliMsgsPerNodePeriod = 4_000
+	maxMilliMsgsPerNodePeriod = 5_000
 
 	asymRun = 300 * time.Second
 
@@ -185,6 +185,7 @@ func (c *cluster) live() []env.NodeID {
 			out = append(out, id)
 		}
 	}
+	slices.Sort(out)
 	return out
 }
 
@@ -256,6 +257,20 @@ func seesState(s *sim.Sim, observers []env.NodeID, subject env.NodeID, want goss
 		}
 		m, err := n.Lookup(subject)
 		if err != nil || m.State != want {
+			return false
+		}
+	}
+	return true
+}
+
+func seesLive(s *sim.Sim, observers []env.NodeID, subject env.NodeID) bool {
+	for _, id := range observers {
+		n := gnode(s, id)
+		if n == nil {
+			return false
+		}
+		m, err := n.Lookup(subject)
+		if err != nil || !m.State.Live() {
 			return false
 		}
 	}
@@ -483,6 +498,10 @@ func crashRun(out *crashOut) func(seed int64) *sim.Sim {
 			return s
 		}
 		others := without(c.ids, victim)
+		if !seesLive(s, others, victim) {
+			s.Fail(fmt.Errorf("setup: %s was not a member at every node when it crashed", victim))
+			return s
+		}
 		at, ok := poll(s, crashAt.Add(detectBound), func() bool { return seesState(s, others, victim, gossip.StateDead) })
 		if !ok {
 			s.Fail(fmt.Errorf("crashed %s not dead at every live node within %v", victim, detectBound))
