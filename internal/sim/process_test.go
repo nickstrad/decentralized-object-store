@@ -2,6 +2,7 @@ package sim_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -185,5 +186,92 @@ func TestNodeQueries(t *testing.T) {
 	}
 	if regions := h.s.Regions(); len(regions) != 2 || regions[0] != "r1" {
 		t.Fatalf("Regions = %v", regions)
+	}
+}
+
+func TestReleaseKeepsFIFOAtTheReleaseInstant(t *testing.T) {
+	const T = env.Time(50 * time.Millisecond)
+	t.Run("a request arriving exactly when its clogged link is released waits for the held one", func(t *testing.T) {
+		h := twoNodes(t, nil)
+		mustNil(t, h.s.Clog("a", "b"))
+		h.rec("a").request("b", "first", time.Hour)
+		h.s.At(T, "unclog", func() { mustNil(t, h.s.Unclog("a", "b")) })
+		h.s.At(T-env.Time(time.Millisecond), "send second", func() { h.rec("a").request("b", "second", time.Hour) })
+		h.run(time.Second)
+		if got := h.rec("b").requests; len(got) != 2 || got[0] != "first" || got[1] != "second" {
+			t.Fatalf("server order %v", got)
+		}
+	})
+	t.Run("a datagram arriving exactly when its node resumes waits for the held ones", func(t *testing.T) {
+		h := twoNodes(t, nil)
+		mustNil(t, h.s.Pause("b"))
+		mustNil(t, h.rec("a").e.Net.Send("b", []byte("first")))
+		h.s.At(T, "resume", func() { mustNil(t, h.s.Resume("b")) })
+		h.s.At(T-env.Time(time.Millisecond), "send second", func() { mustNil(t, h.rec("a").e.Net.Send("b", []byte("second"))) })
+		h.run(time.Second)
+		got := h.rec("b").datagrams
+		if len(got) != 2 || got[0].msg != "first" || got[1].msg != "second" {
+			t.Fatalf("delivery order %+v", got)
+		}
+	})
+	t.Run("stopping a released timer does not wedge the node", func(t *testing.T) {
+		h := twoNodes(t, nil)
+		b := h.rec("b")
+		fired := false
+		tm := b.e.Clock.AfterFunc(time.Millisecond, func() { fired = true })
+		mustNil(t, h.s.Pause("b"))
+		h.s.At(T, "resume then stop", func() {
+			mustNil(t, h.s.Resume("b"))
+			if !tm.Stop() {
+				t.Error("Stop of a released timer returned false")
+			}
+		})
+		h.s.At(T+1, "send", func() { mustNil(t, h.rec("a").e.Net.Send("b", []byte("x"))) })
+		h.run(time.Second)
+		if fired || len(b.datagrams) != 1 {
+			t.Fatalf("fired=%v datagrams=%d", fired, len(b.datagrams))
+		}
+	})
+	t.Run("a reply released at the same instant cancels its pending timeout", func(t *testing.T) {
+		h := twoNodes(t, nil)
+		mustNil(t, h.s.Clog("b", "a"))
+		h.rec("a").request("b", "q", 200*time.Millisecond)
+		h.s.At(T, "unclog", func() { mustNil(t, h.s.Unclog("b", "a")) })
+		h.run(time.Second)
+		reps := h.rec("a").replies
+		if len(reps) != 1 || reps[0].err != nil || reps[0].at != T {
+			t.Fatalf("replies %+v", reps)
+		}
+	})
+}
+
+func TestErrorMessagesNameTheSeed(t *testing.T) {
+	s := sim.New(sim.Config{Seed: 31, MaxSteps: 1})
+	s.AddInvariant("never", 1, func() error { return errors.New("nope") })
+	s.At(1, "x", func() {})
+	err := s.RunUntilQuiet()
+	if err == nil || !strings.Contains(err.Error(), "seed 31") || !strings.Contains(err.Error(), `"never"`) {
+		t.Fatalf("invariant error %v", err)
+	}
+	s2 := sim.New(sim.Config{Seed: 32, MaxSteps: 1})
+	s2.At(1, "x", func() {})
+	s2.At(2, "y", func() {})
+	err = s2.RunUntilQuiet()
+	if err == nil || !strings.Contains(err.Error(), "seed 32") || !strings.Contains(err.Error(), "budget") {
+		t.Fatalf("stall error %v", err)
+	}
+}
+
+func TestInvalidNetConfigFailsTheRun(t *testing.T) {
+	nc := sim.DefaultNetConfig()
+	nc.Latency = sim.Range{Min: 5, Max: 1}
+	s := sim.New(sim.Config{Seed: 1, Net: nc})
+	if _, err := s.Step(); !errors.Is(err, env.ErrInvalidArgument) {
+		t.Fatalf("Step = %v", err)
+	}
+	nc = sim.DefaultNetConfig()
+	nc.DropPPM = sim.PPM + 1
+	if err := sim.New(sim.Config{Seed: 1, Net: nc}).Err(); !errors.Is(err, env.ErrInvalidArgument) {
+		t.Fatalf("Err = %v", err)
 	}
 }
