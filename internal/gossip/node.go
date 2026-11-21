@@ -137,6 +137,8 @@ type Node struct {
 	relays    map[uint32]relay
 	relayFIFO []relayRef
 
+	rx        []Member
+	tx        []Member
 	seeds     []env.NodeID
 	subs      []func(Event)
 	tick      env.Timer
@@ -272,11 +274,20 @@ func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 		n.record(&n.stats.Malformed, fmt.Errorf("gossip: datagram from %s: %d bytes over the %d-byte limit: %w", from, len(msg), n.cfg.MaxPacket, ErrMalformed))
 		return
 	}
-	m, err := Decode(msg)
+	rx := n.rx
+	n.rx = nil
+	m, err := decodeInto(msg, rx, n.known)
 	if err != nil {
+		n.rx = rx
 		n.record(&n.stats.Malformed, fmt.Errorf("gossip: datagram from %s: %w", from, err))
 		return
 	}
+	defer func() {
+		if m.Updates != nil {
+			rx = m.Updates[:0]
+		}
+		n.rx = rx
+	}()
 	if !m.Kind.datagram() {
 		n.record(&n.stats.Malformed, fmt.Errorf("gossip: datagram from %s: %s is not a datagram kind: %w", from, m.Kind.String(), ErrMalformed))
 		return
@@ -292,6 +303,11 @@ func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 	case KindPingReq:
 		n.onPingReq(from, m)
 	}
+}
+
+func (n *Node) known(id []byte) (Member, bool) {
+	m, ok := n.view.byID[env.NodeID(id)]
+	return m, ok
 }
 
 func (n *Node) pruneRelays(now env.Time) {
@@ -412,6 +428,9 @@ func (n *Node) apply(u Member) bool {
 		return false
 	}
 	cur, had := n.view.Get(u.ID)
+	if had && !Supersedes(u, cur) {
+		return false
+	}
 	if !had {
 		if t, ok := n.tombs[u.ID]; ok && !Supersedes(u, t.m) {
 			if u.State.Live() && n.admit(u.ID) {
@@ -565,10 +584,10 @@ func (n *Node) onProbeTimeout(seq uint32) {
 	if n.closed || !n.probe.active || n.probe.acked || n.probe.seq != seq || n.cfg.noIndirect {
 		return
 	}
-	var cands []env.NodeID
-	for _, m := range n.view.Live() {
-		if m.ID != n.self.ID && m.ID != n.probe.target {
-			cands = append(cands, m.ID)
+	cands := make([]env.NodeID, 0, n.view.LiveCount())
+	for _, id := range n.view.order() {
+		if m := n.view.byID[id]; m.State.Live() && id != n.self.ID && id != n.probe.target {
+			cands = append(cands, id)
 		}
 	}
 	k := min(n.cfg.IndirectProbes, len(cands))
@@ -649,7 +668,8 @@ func (n *Node) enqueue(m Member) {
 
 func (n *Node) piggyback(to env.NodeID, size int, lead []Member) []Member {
 	budget := n.cfg.MaxPacket - size
-	out := make([]Member, 0, min(len(n.queue)+len(lead)+1, budget/minUpdateSize+1, MaxUpdates))
+	out := n.tx[:0]
+	n.tx = nil
 	var first []Member
 	take := func(m Member) bool {
 		s := UpdateSize(m)
@@ -707,6 +727,7 @@ func (n *Node) send(to env.NodeID, m Message) {
 func (n *Node) sendWith(to env.NodeID, m Message, lead []Member) bool {
 	m.Updates = n.piggyback(to, m.Size(), lead)
 	b, err := m.Encode()
+	n.tx = m.Updates[:0]
 	if err != nil {
 		n.record(&n.stats.SendErrors, fmt.Errorf("gossip: send %s to %s: %w", m.Kind.String(), to, err))
 		return false
@@ -810,13 +831,14 @@ func (n *Node) onSync() {
 		return
 	}
 	var live, heal []env.NodeID
-	for _, m := range n.view.All() {
+	for _, id := range n.view.order() {
+		m := n.view.byID[id]
 		switch {
-		case m.ID == n.self.ID:
+		case id == n.self.ID:
 		case m.State.Live():
-			live = append(live, m.ID)
+			live = append(live, id)
 		case m.State == StateDead:
-			heal = append(heal, m.ID)
+			heal = append(heal, id)
 		}
 	}
 	for _, r := range n.tombFIFO {

@@ -117,9 +117,10 @@ func appendStr(b []byte, s string) []byte {
 }
 
 type decoder struct {
-	b   []byte
-	off int
-	err error
+	b     []byte
+	off   int
+	err   error
+	known func(id []byte) (Member, bool)
 }
 
 func (d *decoder) fail(what string) {
@@ -168,7 +169,42 @@ func (d *decoder) str(lenWhat, what string) string {
 }
 
 func Decode(b []byte) (Message, error) {
-	d := &decoder{b: b}
+	return decodeInto(b, nil, nil)
+}
+
+func (d *decoder) member() Member {
+	var u Member
+	u.State = State(d.u8("state"))
+	if d.err == nil && !u.State.valid() {
+		d.fail("unknown state " + strconv.Itoa(int(u.State)))
+	}
+	u.Incarnation = d.u32("incarnation")
+	id := d.take(int(d.u8("member id length")), "member id")
+	if d.err == nil && len(id) == 0 {
+		d.fail("empty member id")
+	}
+	region := d.take(int(d.u8("region length")), "region")
+	if d.err != nil {
+		return u
+	}
+	if d.known != nil {
+		if k, ok := d.known(id); ok {
+			u.ID = k.ID
+			if string(region) == string(k.Region) {
+				u.Region = k.Region
+				return u
+			}
+			u.Region = env.Region(region)
+			return u
+		}
+	}
+	u.ID = env.NodeID(id)
+	u.Region = env.Region(region)
+	return u
+}
+
+func decodeInto(b []byte, dst []Member, known func(id []byte) (Member, bool)) (Message, error) {
+	d := &decoder{b: b, known: known}
 	var m Message
 	if v := d.u8("version"); d.err == nil && v != Version {
 		d.fail("unknown version " + strconv.Itoa(int(v)))
@@ -189,21 +225,17 @@ func Decode(b []byte) (Message, error) {
 		d.fail("update count " + strconv.Itoa(count) + " exceeds the packet")
 	}
 	if d.err == nil && count > 0 {
-		m.Updates = make([]Member, 0, count)
+		if cap(dst) >= count {
+			m.Updates = dst[:0]
+		} else {
+			m.Updates = make([]Member, 0, count)
+		}
 	}
 	for i := 0; i < count && d.err == nil; i++ {
-		var u Member
-		u.State = State(d.u8("state"))
-		if d.err == nil && !u.State.valid() {
-			d.fail("unknown state " + strconv.Itoa(int(u.State)))
+		u := d.member()
+		if d.err == nil {
+			m.Updates = append(m.Updates, u)
 		}
-		u.Incarnation = d.u32("incarnation")
-		u.ID = env.NodeID(d.str("member id length", "member id"))
-		if d.err == nil && u.ID == "" {
-			d.fail("empty member id")
-		}
-		u.Region = env.Region(d.str("region length", "region"))
-		m.Updates = append(m.Updates, u)
 	}
 	if d.err == nil && d.off != len(b) {
 		d.fail(strconv.Itoa(len(b)-d.off) + " trailing bytes")
