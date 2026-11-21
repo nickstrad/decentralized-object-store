@@ -188,8 +188,53 @@ func compareID(a, b env.NodeID) int {
 	return 0
 }
 
+func propRecordMonotonicAcrossPurge(t *rapid.T) {
+	h := newHarness(t, "self", gossip.Config{DeadRetention: time.Second})
+	ids := []env.NodeID{"a", "b", "c"}
+	h.node.Start()
+	prev := map[env.NodeID]gossip.Member{}
+	record := func(id env.NodeID) (gossip.Member, bool) {
+		if m, err := h.node.Lookup(id); err == nil {
+			return m, true
+		}
+		for _, m := range h.node.Tombstones() {
+			if m.ID == id {
+				return m, true
+			}
+		}
+		return gossip.Member{}, false
+	}
+	steps := rapid.IntRange(1, 60).Draw(t, "steps")
+	for i := 0; i < steps; i++ {
+		if rapid.Bool().Draw(t, "advance") {
+			h.clock.advance(time.Duration(rapid.Int64Range(0, int64(3*time.Second)).Draw(t, "for")))
+			for _, r := range h.net.takeRequests() {
+				r.cb(nil, env.ErrTimeout)
+			}
+			h.net.take()
+		} else {
+			ups := rapid.SliceOfN(genUpdate(ids, 6), 1, 4).Draw(t, "gossip")
+			h.deliver("a", gossipMsg(ups...))
+		}
+		for _, id := range ids {
+			cur, ok := record(id)
+			old, had := prev[id]
+			if had && !ok {
+				t.Fatalf("step %d: the record of %s (%+v) vanished", i, id, old)
+			}
+			if had && gossip.Supersedes(old, cur) {
+				t.Fatalf("step %d: the record of %s went from %+v back to %+v", i, id, old, cur)
+			}
+			if ok {
+				prev[id] = cur
+			}
+		}
+	}
+}
+
 func TestPropIncarnationMonotonic(t *testing.T) {
 	rapid.Check(t, propIncarnationMonotonic)
+	rapid.Check(t, propRecordMonotonicAcrossPurge)
 	rapid.Check(t, func(t *rapid.T) {
 		ups := rapid.SliceOfN(genUpdate(propIDs, 6), 0, 40).Draw(t, "updates")
 		v := gossip.NewView()
