@@ -77,9 +77,19 @@ Open decisions / blockers:
 - Claude sign-in on this VM ends between 2026-11-25 and 2026-11-28 (OQ-14).
 
 Facts a resuming agent needs:
-- GitHub Pages is already enabled (source: GitHub Actions) but no workflow
-  is committed yet, so https://nickstrad.github.io/decentralized-object-store/
-  serves nothing until Chunk 0a lands. Not yet recorded in the README.
+- KICKOFF REVIEW SITE (Nick's direction 2026-11-21: the proposal review
+  happens through GitHub Pages):
+  https://nickstrad.github.io/decentralized-object-store/ . Workflow
+  .github/workflows/pages.yml runs .github/scripts/build_site.py on every
+  push to main and deploys `_site`: index.html (kickoff notice plus the
+  plan's North Star paragraph), plan.html (PLAN.md), c4/index.html
+  (docs/c4/README.md), one page per docs/c4 diagram file (9), and
+  c4/model.json. One external dependency: mermaid.js 11 from the jsDelivr
+  CDN draws the Mermaid blocks. This is a scaffold with no written prose;
+  Chunk 0 supersedes it with the full book site (Neon writes the prose).
+  Live status: see the last line of this entry. Not yet recorded in the
+  README.
+  Deploy check: PENDING first workflow run.
 - Run opencode and codex headless with stdin closed (`</dev/null`).
 - Vendored kb, go.mod, gate scripts: not created yet (Chunk 0a).
 
