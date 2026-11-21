@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: Gate suite through Docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run gates G0-G6 in the dev container
+        env:
+          GATE_STAGE: final
+        run: agent_work/gates/gate.sh ci
+      - name: Gate canaries
+        run: agent_work/gates/canaries.sh
+      - name: Upload gate result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-result
+          path: |
+            agent_work/ci/gates/result.json
+            agent_work/ci/gates/*.log
+          if-no-files-found: ignore
