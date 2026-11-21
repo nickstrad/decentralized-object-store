@@ -38,6 +38,13 @@ Next steps (only after Nick's ruling arrives as a follow-up brief file):
 4. Chunks 6, 7, 8 in order.
 
 Open decisions / blockers:
+- C4 RULING (Nick, 2026-11-21, via Twin): this project keeps a C4
+  diagrams section on its GitHub Pages site, up to date per landing,
+  designed with Nick's c4-ask tool; designing the initial diagrams is
+  part of kickoff and they go to Nick for buy-in together with the plan
+  sign-off. Full ruling: /root/briefs/objstore-c4-ruling-2026-11-21.md. A bounded diagram-design run
+  follows this entry; diagrams land in docs/c4/ labelled TARGET
+  architecture, awaiting Nick's buy-in.
 - BOOK RULING (Nick, 2026-11-20, via Twin): in addition to the per-chunk
   Neon write-ups, Neon assembles a concise Leanpub-style BOOK as the
   project's canonical learning artifact - per-chunk write-ups become book
