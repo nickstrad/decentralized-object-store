@@ -275,3 +275,48 @@ func TestInvalidNetConfigFailsTheRun(t *testing.T) {
 		t.Fatalf("Err = %v", err)
 	}
 }
+
+func TestReplyFromACrashedServerIsDropped(t *testing.T) {
+	h := twoNodes(t, nil)
+	var pending env.Reply
+	h.rec("b").onRequest = func(r *recorder, from env.NodeID, req []byte, reply env.Reply) { pending = reply }
+	h.rec("a").request("b", "q", 100*time.Millisecond)
+	h.run(10 * time.Millisecond)
+	mustNil(t, h.s.Crash("b"))
+	mustNil(t, h.s.Restart("b"))
+	pending([]byte("from a dead incarnation"), nil)
+	h.run(time.Second)
+	reps := h.rec("a").replies
+	if len(reps) != 1 || !errors.Is(reps[0].err, env.ErrTimeout) {
+		t.Fatalf("replies %+v", reps)
+	}
+}
+
+func TestEventLogKeepsTheLastLogCapRecords(t *testing.T) {
+	s := sim.New(sim.Config{Seed: 1, LogCap: 3})
+	for i := 1; i <= 10; i++ {
+		s.At(env.Time(i), "act", func() {})
+	}
+	mustNil(t, s.RunUntilQuiet())
+	if s.LogLen() != 10 || !s.LogTruncated() {
+		t.Fatalf("LogLen %d truncated %v", s.LogLen(), s.LogTruncated())
+	}
+	tail := s.LogTail(5)
+	if len(tail) != 3 || !strings.HasPrefix(tail[0], "t=8 ") || !strings.HasPrefix(tail[2], "t=10 ") {
+		t.Fatalf("tail %q", tail)
+	}
+	var b strings.Builder
+	mustNil(t, s.WriteLog(&b))
+	lines := strings.Split(strings.TrimSpace(b.String()), "\n")
+	if len(lines) != 4 || lines[0] != "# log truncated: first 7 of 10 records dropped" || !strings.Contains(lines[3], "action/ran") {
+		t.Fatalf("log %q", lines)
+	}
+	full := sim.New(sim.Config{Seed: 1})
+	for i := 1; i <= 10; i++ {
+		full.At(env.Time(i), "act", func() {})
+	}
+	mustNil(t, full.RunUntilQuiet())
+	if full.Digests() != s.Digests() {
+		t.Fatal("LogCap changed the event digest")
+	}
+}
