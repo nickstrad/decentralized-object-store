@@ -2,6 +2,7 @@ package sim
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
@@ -156,6 +157,9 @@ func (s *Sim) StartNemesis(cfg NemesisConfig) (*Nemesis, error) {
 	if cfg.Phases < 1 || cfg.Chaos <= 0 || cfg.Heal < 0 || cfg.MaxGap <= 0 {
 		return nil, fmt.Errorf("sim: nemesis: phases %d chaos %v heal %v gap %v: %w", cfg.Phases, cfg.Chaos, cfg.Heal, cfg.MaxGap, env.ErrInvalidArgument)
 	}
+	if !withinHorizon(cfg) {
+		return nil, fmt.Errorf("sim: nemesis: start %v plus %d phases of %v chaos and %v heal passes the horizon %v: %w", cfg.Start, cfg.Phases, cfg.Chaos, cfg.Heal, Horizon, env.ErrInvalidArgument)
+	}
 	if len(cfg.Kinds) == 0 {
 		cfg.Kinds = ChaosKinds()
 	}
@@ -175,6 +179,14 @@ func (s *Sim) StartNemesis(cfg NemesisConfig) (*Nemesis, error) {
 		n.quiet = end
 	}
 	return n, nil
+}
+
+func withinHorizon(cfg NemesisConfig) bool {
+	if cfg.Start > Horizon || cfg.Chaos > math.MaxInt64-cfg.Heal {
+		return false
+	}
+	room := int64(Horizon) - int64(max(cfg.Start, 0))
+	return int64(cfg.Chaos+cfg.Heal) <= room/int64(cfg.Phases)
 }
 
 func (n *Nemesis) QuietAt() env.Time { return n.quiet }
@@ -205,7 +217,7 @@ func (n *Nemesis) fire(e *event) disposition {
 		out = OutcomeApplied
 	}
 	n.hist = append(n.hist, NemesisStep{At: s.now, Fault: f, Outcome: out})
-	next := s.now.Add(time.Duration(1 + s.nemRand.Int64N(int64(n.cfg.MaxGap))))
+	next := later(s.now, time.Duration(1+s.nemRand.Int64N(int64(n.cfg.MaxGap))))
 	if next < end {
 		s.schedule(&event{at: next, kind: kindFault, node: -1, peer: -1, nemesis: n, label: "chaos", fault: &Fault{}, until: end})
 	}

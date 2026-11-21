@@ -80,7 +80,7 @@ func (s *Sim) latency(from, to int) time.Duration {
 	if r.Max <= r.Min {
 		return r.Min
 	}
-	return r.Min + time.Duration(s.netRand.Int64N(int64(r.Max-r.Min)+1))
+	return r.Min + time.Duration(s.netRand.Uint64N(uint64(r.Max-r.Min)+1))
 }
 
 func (s *Sim) sendDatagram(from, to int, msg []byte) {
@@ -93,7 +93,7 @@ func (s *Sim) sendDatagram(from, to int, msg []byte) {
 		copies = 2
 	}
 	for i := 0; i < copies; i++ {
-		s.schedule(&event{at: s.now.Add(s.latency(from, to)), kind: kindDatagram, node: to, peer: from, payload: clone(msg)})
+		s.schedule(&event{at: later(s.now, s.latency(from, to)), kind: kindDatagram, node: to, peer: from, payload: clone(msg)})
 	}
 }
 
@@ -102,7 +102,7 @@ func (s *Sim) sendStream(e *event) {
 	if l.blocked || s.roll(l.lossPPM) {
 		return
 	}
-	at := s.now.Add(s.latency(e.peer, e.node))
+	at := later(s.now, s.latency(e.peer, e.node))
 	if at < l.lastStream {
 		at = l.lastStream
 	}

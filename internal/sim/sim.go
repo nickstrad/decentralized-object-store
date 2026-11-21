@@ -237,6 +237,9 @@ func (s *Sim) AddNode(spec NodeSpec, f Factory) error {
 	if f == nil {
 		return fmt.Errorf("sim: add node %s: nil factory: %w", spec.ID, env.ErrInvalidArgument)
 	}
+	if spec.Skew > MaxSkew || spec.Skew < -MaxSkew {
+		return fmt.Errorf("sim: add node %s: skew %d outside ±%d: %w", spec.ID, spec.Skew, MaxSkew, env.ErrInvalidArgument)
+	}
 	if spec.DriftPPM > MaxDriftPPM || spec.DriftPPM < -MaxDriftPPM {
 		return fmt.Errorf("sim: add node %s: drift %d ppm outside ±%d: %w", spec.ID, spec.DriftPPM, MaxDriftPPM, env.ErrInvalidArgument)
 	}
@@ -353,6 +356,10 @@ func (s *Sim) schedule(e *event) *event {
 	if e.at < s.now {
 		e.at = s.now
 	}
+	if e.at > Horizon {
+		e.hi = -1
+		return e
+	}
 	s.seq++
 	e.seq = s.seq
 	s.q.push(e)
@@ -376,7 +383,7 @@ func (s *Sim) Workload(start env.Time, count int, maxGap time.Duration, fn func(
 			fn(i)
 			if i+1 < count {
 				gap := 1 + s.workRand.Int64N(int64(maxGap))
-				s.At(s.now+env.Time(gap), "workload", step(i+1))
+				s.At(later(s.now, time.Duration(gap)), "workload", step(i+1))
 			}
 		}
 	}
@@ -489,6 +496,9 @@ func (s *Sim) Step() (bool, error) {
 }
 
 func (s *Sim) RunUntil(t env.Time) error {
+	if t > Horizon {
+		t = Horizon
+	}
 	for s.err == nil {
 		next := s.q.peek()
 		if next == nil || next.at > t {
@@ -504,7 +514,7 @@ func (s *Sim) RunUntil(t env.Time) error {
 	return s.err
 }
 
-func (s *Sim) RunFor(d time.Duration) error { return s.RunUntil(s.now.Add(d)) }
+func (s *Sim) RunFor(d time.Duration) error { return s.RunUntil(later(s.now, d)) }
 
 func (s *Sim) RunUntilQuiet() error {
 	for s.err == nil {
@@ -520,6 +530,9 @@ func (s *Sim) RunUntilQuiet() error {
 }
 
 func (s *Sim) RunUntilConverged(deadline env.Time, converged func() bool) error {
+	if deadline > Horizon {
+		deadline = Horizon
+	}
 	for s.err == nil {
 		done := false
 		s.guard(-1, "convergence check", func() { done = converged() })

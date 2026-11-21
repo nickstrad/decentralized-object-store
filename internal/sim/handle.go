@@ -63,7 +63,7 @@ func (h *handle) Request(to env.NodeID, req []byte, timeout time.Duration, cb fu
 	s.nextCall++
 	c := &call{id: s.nextCall, to: ti, cb: cb}
 	from.calls[c.id] = c
-	c.timeout = s.schedule(&event{at: s.now.Add(from.toGlobal(timeout)), kind: kindTimeout, node: from.idx, peer: -1, inc: h.inc, call: c.id})
+	c.timeout = s.schedule(&event{at: later(s.now, from.toGlobal(timeout)), kind: kindTimeout, node: from.idx, peer: -1, inc: h.inc, call: c.id})
 	s.sendStream(&event{kind: kindRequest, node: ti, peer: from.idx, peerInc: h.inc, call: c.id, payload: clone(req)})
 }
 

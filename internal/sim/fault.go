@@ -201,7 +201,7 @@ func (s *Sim) ScheduleFromBytes(data []byte, start env.Time, step time.Duration)
 	at := start
 	for i := 0; i+4 <= len(data); i += 4 {
 		b0, b1, b2, b3 := data[i], data[i+1], data[i+2], data[i+3]
-		at = at.Add(time.Duration(b0%16) * step)
+		at = later(at, scaled(int64(b0%16), step))
 		f := Fault{Kind: kinds[int(b1)%len(kinds)]}
 		f.Node = ids[int(b2)%len(ids)]
 		f.Peer = ids[int(b3)%len(ids)]

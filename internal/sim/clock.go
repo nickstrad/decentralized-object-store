@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"math"
 	"math/bits"
 	"time"
 
@@ -16,9 +17,6 @@ func (n *node) toGlobal(d time.Duration) time.Duration {
 	if d <= 0 {
 		return 0
 	}
-	if d > 1<<62 {
-		d = 1 << 62
-	}
 	if n.drift == 0 {
 		return d
 	}
@@ -28,7 +26,33 @@ func (n *node) toGlobal(d time.Duration) time.Duration {
 	if r != 0 {
 		q++
 	}
+	if q > math.MaxInt64 {
+		return math.MaxInt64
+	}
 	return time.Duration(q)
+}
+
+func later(t env.Time, d time.Duration) env.Time {
+	if d > 0 && int64(t) > math.MaxInt64-int64(d) {
+		return math.MaxInt64
+	}
+	if d < 0 && int64(t) < math.MinInt64-int64(d) {
+		return math.MinInt64
+	}
+	return t.Add(d)
+}
+
+func scaled(k int64, d time.Duration) time.Duration {
+	if k == 0 || d == 0 {
+		return 0
+	}
+	if d > 0 && k > math.MaxInt64/int64(d) {
+		return math.MaxInt64
+	}
+	if d < 0 && k > math.MinInt64/int64(d) {
+		return math.MinInt64
+	}
+	return time.Duration(k) * d
 }
 
 func (h *handle) Now() env.Time { return h.n.local(h.s.now) }
@@ -49,7 +73,7 @@ func (h *handle) AfterFunc(d time.Duration, fn func()) env.Timer {
 
 func (t *timer) arm(d time.Duration) {
 	h := t.h
-	t.ev = h.s.schedule(&event{at: h.s.now.Add(h.n.toGlobal(d)), kind: kindTimer, node: h.n.idx, peer: -1, inc: h.inc, timer: t})
+	t.ev = h.s.schedule(&event{at: later(h.s.now, h.n.toGlobal(d)), kind: kindTimer, node: h.n.idx, peer: -1, inc: h.inc, timer: t})
 }
 
 func (t *timer) Stop() bool {
