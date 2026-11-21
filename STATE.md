@@ -9,10 +9,9 @@ PLAN.md section 9.1 and override the spec where they differ (notably: OCC
 replaces the CRDT layer; Docker is the one environment; the book is the
 learning artifact; C4 diagrams are kept current).
 
-Status: PHASE 2 (BUILD) RUNNING since 2026-11-21 (orchestrator relaunched 18:32Z; the
-chunk runs it found alive were left running, nothing was dispatched twice). Step 0 landed.
-Chunk 0a (foundation tooling) is in Astra arbitration after a second Neon FAIL whose
-findings are already fixed; Chunk 0b (simulator) is repaired and in Neon re-review.
+Status: PHASE 2 (BUILD) RUNNING since 2026-11-21. Step 0 and Chunk 0a (foundation
+tooling) are LANDED (8205edf, plus the kb-index fix c5117c5). Chunk 0b (simulator) is
+reviewed (NITS), attacked (52 held, 8 broken) and in its one post-adversarial Opus round.
 
 Seats (this project only): Fable orchestrates, gates and lands; Opus writes
 product Go (logic only, no comments), fresh agent and worktree per chunk, at
@@ -26,8 +25,8 @@ arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.
 | Chunk | What it is | State |
 |---|---|---|
 | Step 0 | Sign-off rulings applied to PLAN.md | LANDED |
-| 0a | Foundation: go.mod, Docker environment, gate scripts and canaries, detlint, orchestration scripts, vendored kb, book site on Pages, CI | on `chunk/0a-foundation`: repaired twice (REVIEW-1 FAIL 11 findings, all fixed; REVIEW-2 FAIL 5 new findings, all fixed in e0409b5); canaries 48/48; adversarial 99 held / 9 narrowed (RESULTS.md); Astra arbitration + Neon prose (README, docs/index.md) running |
-| 0b | Deterministic simulator (internal/env, internal/sim, simtest, cmd/objsim) | on `chunk/0b-simulator`: built (Opus), REVIEW-1 FAIL (3 fault-model bugs), repair round done (exit 0, goldens unchanged); Neon re-review running; then rebase on main after 0a lands, gate, Astra adversarial, prose + chapter 01 |
+| 0a | Foundation: go.mod, Docker environment, gate scripts and canaries, detlint, orchestration scripts, vendored kb, book site on Pages, CI | LANDED 8205edf (arbitration PASS; 50/50 canaries; adversarial 99 held / 9 narrowed); follow-up c5117c5 (SQLite header in the image so `kb-sync.sh index` works). CI green, site serving the new front page |
+| 0b | Deterministic simulator (internal/env, internal/sim, simtest, cmd/objsim) | on `chunk/0b-simulator`, rebased on main: REVIEW-1 FAIL → repair → REVIEW-2 NITS (API ready to freeze; 1 nit); Astra 52 held / 8 broken; Opus round `0b-repair2` running for the 8 + the nit |
 | 1 | SWIM gossip membership (internal/gossip) | not started (needs 0b) |
 | 2 | Reed-Solomon erasure coding and chunk store (internal/erasure, internal/storage) | not started (needs 0b) |
 | 3 | Merkle anti-entropy (internal/merkle) | not started (needs 0b) |
@@ -39,32 +38,34 @@ arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.
 
 ## In progress
 
-- 0a (worktree `0a-foundation`): runs `0a-arbitration` (Astra, writes
-  agent_work/0a-foundation/ARBITRATION-1.md; verdict is final) and `0a-prose` (Neon, one
-  commit: README.md + docs/index.md). After both: close any arbitration nits, commit the work
-  notes (agent_work/0a-foundation/, agent_work/adversarial/0a-foundation/ — still untracked),
-  update agent_work/INDEX.md, `GATE_STAGE=final agent_work/gates/gate.sh 0a-foundation` on a
-  clean tree, `agent_work/gates/prose-check.sh a78cffc HEAD`, canaries, then
-  `agent_work/orch/land.sh 0a-foundation chunk/0a-foundation <msg-file>` from main, verify
-  the Pages run and the front page, docs/knowledge entry + kb sync.
-- 0b (worktree `0b-simulator`, branched from 0a's first commit fde6401): run `0b-rereview`
-  (Neon, writes agent_work/0b-simulator/REVIEW-2.md). After 0a lands: `git rebase --onto main
-  fde6401`, add the one detlint allowlist line for `runtime/debug` in internal/sim/sim.go
-  (panic stack for failure reports only), run the gate; then Astra adversarial (brief still
-  to write: /root/briefs/objstore-p2-0b-adversarial.md), run its scripts, Neon prose
-  (comments + book/chapters/01-deterministic-simulation.md), manifest entry by the
-  orchestrator in a non-prose commit, C4 refresh, final gate, land, tag `freeze-0b`.
+- 0b (worktree `0b-simulator`): run `0b-repair2` (Opus; brief
+  /root/briefs/objstore-p2-0b-repair2.md). When it exits 0:
+  1. `bash agent_work/adversarial/0b-simulator/run-all.sh`; write
+     `agent_work/adversarial/0b-simulator/RESULTS.md` (held/broken per claim; the
+     `network-nemesis-dynamic-blobs` attack stays broken as worded and is NARROWED: nemesis
+     timing/kind/node depend only on seed and nemesis config, the target blob on the node's
+     inventory).
+  2. `agent_work/gates/gate.sh 0b-simulator` (build stage) on a clean tree.
+  3. Neon re-review of that round (REVIEW-3; a FAIL here is a second FAIL → Astra arbitration).
+  4. Neon prose: all comments in internal/env, internal/sim, simtest, cmd/objsim, the CLI
+     help, and `book/chapters/01-deterministic-simulation.md` (trailer `Prose-By: Gemini 4
+     Neon`). Then the orchestrator adds the manifest entry in a NON-prose commit
+     (`book/manifest.json`: n=1, slug deterministic-simulation, status "published"; the
+     chapter's first heading must equal the manifest title).
+  5. C4: move the simulator diagram(s) in docs/c4/ from TARGET to as-built.
+  6. `GATE_STAGE=final agent_work/gates/gate.sh 0b-simulator`, `agent_work/gates/prose-check.sh
+     main HEAD`, commit results, docs/knowledge entry (include the kernel EXTRACTION NOTE:
+     build-notes "Extraction notes" + REVIEW-2 finding 3), INDEX rows.
+  7. `agent_work/orch/land.sh 0b-simulator chunk/0b-simulator <msg>` from main; `git tag
+     freeze-0b && git push origin freeze-0b`; verify the Pages run and that
+     book/deterministic-simulation.html returns 200 with the chapter title (publish ruling:
+     the landing is not done until the chapter is live).
 - Publish ruling (Nick, 2026-11-21): every chunk's chapter goes LIVE on Pages at that
-  chunk's landing; Chunk 8 is assembly and polish only. CHECKED on the 0a scaffold: the site
-  is manifest-driven (`book/manifest.json` + `book/chapters/NN-slug.md`), a single chapter
-  builds, is linked from the book index and passes site-lint before the rest exists (confirmed
-  independently in REVIEW-2). No scaffold fix was needed. Per landing: Neon commits the
-  chapter, the orchestrator adds the manifest entry (status "published"), and the landing is
-  not done until the chapter URL returns 200. 0a itself has no chapter (PLAN 4.2).
-- Simulator ruling (Nick, 2026-11-21): the kernel is extracted to its own repo later, NOT
-  now. The repair round did the pure file moves; the kernel-separability reading check is in
-  both 0b review briefs; tangles go to docs/knowledge/ as an extraction note at 0b's landing
-  (source: build-notes.md "Extraction notes" + REVIEW-2). Never blocks the landing.
+  chunk's landing; Chunk 8 is assembly and polish only. The 0a scaffold was checked and
+  needed no fix: the site is manifest-driven and a single chapter publishes on its own.
+- Simulator ruling (Nick, 2026-11-21): kernel extracted to its own repo later, NOT now.
+  Pure file moves done in 0b's first repair; reading check done in both reviews; the
+  extraction note goes into docs/knowledge/ at 0b's landing. Never blocks the landing.
 
 ## Next steps, in order
 
@@ -93,13 +94,16 @@ arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.
   /root/runs/objstore-p2-*. Progress log: /root/runs/objstore-phase2-progress.txt.
   Done marker (only at completion or cutoff): /root/runs/objstore-phase2-done.txt.
 - Worktrees: /root/Software/decentralized-object-store-work/NN-<slug>, branch
-  chunk/NN-<slug>. Live: 0a-foundation, 0b-simulator. Orchestration scripts (launch.sh,
-  wait.sh, land.sh, seat-probe.sh) are on the 0a branch until it lands — run them from that
-  worktree.
+  chunk/NN-<slug>. Live: 0b-simulator. Orchestration scripts: agent_work/orch/ (launch.sh,
+  wait.sh, land.sh, seat-probe.sh). A second Neon FAIL goes to Astra arbitration; land.sh
+  takes the newest ARBITRATION-N.md as the verdict when one exists. A NITS review needs a
+  `NITS CLOSED` line appended by the orchestrator once each nit is closed.
+- Gate stages: `agent_work/gates/gate.sh <chunk>` (build stage, on a chunk branch, before
+  prose) and `GATE_STAGE=final ...` (after prose, and the only form that runs on main).
 - Site: https://nickstrad.github.io/decentralized-object-store/ — built by
   .github/scripts/build_site.py through .github/workflows/pages.yml on every
-  push to main. Currently the kickoff review site; 0a turns it into the book
-  site.
+  push to main. The book site since 0a landed; the book index lists
+  chapters as they are published (none yet).
 - C4 set: docs/c4/ (c4-sdk bundle model.json, nine diagram files). The
   07-component-crdt diagram still shows the pre-amendment CRDT design and is
   redrawn as the OCC component when Chunk 4 lands; other diagrams move from
