@@ -15,8 +15,16 @@
 #                       in_container=false and never counts for landing
 #   GATE_OUT=<dir>      where to write results (default agent_work/<chunk>/gates)
 #
+# A result counts for landing only when ALL of these hold: every gate ran and is green, the
+# run was inside the dev container, the commit is a full SHA, the host wrapper saw a clean
+# tree, the stage is valid and the fuzz budget is at least 30 s. The host wrapper supplies
+# the commit, the clean-tree flag and the image ID; the file is evidence for an honest
+# operator, not a tamper-proof certificate, and land.sh binds it to the branch tip.
+#
 # Exit status: 0 all requested gates green, 1 a gate is red, 2 usage or setup error.
 set -u
+set -o pipefail
+unset FUZZ_ONLY
 chunk=${1:-}
 [ -n "$chunk" ] || { echo "usage: gate.sh <chunk>" >&2; exit 2; }
 here=$(cd "$(dirname "$0")" && pwd -P)
@@ -43,13 +51,19 @@ fi
 
 # ---------------------------------------------------------------- gate side
 sha=${GATE_SHA:-unknown}
+[[ "$sha" =~ ^[0-9a-f]{40}$ ]] || sha=unknown
 stage=${GATE_STAGE:-build}
+case "$stage" in build|final) ;; *) echo "gate: GATE_STAGE must be build or final, got '$stage'" >&2; exit 2 ;; esac
+fuzz_seconds=${FUZZ_SECONDS:-30}
+[[ "$fuzz_seconds" =~ ^[0-9]+$ ]] || { echo "gate: FUZZ_SECONDS must be a whole number" >&2; exit 2; }
+dirty=${GATE_DIRTY:-true}
+[ "$dirty" = false ] || dirty=true
 out=${GATE_OUT:-agent_work/$chunk/gates}
 mkdir -p "$out" || exit 2
 rm -f "$out"/G*.log "$out/result.json"
 module=$(go list -m 2>/dev/null)
 [ -n "$module" ] || { echo "gate: not in a Go module" >&2; exit 2; }
-if [[ "$sha" =~ ^[0-9a-f]{12,} ]]; then seed=$((16#${sha:0:12})); else seed=1; fi
+if [ "$sha" != unknown ]; then seed=$((16#${sha:0:12})); else seed=1; fi
 bin=$(mktemp -d)
 started=$(date -u +%FT%TZ)
 checks_json='[]'
@@ -71,6 +85,8 @@ check() {
 
 # Directories of the root module's own Go files (nested modules and tool trees excluded).
 go_dirs() { go list -f '{{.Dir}}' ./... ; }
+# Files and directories that are not part of the product tree.
+not_product=(-not -path './agent_work/*' -not -path './kb/*' -not -path './.git/*' -not -path './.kb/*' -not -path './_site/*')
 # Every .go file that belongs to the product tree, whatever its build tags.
 product_go_files() {
   find . -name '*.go' -not -path './agent_work/*' -not -path './kb/*' -not -path './.git/*' \
@@ -78,23 +94,29 @@ product_go_files() {
 }
 # Packages that must be deterministic and single-threaded (PLAN 2.1, 2.5). simtest is test
 # plumbing (flags, environment, re-executing the test binary) and is deliberately outside.
+# The list is every directory under the roots that holds a Go file (found on disk, so a
+# directory the go tool sees no package in, such as one whose only file is behind a build
+# tag, is still linted) plus everything in this module those packages import, directly or
+# not, so a helper package cannot hide a clock.
 detlint_dirs() {
-  local d
-  [ -d internal/env ] && echo internal/env
-  if [ -d internal/sim ]; then
-    find internal/sim -type d -not -path '*/testdata*' -not -path 'internal/sim/simtest*' | sort
-  fi
-  for d in gossip erasure merkle occ saga; do [ -d "internal/$d" ] && echo "internal/$d/..."; done
-  return 0
+  local d roots=() dirs pkgs deps
+  for d in env sim gossip erasure merkle occ saga; do [ -d "internal/$d" ] && roots+=("internal/$d"); done
+  [ ${#roots[@]} -gt 0 ] || return 0
+  dirs=$(find "${roots[@]}" -type f -name '*.go' -not -path '*/testdata/*' -not -path 'internal/sim/simtest/*' -printf '%h\n' | sort -u)
+  [ -n "$dirs" ] || return 0
+  pkgs=$(sed 's#^#./#' <<<"$dirs")
+  # Directories with no buildable package make go list fail; -e keeps the rest listed.
+  deps=$(go list -e -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' $pkgs) || return 1
+  { echo "$dirs"; grep "^$module/" <<<"$deps" | sed "s#^$module/##"; } | sort -u
 }
 
 # ---- G0 hygiene
 g0_tools()  { (cd agent_work/gates/detlint && go build -o "$bin/" ./...) && ls "$bin"; }
-g0_gofmt()  { local o; o=$(gofmt -l $(go_dirs) agent_work/gates/detlint/*.go agent_work/gates/detlint/cmd 2>&1); echo "$o"; [ -z "$o" ]; }
+g0_gofmt()  { local o dirs; dirs=$(go_dirs) || return 1; o=$(gofmt -l $dirs agent_work/gates/detlint 2>&1); echo "$o"; [ -z "$o" ]; }
 g0_vet()    { go vet ./...; }
 g0_build()  { go build ./...; }
 g0_detlint() {
-  local dirs; dirs=$(detlint_dirs)
+  local dirs; dirs=$(detlint_dirs) || { echo "cannot list the packages to lint"; return 1; }
   [ -n "$dirs" ] || { echo "NOTE: no simulator or protocol packages yet"; return 0; }
   "$bin/detlint" -root "$root" -allow agent_work/gates/detlint-allow.txt $dirs
 }
@@ -103,13 +125,20 @@ g0_panics() {
   "$bin/paniccheck" -root "$root" -allow agent_work/gates/panic-allowlist.txt internal
 }
 g0_deps() {
-  local rc=0 req bad
+  local rc=0 req bad deps
   [ ! -e go.work ] || { echo "go.work present: workspaces can smuggle modules in"; rc=1; }
   [ ! -e vendor ] || { echo "vendor/ present"; rc=1; }
-  req=$(go mod edit -json | jq -c '[.Require[]?.Path]')
+  bad=$(find . -name go.mod -not -path ./go.mod "${not_product[@]}")
+  [ -z "$bad" ] || { echo "go.mod outside the root, agent_work/ and kb/ (a nested module hides code from every check):"; echo "$bad"; rc=1; }
+  bad=$(find . -type f \( -name '*.s' -o -name '*.S' -o -name '*.c' -o -name '*.h' -o -name '*.cc' -o -name '*.cpp' -o -name '*.m' -o -name '*.syso' -o -name '*.swig' \) "${not_product[@]}" -not -path '*/testdata/*')
+  [ -z "$bad" ] || { echo "assembly, C or object files in the product tree (no check can read them):"; echo "$bad"; rc=1; }
+  bad=$(find . -type l "${not_product[@]}")
+  [ -z "$bad" ] || { echo "symlinks in the product tree:"; echo "$bad"; rc=1; }
+  req=$(go mod edit -json | jq -c '[.Require[]?.Path]') || rc=1
   [ "$req" = '["pgregory.net/rapid"]' ] || { echo "go.mod must require exactly pgregory.net/rapid, has: $req"; rc=1; }
   [ "$(go mod edit -json | jq -c '[(.Replace // [])[], (.Tool // [])[]] | length')" = 0 ] || { echo "go.mod has replace or tool directives"; rc=1; }
-  bad=$(go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./... | grep -v "^$module\(/\|$\)" || true)
+  deps=$(go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./...) || { echo "go list -deps failed"; return 1; }
+  bad=$(grep -v "^$module\(/\|$\)" <<<"$deps" || true)
   [ -z "$bad" ] || { echo "non-test build reaches packages outside the standard library and this module:"; echo "$bad"; rc=1; }
   # Every file, whatever its build tags: product files import the standard library and this
   # module only; test files may also import rapid.
@@ -127,6 +156,7 @@ g0_selfcontained() {
   hits=$(find cmd -name 'help.txt' 2>/dev/null | xargs -r grep -nE '/root/|/home/[a-z]|\bvm-1\b|objstore-p2-' || true)
   [ -z "$hits" ] || { echo "machine references in CLI help:"; echo "$hits"; rc=1; }
   python3 agent_work/gates/site_lint.py "$root" || rc=1
+  python3 agent_work/gates/site_lint.py --selftest || { echo "site-lint self-test failed"; rc=1; }
   return $rc
 }
 
@@ -134,8 +164,8 @@ g0_selfcontained() {
 floor_pkgs='internal/sim internal/gossip internal/erasure internal/merkle internal/occ internal/saga'
 g1_unit() {
   local rc=0 p line pct
-  go test -count=1 -timeout 30m -cover ./... 2>&1 | tee "$bin/cover.txt"
-  [ "${PIPESTATUS[0]}" = 0 ] || rc=1
+  go test -count=1 -timeout 30m -cover ./... > "$bin/cover.txt" 2>&1 || rc=1
+  cat "$bin/cover.txt"
   for p in $floor_pkgs; do
     [ -d "$p" ] || continue
     line=$(grep -E "^ok[[:space:]]+$module/$p[[:space:]]" "$bin/cover.txt" || true)
@@ -147,20 +177,23 @@ g1_unit() {
   return $rc
 }
 
-# ---- G2 rapid properties, 2,000 checks, seed from the commit
+# ---- G2 rapid properties, 2,000 checks, seed from the commit.
+# Every test of every rapid-importing package runs at the gate budget: selecting by name
+# ('Laws|Prop') would let a property with another name skip the budget unnoticed.
 g2_property() {
-  local pkgs rc=0 p
-  pkgs=$(go list -f '{{.ImportPath}} {{.TestImports}} {{.XTestImports}}' ./... | grep 'pgregory.net/rapid' | cut -d' ' -f1)
+  local all pkgs rc=0 p
+  all=$(go list -f '{{.ImportPath}} {{.TestImports}} {{.XTestImports}}' ./...) || { echo "go list failed"; return 1; }
+  pkgs=$(grep 'pgregory.net/rapid' <<<"$all" | cut -d' ' -f1 || true)
   [ -n "$pkgs" ] || { echo "NOTE: no package imports rapid"; return 0; }
-  echo "NOTE: rapid seed $seed, 2000 checks"
+  echo "NOTE: rapid seed $seed, 2000 checks, $(wc -w <<<"$pkgs") packages"
   for p in $pkgs; do
-    go test -count=1 -timeout 30m "$p" -run 'Laws|Prop' -rapid.checks=2000 -rapid.seed="$seed" || rc=1
+    go test -count=1 -timeout 60m "$p" -rapid.checks=2000 -rapid.seed="$seed" || rc=1
   done
   return $rc
 }
 
 # ---- G3 fuzz, short
-g3_fuzz() { FUZZ_SECONDS=${FUZZ_SECONDS:-30} agent_work/gates/fuzz-short.sh; }
+g3_fuzz() { FUZZ_SECONDS=$fuzz_seconds agent_work/gates/fuzz-short.sh; }
 
 # ---- G4 race
 g4_race() {
@@ -173,24 +206,20 @@ g4_race() {
   return $rc
 }
 
-# ---- G5 DST seeds: pinned seeds + 500 from the commit, replay meta-tests, canaries
+# ---- G5 DST seeds: pinned seeds + 500 from the commit, replay meta-tests, canaries.
+# The whole module runs under the sweep variables: picking packages by their imports would
+# miss a scenario that reaches the simulator through another package.
 g5_dst() {
-  local pkgs rc=0 p
-  pkgs=$(go list -f '{{.ImportPath}} {{.Imports}} {{.TestImports}} {{.XTestImports}}' ./... | grep "$module/internal/sim" | cut -d' ' -f1)
-  pkgs=$(printf '%s\n%s\n' "$pkgs" "$(go list ./internal/sim/... 2>/dev/null)" | sort -u | grep -v '^$' || true)
-  [ -n "$pkgs" ] || { echo "NOTE: no simulation packages yet"; return 0; }
+  [ -d internal/sim ] || { echo "NOTE: no simulator yet"; return 0; }
   echo "NOTE: 500 seeds from base $seed"
-  for p in $pkgs; do
-    DST_SEEDS=500 DST_SEED_BASE="$seed" go test -count=1 -timeout 60m "$p" || rc=1
-  done
-  return $rc
+  DST_SEEDS=500 DST_SEED_BASE="$seed" go test -count=1 -timeout 120m ./...
 }
 
 # ---- G6 Docker environment
 g6_docker() {
   echo "in_container=$in_container image=${GATE_IMAGE_ID:-unknown} $(go version)"
   [ "$in_container" = true ] || { echo "the gate did not run inside the dev container"; return 1; }
-  [ -n "${GATE_IMAGE_ID:-}" ] && [ "${GATE_IMAGE_ID:-}" != unknown ] || { echo "no image ID recorded"; return 1; }
+  [[ "${GATE_IMAGE_ID:-}" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "no image ID recorded"; return 1; }
 }
 
 echo "gate: chunk=$chunk sha=$sha stage=$stage in_container=$in_container seed=$seed"
@@ -215,12 +244,12 @@ want G6 && check G6 docker g6_docker
 partial=false; [ -z "${GATE_ONLY:-}" ] || partial=true
 counts=false
 if [ "$overall" = pass ] && [ "$in_container" = true ] && [ "$partial" = false ] && [ "$sha" != unknown ] \
-   && [ "${GATE_DIRTY:-false}" = false ]; then counts=true; fi
+   && [ "$dirty" = false ] && [ "$fuzz_seconds" -ge 30 ]; then counts=true; fi
 jq -n --arg chunk "$chunk" --arg sha "$sha" --arg stage "$stage" --arg started "$started" \
   --arg finished "$(date -u +%FT%TZ)" --arg go "$(go version)" --arg image "${GATE_IMAGE_ID:-unknown}" \
   --arg overall "$overall" --argjson in_container "$in_container" --argjson partial "$partial" \
-  --argjson dirty "${GATE_DIRTY:-false}" --argjson counts "$counts" --argjson seed "$seed" \
-  --argjson fuzz "${FUZZ_SECONDS:-30}" --argjson checks "$checks_json" \
+  --argjson dirty "$dirty" --argjson counts "$counts" --argjson seed "$seed" \
+  --argjson fuzz "$fuzz_seconds" --argjson checks "$checks_json" \
   '{chunk:$chunk, sha:$sha, stage:$stage, started:$started, finished:$finished, go_version:$go,
     image_id:$image, in_container:$in_container, partial:$partial, dirty_tree:$dirty,
     seed_from_sha:$seed, fuzz_seconds:$fuzz, overall:$overall, counts_for_landing:$counts,

@@ -25,6 +25,7 @@ Exit status: 0 on success; 1 with a message on a broken manifest or missing sour
 
 import html
 import json
+import os
 import posixpath
 import re
 import shutil
@@ -36,7 +37,7 @@ import markdown
 SCRIPT_ROOT = Path(__file__).resolve().parents[2]
 REPO_URL = "https://github.com/nickstrad/decentralized-object-store"
 MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
-NEVER_PUBLISH = ("docs/knowledge/", "agent_work/", "STATE.md", "kb/", ".kb/")
+NEVER_PUBLISH = ("docs/knowledge/", "agent_work/", "STATE.md", "kb/", ".kb/", ".git/")
 
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 STATUS_RE = re.compile(r"^[a-z][a-z-]*$")
@@ -145,6 +146,42 @@ class BuildError(Exception):
     pass
 
 
+def is_private(rel):
+    """True if a repo-relative posix path is in (or is) the never-published set."""
+    rel = posixpath.normpath(rel)
+    return any((rel + "/").startswith(p if p.endswith("/") else p + "/")
+               for p in NEVER_PUBLISH)
+
+
+def check_published(root, path):
+    """Refuse a file whose REAL path is outside the repo or in the never-published set."""
+    real_root = os.path.realpath(root)
+    real = os.path.realpath(path)
+    rel = os.path.relpath(real, real_root).replace(os.sep, "/")
+    if rel == ".." or rel.startswith("../"):
+        raise BuildError("refusing to publish %s: real path %s is outside the repository"
+                         % (path, real))
+    if is_private(rel):
+        raise BuildError("refusing to publish %s: real path is never-published (%s)" % (path, rel))
+
+
+def refuse_symlinks(root):
+    """No symlink anywhere under book/ or docs/, nor README.md / PLAN.md themselves."""
+    for name in ("README.md", "PLAN.md", "book", "docs"):
+        if os.path.islink(root / name):
+            raise BuildError("refusing symlink %s" % name)
+    for top in ("book", "docs"):
+        base = root / top
+        if not base.is_dir():
+            continue
+        for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
+            for n in dirnames + filenames:
+                p = Path(dirpath) / n
+                if p.is_symlink():
+                    raise BuildError("refusing symlink %s (symlinks are never published)"
+                                     % p.relative_to(root).as_posix())
+
+
 def highlight_go(code_html):
     """Dependency-free Go highlighting: keywords, builtins, strings, comments, numbers."""
     code = html.unescape(code_html)
@@ -210,16 +247,28 @@ class Site:
             if re.match(r"^([a-z][a-z0-9+.-]*:|#|//)", value, flags=re.I):
                 return match.group(0)
             path, sep, frag = value.partition("#")
-            if not path:
-                return match.group(0)
+            if not path or path.startswith("/") or "\\" in path:
+                return match.group(0)  # root-absolute: left as written for the lint to flag
             target = posixpath.normpath(posixpath.join(src_dir, path))
             if target in self.pages:
                 new = posixpath.relpath(self.pages[target], out_dir)
             elif (target.startswith("book/") and (self.root / target).is_file()
                   and target != "book/manifest.json"):
+                check_published(self.root, self.root / target)
                 self.assets[target] = target
                 new = posixpath.relpath(target, out_dir)
-            elif not target.startswith("..") and (self.root / target).exists():
+            elif target == ".." or target.startswith("../"):
+                return match.group(0)
+            elif is_private(target) or (
+                    (self.root / target).exists() and is_private(os.path.relpath(
+                        os.path.realpath(self.root / target),
+                        os.path.realpath(self.root)).replace(os.sep, "/"))):
+                if src == "PLAN.md":
+                    kind = "tree" if (self.root / target).is_dir() else "blob"
+                    new = "%s/%s/main/%s" % (REPO_URL, kind, target)
+                else:
+                    raise BuildError("%s links to never-published path %s" % (src, target))
+            elif (self.root / target).exists():
                 kind = "tree" if (self.root / target).is_dir() else "blob"
                 new = "%s/%s/main/%s" % (REPO_URL, kind, target)
             else:
@@ -253,6 +302,7 @@ class Site:
         self.written.append(out)
 
     def render_source(self, src, section, reading=False, extra=""):
+        check_published(self.root, self.root / src)
         text = read(self.root / src)
         out = self.pages[src]
         body = self.rewrite_links(render_markdown(text), src, out) + extra
@@ -317,10 +367,14 @@ def load_manifest(root):
             if not STATUS_RE.match(e["status"]):
                 raise BuildError("%s: bad status %r" % (label, e["status"]))
             norm = posixpath.normpath(file)
-            if (file.startswith("/") or norm.startswith("..") or not norm.endswith(".md")
-                    or norm != file):
+            if (file.startswith("/") or "\\" in file or "\0" in file or norm == ".."
+                    or norm.startswith("../") or not norm.endswith(".md") or norm != file):
                 raise BuildError("%s: 'file' must be a normalized .md path inside book/, got %r"
                                  % (label, file))
+            check_published(root, root / "book" / file)
+            real_book = os.path.realpath(root / "book")
+            if not os.path.realpath(root / "book" / file).startswith(real_book + os.sep):
+                raise BuildError("%s: chapter file resolves outside book/: %r" % (label, file))
             if not (root / "book" / file).is_file():
                 raise BuildError("%s: chapter file book/%s does not exist" % (label, file))
             entries.append(dict(e, kind=kind, src="book/" + file))
@@ -360,6 +414,8 @@ def build_book(site, title, entries):
 
 
 def build(root, out):
+    refuse_symlinks(root)
+    check_published(root, root / "README.md")
     readme = read(root / "README.md")
     site = Site(root, out)
     site.project = title_of(readme, "README.md")
@@ -396,8 +452,10 @@ def build(root, out):
     site.render_source("docs/c4/README.md", "c4")
     for p in diagrams:
         site.render_source("docs/c4/" + p.name, "c4")
+    check_published(root, c4_dir / "model.json")
     shutil.copyfile(c4_dir / "model.json", out / "c4" / "model.json")
     for src, dst in sorted(site.assets.items()):
+        check_published(root, root / src)
         (out / dst).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / src, out / dst)
     (out / ".nojekyll").write_text("", encoding="utf-8")
