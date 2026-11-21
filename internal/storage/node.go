@@ -209,13 +209,13 @@ func (op *putOp) fill() {
 	for !op.finished && !op.stopped && op.inflight < op.n.cfg.Window && op.next < len(op.stripes) {
 		i := op.next
 		op.next++
-		op.inflight++
-		op.n.stats.PutAwaitingPeak = max(op.n.stats.PutAwaitingPeak, uint64(op.inflight))
 		if err := op.launch(i); err != nil {
 			op.stopped = true
 			op.n.later(func() { op.finish(err) })
 			return
 		}
+		op.inflight++
+		op.n.stats.PutAwaitingPeak = max(op.n.stats.PutAwaitingPeak, uint64(op.inflight))
 	}
 }
 
