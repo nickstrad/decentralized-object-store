@@ -13,7 +13,7 @@ func TestTimers(t *testing.T) {
 	tests := []struct {
 		name string
 		act  func(c env.Clock, fired *[]env.Time) env.Timer
-		then func(tm env.Timer)
+		then func(t *testing.T, tm env.Timer)
 		want []env.Time
 	}{
 		{"a timer fires once after its duration", func(c env.Clock, fired *[]env.Time) env.Timer {
@@ -21,27 +21,27 @@ func TestTimers(t *testing.T) {
 		}, nil, []env.Time{50}},
 		{"a stopped timer never fires", func(c env.Clock, fired *[]env.Time) env.Timer {
 			return c.AfterFunc(50, func() { *fired = append(*fired, c.Now()) })
-		}, func(tm env.Timer) {
+		}, func(t *testing.T, tm env.Timer) {
 			if !tm.Stop() {
-				panic("Stop of a pending timer returned false")
+				t.Fatal("Stop of a pending timer returned false")
 			}
 			if tm.Stop() {
-				panic("second Stop returned true")
+				t.Fatal("second Stop returned true")
 			}
 		}, nil},
 		{"a reset timer fires at the new time only", func(c env.Clock, fired *[]env.Time) env.Timer {
 			return c.AfterFunc(50, func() { *fired = append(*fired, c.Now()) })
-		}, func(tm env.Timer) {
+		}, func(t *testing.T, tm env.Timer) {
 			if !tm.Reset(80) {
-				panic("Reset of a pending timer returned false")
+				t.Fatal("Reset of a pending timer returned false")
 			}
 		}, []env.Time{80}},
 		{"a stopped timer can be reset and fires", func(c env.Clock, fired *[]env.Time) env.Timer {
 			return c.AfterFunc(50, func() { *fired = append(*fired, c.Now()) })
-		}, func(tm env.Timer) {
+		}, func(t *testing.T, tm env.Timer) {
 			tm.Stop()
 			if tm.Reset(20) {
-				panic("Reset of a stopped timer returned true")
+				t.Fatal("Reset of a stopped timer returned true")
 			}
 		}, []env.Time{20}},
 		{"a zero or negative duration fires at the current time", func(c env.Clock, fired *[]env.Time) env.Timer {
@@ -54,7 +54,7 @@ func TestTimers(t *testing.T) {
 			var fired []env.Time
 			tm := tc.act(h.rec("a").e.Clock, &fired)
 			if tc.then != nil {
-				tc.then(tm)
+				tc.then(t, tm)
 			}
 			mustNil(t, h.s.RunUntilQuiet())
 			if len(fired) != len(tc.want) {

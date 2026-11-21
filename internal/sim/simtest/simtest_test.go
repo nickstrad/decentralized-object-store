@@ -97,6 +97,11 @@ func TestPinnedSeeds(t *testing.T) {
 	if err != nil || fmt.Sprint(got) != "[42 -7 42]" {
 		t.Fatalf("PinnedSeeds = %v %v", got, err)
 	}
+	mustOK(t, os.WriteFile(filepath.Join(dir, SeedsFile), []byte("42\tTestX tab-separated note\n7\n\t8\t\n"), 0o644))
+	got, err = PinnedSeeds(dir)
+	if err != nil || fmt.Sprint(got) != "[42 7 8]" {
+		t.Fatalf("PinnedSeeds with tabs = %v %v", got, err)
+	}
 	mustOK(t, os.WriteFile(filepath.Join(dir, SeedsFile), []byte("abc\n"), 0o644))
 	if _, err := PinnedSeeds(dir); err == nil {
 		t.Fatal("bad line accepted")
@@ -268,5 +273,51 @@ func TestCluster(t *testing.T) {
 	})
 	if len(ids) != 5 || len(got) != 5 || s.Region(ids[1]) != "r1" || s.Region(ids[2]) != "r0" {
 		t.Fatalf("Cluster = %v regions %v", ids, s.Regions())
+	}
+}
+
+type panicky struct{ env.Process }
+
+func (p *panicky) Start() { explodeInStart() }
+
+func explodeInStart() { panic("planted node panic") }
+
+func TestReportShowsThePanicStack(t *testing.T) {
+	clearEnv(t)
+	c := &captureTB{name: "TestFake/seed=5"}
+	RequireDeterministic(c, 5, func(seed int64) *sim.Sim {
+		s := sim.New(sim.Config{Seed: seed})
+		if err := s.AddNode(sim.NodeSpec{ID: "a"}, func(e env.Env) env.Process { return &panicky{} }); err != nil {
+			s.Fail(err)
+		}
+		s.Fail(s.RunUntil(env.Time(1e9)))
+		return s
+	})
+	for _, fn := range c.cleanups {
+		fn()
+	}
+	out := strings.Join(c.logs, "\n")
+	for _, want := range []string{"planted node panic", "panic stack:", "simtest.explodeInStart", "simtest_test.go"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("report lacks %q:\n%s", want, out)
+		}
+	}
+	if !strings.HasSuffix(strings.TrimSpace(out), "-count=1") {
+		t.Fatalf("REPLAY is not the last line:\n%s", out)
+	}
+}
+
+func TestReportTailHeaderCountsThePrintedLines(t *testing.T) {
+	clearEnv(t)
+	s := sim.New(sim.Config{Seed: 1, LogCap: 5})
+	for i := 1; i <= 30; i++ {
+		s.At(env.Time(i), "act", func() {})
+	}
+	mustOK(t, s.RunUntilQuiet())
+	c := &captureTB{name: "TestFake"}
+	Report(c, s)
+	out := strings.Join(c.logs, "\n")
+	if !strings.Contains(out, "event log tail (5 of 30):") || strings.Count(out, "action/ran") != 5 {
+		t.Fatalf("tail header or lines wrong:\n%s", out)
 	}
 }
