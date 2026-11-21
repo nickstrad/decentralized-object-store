@@ -51,20 +51,24 @@ type Membership interface {
 }
 
 type Stats struct {
-	Sent            uint64
-	SendErrors      uint64
-	Received        uint64
-	Malformed       uint64
-	DroppedClosed   uint64
-	Probes          uint64
-	IndirectProbes  uint64
-	Suspicions      uint64
-	Refutations     uint64
-	RefuteOverflows uint64
-	Syncs           uint64
-	SyncErrors      uint64
-	Purged          uint64
-	Rejoins         uint64
+	Sent              uint64
+	SendErrors        uint64
+	Received          uint64
+	Malformed         uint64
+	DroppedClosed     uint64
+	Probes            uint64
+	IndirectProbes    uint64
+	Suspicions        uint64
+	Refutations       uint64
+	RefuteOverflows   uint64
+	Syncs             uint64
+	SyncErrors        uint64
+	Purged            uint64
+	Rejoins           uint64
+	RelaysDropped     uint64
+	ViewFull          uint64
+	TombstonesEvicted uint64
+	Reinstated        uint64
 }
 
 type memberLocal struct {
@@ -170,6 +174,8 @@ func (n *Node) Self() Member { return n.self }
 func (n *Node) Members() []Member { return n.view.Live() }
 
 func (n *Node) All() []Member { return n.view.All() }
+
+func (n *Node) Tombstones() []Member { return nil }
 
 func (n *Node) LiveCount() int { return n.view.LiveCount() }
 

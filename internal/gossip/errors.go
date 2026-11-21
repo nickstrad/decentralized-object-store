@@ -11,6 +11,7 @@ var (
 	ErrNotMember  = errors.New("gossip: not a member")
 	ErrClosed     = errors.New("gossip: node has left the cluster")
 	ErrJoinFailed = errors.New("gossip: join failed")
+	ErrViewFull   = errors.New("gossip: membership view is full")
 )
 
 const (
@@ -18,6 +19,7 @@ const (
 	CodeNotMember  = env.CodeAppMin + 17
 	CodeClosed     = env.CodeAppMin + 18
 	CodeJoinFailed = env.CodeAppMin + 19
+	CodeViewFull   = env.CodeAppMin + 20
 )
 
 func Codes() []env.CodeEntry {
@@ -26,6 +28,7 @@ func Codes() []env.CodeEntry {
 		{Code: CodeNotMember, Err: ErrNotMember},
 		{Code: CodeClosed, Err: ErrClosed},
 		{Code: CodeJoinFailed, Err: ErrJoinFailed},
+		{Code: CodeViewFull, Err: ErrViewFull},
 	}
 }
 

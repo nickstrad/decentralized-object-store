@@ -24,6 +24,9 @@ const (
 	MaxMult           = 1000
 	MaxPacketLimit    = 1 << 20
 	MaxInterval       = time.Hour
+	MaxTombstones     = 4096
+	MaxRelays         = 1024
+	MaxSeeds          = 256
 )
 
 type Config struct {
@@ -37,6 +40,7 @@ type Config struct {
 	SyncTimeout    time.Duration
 	DeadRetention  time.Duration
 	MaxPacket      int
+	MaxMembers     int
 
 	noIndirect bool
 }
@@ -70,6 +74,9 @@ func (c Config) WithDefaults() Config {
 	if c.MaxPacket == 0 {
 		c.MaxPacket = DefaultMaxPacket
 	}
+	if c.MaxMembers == 0 {
+		c.MaxMembers = MaxUpdates
+	}
 	return c
 }
 
@@ -96,6 +103,10 @@ func (c Config) Validate() error {
 		return bad("dead retention", int64(c.DeadRetention))
 	case c.MaxPacket < MinPacket || c.MaxPacket > MaxPacketLimit:
 		return bad("max packet", int64(c.MaxPacket))
+	case c.MaxMembers < 1 || c.MaxMembers > MaxUpdates:
+		return bad("max members", int64(c.MaxMembers))
+	case len(c.Seeds) > MaxSeeds:
+		return bad("seed count", int64(len(c.Seeds)))
 	}
 	for i, s := range c.Seeds {
 		if s == "" || len(s) > MaxIDLen {
