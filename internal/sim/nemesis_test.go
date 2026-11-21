@@ -2,6 +2,7 @@ package sim_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -153,25 +154,111 @@ func TestNemesisBudget(t *testing.T) {
 	}
 }
 
+func stripeOf(_ env.NodeID, blob string) string {
+	if strings.HasPrefix(blob, "shard/") {
+		return "stripe"
+	}
+	return ""
+}
+
+func shardCluster(t *testing.T) *harness {
+	h := newHarness(t, sim.Config{Seed: 1}, spec("a", "r"), spec("b", "r"), spec("c", "r"))
+	for _, id := range []env.NodeID{"a", "b", "c"} {
+		d := h.rec(id).e.Disk
+		for _, name := range []string{"epoch", "meta/1", "saga/1", "shard/" + string(id)} {
+			mustNil(t, d.Write(name, []byte("bytes of "+name)))
+			mustNil(t, d.Sync(name))
+		}
+	}
+	return h
+}
+
 func TestBudgetGroupLimit(t *testing.T) {
-	s, ids := toySim(t, 5, 6)
-	mustNil(t, s.RunUntil(env.Time(time.Second)))
-	b := sim.Budget{MaxDamagedDisks: 6, MaxDamagedPerGroup: 1, GroupOf: func(env.NodeID, string) string { return "stripe" }}
-	mustNil(t, b.Check(s))
-	if !b.Allows(s, sim.Fault{Kind: sim.FaultBitRot, Node: ids[0], Blob: simtoy.Blob}) {
-		t.Fatal("first rot refused")
-	}
-	mustNil(t, s.BitRot(ids[0], simtoy.Blob))
-	if b.Allows(s, sim.Fault{Kind: sim.FaultBitRot, Node: ids[1], Blob: simtoy.Blob}) {
-		t.Fatal("second rot in the same group allowed")
-	}
-	if b.Allows(s, sim.Fault{Kind: sim.FaultWipeDisk, Node: ids[1]}) {
-		t.Fatal("wipe touching the same group allowed")
-	}
-	mustNil(t, s.BitRot(ids[1], simtoy.Blob))
-	if err := b.Check(s); !errors.Is(err, sim.ErrBudget) {
-		t.Fatalf("Check = %v", err)
-	}
+	t.Run("a second rot or a wipe in a full group is refused", func(t *testing.T) {
+		s, ids := toySim(t, 5, 6)
+		mustNil(t, s.RunUntil(env.Time(time.Second)))
+		b := sim.Budget{MaxDamagedDisks: 6, MaxDamagedPerGroup: 1, GroupOf: func(env.NodeID, string) string { return "stripe" }}
+		mustNil(t, b.Check(s))
+		if !b.Allows(s, sim.Fault{Kind: sim.FaultBitRot, Node: ids[0], Blob: simtoy.Blob}) {
+			t.Fatal("first rot refused")
+		}
+		mustNil(t, s.BitRot(ids[0], simtoy.Blob))
+		if b.Allows(s, sim.Fault{Kind: sim.FaultBitRot, Node: ids[1], Blob: simtoy.Blob}) {
+			t.Fatal("second rot in the same group allowed")
+		}
+		if b.Allows(s, sim.Fault{Kind: sim.FaultWipeDisk, Node: ids[1]}) {
+			t.Fatal("wipe touching the same group allowed")
+		}
+		mustNil(t, s.BitRot(ids[1], simtoy.Blob))
+		if err := b.Check(s); !errors.Is(err, sim.ErrBudget) {
+			t.Fatalf("Check = %v", err)
+		}
+	})
+	t.Run("blobs outside any group never count against a group", func(t *testing.T) {
+		h := shardCluster(t)
+		b := sim.Budget{MaxDamagedDisks: 2, MaxDamagedPerGroup: 1, GroupOf: stripeOf}
+		for _, f := range []sim.Fault{
+			{Kind: sim.FaultWipeDisk, Node: "a"},
+			{Kind: sim.FaultBitRot, Node: "a", Blob: "meta/1"},
+			{Kind: sim.FaultReadError, Node: "a", Blob: "saga/1", Count: 1},
+		} {
+			if !b.Allows(h.s, f) {
+				t.Fatalf("%v refused", f)
+			}
+		}
+		mustNil(t, h.s.WipeDisk("a"))
+		mustNil(t, b.Check(h.s))
+		mustNil(t, h.s.BitRot("b", "meta/1"))
+		mustNil(t, h.s.BitRot("b", "saga/1"))
+		mustNil(t, b.Check(h.s))
+		if b.Allows(h.s, sim.Fault{Kind: sim.FaultBitRot, Node: "c", Blob: "shard/c"}) {
+			t.Fatal("rot of a second shard allowed after a wipe took the first")
+		}
+	})
+	t.Run("a read error on a blob counts against its group", func(t *testing.T) {
+		h := shardCluster(t)
+		b := sim.Budget{MaxDamagedDisks: 3, MaxDamagedPerGroup: 1, GroupOf: stripeOf}
+		mustNil(t, h.s.BitRot("a", "shard/a"))
+		mustNil(t, b.Check(h.s))
+		if b.Allows(h.s, sim.Fault{Kind: sim.FaultReadError, Node: "b", Blob: "shard/b", Count: 2}) {
+			t.Fatal("read error on a second shard allowed")
+		}
+		if !b.Allows(h.s, sim.Fault{Kind: sim.FaultReadError, Node: "b", Blob: "meta/1", Count: 2}) {
+			t.Fatal("read error on an ungrouped blob refused")
+		}
+		mustNil(t, h.s.FailReads("b", "shard/b", 2))
+		if err := b.Check(h.s); !errors.Is(err, sim.ErrBudget) {
+			t.Fatalf("Check = %v", err)
+		}
+		h.s.HealAll()
+		mustNil(t, b.Check(h.s))
+	})
+	t.Run("a read error on a whole node counts against every group it holds", func(t *testing.T) {
+		h := shardCluster(t)
+		b := sim.Budget{MaxDamagedDisks: 3, MaxDamagedPerGroup: 1, GroupOf: stripeOf}
+		mustNil(t, h.s.BitRot("a", "shard/a"))
+		if b.Allows(h.s, sim.Fault{Kind: sim.FaultReadError, Node: "b", Count: 2}) {
+			t.Fatal("whole-node read error on a node holding a second shard allowed")
+		}
+		mustNil(t, h.s.FailReads("b", "", 2))
+		if err := b.Check(h.s); !errors.Is(err, sim.ErrBudget) {
+			t.Fatalf("Check = %v", err)
+		}
+	})
+	t.Run("an unnamed bit-rot is judged on every blob it could hit", func(t *testing.T) {
+		h := shardCluster(t)
+		b := sim.Budget{MaxDamagedDisks: 3, MaxDamagedPerGroup: 1, GroupOf: stripeOf}
+		mustNil(t, h.s.BitRot("a", "shard/a"))
+		if b.Allows(h.s, sim.Fault{Kind: sim.FaultBitRot, Node: "b"}) {
+			t.Fatal("unnamed rot on a node holding a second shard allowed")
+		}
+		d := h.rec("c").e.Disk
+		mustNil(t, d.Delete("shard/c"))
+		mustNil(t, d.Sync("shard/c"))
+		if !b.Allows(h.s, sim.Fault{Kind: sim.FaultBitRot, Node: "c"}) {
+			t.Fatal("unnamed rot on a node with only ungrouped blobs refused")
+		}
+	})
 }
 
 func TestNemesisConfigValidation(t *testing.T) {

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"math/bits"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -250,12 +252,72 @@ func TestPropHealedNetworkDelivers(t *testing.T) {
 	})
 }
 
+type withUngroupedBlobs struct {
+	env.Process
+	e env.Env
+}
+
+func (w *withUngroupedBlobs) Start() {
+	for _, name := range []string{"meta/1", "saga/1"} {
+		_ = w.e.Disk.Write(name, []byte(name))
+		_ = w.e.Disk.Sync(name)
+	}
+	w.Process.Start()
+}
+
+func (w *withUngroupedBlobs) Unwrap() env.Process { return w.Process }
+
+func budgetHolds(s *sim.Sim, b sim.Budget) error {
+	if live := s.LiveCount(); live < b.MinLive {
+		return fmt.Errorf("%d live nodes, minimum %d", live, b.MinLive)
+	}
+	disks := 0
+	groups := map[string]int{}
+	for _, id := range s.Nodes() {
+		d := s.Disk(id)
+		hit := map[string]bool{}
+		for _, name := range d.Damaged() {
+			hit[name] = true
+		}
+		names, any := sim.ReadFaults(d)
+		for _, name := range names {
+			hit[name] = true
+		}
+		if any > 0 {
+			for _, name := range d.Names() {
+				hit[name] = true
+			}
+		}
+		if len(hit) > 0 || any > 0 {
+			disks++
+		}
+		if b.GroupOf == nil {
+			continue
+		}
+		for _, name := range slices.Sorted(maps.Keys(hit)) {
+			if g := b.GroupOf(id, name); g != "" {
+				groups[g]++
+				if groups[g] > b.MaxDamagedPerGroup {
+					return fmt.Errorf("group %q has %d damaged blobs, limit %d", g, groups[g], b.MaxDamagedPerGroup)
+				}
+			}
+		}
+	}
+	if disks > b.MaxDamagedDisks {
+		return fmt.Errorf("%d damaged disks, limit %d", disks, b.MaxDamagedDisks)
+	}
+	return nil
+}
+
 func TestPropNemesisRespectsBudget(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		n := rapid.IntRange(3, 8).Draw(t, "n")
 		s := sim.New(sim.Config{Seed: rapid.Int64().Draw(t, "seed")})
 		ids := sim.NodeIDs(n)
-		if err := s.AddCluster(ids, 3, simtoy.Factory(simtoy.Config{Peers: ids})); err != nil {
+		toy := simtoy.Factory(simtoy.Config{Peers: ids})
+		if err := s.AddCluster(ids, 3, func(e env.Env) env.Process {
+			return &withUngroupedBlobs{Process: toy(e), e: e}
+		}); err != nil {
 			t.Fatal(err)
 		}
 		b := sim.Budget{
@@ -264,22 +326,41 @@ func TestPropNemesisRespectsBudget(t *testing.T) {
 			MaxDamagedPerGroup: rapid.IntRange(0, 3).Draw(t, "perGroup"),
 		}
 		if rapid.Bool().Draw(t, "groups") {
-			b.GroupOf = func(env.NodeID, string) string { return "one" }
+			b.GroupOf = func(_ env.NodeID, blob string) string {
+				if blob == simtoy.Blob {
+					return "one"
+				}
+				return ""
+			}
+		}
+		kinds := sim.ChaosKinds()
+		if rapid.Bool().Draw(t, "diskHeavy") {
+			kinds = []sim.FaultKind{sim.FaultBitRot, sim.FaultReadError, sim.FaultWipeDisk, sim.FaultWipeRejoin, sim.FaultCrash, sim.FaultRestart}
 		}
 		cfg := sim.NemesisConfig{
 			Start: 0, Phases: rapid.IntRange(1, 3).Draw(t, "phases"),
-			Chaos: 2 * time.Second, Heal: time.Second, MaxGap: 50 * time.Millisecond, Budget: b,
+			Chaos: 2 * time.Second, Heal: time.Second, MaxGap: 50 * time.Millisecond, Budget: b, Kinds: kinds,
 		}
 		nem, err := s.StartNemesis(cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
 		s.AddInvariant("budget", 1, func() error { return b.Check(s) })
+		s.AddInvariant("budget/independent", 1, func() error { return budgetHolds(s, b) })
 		if err := s.RunUntil(nem.QuietAt()); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.Verify(); err != nil {
 			t.Fatal(err)
+		}
+		applied := 0
+		for _, st := range nem.History() {
+			if st.Outcome == sim.OutcomeApplied {
+				applied++
+			}
+		}
+		if applied == 0 && b.MaxDamagedDisks > 0 && b.MinLive < n {
+			t.Fatalf("nemesis applied nothing: %+v", nem.History())
 		}
 	})
 }
