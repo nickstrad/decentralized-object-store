@@ -1,0 +1,31 @@
+scenario=adversarial-fail seed=23 steps=1 time=0
+events=3d06bded5195a8305f443b05be7678552d8d9ae14de7e5c76fb63e8fbfe71db1
+state=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+objsim: sim: seed 23: panic in action deliberate at node "" t=0: cli-replay-fixture
+event log tail (1 of 1):
+  t=0 seq=1 action/ran node=- peer=- hash=ed42748d3fdb379e aux=0
+panic stack:
+goroutine 1 [running]:
+runtime/debug.Stack()
+	/usr/local/go/src/runtime/debug/stack.go:26 +0x5e
+github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).guard.func1()
+	/src/internal/sim/sim.go:445 +0x58
+panic({0x4e33c0?, 0x512d70?})
+	/usr/local/go/src/runtime/panic.go:860 +0x13a
+main.main.scenarios.func1.1()
+	/src/agent_work/adversarial/0b-simulator/.cli-e5uyl_63/scenarios.go:4 +0x25
+github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).guard(0x23402d0a2b70?, 0x507025?, {0x23402d0ca000?, 0x50787d?}, 0x76f32c713bf0?)
+	/src/internal/sim/sim.go:454 +0x56
+github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).exec(0x23402d0c6000, 0x23402d0c8000)
+	/src/internal/sim/sim.go:565 +0x705
+github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).Step(0x23402d0c6000)
+	/src/internal/sim/sim.go:483 +0x166
+github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).RunUntilQuiet(0x23402d0c6000)
+	/src/internal/sim/sim.go:521 +0x2b
+main.main.scenarios.func1(0x23402d0c2070?)
+	/src/agent_work/adversarial/0b-simulator/.cli-e5uyl_63/scenarios.go:4 +0x65
+main.run({0x7ffca08a7e03, 0x3d}, {0x23402d0b2010, 0x4, 0x4}, {0x23402d0a2f20, 0x1, 0x23402d09a068?}, {0x5136b8, 0x23402d082020}, ...)
+	/src/agent_work/adversarial/0b-simulator/.cli-e5uyl_63/main.go:56 +0x42f
+main.main()
+	/src/agent_work/adversarial/0b-simulator/.cli-e5uyl_63/main.go:20 +0xc5
+REPLAY: /src/agent_work/adversarial/0b-simulator/.cli-e5uyl_63/objsim -scenario adversarial-fail -seed 23
