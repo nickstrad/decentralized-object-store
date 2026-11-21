@@ -489,9 +489,9 @@ CONSTANTS
 const (
 	DefaultSeeds    = 3
 	DefaultSeedBase = 1
-	TailLines       = 20
 	SeedsFile       = "seeds.txt"
 )
+const TailLines = 20
 
 VARIABLES
 
