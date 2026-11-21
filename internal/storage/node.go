@@ -195,6 +195,7 @@ func (op *putOp) finish(err error) {
 		return
 	}
 	op.finished = true
+	op.data = nil
 	if err != nil {
 		op.n.stats.PutsFail++
 		op.cb(nil, objectErr("put", op.man.Bucket, op.man.Key, err))

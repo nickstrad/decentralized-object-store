@@ -3,8 +3,10 @@ package storage_test
 import (
 	"bytes"
 	"errors"
+	"runtime"
 	"testing"
 	"time"
+	"weak"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
@@ -165,4 +167,38 @@ func TestNodeGetUsesTheManifestLayout(t *testing.T) {
 	if g.err != nil || !bytes.Equal(g.res.Data, data) {
 		t.Fatalf("a 4+2 node reading a 2+1 object: %v", g.err)
 	}
+}
+
+func TestNodePutReleasesTheObjectAtTheAck(t *testing.T) {
+	codes, err := storage.Codes()
+	mustNil(t, err)
+	lat := sim.Range{Min: time.Microsecond, Max: time.Microsecond}
+	s := sim.New(sim.Config{Seed: 220211, Codes: codes, Net: sim.NetConfig{Latency: lat, InterRegionLatency: lat}})
+	ids := sim.NodeIDs(6)
+	cfg := storage.Config{Layout: storage.Layout{K: 4, M: 2, StripeSize: 1 << 10}, Members: clusterMembers(ids, 3), Window: 1}
+	mustNil(t, s.AddCluster(ids, 3, nodeFactory(cfg)))
+	mustNil(t, s.RunUntilQuiet())
+	mustNil(t, s.Pause(ids[5]))
+	n := nodeOf(t, s, ids[0])
+	data := bytes.Repeat([]byte{9}, 16<<10)
+	held := weak.Make(&data[0])
+	done := false
+	n.Put("b", "k", data, func(_ *storage.Manifest, err error) {
+		mustNil(t, err)
+		done = true
+	})
+	data = nil
+	mustNil(t, s.RunFor(storage.DefaultRequestTimeout/2))
+	if !done {
+		t.Fatal("the put did not ack with one paused holder")
+	}
+	if n.Stats().PutOutstanding == 0 {
+		t.Fatal("no request is outstanding after the ack; the test needs late requests")
+	}
+	runtime.GC()
+	if held.Value() != nil {
+		t.Fatalf("the object buffer is still reachable after the ack with %d late requests outstanding", n.Stats().PutOutstanding)
+	}
+	mustNil(t, s.Resume(ids[5]))
+	mustNil(t, s.RunUntilQuiet())
 }
