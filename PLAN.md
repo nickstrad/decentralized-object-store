@@ -1,13 +1,17 @@
 # PLAN — Decentralized Object Store & Local-First Sync Engine (Go)
 
-Status: Phase 1 plan, awaiting Nick's sign-off. Nothing in Phase 2 starts before that.
+Status: SIGNED OFF by Nick on 2026-11-21; Phase 2 (the build) is running. Section 9 holds
+Nick's answer to each of the 16 open questions, and the body of the plan has been amended to
+match them (Step 0 of Phase 2). Where the text still carries an **(OQ-n)** marker, the ruling
+in section 9 is the decision. Three rulings changed the plan's shape and are folded in
+throughout: the **OCC amendment** (optimistic concurrency control replaces the CRDT
+primitive — Chunk 4, 7.5), **Docker as the one environment** (2.9, 7.6), and **the book**
+as the canonical learning artifact with a kept-current **C4 diagram set** (3, 6, Chunk 8).
 Spec: [docs/project-source.md](docs/project-source.md). Current state: [STATE.md](STATE.md).
-Section 9 lists the open questions; every recommendation marked **(OQ-n)** is a proposal,
-not a decision.
 
 Contents: 1 North Star · 2 Testing architecture · 3 Repo layout · 4 Chunk plan ·
 5 Concurrency map · 6 Per-chunk pipeline · 7 Key technical decisions · 8 Risks ·
-9 Open questions for Nick · Appendix A (research and probe evidence)
+9 Open questions for Nick (answered; rulings in 9.1) · Appendix A (research and probe evidence)
 
 ---
 
@@ -17,15 +21,18 @@ A leaderless, multi-region object store with a local-first metadata sync layer �
 plus a small Figma-style sync — written in Go on the standard library alone, in which every
 node can accept reads and writes without asking a leader or a quorum of a consensus group.
 Membership comes from SWIM gossip, durability from Reed-Solomon striping, self-healing from
-Merkle-tree anti-entropy, conflict-free metadata from CRDTs, and multi-step cluster changes
-from compensating Sagas. The repository's claim is that these properties are **proven, not
+Merkle-tree anti-entropy, metadata that never loses a write silently from optimistic
+concurrency control (conditional writes, version vectors, and concurrent versions kept as
+siblings — Nick's OCC amendment, which replaces the spec's CRDT layer), and multi-step
+cluster changes from compensating Sagas. The repository's claim is that these properties are **proven, not
 asserted**: a deterministic simulator runs 20–100 nodes through partitions, packet loss,
 bit-rot and crashes in milliseconds from one `int64` seed; property tests and fuzzers check
-the algebra; the race detector and lifecycle tests check the real runtime; end-to-end tests
+the algebra and the merge laws; the race detector and lifecycle tests check the real runtime; end-to-end tests
 run real processes. A reader gets a commit history that works as a guided tour (one landing
-per primitive, each message naming what its tests prove), an architecture write-up per
-primitive that states the benefit, the trade-off accepted and the evidence, and a failing
-seed they can replay with one printed command.
+per primitive, each message naming what its tests prove), a concise book with one chapter
+per primitive that states the idea, the trade-off accepted and the evidence, a C4 diagram
+set that matches the code at every landing, one Docker workflow that runs everything on any
+machine, and a failing seed they can replay with one printed command.
 
 ---
 
@@ -35,7 +42,7 @@ Everything in sections 3–7 follows from this section. A chunk is briefed from 
 the brief names what must be proven and with which test kind, the tests are written first,
 and the code counts as done only when the landing gates in 2.9 are green.
 
-### 2.1 The DST harness (`internal/sim`, built in Chunk 0)
+### 2.1 The DST harness (`internal/sim`, built in Chunk 0b)
 
 **Shape.** Protocol code is written as single-threaded state machines that never touch a
 socket, a wall clock, an OS file or a goroutine. They see the world through four interfaces
@@ -64,8 +71,8 @@ rewriting or runtime tricks.
 **Virtual clock.** Time is an `int64` count of virtual nanoseconds from a fixed epoch. The
 clock never moves on its own: the loop pops the next event and jumps the clock to its
 timestamp. Timers are events. Per-node skew and drift are supported (a node's `Clock.Now`
-is the global time passed through that node's offset and rate), because LWW metadata is
-only as good as the clocks under it (Chunk 4 needs this).
+is the global time passed through that node's offset and rate), because last-writer-wins on scalar
+metadata fields is only as good as the clocks under it (Chunk 4 needs this).
 
 **Single-threaded discrete-event loop.** One priority queue ordered by `(time, seq)`, where
 `seq` is a global insertion counter, so equal-time events run in FIFO order and the order is
@@ -162,37 +169,39 @@ registers its own (2.2).
 | Reed-Solomon | **round-trip**: for any payload, any valid `(k, m)`, any erasure set of size ≤ m, decode returns the exact bytes; **MDS**: every `k×k` submatrix of the coding matrix is invertible (exhaustive for small `k+m`, sampled above); **failure boundary**: more than `m` losses returns `ErrTooFewShards`, never a panic and never wrong bytes; **corruption**: up to `m` corrupted shards are detected by checksum and treated as erasures (7.3); systematic: the first `k` shards are the data |
 | Merkle | **completeness**: diff returns exactly the keys whose hashes differ or that exist on one side (zero missed, zero spurious); **efficiency**: hashes exchanged ≤ `c·d·log N` for `d` differing keys, and round trips ≤ tree depth; root equality ⇔ map equality; incremental update equals rebuild from scratch; insertion order does not change the root |
 | Gossip | **convergence**: after faults stop, all live nodes hold identical membership views within `c·log₂N` protocol periods; incarnation numbers never decrease; a node never declares itself dead; no eviction under a single asymmetric link; a crashed node is declared dead by all within a bound; a dead verdict is only overturned by a higher incarnation |
-| CRDTs | commutativity, associativity, idempotency of `Merge` for each type; `Merge` is an upper bound (`a ≤ a⊔b`); every operation is an inflation; **strong eventual consistency**: any two replicas that have received the same set of updates, in any order, with any duplication, encode to identical bytes; PN-Counter value equals increments minus decrements with no double counting; OR-Set add-wins; LWW total order with deterministic tie-break; encode/decode round-trip |
+| OCC metadata | **check-and-set**: on one replica a conditional write succeeds exactly when its precondition (`If-Match` ETag / `If-None-Match`) holds against the current state, checked against a reference model; **version vectors** form a partial order (reflexive, antisymmetric, transitive; `Concurrent` is symmetric); **no silent loss**: every acknowledged write is either present as a sibling or is dominated by a version whose writer had seen it — never dropped by a merge; replica `Merge` is commutative, associative and idempotent and keeps every non-dominated sibling; **convergence**: replicas that have received the same set of versions, in any order, with any duplication, encode to identical bytes and report the same ETag; a resolving write that names all siblings collapses them to one version; scalar fields are last-writer-wins by hybrid logical clock with a deterministic tie-break; quota counter updates are check-and-set and never apply a stale read; encode/decode round-trip |
 | Saga | **terminal-state invariant**: every saga ends Completed (all forward effects present) or Compensated (no forward effect remains), for every failure point; recovery from any log prefix is idempotent (recovering twice equals once); compensations run in reverse order of completed steps; no step runs after the saga reaches a terminal state |
 | Simulator | replay (2.1); a healed network delivers every message sent after the heal; virtual time never goes backwards |
 
-**Generator design — one generator, three drivers (stdlib only, OQ-4).** A small in-repo
-package, `internal/prop` (built in Chunk 0, about 300 lines), gives generators a byte tape:
-`prop.Check(t, func(g *prop.G) { ... g.IntN(n) ... g.Bytes(max) ... })`. Values are drawn
-from the tape, so the same property function runs under three drivers:
-1. **random**: the tape is filled from a seeded PCG stream (`PROP_SEED`, `PROP_RUNS`);
-2. **fuzz**: the tape is the `[]byte` input of a `testing.F` target, so every property is
-   also a fuzz target with no extra code, and Go's coverage guidance searches it;
-3. **replay**: a saved tape reproduces a failure exactly.
+**Generator design — `pgregory.net/rapid` (adopted, OQ-4).** Nick ruled for rapid as a
+test-only dependency instead of an in-repo helper. Properties are written as
+`rapid.Check(t, func(t *rapid.T) { ... })` with rapid generators, and stateful tests use
+`rapid`'s state-machine support (`t.Repeat` over a map of actions with a reference model
+checked after every step). The same property function also runs as a native fuzz target
+through `f.Fuzz(rapid.MakeFuzz(prop))`, so each headline law is searched both by rapid's
+random generation and by Go's coverage-guided fuzzer. rapid is imported from `_test.go`
+files only; gate G0 checks that mechanically (2.9).
 
 Generators are built for the hard cases, not uniform noise: payload sizes are drawn from
-`{0, 1, primes, k−1, k, k+1, shard-size boundaries, large}`; CRDT states are generated by
-running random operation sequences on several replicas and merging some of them (so the
-states are reachable ones) and separately as arbitrary decoded bytes (so `Merge` is also
+`{0, 1, primes, k−1, k, k+1, shard-size boundaries, large}`; OCC states are generated by
+running random conditional-write sequences on several replicas and merging some of them (so
+the states are reachable ones) and separately as arbitrary decoded bytes (so `Merge` is also
 checked on states no honest replica would produce); Merkle maps are generated as a base map
 plus a mutation script of inserts, deletes and bit flips.
 
-**How failures shrink or replay.** On failure `prop` shrinks the tape — delete spans, zero
-bytes, lower bytes — re-running the property each time and keeping any change that still
-fails (the internal-reduction technique, which shrinks every generator for free). It then
-prints the minimal counterexample, the seed, and
-`REPLAY: PROP_SEED=<n> go test ./internal/crdt -run '^TestORSetLaws$' -count=1`, and writes
-the shrunk tape to `testdata/prop/<Test>/<hash>`; saved tapes run first on every later run.
-Under the fuzz driver, Go's own minimizer and `testdata/fuzz/` do the same job. `prop` has
-its own meta-test: a planted failing property must shrink to a known minimal case.
+**How failures shrink or replay.** rapid shrinks a failing case automatically and writes a
+fail file under the package's `testdata/rapid/<Test>/`; fail files are committed and replay
+first on every later run ("append, never delete", like DST seeds). The failure output names
+the seed, and the test helper prints
+`REPLAY: go test ./internal/occ -run '^TestPropNoSilentLoss$' -rapid.seed=<n> -count=1`.
+The `-rapid.*` flags exist only in test binaries that import rapid, so the gate scripts pass
+them per package (the packages are found with `go list`), never through `go test ./...`.
+Plain `go test` uses rapid's default of 100 checks with a fresh seed; the landing gate runs
+2,000 checks with a seed derived from the commit SHA (same commit, same cases). Under the
+fuzz driver, Go's own minimizer and `testdata/fuzz/` do the same job.
 
-Stateful tests (the simulator, the Saga engine, the chunk store) use the same tape to
-generate operation sequences against a simple reference model and compare after every step.
+Stateful tests (the simulator, the Saga engine, the chunk store, the OCC store) generate
+operation sequences against a simple reference model and compare after every step.
 
 ### 2.3 Fuzz targets (Go native fuzzing, `testing.F`)
 
@@ -203,8 +212,9 @@ generate operation sequences against a simple reference model and compare after 
 | `FuzzShardDecode` | storage | arbitrary bytes as a shard file: rejected or accepted, never a panic, never a checksum bypass |
 | `FuzzMerkleDiff` (spec) | merkle | completeness and the hash-count bound over arbitrary maps and mutation scripts |
 | `FuzzMerkleWire` | merkle | arbitrary bytes as diff-protocol messages never panic or loop |
-| `FuzzCRDTLaws` (spec) | crdt | the three semilattice laws for all four types on arbitrary states A, B, C |
-| `FuzzCRDTDecode` | crdt | decode never panics; decode∘encode is the identity; merging a decoded hostile state keeps the laws |
+| `FuzzOCCConditionalWrite` (replaces the spec's `FuzzCRDTLaws`) | occ | fuzz bytes become a schedule of conditional writes, deletes and merges across replicas, checked against a reference model: a write succeeds only when its precondition holds; no acknowledged version is lost without a descendant that saw it; replicas with the same versions are byte-identical |
+| `FuzzOCCMergeLaws` | occ | `Merge` is commutative, associative and idempotent on arbitrary decoded states A, B, C and never drops a non-dominated sibling |
+| `FuzzOCCDecode` | occ | decode never panics; decode∘encode is the identity; merging a decoded hostile state keeps the laws |
 | `FuzzGossipWire` | gossip | decode never panics; round-trip; an arbitrary inbound packet never breaks a node's invariants |
 | `FuzzSagaLogRecover` | saga | arbitrary, truncated or corrupted log bytes: recovery returns a valid prefix or a typed error, never a panic |
 | `FuzzSimSchedule` | sim | fuzz bytes become a fault schedule; simulator invariants and replay hold |
@@ -224,9 +234,10 @@ from a PRNG), because byte-level fuzzing of megabytes is slow; fuzz inputs are c
 loops over every target.
 - Per-chunk landing gate: 30 s per target touched by the chunk, `-fuzzminimizetime 5s`
   (the default minimize time looks like a hang — a finding already in the machine's kb).
-- Chunk 7 hardening: 15 minutes per target, 60 minutes each for the three spec-named
-  targets and `FuzzClusterNemesis`, run in parallel across cores; results and any new
-  corpus entries recorded per target (**OQ-9** for the budget).
+- Chunk 7 hardening (Nick's ruling, OQ-9): 5 minutes per target, 15 minutes each for the
+  four headline targets — `FuzzErasureCoding`, `FuzzMerkleDiff`, `FuzzOCCConditionalWrite`
+  and `FuzzClusterNemesis` — run in parallel across cores; results and any new corpus
+  entries recorded per target.
 
 ### 2.4 Unit tests
 
@@ -248,8 +259,8 @@ loops over every target.
 
 ### 2.5 Concurrency validation
 
-**Where concurrency is allowed.** The five primitive packages, `internal/sim` and
-`internal/prop` contain no `go` statement, no channel, no mutex and no `sync/atomic`
+**Where concurrency is allowed.** The five primitive packages and `internal/sim` contain
+no `go` statement, no channel, no mutex and no `sync/atomic`
 (`detlint` enforces it). They are single-threaded by construction, which is why the
 simulator can prove things about them. Goroutines exist only in the real-runtime layer:
 `internal/node` (socket readers, the node's event loop, timers), `internal/storage`'s HTTP
@@ -310,10 +321,10 @@ server, and `cmd/`.
 | `erasure` | `ErrInvalidConfig`, `ErrTooFewShards`, `ErrShardSize`; `*ShardError{Index, Err}` | decoding is total: any input gives bytes or one of these |
 | `storage` (chunk store) | `ErrNotFound`, `ErrCorrupt`, `ErrExists`; `*ObjectError{Op, Bucket, Key, Err}` | a checksum mismatch is `ErrCorrupt`, never silently returned bytes |
 | `merkle` | `ErrMalformed`, `ErrDepth`; peer failures surface as transport errors | a failed round is abandoned whole; the next round is the retry |
-| `crdt` | `ErrMalformed` (decode only) | `Merge` has no error return — it is total by construction, and that is a tested property |
+| `occ` | `ErrPreconditionFailed` (a conditional write whose `If-Match`/`If-None-Match` does not hold), `ErrMalformed` (decode only), `ErrNotFound`; `*ConflictError{Key, Siblings}` where a caller asked for a single value and several siblings exist | replica `Merge` has no error return — it is total by construction, and that is a tested property |
 | `gossip` | `ErrMalformed`, `ErrNotMember`, `ErrClosed` | a bad packet is counted and dropped, never fatal |
 | `saga` | `*StepError{Saga, Step, Attempt, Err}`, `ErrPermanent`, `ErrSagaNotFound`, `ErrLogCorrupt` | steps classify failures as retryable or permanent; only the engine retries |
-| object API | maps the above to HTTP status in one table (`ErrNotFound`→404, `ErrUnavailable`→503, `ErrCorrupt`→500 with repair triggered, quota→507 …) | the table is tested row by row |
+| object API | maps the above to HTTP status in one table (`ErrNotFound`→404, `ErrPreconditionFailed`→412, siblings on a single-value read→300 with every sibling's version ID and ETag listed, `ErrUnavailable`→503, `ErrCorrupt`→500 with repair triggered, quota→507 …) | the table is tested row by row |
 | `env`/transport | `ErrTimeout`, `ErrUnreachable`, `ErrClosed`, `ErrTooLarge` | the same sentinels from the simulated and the real transport |
 
 **Crossing the network boundary.** Go error values never cross. A response carries a
@@ -357,13 +368,13 @@ share one scenario definition where they can:
 | # | Scenario | Tier | Pass criteria |
 |---|---|---|---|
 | E1 | Multi-region put/get | S, R | objects of 0 B, 1 B, prime sizes and multi-MB written through a node in each region are read back byte-identical through every other node; shards are spread so no region holds more than `m` of a stripe |
-| E2 | Partition and heal | S, R | during a region partition both sides keep accepting metadata writes and any object write/read the surviving shards allow; anything else returns `ErrUnavailable`, never wrong bytes; after heal all nodes reach identical membership, identical CRDT bytes and identical Merkle roots within the stated bound; no acknowledged write is lost |
+| E2 | Partition and heal | S, R | during a region partition both sides keep accepting metadata writes and any object write/read the surviving shards allow; anything else returns `ErrUnavailable`, never wrong bytes; after heal all nodes reach identical membership, identical metadata bytes (sibling sets included) and identical Merkle roots within the stated bound; no acknowledged write is lost |
 | E3 | Bit-rot detection and repair | S, R | with up to `m` shards per stripe corrupted on disk, every GET still returns correct bytes; background anti-entropy restores every corrupted shard within the bound; bytes moved for repair are proportional to the damage, not the bucket |
 | E4 | Bucket migration, success | S, R | bucket moves from region A to B under live traffic; ends with verified equal Merkle roots, routing pointer on B at every node, zero shards of the bucket left in A, every object readable |
 | E5 | Bucket migration, rollback | S (every failure point), R (kill target mid-copy, kill coordinator mid-saga) | the saga ends Compensated: pointer still A, zero orphan shards in B, source intact; a restarted coordinator resumes from its log and reaches the same end |
 | E6 | Node crash and restart | S, R | `SIGKILL` during writes: acknowledged objects survive; the restarted node rejoins with a higher incarnation, catches up by anti-entropy, and serves reads; a wiped node is refilled |
 | E7 | Nemesis and healing cycles | S (long, many seeds) | alternating chaos and heal for many cycles: safety invariants hold at every step, availability holds within the fault budget, full convergence after each heal; seeds swept in the hundreds per gate and far more in hardening |
-| E8 | Local-first metadata sync | S, R | two regions (and a client replica, **OQ-7**) edit tags, ACL sets, quotas and object metadata while disconnected; after reconnect all replicas hold identical bytes and every concurrent add is present |
+| E8 | Local-first metadata sync (node-level only, OQ-7) | S, R | two regions edit tags, ACL entries, quotas and object metadata while disconnected, using conditional writes; after reconnect all nodes hold identical bytes; **no silent loss — conflicts surface as siblings**: every acknowledged concurrent version is readable as a sibling until a resolving write names them all; scalar fields settle by last-writer-wins. There is no client replica |
 | E9 | Shutdown and cancellation | R | SIGTERM under load: in-flight requests finish or fail cleanly, the process exits within the deadline with no goroutine left, restart is clean |
 
 Tier S scenarios run under `RequireDeterministic`. Tier R runs under `-race` builds of the
@@ -373,7 +384,7 @@ binary and is kept small enough to finish in a few minutes.
 
 | Question | Answered by |
 |---|---|
-| Is the algebra right? | property tests and fuzzing |
+| Is the algebra right, and do conditional writes and merges keep their laws? | property tests (rapid) and fuzzing |
 | Does the protocol hold up under faults and bad timing? | DST, many seeds, invariants each step |
 | Is the edge-case behaviour and the error contract right? | table-driven unit tests |
 | Does the real runtime manage goroutines safely? | `-race`, synctest lifecycle tests, leak checks |
@@ -382,23 +393,27 @@ binary and is kept small enough to finish in a few minutes.
 
 ### 2.9 Landing gates per chunk (ordered; all must be green to merge)
 
-`agent_work/gates/gate.sh <chunk>` runs G0–G6 and writes a machine-readable result file to
-`agent_work/<chunk>/gates/`. Each gate script has a canary proving it fails on a planted
-violation.
+**Every gate runs through Docker** (Nick's ruling, OQ-16). `agent_work/gates/gate.sh
+<chunk>` is the one entry point: called on the host it re-executes itself inside the `dev`
+service of `compose.yaml` (`docker compose run --rm dev agent_work/gates/gate.sh <chunk>`),
+runs G0–G6 there, and writes a machine-readable result file to
+`agent_work/<chunk>/gates/`. A result produced outside the container is marked as such and
+does not count for landing. The same command is what a contributor runs on a Mac. Each gate
+script has a canary proving it fails on a planted violation.
 
 | # | Gate | Command / check |
 |---|---|---|
-| G0 | Hygiene | `gofmt -l` empty; `go vet ./...`; `go build ./...`; `detlint` (banned calls and constructs in sim-reachable packages); panic allowlist; **zero-dependency check** — root `go.mod` has no `require`, `go list -deps ./...` is standard library plus this module |
-| G1 | Unit | `go test ./...` (fixed seeds); per-package coverage report against the floor |
-| G2 | Property | `PROP_RUNS=2000 go test -run 'Laws|Prop' ./...`; saved tapes replay first |
+| G0 | Hygiene | `gofmt -l` empty; `go vet ./...`; `go build ./...`; `detlint` (banned calls and constructs in sim-reachable packages); panic allowlist; **dependency check** — root `go.mod` requires exactly one module, `pgregory.net/rapid`; `go list -deps ./...` (non-test) is standard library plus this module; rapid is imported only from `_test.go` files |
+| G1 | Unit | `go test ./...` (fixed DST seeds); per-package coverage report against the floor |
+| G2 | Property | rapid properties at 2,000 checks, seed from the commit SHA, run per rapid-importing package (`-run 'Laws|Prop' -rapid.checks=2000 -rapid.seed=<n>`); committed fail files replay first |
 | G3 | Fuzz, short | 30 s per target the chunk touches; committed corpus replays |
 | G4 | Race | `go test -race ./...`; `-count=3` on node, storage, e2e |
 | G5 | DST seeds | pinned seeds + 500 seeds based on the commit SHA per scenario; replay meta-tests; planted-bug canaries fail as required |
-| G6 | Portability | `GOOS=darwin GOARCH=arm64 go build ./... && go vet ./...` locally (7.6) |
+| G6 | Docker environment | the gate ran inside the `dev` image built from the repo's `Dockerfile` at this commit (image build is part of the gate; the result file records the image ID and Go version). There is no native macOS gate or CI job |
 | G7 | Adversarial | Astra's harnesses run by the orchestrator; `RESULTS.md` records held/broken per claim; every broken claim is repaired (and re-run) or narrowed in writing |
 | G8 | Review | Neon verdict PASS, or NITS with each nit closed |
-| G9 | Prose | Neon prose pass and write-up done; comment-only-diff check (the Go AST is unchanged by the prose commit); prose-provenance check (2.10); self-containment check (no `/root/`, no brief or machine references in reader-facing files); `site-lint`; G0–G6 re-run on the final tree |
-| G10 | Acceptance | orchestrator reads the diff, the evidence and the write-up against the brief; then merge, push, verify the Pages deploy serves the write-up |
+| G9 | Prose and diagrams | Neon prose pass and the chunk's book chapter draft done; comment-only-diff check (the Go AST is unchanged by the prose commit); prose-provenance check (2.10); self-containment check (no `/root/`, no brief or machine references in reader-facing files); `site-lint`; **C4 accuracy check** — the orchestrator compares `docs/c4/` with the code as landed and refreshes any diagram the chunk made stale, in the same landing (a stale diagram is a defect); G0–G6 re-run on the final tree |
+| G10 | Acceptance | orchestrator reads the diff, the evidence and the chapter draft against the brief; then merge, push, verify the Pages deploy serves the chapter |
 
 ### 2.10 The prose rule, made checkable
 
@@ -406,11 +421,16 @@ Opus writes Go with **no comments** other than machine directives (`//go:build`,
 `//go:embed`, `// Output:` in examples). A check at the end of the build stage enforces it.
 Opus explains intent in `agent_work/<chunk>/build-notes.md` (operational, not shipped as
 reader copy), which Neon uses as source material. Every comment in the final tree and every
-reader-facing markdown file is then written in the Neon prose stage, in commits carrying a
+reader-facing markdown file (README, `docs/`, `book/`, site copy) and the CLI help text is
+then written in the Neon prose stage, in commits carrying a
 `Prose-By: Gemini 4 Neon` trailer. The provenance check verifies that (a) the pre-prose
 tree had no comments, (b) the prose commits change only comments and reader-facing
 markdown, and (c) no later commit touches either without the trailer. Identifier names,
-error strings, test names and log messages are code and are Opus's (**OQ-8**).
+error strings, test names and log messages are code and are Opus's. The orchestrator writes
+PLAN, STATE, briefs, `agent_work/`, `docs/knowledge/` entries and commit messages; those are
+operational and outside the Neon rule (OQ-8, as ruled). The C4 diagram structure
+(`docs/c4/model.json`, the Mermaid sources) is architecture work and is the orchestrator's;
+explanatory prose around the diagrams is Neon's.
 
 ---
 
@@ -419,15 +439,15 @@ error strings, test names and log messages are code and are Opus's (**OQ-8**).
 | Path | Purpose |
 |---|---|
 | `PLAN.md`, `STATE.md`, `README.md` | this plan; current state and resume instructions; reader-facing front page (Neon) |
-| `go.mod` | module (**OQ-1**), `go 1.26`, no `require` lines |
+| `go.mod`, `go.sum` | module `github.com/nickstrad/decentralized-object-store` (OQ-1), `go 1.26`; one `require`: `pgregory.net/rapid`, used by tests only (OQ-4) |
+| `Dockerfile`, `compose.yaml`, `.dockerignore` | the canonical develop-and-run environment (OQ-16): a `dev` service for build, unit/property tests, DST, fuzzing, E2E and the gate suite, and a `cluster` profile that runs `objnode` peers in three region groups (usable from Chunk 6) |
 | `internal/env/` | the four interfaces protocol code sees: `Clock`, `Rand`, `Transport`, `Disk`; shared sentinels (addition to the spec's layout — reason in 7.1) |
 | `internal/sim/` | discrete-event simulator: PRNG streams, virtual clock, event loop, fault-injecting network and disk, nemesis, event log, digests |
 | `internal/sim/simtest/` | test helpers: `-seed`/`DST_SEED`, seed sweeps, `RequireDeterministic`, replay-command printing, cluster builders |
-| `internal/prop/` | stdlib-only property-testing helper: tape generators, shrinking, replay (addition; 2.2) |
 | `internal/gossip/` | SWIM membership: probe, indirect probe, suspicion state machine, piggybacked dissemination |
 | `internal/erasure/` | GF(2^8) arithmetic and the Reed-Solomon encoder/decoder |
 | `internal/merkle/` | Merkle tree builder, diff protocol, anti-entropy repair worker |
-| `internal/crdt/` | state-based CRDTs: PN-Counter, OR-Set, LWW-Register, LWW-Element-Set; hybrid logical clock; replication of CRDT state |
+| `internal/occ/` | optimistic concurrency control for metadata (replaces the spec's `internal/crdt`; name chosen at Step 0 of Phase 2 because the package is the OCC primitive itself, not a storage detail): version vectors, version IDs and ETags, conditional check-and-set, sibling sets, last-writer-wins scalar fields on a hybrid logical clock, OCC-checked quota counters, canonical encoding, replica merge and state replication |
 | `internal/saga/` | durable Saga orchestrator, log, recovery; the bucket-migration workflow definition |
 | `internal/storage/` | local chunk store, shard placement, object put/get paths, HTTP object API |
 | `internal/node/` | wiring of all primitives into one node; the real runtime (UDP/TCP transports, file disk, wall clock, node loop) (addition; 7.1) |
@@ -436,18 +456,20 @@ error strings, test names and log messages are code and are Opus's (**OQ-8**).
 | `cmd/objsim/` | run a named simulation scenario from a seed outside `go test` (addition; 2.1) |
 | `test/e2e/` | end-to-end suite: tier S scenarios, tier R process harness, `FuzzClusterNemesis` |
 | `docs/project-source.md` | the spec, as given |
-| `docs/architecture/<slug>.md` | Neon's architecture write-up per paradigm; published |
-| `docs/index.md`, `docs/_config.yml` | Pages site front page and configuration |
+| `book/` | the book, the project's canonical learning artifact (book ruling): `book/manifest.json` (table of contents), `book/chapters/NN-<slug>.md` — one chapter draft per chunk, written by Neon in that chunk's prose stage; front matter and assembly in Chunk 8. Supersedes the per-paradigm `docs/architecture/` write-ups, which are not created |
+| `docs/c4/` | C4 diagram set authored with c4-sdk (`model.json` bundle, per-diagram markdown with Mermaid and terminal renderings); TARGET architecture at kickoff, updated to as-built at each landing (C4 ruling) |
+| `docs/index.md` | site front page copy (Neon) |
+| `.github/scripts/build_site.py` | builds the Pages site: front page, the book, the C4 section, the plan |
 | `docs/knowledge/` | project knowledge entries (markdown, in git), one or more per landed chunk; indexed by the vendored kb |
 | `kb/` | the kb tool vendored whole (a nested Go module with its own dependencies; outside the root module, so the zero-dependency check is unaffected) |
 | `.kb/` | location file for the in-repo knowledge store |
-| `.github/workflows/pages.yml` | builds `docs/` and deploys to GitHub Pages on every push to main |
-| `.github/workflows/ci.yml` | `go test` on Linux and macOS runners (7.6) |
+| `.github/workflows/pages.yml` | builds the site (book, C4 section, plan) and deploys to GitHub Pages on every push to main |
+| `.github/workflows/ci.yml` | runs the gate suite through `docker compose` on a Linux runner; no macOS job (OQ-16) |
 | `agent_work/INDEX.md` | index of every script: name, purpose, chunk, author seat, what it proved / last result |
 | `agent_work/orch/` | orchestration scripts: launch, wait, seat probes, Neon/Astra runners, land, knowledge sync |
 | `agent_work/gates/` | gate scripts (`gate.sh`, `fuzz-short.sh`, `detlint/`, prose and self-containment checks) and their canaries |
 | `agent_work/probes/` | feasibility probes (Phase 1 probes are already here) |
-| `agent_work/adversarial/<chunk>/` | Astra's harnesses and scripts with `RESULTS.md`; permanent, indexed in their own section; each harness is its own nested Go module or a bash script |
+| `agent_work/adversarial/<chunk>/` | Astra's harnesses and scripts with `RESULTS.md`; permanent, indexed in their own section; each harness is its own nested Go module or a bash script; outside oracle libraries are allowed in these nested modules only (OQ-5) |
 | `agent_work/<chunk>/` | per-chunk work notes: brief copy, build notes, reviews, gate results, seeds, route used for Neon |
 | `agent_work/kb-sync.sh`, `kb-vendor.sha` | vendor the kb tool, rebuild the in-repo index, report drift |
 
@@ -459,65 +481,75 @@ error strings, test names and log messages are code and are Opus's (**OQ-8**).
 
 | Spec item | Chunk | Note |
 |---|---|---|
-| Guideline: zero external engine dependencies | all; gate G0 | checked mechanically at every landing |
+| Guideline: zero external engine dependencies | all; gate G0 | checked mechanically at every landing; the one module in `go.mod`, `pgregory.net/rapid`, is test-only and never reaches a product package |
 | Guideline: deterministic chaos testing | 0, then every chunk | |
-| Guideline: `-race` and property tests | 0 (tooling), every chunk (gates G2, G4) | |
-| Structure: `internal/sim` | 0 | |
+| Guideline: `-race` and property tests | 0a (tooling), every chunk (gates G2, G4) | |
+| Structure: `internal/sim` | 0b | |
 | Structure: `cmd/objnode` | 6 | |
 | Structure: `internal/gossip` | 1 | |
 | Structure: `internal/erasure` | 2 | |
 | Structure: `internal/merkle` | 3 | |
-| Structure: `internal/crdt` (LWW-Element-Set, OR-Set, PN-Counter, LWW-Register) | 4 | LWW-Element-Set is in the structure list but not in Commit 4's scope; **kept** — all four types are built |
+| Structure: `internal/crdt` (LWW-Element-Set, OR-Set, PN-Counter, LWW-Register) | 4, as `internal/occ` | **REPLACED by Nick's OCC amendment (2026-11-21):** the four CRDT types are not built. Metadata is protected by optimistic concurrency control — ETags, conditional writes, version vectors, siblings — with last-writer-wins kept only for scalar fields. This is a deliberate, signed-off departure from the spec |
 | Structure: `internal/saga` | 5 | |
 | Structure: `internal/storage` (chunk store + HTTP/RPC object API) | 2 (chunk store), 6 (object API) | split because the chunk store is needed by Chunks 2 and 3 and the API needs everything |
-| Commit 0 + its replay meta-test | 0 | |
+| Commit 0 + its replay meta-test | 0b | |
 | Commit 1 + 20-node convergence tests | 1 | |
 | Commit 2 + round-trip tests | 2; distribution across gossip-discovered peers finishes in 6 | Chunk 2 places shards on a membership list behind an interface; the real gossip view is wired in 6 (reason: lets 1 and 2 build concurrently) |
 | Commit 3 + fault-injection tests | 3; applied to erasure-coded objects in 6 | same reason |
-| Commit 4 + random-order property tests | 4; membership-driven peer choice wired in 6 | same reason |
+| Commit 4 + random-order property tests | 4 (as OCC: random-order, duplicated delivery of versions converges to identical bytes with every concurrent version kept as a sibling); membership-driven peer choice wired in 6 | same reason; scope per the OCC amendment |
 | Commit 5 + failure-injection tests | 5 (engine + workflow against a model of the cluster); 6 (the same failure matrix against the real components) | the spec's terminal-state claim is only fully proven when Chunk 6 lands; Chunk 5's write-up says so and is updated in 6 |
-| DST core: single-threaded simulation driven by `-seed` | 0 | |
-| DST core: continuous nemesis and healing cycles | 0 (mechanism), 7 (whole-cluster cycles) | |
+| DST core: single-threaded simulation driven by `-seed` | 0b | |
+| DST core: continuous nemesis and healing cycles | 0b (mechanism), 7 (whole-cluster cycles) | |
 | DST core: mathematical law fuzzing | 2, 4 | |
 | SWIM suite: convergence property; asymmetry resilience | 1 | |
 | RS suite: `FuzzErasureCoding` round-trip; failure boundary | 2 | |
 | Merkle suite: `FuzzMerkleDiff` completeness and efficiency; self-healing DST | 3 (replicated chunks); 6–7 (erasure-coded objects under traffic) | |
-| CRDT suite: `FuzzCRDTLaws`; multi-region convergence DST | 4 | |
+| CRDT suite: `FuzzCRDTLaws`; multi-region convergence DST | 4 | restated for OCC: `FuzzOCCConditionalWrite` and `FuzzOCCMergeLaws`; the multi-region convergence DST asserts byte-identical metadata with siblings preserved |
 | Saga suite: exhaustive failure points; terminal-state invariant | 5, re-run on real components in 6 | |
 | Mission: E2E as final build phase | 7 | |
-| Mission: write-up per paradigm, Pages incremental | every chunk; scaffold in 0; finish in 8 | |
-| Mission: kb vendoring and both stores | scaffold in 0; entry per chunk | |
+| Mission: write-up per paradigm, Pages incremental | every chunk writes its book chapter draft; site in 0a; book assembled in 8 | book ruling: the chapter drafts replace standalone write-ups |
+| Ruling: C4 diagram section kept current | every landing (gate G9) | kickoff set already in `docs/c4/` |
+| Ruling: Docker as the one environment | 0a; every gate | |
+| Mission: kb vendoring and both stores | scaffold in 0a; entry per chunk | |
 
 Cut, with reasons: S3 wire compatibility and request signing (not in the spec; the API is
 S3-like, path-style, unauthenticated — **OQ-6**); SWIM Lifeguard extensions (not in the
 spec; the suspicion mechanism the spec names is built); consensus of any kind (the spec is
-availability-first); delta-state CRDTs (state-based is what the spec names; full-state
-exchange guarded by a digest is enough at 100 nodes).
+availability-first); the CRDT types themselves (replaced by OCC, Nick's amendment); a
+client-side replica and `/v1/sync` client document (OQ-7: node-level sync only); saga
+takeover after a coordinator is lost for good (OQ-13: a stated limitation).
 
 ### 4.2 Chunks
 
 Sizes are rough non-comment Go lines, code + tests. Every chunk's landing message names the
 paradigm and what its tests prove (4.3).
 
-#### Chunk 0 — Foundation and the DST simulator (spec Commit 0)
+#### Chunk 0 — Foundation (0a) and the DST simulator (0b, spec Commit 0)
 
-Lands as two commits so the tour reads cleanly: **0a** foundation (tooling only), then
-**0b** the simulator. They are built at the same time by different seats.
+Two separate chunks with separate landings (Nick's ruling, OQ-2): **0a** foundation
+(tooling only) lands first, then **0b** the simulator. 0b's build starts while 0a is being
+finished, because 0b needs only `go.mod` and the Docker environment from it.
 
-**0a deliverable (orchestrator scripts; Neon for the site's front page).** `go.mod`; gate
-scripts and their canaries (`agent_work/gates/`); `detlint` (stdlib `go/ast` + `go/types`);
+**0a deliverable (orchestrator-owned tooling; Neon for reader-facing copy).** `go.mod` with
+the test-only rapid requirement; `Dockerfile`, `compose.yaml` and `.dockerignore` — the one
+environment for build, unit/property tests, DST, fuzzing, E2E, the gate suite and (from
+Chunk 6) a running multi-region cluster; gate scripts and their canaries
+(`agent_work/gates/`), all run through Docker; `detlint` (stdlib `go/ast` + `go/types`);
 orchestration scripts (`agent_work/orch/`); kb vendored into `kb/` with `kb-sync.sh` and an
-empty in-repo store; Pages scaffold (`docs/index.md`, `_config.yml`, `pages.yml`) deployed
-and verified serving; `ci.yml`.
+empty in-repo store; the Pages site grown from the kickoff scaffold into the book site
+(front page, book section fed from `book/`, C4 section, plan) and verified serving;
+`ci.yml` running the gates through Docker on Linux.
 - Tests first: one canary per gate — a planted unformatted file, banned `time.Now`, a
-  `require` line, an unlisted panic, a comment in pre-prose Go, a `/root/` path in a doc —
+  second `require` line, rapid imported from a non-test file, an unlisted panic, a comment
+  in pre-prose Go, a `/root/` path in a doc, a result file produced outside the container —
   each must turn its gate red.
 - Adversarial (Astra): make a gate pass on a tree that violates it; get a comment or a
   dependency past the checks; find an entropy source `detlint` misses (aliased imports,
   method values, `maphash`, pointer formatting with `%p`, `select` order, `os.Getpid`).
+- Book: no chapter; the README and the site front page say how to work through Docker.
 
 **0b deliverable (Opus).** `internal/env`, `internal/sim`, `internal/sim/simtest`,
-`internal/prop`, `cmd/objsim` skeleton, and a toy protocol used only by the simulator's own
+`cmd/objsim` skeleton, and a toy protocol used only by the simulator's own
 tests (a max-register flood, the smallest thing that converges).
 - Tests written first:
   - meta: `TestReplaySameProcess`, `TestReplayAcrossProcesses`, `TestGoldenDigests`,
@@ -530,8 +562,7 @@ tests (a max-register flood, the smallest thing that converges).
     torn tail, read error); crash/restart/pause; stall detection;
   - property: `TestPropHealedNetworkDelivers`, `TestPropTimeMonotonic`,
     `TestPropStreamsIndependent` (extra draws on one stream do not change another),
-    `TestPropNemesisRespectsBudget`, disk against a reference model; `prop`'s own
-    `TestShrinkFindsMinimal` and `TestTapeReplay`;
+    `TestPropNemesisRespectsBudget`, disk against a reference model (rapid state machine);
   - fuzz: `FuzzSimSchedule`;
   - errors: every `env` sentinel produced by the simulated transport and disk.
 - Adversarial (Astra): break replay (find any API use, schedule or node count where two
@@ -540,8 +571,8 @@ tests (a max-register flood, the smallest thing that converges).
   rates against configuration); show an asymmetric partition leaking in the blocked
   direction; show bit-rot that is not silent or a wipe that leaves data; break stream
   independence; make the loop hang instead of reporting a stall.
-- Write-ups: `deterministic-simulation` (the DST/chaos harness).
-- Size: 0a about 900 lines of scripts; 0b about 2,400 code + 2,600 tests.
+- Book chapter: `01-deterministic-simulation` (the DST/chaos harness and the testing approach).
+- Size: 0a about 1,100 lines of scripts and configuration; 0b about 2,100 code + 2,500 tests.
 - **Interface freeze:** when 0b lands, `internal/env` and the `simtest` API are frozen
   (5.1). This is what lets Chunks 1–5 build concurrently.
 
@@ -576,7 +607,7 @@ seed addresses, so two sides of a healed partition find each other again (7.7). 
   one; check whether convergence really scales as `log N` (fit across N up to 200) or the
   constant hides linear growth; flapping node; packet at the size limit; a node restarted
   with lost state and the same ID.
-- Write-up: `swim-gossip`. Size: about 1,300 code + 2,000 tests.
+- Book chapter: `02-swim-gossip`. Size: about 1,300 code + 2,000 tests.
 
 #### Chunk 2 — Reed-Solomon erasure coding and the chunk store (spec Commit 2)
 
@@ -602,11 +633,13 @@ rendezvous hashing over a `Membership` interface (7.2).
     more than `m` returns `ErrUnavailable`);
   - errors: every sentinel in 2.6's erasure and storage rows.
 - Adversarial (Astra): differential test against an independent reference implementation
-  in the harness's own module (**OQ-5**); hunt for any `(k, m, loss set)` that decodes to
+  in the harness's own module (allowed there only, OQ-5 — e.g. klauspost/reedsolomon); hunt for any `(k, m, loss set)` that decodes to
   wrong bytes rather than an error; corrupt shards so the header and checksum still agree;
   swap shards between stripes or objects; truncated and oversized shards; `k+m` at the
   field limit; multi-MB memory behaviour; placement skew and region concentration.
-- Write-up: `reed-solomon-erasure-coding`. Size: about 1,500 code + 2,200 tests.
+- Defaults (OQ-15): `k=4, m=2` across 3 regions, two shards per region, so any one region
+  can be lost; a PUT is acknowledged at `k+1` durable shards.
+- Book chapter: `03-reed-solomon-erasure-coding`. Size: about 1,500 code + 2,200 tests.
 
 #### Chunk 3 — Merkle anti-entropy (spec Commit 3)
 
@@ -634,35 +667,79 @@ the same chunks); Chunk 6 points the same code at erasure-coded objects.
   preimage through leaf/inner confusion); find a divergence the diff misses; find `d` and
   `N` where cost exceeds the bound; mutate the tree during a diff; a peer that lies in the
   protocol (must not corrupt the honest side or loop it); rot in the stored tree itself.
-- Write-up: `merkle-anti-entropy`. Size: about 1,100 code + 1,800 tests.
+- Book chapter: `04-merkle-anti-entropy`. Size: about 1,100 code + 1,800 tests.
 
-#### Chunk 4 — CRDT metadata layer (spec Commit 4)
+#### Chunk 4 — Optimistic concurrency control for metadata (replaces spec Commit 4)
 
-**Deliverable.** `internal/crdt`: PN-Counter (storage quotas), OR-Set (bucket tags, ACL
-memberships), LWW-Register (object metadata, routing pointers), LWW-Element-Set; a hybrid
-logical clock for LWW timestamps with node-ID tie-break; canonical encoding so equal states
-are equal bytes; a typed metadata document composed of these; and a replicator that
-exchanges state with random peers from a `Membership` interface (digest first, state on
-mismatch) (7.5).
+Nick's OCC amendment (2026-11-21) replaces the CRDT metadata layer. The rule the chunk
+proves: **no write is ever lost silently.** A writer states what it believes the current
+version is; if it is wrong the write is refused; if two writers could not see each other
+(a partition), both versions are kept as siblings until someone resolves them.
+
+**Deliverable.** `internal/occ` (7.5):
+- **version vectors** (`actor → counter`) with `Compare` giving Equal / Before / After /
+  Concurrent, and a hybrid logical clock for scalar fields;
+- a **versioned record** per key: a set of siblings, each with a version ID, the version
+  vector it was written at, a value (or a tombstone) and an HLC stamp; the record's **ETag**
+  is a deterministic hash of its sibling set, so equal states have equal ETags on every
+  node;
+- **check-and-set**: `Put`/`Delete` take a precondition — `If-Match: <etag>`,
+  `If-None-Match: *` (create only), or none — and are applied atomically against the local
+  state; a failed precondition returns `ErrPreconditionFailed` and changes nothing. A
+  successful write's vector dominates every sibling the writer's ETag covered, so it
+  replaces exactly what the writer saw; an unconditional write is recorded as concurrent
+  with what it did not read rather than overwriting it;
+- **replica merge**: union of siblings minus any sibling dominated by another — commutative,
+  associative, idempotent, total; concurrent versions survive as siblings, never silently
+  overwritten; a **resolving write** that names the current ETag collapses the siblings;
+- **scalar metadata fields** (routing pointer, per-object content type and similar small
+  fields): last-writer-wins by HLC with node-ID tie-break — the only place LWW applies;
+- **quota counters as OCC-checked updates**: usage changes are read-modify-write with
+  `If-Match` and bounded retry; concurrent partition-side updates surface as siblings and
+  are resolved by a recompute hook (the integrated node recounts from manifests in
+  Chunk 6), never by guessing;
+- canonical encoding so equal states are equal bytes; a typed metadata document (tags, ACL
+  entries, quotas, object metadata, manifests) built from these records; and a replicator
+  that exchanges state with random peers from a `Membership` interface (digest first, state
+  on mismatch).
 - Tests first:
-  - unit: per-type operation tables; `TestHLCRules`; `TestCanonicalEncoding`;
-    `TestLWWTieBreak`; decode malformed table;
-  - property: `TestPNCounterLaws`, `TestORSetLaws`, `TestLWWRegisterLaws`,
-    `TestLWWElementSetLaws`, `TestDocumentLaws` (the three laws each), `TestPropInflation`,
-    `TestPropSEC` (random, duplicated, reordered delivery → identical bytes),
-    `TestPropPNCounterNoDoubleCount`, `TestPropORSetAddWins`, `TestPropHLCMonotonic`;
-  - fuzz: `FuzzCRDTLaws`, `FuzzCRDTDecode`;
-  - DST: `TestMultiRegionConvergenceDST` (3 regions, concurrent mutations, partitions,
-    reordering, duplication, clock skew; bit-identical metadata on all replicas after
-    heal, and every acknowledged update reflected); `TestOfflineRegionDST` (a region
-    edits alone for a long time, then syncs); canary `TestCanaryMergeTakesLeft`;
-  - errors: decode failures only; a test asserts `Merge` cannot fail on any decoded state.
-- Adversarial (Astra): hunt for states (including hostile decoded ones) that break a law;
-  clock skew and HLC overflow making LWW pick a surprising winner; equal timestamps from
-  different nodes; a node ID reused after a wipe (OR-Set tag reuse, counter reset);
-  remove-then-re-add interleavings; unbounded tombstone growth measured; states that
-  encode differently yet compare equal.
-- Write-up: `crdt-metadata`. Size: about 1,300 code + 2,100 tests.
+  - unit: `TestVersionVectorCompareTable`; `TestConditionalPutTable` and
+    `TestConditionalDeleteTable` (every precondition × state row, including tombstones and
+    siblings); `TestETagDeterministic`; `TestResolveCollapsesSiblings`; `TestHLCRules`;
+    `TestLWWScalarTieBreak`; `TestQuotaCheckAndSet`; `TestCanonicalEncoding`; decode
+    malformed table;
+  - property (rapid): `TestPropVersionVectorPartialOrder`; `TestPropCheckAndSetModel`
+    (single replica against a reference model: success iff the precondition holds);
+    `TestPropMergeLaws` (commutative, associative, idempotent); `TestPropNoSilentLoss`
+    (random conditional writes on several replicas, random merges: every acknowledged
+    version is a sibling or has a descendant whose writer saw it);
+    `TestPropConvergence` (random, duplicated, reordered delivery → identical bytes and
+    ETags); `TestPropSiblingsOnlyWhenConcurrent` (causally ordered writes never leave
+    siblings); `TestPropQuotaNoStaleApply`; `TestPropHLCMonotonic`;
+  - fuzz: `FuzzOCCConditionalWrite` (headline), `FuzzOCCMergeLaws`, `FuzzOCCDecode`;
+  - DST: `TestMultiRegionConvergenceDST` (3 regions, concurrent conditional writes,
+    partitions, reordering, duplication, clock skew; byte-identical metadata on all
+    replicas after heal, every acknowledged write present as a sibling or causally
+    superseded); `TestOfflineRegionDST` (a region edits alone for a long time, then syncs:
+    its versions arrive as siblings of the other side's, none dropped);
+    `TestConditionalWriteRaceDST` (two writers holding the same ETag: on one node exactly
+    one wins and the other gets `ErrPreconditionFailed`; across a partition both are
+    acknowledged and both survive as siblings); canary `TestCanaryMergeDropsSibling`;
+  - errors: `ErrPreconditionFailed` on every failing precondition row; `*ConflictError`
+    fields; decode failures; a test asserts `Merge` cannot fail on any decoded state.
+- Adversarial (Astra): find any schedule in which an acknowledged write disappears without
+  a descendant that saw it; an actor ID reused after a wipe (counter reset making a new
+  write look dominated — the classic version-vector hazard); hostile decoded states that
+  break a merge law or forge dominance; ETag collisions between different sibling sets;
+  sibling explosion measured (how many siblings can a partitioned workload create, and is
+  it bounded by writers rather than writes); clock skew and HLC overflow making a scalar
+  field pick a surprising winner; quota overshoot size under partition; a conditional
+  write succeeding against a stale ETag.
+- Book chapter: `05-optimistic-concurrency-control` (the OCC chapter, replacing the
+  planned CRDT chapter; it says why the project chose OCC over CRDTs and what that costs).
+- C4: the component diagram drawn at kickoff for `internal/crdt`
+  (`docs/c4/07-component-crdt.md`) is redrawn as the OCC component in this chunk's landing.
+- Size: about 1,300 code + 2,100 tests.
 
 #### Chunk 5 — Saga engine and the bucket-migration workflow (spec Commit 5)
 
@@ -697,19 +774,23 @@ the real components and re-runs the same matrix (7.8).
   compensation that fails forever (what is promised then?); log corruption in the middle;
   a crash during recovery itself; writes arriving at the source during the copy; two
   sagas on one bucket.
-- Write-up: `sagas`. Size: about 1,400 code + 2,200 tests.
+- Stated limitation (OQ-13): a permanently lost coordinator leaves its saga unfinished;
+  there is no saga-log replication or takeover.
+- Book chapter: `06-sagas`. Size: about 1,400 code + 2,200 tests.
 
 #### Chunk 6 — Integration: the object store and sync engine
 
 **Deliverable.** `internal/node` wires gossip, placement, the chunk store, erasure coding,
-anti-entropy, CRDT metadata and the Saga engine into one node, and supplies the real
+anti-entropy, OCC metadata and the Saga engine into one node, and supplies the real
 runtime: UDP transport, TCP request/response transport, file-backed disk, wall clock, the
 node loop. `internal/storage` gains the HTTP object API (put/get/head/delete/list, bucket
 create, tags and ACL, quota, metadata, migration start/status, membership and health) and
-the metadata sync endpoint (**OQ-7**). `cmd/objnode` runs a node from flags or a config
+conditional requests (`If-Match` / `If-None-Match` on PUT and DELETE, `ETag` and version ID
+on every response, siblings listed when a key is in conflict). Metadata sync is node to
+node only — there is no client replica or `/v1/sync` client document (OQ-7). `cmd/objnode` runs a node from flags or a config
 file. The cross-links deferred from Chunks 2–5 are made here: shards placed on the gossip
-view; Merkle trees over manifests and over each node's shard inventory (7.4); CRDT
-replication to gossip-chosen peers; migration steps on real components.
+view; Merkle trees over manifests and over each node's shard inventory (7.4); OCC metadata
+replication to gossip-chosen peers; quota recompute on sibling resolution; migration steps on real components.
 - Tests first:
   - unit: HTTP status table, config validation, wire-code ↔ sentinel round-trip, frame
     codec, flag parsing;
@@ -723,14 +804,16 @@ replication to gossip-chosen peers; migration steps on real components.
     shutdown tests, leak checks, `-race -count=3`; runtime conformance (same scenario on
     simulator and loopback);
   - errors: the whole 2.6 API table through HTTP.
-- Adversarial (Astra): concurrent PUTs to one key from two regions (which wins, and are
-  the loser's shards collected?); GET during repair and during migration; malformed and
+- Adversarial (Astra): concurrent PUTs to one key from two regions (both must survive as
+  siblings with their shards intact until resolved; are a resolved-away sibling's shards
+  collected?); conditional PUT races through HTTP; GET during repair and during migration; malformed and
   slow HTTP clients; shutdown races; goroutine leaks under churn; cross-feature
   interleavings (migration during partition during bit-rot); quota overshoot size under
   partition; real-socket behaviour the simulator does not model (short reads, connection
   resets).
-- Write-up: `object-store-and-sync-engine` (the integrated system); Chunk 5's write-up
-  updated with the real-component evidence. Size: about 2,800 code + 3,000 tests.
+- Book chapter: `07-object-store-and-sync-engine` (the integrated system); Chunk 5's
+  chapter draft updated with the real-component evidence. The `cluster` compose profile
+  becomes usable here and is exercised by a gate. Size: about 2,800 code + 3,000 tests.
 
 #### Chunk 7 — E2E suite, nemesis cycles, fuzz hardening
 
@@ -742,23 +825,29 @@ fixes found here go through the normal pipeline as part of this chunk.
   any fix it forces.
 - Adversarial (Astra): its own nemesis schedules aimed at the seams between primitives; a
   long soak looking for slow leaks (memory, goroutines, tombstones, orphan shards); tier R
-  chaos (kill, restart, corrupt files, fill disk); any claim in any earlier write-up
+  chaos (kill, restart, corrupt files, fill disk); any claim in any earlier chapter
   retested on the whole system.
-- Write-up: `end-to-end-and-hardening` (what the whole-system tests show and what they do
-  not). Size: about 600 code + 3,200 tests and harness.
+- Book chapter: `08-end-to-end-and-hardening` (what the whole-system tests show and what
+  they do not). Tier R runs inside the Docker `dev` service like every other gate. Size: about 600 code + 3,200 tests and harness.
 
-#### Chunk 8 — Publishing finish
+#### Chunk 8 — Publishing finish: the book
 
-**Deliverable (Neon prose; orchestrator checks).** Site complete: front page, a reading
-order, all eight write-ups cross-linked and consistent with the final code; final README
-with the live site URL, how to run the tests, how to replay a seed, and how to run a local
-cluster; self-containment sweep over every reader-facing file; prose-provenance sweep over
-the whole tree; kb stores final sync; link check on the deployed site.
+**Deliverable (Neon prose; orchestrator checks).** The assembled **book** (book ruling):
+the eight chapter drafts edited into one concise Leanpub-style manuscript in `book/` —
+preface, a topic → repo map (topic, chapter, package, main tests), consistent chapter
+shape (the idea; how it maps to this project; a few inlined snippets; diagrams with
+Mermaid source and a terminal rendering where they help; "go deeper in the repo" pointers;
+source papers and further reading), chapters in the low thousands of words. The Pages site
+presents the book as its main content, next to the C4 section. Final README pointing at
+the book as the way to learn the project, with the live site URL, how to run the tests
+through Docker, how to replay a seed, and how to run a local cluster; final C4 pass
+(as-built, TARGET labels removed); self-containment sweep over every reader-facing file;
+prose-provenance sweep over the whole tree; kb stores final sync; link check on the
+deployed site.
 - Tests first: `site-lint`, link check, self-containment and provenance checks, every
   command quoted in the README executed by a script (`agent_work/gates/readme-commands.sh`).
-- Adversarial (Astra): follow the README on a clean clone (Linux, and the macOS CI job)
-  and report every step that fails or is unclear; find any claim in the prose the evidence
-  does not support.
+- Adversarial (Astra): follow the README on a clean clone through Docker and report every
+  step that fails or is unclear; find any claim in the book the evidence does not support.
 - Size: prose only.
 
 ### 4.3 Commit history on main
@@ -770,10 +859,10 @@ feat(cluster): SWIM gossip membership and failure detection
 
 Tests prove: 20/50/100-node clusters converge to identical views within
 c·log2(N) periods under 10% loss; a one-way link drop causes no eviction; ...
-Adversarial: 9 claims attacked, 8 held, 1 narrowed (see docs/architecture/swim-gossip.md).
+Adversarial: 9 claims attacked, 8 held, 1 narrowed (see book/chapters/02-swim-gossip.md).
 ```
 
-The spec's own commit subjects are used for Chunks 0b–5. Inside a merge, the build,
+The spec's own commit subjects are used for Chunks 0b–3 and 5; Chunk 4's names OCC. Inside a merge, the build,
 repair and prose commits stay visible on the side branch.
 
 ---
@@ -788,7 +877,7 @@ repair and prose commits stay visible on the side branch.
    0b simulator ──┘            │
       ┌───────────┬────────────┼────────────┬───────────┐
       ▼           ▼            ▼            ▼           ▼
-  1 gossip    2 erasure    3 merkle      4 crdt      5 saga     (independent packages)
+  1 gossip    2 erasure    3 merkle      4 occ       5 saga     (independent packages)
       └───────────┴────────────┼────────────┴───────────┘
                                ▼
                         6 integration
@@ -798,14 +887,14 @@ repair and prose commits stay visible on the side branch.
                         8 publishing finish
 ```
 
-- **Wave A:** 0a (orchestrator) and 0b (Opus) at the same time. 0b's review, adversarial
-  pass and landing complete before Wave B starts, because everything depends on the
+- **Wave A:** 0a (orchestrator) lands first; 0b (Opus) is built against it. 0b's review,
+  adversarial pass and landing complete before Wave B starts, because everything depends on the
   interfaces being right.
 - **Wave B:** Chunks 1–5 are independent: each touches only its own package (Chunk 2 also
   owns the chunk-store files in `internal/storage`) and sees the others only through small
   interfaces it declares itself (`Membership`, `Repairer`, saga step interfaces). All five
-  can be built concurrently; the recommended cap is three Opus builders at once
-  (**OQ-10**), started in the order 1, 2, 4, then 3 and 5 as slots free up. Neon reviews
+  can be built concurrently; the cap is three Opus builders at once
+  (Nick's ruling, OQ-10), started in the order 1, 2, 4, then 3 and 5 as slots free up. Neon reviews
   and Astra adversarial runs draw on other pools and overlap with builds freely.
 - **Waves C–E:** Chunks 6, 7, 8 in sequence. Within Chunk 7 the scenario groups (E1–E3,
   E4–E5, E6–E9) can be built by separate agents on disjoint files.
@@ -813,7 +902,7 @@ repair and prose commits stay visible on the side branch.
 **The freeze.** After 0b lands, `internal/env` and the exported API of `internal/sim` and
 `simtest` change only through a *simulator change request*: the builder writes the need in
 its work notes and stops on that point; the orchestrator dispatches a small separate fix
-(own worktree, full Chunk 0 gates, replay goldens updated on purpose), lands it as its own
+(own worktree, full Chunk 0b gates, replay goldens updated on purpose), lands it as its own
 commit, and the waiting chunks rebase. Builders never edit those packages in their own
 branches; a gate check rejects a chunk diff that does.
 
@@ -845,7 +934,7 @@ reading order and README keep the logical order regardless.
 
 ## 6. Per-chunk pipeline
 
-Every stage is a fresh headless agent with a brief file (`/root/briefs/objstore-<chunk>-
+Every stage is a fresh headless agent with a brief file (`/root/briefs/objstore-p2-<chunk>-
 <stage>.md`, copied into `agent_work/<chunk>/`), a log, a pid file and an exit file under
 `/root/runs/`. The orchestrator waits for both the exit file and the expected outputs, with
 a deadline, and fails closed. A run that dies is diagnosed from its log and re-dispatched
@@ -864,22 +953,24 @@ is reported in STATE.md.
 | 8 | Orchestrator runs every adversarial script and records held/broken per claim | Fable | `RESULTS.md`, index rows |
 | 9 | If anything broke: one Opus repair round (fix, or propose narrowing the claim), Neon re-review of that repair, adversarial scripts re-run | Opus, Neon, Fable | commits, `REVIEW-3.md`, updated `RESULTS.md` |
 | 10 | Full gate suite on the result | Fable | gate results |
-| 11 | Prose, once, late: all code comments and the architecture write-up, from the final code, build notes, reviews, gate results, adversarial results and every narrowed claim | Neon (fresh) | prose commits with the `Prose-By` trailer; `docs/architecture/<slug>.md` |
-| 12 | G9 checks and G0–G6 again on the final tree | Fable | gate results |
+| 11 | Prose, once, late: all code comments, CLI help and the chunk's **book chapter draft**, from the final code, build notes, reviews, gate results, adversarial results and every narrowed claim | Neon (fresh) | prose commits with the `Prose-By` trailer; `book/chapters/NN-<slug>.md` |
+| 12 | G9 checks, the C4 accuracy check (refresh `docs/c4/` if the chunk changed the architecture), and G0–G6 again on the final tree | Fable | gate results, C4 commits if needed |
 | 13 | Acceptance against the brief | Fable | accept, or one more targeted fix through the same seats |
 | 14 | Land: rebase if needed, merge `--no-ff` with the tour message, push | Fable | commit on main |
-| 15 | Verify the Pages deploy: workflow run succeeded and the write-up URL returns 200 with the write-up's title | Fable | recorded in work notes |
+| 15 | Verify the Pages deploy: workflow run succeeded and the chapter URL returns 200 with the chapter's title | Fable | recorded in work notes |
 | 16 | Bookkeeping: STATE.md, `docs/knowledge/<entry>.md` + in-repo index, vm-1 kb entry, `agent_work/INDEX.md`, progress file | Fable | commit on main, pushed |
 
 Rules that go with the table:
 - Adversarial comes after the review cycle on purpose: Astra attacks code that has already
   passed review, so its findings are about claims, not typos.
 - A second FAIL from Neon, or a builder/reviewer standoff, goes to arbitration under the
-  standing protocol. Which seat arbitrates in this project is **OQ-11**.
+  standing protocol. Astra (`gpt-6-astra`) arbitrates in this project (OQ-11); its verdict is
+  final.
 - The Neon prose brief contains only verified evidence. Any claim that was narrowed is
   given to Neon in its narrowed form, with the reason.
 - The knowledge entry written at stage 16 is operational text by the orchestrator; it is
-  not published on the site and is excluded from the Neon rule (**OQ-8**).
+  not published on the site and is excluded from the Neon rule (OQ-8).
+- Stages 3, 8, 10 and 12 run through Docker (2.9).
 - Pool check before each dispatch: Claude weekly, Codex weekly, and the Neon route probe
   (`agent_work/orch/seat-probe.sh`). A 429 on one Neon route switches routes and continues.
 
@@ -911,7 +1002,7 @@ Consequences: the simulator proves the protocol logic exactly; the runtime layer
 and is the only place where races can exist, which is where `-race`, synctest and the
 leak checks are aimed; the conformance tests show both worlds run the same code. What the
 simulator does not model — short reads, kernel buffers, connection resets — is covered by
-tier R and named in the write-ups as a limit of the simulation evidence. Client-facing
+tier R and named in the book as a limit of the simulation evidence. Client-facing
 HTTP is outside the simulated network; in tier S, clients call the API layer in process.
 
 `internal/env` and `internal/node` are additions to the spec's suggested layout. Reason:
@@ -931,17 +1022,22 @@ runtime needs one that is not `internal/storage`.
   names live in the in-memory disk.
 - The **manifest** of an object version (size, content SHA-256, `k`, `m`, stripe count,
   per-shard checksums, and the node chosen for each shard at write time) is metadata: it
-  is the value of that key's LWW-Register and replicates to every node as CRDT state.
+  is the value of a version of that key's OCC record (7.5) and replicates to every node as
+  metadata state. The object's ETag and version ID come from that record.
 - **Placement:** rendezvous (highest-random-weight) hashing over the live membership view,
   constrained so no region gets more than `m` shards of a stripe when the region count
   allows. No ring to maintain, and a membership change moves only the shards it must.
 - **Write:** a PUT succeeds when at least `k+1` shards (configurable, between `k` and
-  `k+m`) are durably acknowledged and the manifest is stored locally; missing shards are
+  `k+m`) are durably acknowledged and the manifest is stored locally (subject to the
+  request's `If-Match` / `If-None-Match` precondition, checked atomically at the node); missing shards are
   filled by repair. **Read:** any `k` verified shards. **Delete:** a tombstone manifest.
   Shards no manifest refers to are collected after a grace period.
-- Trade-offs accepted, to be stated in the write-up: every node holds all metadata (simple
-  and fine at 100 nodes, not at 10,000); concurrent PUTs to one key resolve by LWW, so one
-  writer's acknowledged object is superseded; no read-your-writes across regions.
+- Trade-offs accepted, to be stated in the book: every node holds all metadata (simple
+  and fine at 100 nodes, not at 10,000); concurrent PUTs to one key that could not see each
+  other are both kept as siblings (their shards too) until a resolving write, so readers of
+  a conflicted key must choose or resolve; a precondition is checked at one node, so it
+  guards against writers that node has heard from, not against the other side of a
+  partition; no read-your-writes across regions.
 
 ### 7.3 Reed-Solomon construction and what "corrupted" means
 
@@ -955,7 +1051,7 @@ runtime needs one that is not `internal/storage`.
 - Reed-Solomon corrects `m` *erasures* (known positions) but only `m/2` *errors* at unknown
   positions. The spec asks for recovery from up to `m` missing **or corrupted** shards.
   That holds because corruption is located by the per-shard SHA-256: a shard that fails its
-  checksum is treated as missing. The write-up must say this plainly, and
+  checksum is treated as missing. The chapter must say this plainly, and
   `TestPropCorruptionBecomesErasure` is the proof.
 
 ### 7.4 Merkle tree shape and what the trees cover
@@ -979,40 +1075,63 @@ runtime needs one that is not `internal/storage`.
   wording) would not work with erasure coding; this is the adaptation, and Chunk 3 proves
   the library on plain replicas first.
 
-### 7.5 CRDT choices
+### 7.5 OCC choices (replaces "CRDT choices"; Nick's amendment)
 
-- State-based (convergent) types as the spec says, merged by join. OR-Set in its classic
-  form — unique add-tags plus a tombstone set — because its laws are easy to state and
-  prove; tombstones grow without bound and that is the trade-off recorded (**OQ-12** offers
-  the compact variant).
-- LWW timestamps are hybrid logical clocks `(wall, counter, node ID)`: totally ordered,
-  monotonic per node, close to real time when clocks are sane. "Last" means highest HLC,
-  not last in real time; with skewed clocks a later write can lose. The simulator's clock
-  skew makes this visible and the write-up states it.
-- Replication: each period a node sends a digest of its metadata state to a random live
-  peer and exchanges full state on mismatch (push-pull). SWIM's piggyback channel is too
-  small for CRDT state, so "disseminated over gossip" is implemented as this epidemic
-  exchange using gossip's membership for peer choice.
-- PN-Counter quotas are eventually enforced: regions can overshoot a quota while
-  partitioned. Stated as a trade-off, measured by an adversarial test.
+- **Why OCC instead of CRDTs.** The spec asked for CRDTs so that concurrent metadata edits
+  merge automatically. Nick replaced that with optimistic concurrency control: a client
+  says which version it read (`If-Match`), the store refuses the write if that is stale,
+  and where staleness could not be detected in time — two regions writing during a
+  partition — both versions are kept and shown as siblings. The store never picks a winner
+  between concurrent values behind the client's back. This is the model of S3 conditional
+  writes joined with Dynamo/Riak-style sibling handling. The cost: a conflicted key needs a
+  reader or a resolver to settle it, where a CRDT would have settled it by rule.
+- **Version vectors** detect concurrency. Each replica is an actor; a write increments the
+  writing node's counter in a vector that starts from the versions the writer's ETag
+  covered. Vector A dominates B when it is ≥ everywhere and > somewhere; neither dominating
+  means concurrent. Hazard recorded for the adversarial pass: an actor that loses its disk
+  and reuses its ID would reissue old counters, so the actor ID carries a durable epoch
+  that a wiped node cannot reuse (it takes a fresh one on rejoin).
+- **ETag and version ID.** A version ID is derived from the writing actor, its counter and
+  the content hash. A record's ETag is a hash over its sorted sibling version IDs, so it is
+  the same on every node holding the same siblings, and a single-version record's ETag
+  changes exactly when the version does.
+- **Last-writer-wins only for scalar fields.** Small single-valued fields where a sibling
+  set would be noise (the bucket routing pointer, content type) take the highest hybrid
+  logical clock `(wall, counter, node ID)`. "Last" means highest HLC, not last in real
+  time; with skewed clocks a later write can lose. The simulator's clock skew makes this
+  visible and the book states it.
+- **Quota counters** are OCC-checked: usage is updated by read, compute, write-`If-Match`,
+  with bounded retry on `ErrPreconditionFailed`. Regions can still overshoot a quota while
+  partitioned (each side checks against what it can see); after heal the two usage
+  versions are siblings and the node recomputes usage from the manifests it now holds and
+  writes the resolution. Stated as a trade-off, measured by an adversarial test.
+- **Replication:** each period a node sends a digest of its metadata state to a random live
+  peer and exchanges full state on mismatch (push-pull), merging with the sibling-keeping
+  merge. SWIM's piggyback channel is too small for metadata state, so "disseminated over
+  gossip" is implemented as this epidemic exchange using gossip's membership for peer
+  choice. The merge is still a join (commutative, associative, idempotent), which is what
+  makes any-order, duplicated delivery converge.
+- **Tombstones.** A delete is a version carrying a tombstone; it obeys the same
+  preconditions and can be a sibling of a concurrent write (the write is not lost).
+  Tombstones are kept for a retention period, then collected.
 
-### 7.6 Property-testing approach, fuzz budget, macOS, Go version
+### 7.6 Property testing, fuzz budget, Docker, Go version (as ruled)
 
-- **Property testing:** the in-repo, stdlib-only `internal/prop` described in 2.2
-  (recommended). The alternative is `pgregory.net/rapid` as a test-only dependency: more
-  mature shrinking and state-machine support, at the cost of the repo's first external
-  module. The spec's zero-dependency rule is about the engine, so either is allowed;
-  staying on the standard library keeps `go.mod` empty and makes the properties double as
-  fuzz targets. **OQ-4.**
-- **Fuzz budget:** 2.3 — 30 s per touched target per chunk; 15/60 minutes in hardening.
-- **macOS:** gate every chunk on `GOOS=darwin GOARCH=arm64 go build ./... && go vet ./...`
-  locally (seconds; the probe confirms cross-building works here), and add a CI job on a
-  GitHub macOS runner that runs `go test ./...` after each push (free for a public repo).
-  The cross-build is a landing gate; the macOS test job is checked after landing, and a
-  failure there becomes a fix-forward item before the next chunk lands. Platform-specific
-  code is confined to `internal/node` (directory fsync, socket options).
-- **Go version:** `go 1.26` with `toolchain go1.26.8` in `go.mod`; CI reads the version
-  from `go.mod`. Needs 1.25+ for `testing/synctest` and `WaitGroup.Go`.
+- **Property testing:** `pgregory.net/rapid`, test-only (OQ-4; 2.2). It is the root
+  module's single `require`. The spec's zero-dependency rule is about the engine, and gate
+  G0 proves no product package can reach rapid.
+- **Fuzz budget:** 2.3 — 30 s per touched target per chunk; in hardening 5 minutes per
+  target and 15 minutes for the four headline targets (OQ-9).
+- **Docker is the canonical environment (OQ-16).** The repo ships a `Dockerfile` (the
+  official Go image at the toolchain version in `go.mod`, plus the few tools the gates
+  need) and `compose.yaml`. `docker compose run --rm dev <command>` is how anything is
+  built, tested, fuzzed or simulated, on Nick's Mac and on the build VM alike; the
+  `cluster` profile runs a multi-region set of `objnode` containers. Landing gates and CI
+  go through the same path. There is **no native macOS gate and no macOS CI job**; the
+  darwin cross-build gate of the Phase 1 draft is dropped. Module and build caches live in
+  named volumes so repeated runs are fast.
+- **Go version:** `go 1.26` with `toolchain go1.26.8` in `go.mod`; the Dockerfile pins the
+  same version. Needs 1.25+ for `testing/synctest` and `WaitGroup.Go`.
 
 ### 7.7 Gossip after a partition heals
 
@@ -1026,13 +1145,15 @@ mechanism behind the spec's "converge … after partitions heal".
 
 - The coordinator is the node that started the saga; its log is on its own disk and it
   resumes after restart. A coordinator that never comes back leaves its saga unfinished —
-  a stated limit of a leaderless design without consensus (**OQ-13**).
+  a stated limit of a leaderless design without consensus, accepted by Nick (OQ-13): no
+  saga-log replication, no takeover machinery.
 - Step order: allocate, copy, verify (all compensable) → flip pointer (pivot) → catch-up
   diff and delete source (forward-only, retried until done). Writes that reach the source
   during the copy are caught by a second Merkle comparison after the flip, before the
   source is deleted.
 - Without consensus there is no mutual exclusion, so two coordinators can migrate one
-  bucket at once across a partition. The routing pointer is an LWW-Register; after the
+  bucket at once across a partition. The routing pointer is a last-writer-wins scalar
+  field (7.5); after the
   flip a saga re-reads the merged pointer, and the one that lost cleans up its target.
   `TestDuelingMigrationsDST` is the proof, and this is the claim most likely to be
   narrowed by the adversarial pass.
@@ -1041,23 +1162,17 @@ mechanism behind the spec's "converge … after partitions heal".
 
 ### 7.9 Pages build tooling
 
-- Recommended: the stock Actions pipeline — `actions/checkout`,
-  `actions/configure-pages`, `actions/jekyll-build-pages` with `source: ./docs`,
-  `actions/upload-pages-artifact`, `actions/deploy-pages` — on every push to main. No
-  Node, no site generator in the repo, nothing to maintain; the write-ups stay plain
-  markdown that also reads well on GitHub. `docs/_config.yml` sets title, theme and
-  excludes `knowledge/`.
-- Known hazard: Jekyll runs Liquid over markdown, so `{{` or `{%` in a code sample breaks
-  or alters a page. `site-lint` rejects them in `docs/` outside raw blocks, and the prose
-  brief tells Neon.
-- Fallback if the Jekyll output disappoints: a pandoc step in the same workflow.
-- State today: Pages is already enabled on the repo with source "GitHub Actions"
-  (checked through the API); no workflow exists yet, so the URL serves nothing until
-  Chunk 0a lands. Workflow files are pushed over SSH, which the machine's key allows.
-  Action versions are pinned and checked at Chunk 0a.
-- Verification after each landing: the workflow run concluded successfully and
-  `curl` of the write-up URL returns 200 and contains the write-up's title. A 404 is not
-  published.
+- As built at kickoff and kept: `.github/workflows/pages.yml` runs
+  `.github/scripts/build_site.py` on every push to main and deploys the result. The script
+  renders markdown to HTML and draws Mermaid blocks with mermaid.js. Chunk 0a grows it
+  from the kickoff review site into the book site: a front page, the **book** (every
+  chapter in `book/manifest.json`, in order), the **C4 section** (`docs/c4/`), and the
+  plan. This replaces the Jekyll pipeline the Phase 1 draft recommended — the script was
+  already live and verified, and it has no Liquid hazard.
+- `site-lint` checks that every chapter in the manifest exists, every internal link
+  resolves in the built site, and no reader-facing page refers to this machine.
+- Verification after each landing: the workflow run concluded successfully and `curl` of
+  the chapter URL returns 200 and contains the chapter's title. A 404 is not published.
 
 ### 7.10 Knowledge stores
 
@@ -1076,11 +1191,11 @@ mechanism behind the spec's "converge … after partitions heal".
 
 | Risk | Handling |
 |---|---|
-| The VM's Claude sign-in ends between 2026-11-25 and 2026-11-28, and both the orchestrator and the builders are Claude seats | Wave B concurrency; STATE.md resumable at every checkpoint; land in order so main is always a coherent prefix of the tour; **OQ-14** asks what should happen at the cutoff |
+| The VM's Claude sign-in ends between 2026-11-25 and 2026-11-28, and both the orchestrator and the builders are Claude seats | Wave B concurrency; STATE.md resumable at every checkpoint; land in order so main is always a coherent prefix of the tour; at the cutoff the build stops at the last landed chunk with STATE.md resumable and no chunk moves to another seat (OQ-14, as ruled) |
 | Claude weekly cap with several Opus builders at once | cap of three concurrent builders; usage checked before each dispatch; stop new dispatches when limited and let in-flight work finish |
 | Neon direct route credits run out; OpenRouter depleted until 2026-12-01 | route probe before each Neon stage; a quota error is a pause on that stage, not a pipeline failure; other chunks continue |
 | Simulator interface turns out wrong after the freeze | change-request path in 5.1; Chunk 0b gets the heaviest adversarial pass for this reason |
-| The `O(log N)` convergence and `O(d log N)` cost claims are empirical | tests fix the constant and report measurements; write-ups say "measured for N up to …", not "proven" |
+| The `O(log N)` convergence and `O(d log N)` cost claims are empirical | tests fix the constant and report measurements; chapters say "measured for N up to …", not "proven" |
 | Integration (Chunk 6) is the largest and least parallel chunk | interfaces declared in Chunks 2–5 are written with 6 in mind; 6's brief may split into 6a (node + runtime) and 6b (API + CLI) if its size estimate holds |
 | Neon comments could change code by accident | comment-only-diff check compares the Go AST before and after the prose commit |
 
@@ -1090,9 +1205,11 @@ day. That is tight against the sign-in window.
 
 ---
 
-## 9. Open questions for Nick
+## 9. Open questions for Nick — ANSWERED 2026-11-21
 
-No default is applied to any of these until you rule. Each has a recommendation.
+Nick answered all sixteen on 2026-11-21 after reviewing the plan and the C4 set on the
+review site. Each question is kept as asked; **9.1** below gives the rulings. The rulings
+override anything in this plan that still differs from them.
 
 1. **OQ-1 Module path and repo name.** Recommend
    `github.com/nickstrad/decentralized-object-store` (matches the repo). Confirm the repo
@@ -1146,6 +1263,43 @@ No default is applied to any of these until you rule. Each has a recommendation.
 16. **OQ-16 macOS.** Recommend the local darwin cross-build as a landing gate plus a macOS
     CI test job checked after landing. Say if you want the macOS test job to block
     landings instead.
+
+### 9.1 Nick's rulings (2026-11-21)
+
+| # | Ruling |
+|---|---|
+| OQ-1 | **Keep** `github.com/nickstrad/decentralized-object-store` as module path and repo name. |
+| OQ-2 | **Split** Chunk 0: 0a (foundation tooling, vendored kb, Pages site, CI, Docker setup), then 0b (the simulator). |
+| OQ-3 | `math/rand/v2`, `*rand.Rand` over PCG, named streams. Overrides the spec's literal `math/rand`. |
+| OQ-4 | **Adopt `pgregory.net/rapid`** as a test-only dependency (overrides the `internal/prop` recommendation; `internal/prop` is not built). |
+| OQ-5 | Outside oracle libraries **allowed inside `agent_work/adversarial/` nested modules only** (e.g. klauspost/reedsolomon as a differential oracle); the root module stays free of them. |
+| OQ-6 | S3-like path-style HTTP API; **no** S3 wire compatibility, signatures or auth. |
+| OQ-7 | **Node-level only.** Regions are offline-capable replicas; no client replica and no `/v1/sync` client document (overrides the recommendation). E8 loses its client leg. |
+| OQ-8 | Prose boundary as recommended: Neon — README, `docs/`, the book, site copy, all code comments, CLI help; Opus — identifiers, error strings, log messages, test names; orchestrator — PLAN, STATE, briefs, `agent_work/`, `docs/knowledge/` entries, commit messages. |
+| OQ-9 | Hardening fuzz budget: **5 minutes per target, 15 minutes for the four headline targets** (smaller than recommended). |
+| OQ-10 | **At most 3** Opus builders at once in Wave B. |
+| OQ-11 | **Astra** (`gpt-6-astra`) arbitrates an Opus/Neon standoff after the one repair round. |
+| OQ-12 | **Moot** — the OR-Set is not built; see the OCC amendment. |
+| OQ-13 | **Accepted as a stated limitation:** a permanently lost coordinator leaves its saga unfinished; no saga-log replication or takeover. |
+| OQ-14 | At the sign-in cutoff, **stop at the last landed chunk** with STATE.md resumable. Chunks do not move to other seats. |
+| OQ-15 | `k=4, m=2` across 3 regions (two shards per region; any one region losable); PUT acknowledged at `k+1` durable shards. |
+| OQ-16 | **No native macOS build gate or CI job. Docker is the canonical develop-and-run environment** on every machine: Dockerfile + compose cover build, unit/property tests, DST, fuzzing, E2E and running nodes; landing gates run through Docker; docs and the book present Docker as the way to work on the project. |
+
+**OCC amendment (Nick's proposal, ruled 2026-11-21; replaces OQ-12 and the CRDT
+primitive).** Chunk 4 becomes optimistic concurrency control: ETags, conditional
+PUT/DELETE (`If-Match` / `If-None-Match`), version IDs, and check-and-set in the storage
+layer. Concurrent versions are detected with version vectors and preserved as **siblings**,
+never silently overwritten. Last-writer-wins applies only to scalar metadata fields. Quota
+counters become OCC-checked updates. E8's guarantee is restated as "no silent loss —
+conflicts surface as siblings". The book's CRDT chapter becomes the OCC chapter, and the
+C4 component diagram for `internal/crdt` is redrawn as the OCC component when Chunk 4
+lands. Package name chosen: `internal/occ`. Folded into 1, 2.2, 2.3, 2.6, 2.7, 3, 4, 7.2
+and 7.5 of this plan.
+
+**Other rulings applied with the sign-off.** The book ruling (2026-11-20): each chunk's
+Neon prose stage produces a book chapter draft, Chunk 8 assembles the book, Pages presents
+it. The C4 ruling (2026-11-21): `docs/c4/` is kept current at every landing and checked in
+gate G9.
 
 ---
 
