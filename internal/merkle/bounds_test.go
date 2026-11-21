@@ -2,6 +2,7 @@ package merkle_test
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -11,9 +12,13 @@ import (
 )
 
 func groundKeys(n, keyLen, leafNibbles int) []string {
+	return groundKeysFrom("ground", n, keyLen, leafNibbles)
+}
+
+func groundKeysFrom(label string, n, keyLen, leafNibbles int) []string {
 	var out []string
 	for i := 0; len(out) < n; i++ {
-		k := fmt.Sprintf("ground-%08d", i)
+		k := fmt.Sprintf("%s-%08d", label, i)
 		k += strings.Repeat("z", keyLen-len(k))
 		h := sha256.Sum256([]byte(k))
 		ok := h[0]>>4 == 0
@@ -180,6 +185,99 @@ func TestDiffBoundsPinned(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestDiffRejectsCheapCuts(t *testing.T) {
+	t.Run("a cut reply that is not full is malformed", func(t *testing.T) {
+		remote := map[string]merkle.Hash{}
+		for _, k := range groundKeys(50, 32, 1) {
+			remote[k] = sum(k)
+		}
+		rt := builtOf(t, 1, remote)
+		s := treeOf(t, 1, nil).Diff(merkle.Limits{})
+		req, _ := s.Request()
+		resp, err := rt.Answer(req)
+		if err != nil || s.Feed(resp) != nil {
+			t.Fatalf("root step: %v", err)
+		}
+		req, _ = s.Request()
+		resp, err = rt.Answer(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := resp[4:]
+		kl := int(body[1])
+		cut := append([]byte{0x03, 1, 1, 1, 1}, body[1:2+kl+32]...)
+		if err := s.Feed(cut); !errors.Is(err, merkle.ErrMalformed) {
+			t.Fatalf("a one-entry cut reply = %v, want ErrMalformed", err)
+		}
+	})
+	t.Run("pieces of one leaf past MaxLeafEntries are malformed", func(t *testing.T) {
+		honest := map[string]merkle.Hash{}
+		for _, k := range groundKeysFrom("a", merkle.MaxLeafEntries, merkle.MaxKeyLen, 1) {
+			honest[k] = sum(k)
+		}
+		extra := map[string]merkle.Hash{}
+		for _, k := range groundKeysFrom("b", 1200, merkle.MaxKeyLen, 1) {
+			extra[k] = sum(k)
+		}
+		at, bt := builtOf(t, 1, honest), builtOf(t, 1, extra)
+		s := treeOf(t, 1, nil).Diff(merkle.Limits{Frontier: 1})
+		var err error
+		for trips := 0; trips < 20; trips++ {
+			req, ok := s.Request()
+			if !ok {
+				break
+			}
+			resp, aerr := at.Answer(req)
+			if aerr != nil {
+				t.Fatal(aerr)
+			}
+			if resp[0] == 0x03 && resp[2] == 0 {
+				resp, aerr = bt.Answer(req)
+				if aerr != nil {
+					t.Fatal(aerr)
+				}
+			}
+			if err = s.Feed(resp); err != nil {
+				break
+			}
+		}
+		if !errors.Is(err, merkle.ErrMalformed) {
+			t.Fatalf("a leaf grown past MaxLeafEntries across pieces = %v, want ErrMalformed", err)
+		}
+	})
+}
+
+func TestDiffRejectsARepeatedPiece(t *testing.T) {
+	remote := map[string]merkle.Hash{}
+	for _, k := range groundKeys(1500, merkle.MaxKeyLen, 1) {
+		remote[k] = sum(k)
+	}
+	rt := builtOf(t, 1, remote)
+	s := treeOf(t, 1, nil).Diff(merkle.Limits{Frontier: 1})
+	trips := 0
+	var err error
+	for {
+		req, ok := s.Request()
+		if !ok {
+			break
+		}
+		trips++
+		if req[2] == 1 {
+			req = []byte{0x01, 1, 1, 1, req[4], 0x00}
+		}
+		resp, aerr := rt.Answer(req)
+		if aerr != nil {
+			t.Fatal(aerr)
+		}
+		if err = s.Feed(resp); err != nil {
+			break
+		}
+	}
+	if !errors.Is(err, merkle.ErrMalformed) || trips != 3 {
+		t.Fatalf("a responder that ignores the resume key: err=%v after %d round trips, want ErrMalformed after 3", err, trips)
+	}
 }
 
 func firstLeafOnly(t *testing.T, resp []byte) []byte {

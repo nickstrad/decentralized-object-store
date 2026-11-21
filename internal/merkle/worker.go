@@ -198,10 +198,12 @@ func (w *Worker) tick() {
 	if err := w.scrub(false); err != nil {
 		w.last = err
 	}
-	if !w.busy {
+	if w.started && !w.busy {
 		w.startRound()
 	}
-	w.arm()
+	if w.started {
+		w.arm()
+	}
 }
 
 func (w *Worker) scrub(all bool) error {

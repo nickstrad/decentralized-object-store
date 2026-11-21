@@ -249,3 +249,52 @@ func TestCodeRange(t *testing.T) {
 		}
 	}
 }
+
+type stopOnRead struct {
+	w     **merkle.Worker
+	reads int
+	stop  int
+}
+
+func (r *stopOnRead) Keys() ([]string, error)        { return []string{"k"}, nil }
+func (r *stopOnRead) Valid(string, merkle.Hash) bool { return true }
+func (r *stopOnRead) Put(string, []byte) error       { return nil }
+func (r *stopOnRead) Fetch(_ env.NodeID, _ string, done func([]byte, error)) {
+	done(nil, env.ErrNotFound)
+}
+func (r *stopOnRead) Read(string) ([]byte, error) {
+	r.reads++
+	if r.reads == r.stop {
+		(*r.w).Stop()
+	}
+	return []byte("v"), nil
+}
+
+func TestWorkerStopFromInsideATick(t *testing.T) {
+	s := sim.New(sim.Config{Seed: 1})
+	var e env.Env
+	if err := s.AddNode(sim.NodeSpec{ID: "n", Region: "r"}, func(x env.Env) env.Process {
+		e = x
+		return fixedReplier{}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RunFor(time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	var w *merkle.Worker
+	r := &stopOnRead{w: &w, stop: 2}
+	w, err := merkle.NewWorker(e, merkle.Config{Depth: 1}, staticPeers{"n", "m"}, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RunFor(10 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if st := w.Stats(); r.reads != 2 || st.Rounds != 0 || st.Scrubbed != 2 {
+		t.Fatalf("a worker stopped during its scrub kept going: reads %d stats %+v", r.reads, st)
+	}
+}
