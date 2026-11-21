@@ -81,9 +81,11 @@ func encodeLeaf(b []byte, es []Entry) []byte {
 	return b
 }
 
-func uvarintLen(n int) int {
+func uvarintLen(n int) int { return uvarintLen64(uint64(n)) }
+
+func uvarintLen64(v uint64) int {
 	l := 1
-	for ; n >= 0x80; n >>= 7 {
+	for ; v >= 0x80; v >>= 7 {
 		l++
 	}
 	return l
@@ -148,7 +150,7 @@ func (r *reader) take(n int) []byte {
 
 func (r *reader) uvarint() uint64 {
 	v, n := binary.Uvarint(r.b)
-	if n <= 0 || n != len(binary.AppendUvarint(nil, v)) {
+	if n <= 0 || n != uvarintLen64(v) {
 		r.bad = true
 		return 0
 	}
@@ -289,7 +291,10 @@ func decodeResponse(b []byte) (response, error) {
 			if r.bad || m > MaxLeafEntries || m > uint64(len(r.b))/33 {
 				return response{}, malformed("leaf entry count")
 			}
-			es := make([]Entry, 0, m)
+			var es []Entry
+			if m > 0 {
+				es = make([]Entry, 0, m)
+			}
 			for k := uint64(0); k < m; k++ {
 				kl := r.uvarint()
 				if r.bad || kl > MaxKeyLen {
