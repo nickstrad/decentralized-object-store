@@ -1,0 +1,7 @@
+HELD C7 protocol-state: four ordered levels, stable repeated requests, 35+1 equal bytes and ErrSession guards
+HELD C10 malformed-wire: 13 truncated, noncanonical, unordered and wrong-kind messages rejected
+HELD C17 random-wire: 20000 deterministic byte strings produce no panic or unexpected error class
+HELD C25 depth-wire: depth zero, overflow, excessive level and peer depth mismatch reject with ErrDepth
+HELD C16 changing-responder: 200 changing-peer sessions terminate within Depth+Frontier without changing the initiator
+HELD C16 one-leaf-per-reply: well-formed prefix replies finish in 17 trips (Depth+Frontier bound)
+HELD C24 leaf-path-validation: a sorted validly encoded key in the wrong leaf is rejected
