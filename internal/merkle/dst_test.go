@@ -144,7 +144,11 @@ func (w *world) writes(count int, start env.Time, window time.Duration) {
 }
 
 func (w *world) trackRot() {
-	w.s.AddInvariant("merkle/rot-repair-time", dstInvariantGap, func() error {
+	w.s.AddInvariant("merkle/rot-repair-time", dstInvariantGap, w.scanRot)
+}
+
+func (w *world) scanRot() error {
+	{
 		now := w.s.Now()
 		seen := map[string]bool{}
 		for _, id := range w.honest {
@@ -170,7 +174,7 @@ func (w *world) trackRot() {
 			delete(w.rotFirst, k)
 		}
 		return nil
-	})
+	}
 }
 
 func sortedTimes(m map[string]env.Time) []string {
@@ -308,6 +312,9 @@ func bitRotRun(nemesis bool) func(seed int64) *sim.Sim {
 			return remember(w)
 		}
 		w.finish(quiet.Add(BitRotConvergeBound))
+		if err := w.scanRot(); err != nil {
+			w.s.Fail(err)
+		}
 		if nem != nil {
 			for _, st := range nem.History() {
 				if st.Fault.Kind == sim.FaultBitRot && st.Outcome == sim.OutcomeApplied {

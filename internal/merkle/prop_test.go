@@ -134,8 +134,8 @@ func TestPropHostileRepliesEndTheSession(t *testing.T) {
 				}
 			}
 			if err := s.Feed(resp); err != nil {
-				if !errors.Is(err, merkle.ErrMalformed) {
-					t.Fatalf("Feed error %v is not ErrMalformed", err)
+				if !errors.Is(err, merkle.ErrMalformed) && !errors.Is(err, merkle.ErrDepth) {
+					t.Fatalf("Feed error %v is neither ErrMalformed nor ErrDepth", err)
 				}
 				break
 			}

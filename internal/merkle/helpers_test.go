@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"testing"
 
 	"github.com/nickstrad/decentralized-object-store/internal/merkle"
 	"pgregory.net/rapid"
@@ -27,7 +26,12 @@ func entriesOf(m map[string]merkle.Hash) []merkle.Entry {
 	return out
 }
 
-func treeOf(t testing.TB, depth int, m map[string]merkle.Hash) *merkle.Tree {
+type fataler interface {
+	Helper()
+	Fatalf(format string, args ...any)
+}
+
+func treeOf(t fataler, depth int, m map[string]merkle.Hash) *merkle.Tree {
 	t.Helper()
 	tr, err := merkle.New(depth)
 	if err != nil {

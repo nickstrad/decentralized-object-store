@@ -203,9 +203,9 @@ func liarFactory(cfg liarConfig) sim.Factory {
 	return func(e env.Env) env.Process { return &liar{e: e, cfg: cfg} }
 }
 
-func (l *liar) Start()                         {}
-func (l *liar) OnDatagram(env.NodeID, []byte)  {}
-func (l *liar) EncodeState() []byte            { return binary.AppendUvarint(nil, l.n) }
+func (l *liar) Start()                        {}
+func (l *liar) OnDatagram(env.NodeID, []byte) {}
+func (l *liar) EncodeState() []byte           { return binary.AppendUvarint(nil, l.n) }
 
 func (l *liar) tree() (*merkle.Tree, bool) {
 	t, err := merkle.New(l.cfg.depth)
@@ -238,7 +238,7 @@ func (l *liar) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	}
 	switch req[0] {
 	case tagMerkle:
-		switch l.e.Rand.IntN(4) {
+		switch l.e.Rand.IntN(8) {
 		case 0:
 			b := make([]byte, l.e.Rand.IntN(80))
 			for i := range b {

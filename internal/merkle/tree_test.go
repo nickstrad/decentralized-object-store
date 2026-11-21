@@ -46,9 +46,9 @@ func TestRootKnownVectors(t *testing.T) {
 }
 
 const (
-	vectorOneKey    = "VECTOR_ONE"
-	vectorThreeKeys = "VECTOR_THREE"
-	vectorEmptyKey  = "VECTOR_EMPTY"
+	vectorOneKey    = "04b2bb96cd443f5054027c6cfe799fbd18e4962401c6c4ab6fe35941338f8635"
+	vectorThreeKeys = "be75e1f2f99d61a4b07af0eb80a9adc4ba8fd61fce9afedcbe59689705d312b6"
+	vectorEmptyKey  = "0b16244ae8a9afe68737b66c8fc1d99c20810eb4151d3264a6b831b9881ebad2"
 )
 
 func TestInsertDeleteUpdate(t *testing.T) {
