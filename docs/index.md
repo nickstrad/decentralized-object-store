@@ -2,8 +2,10 @@
 
 A leaderless, multi-region object store written in Go on the standard library
 alone. It is a learning project, built testing-first. Metadata conflicts are
-handled with optimistic concurrency control rather than CRDTs: concurrent
-versions stay as siblings and are never silently overwritten.
+handled with optimistic concurrency control rather than CRDTs: conditional writes
+reject stale updates, while concurrent writes are resolved by last-writer-wins
+(highest hybrid logical clock, node ID breaking ties) so all replicas converge;
+the losing write is discarded, and every discard is counted and logged.
 
 The foundation tooling and deterministic simulator are built today. No storage
 or protocol code exists yet. Planned building blocks are SWIM gossip membership

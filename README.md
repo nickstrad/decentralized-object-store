@@ -4,8 +4,10 @@ A leaderless, multi-region object store written in Go on the standard library
 alone. It is a learning project, built testing-first so that every claim about
 fault tolerance and consistency is backed by deterministic simulation, property
 tests, and fuzzing. Metadata conflicts are handled with optimistic concurrency
-control rather than CRDTs: concurrent versions stay as siblings and are never
-silently overwritten.
+control rather than CRDTs: conditional writes reject stale updates, while
+concurrent writes are resolved by last-writer-wins (highest hybrid logical
+clock, node ID breaking ties) so all replicas converge; the losing write is
+discarded, and every discard is counted and logged.
 
 Product code imports only the Go standard library. The sole external dependency
 is `pgregory.net/rapid`, restricted to test files and checked by a gate.
@@ -23,7 +25,7 @@ block lands in its own chunk together with a book chapter.
 | SWIM gossip membership | Planned (next) | Failure detection and membership dissemination |
 | Reed-Solomon erasure coding | Planned | 4 data + 2 parity shards across 3 regions |
 | Merkle-tree anti-entropy | Planned | Tree diffing and background repair |
-| OCC metadata | Planned | ETags, conditional writes, version vectors, and concurrent sibling versions |
+| OCC metadata | Planned | ETags, conditional writes, version vectors to detect concurrency, and last-writer-wins with every discarded write counted and logged |
 | Sagas | Planned | Multi-step bucket migration |
 | Integration, E2E, and book | Planned | Full-cluster integration, end-to-end suite, and finished book |
 
