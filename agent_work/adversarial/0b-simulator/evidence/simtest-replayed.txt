@@ -13,36 +13,36 @@
               t=0 seq=9 action/ran node=- peer=- hash=1e7683ef2ebc7684 aux=0
               t=1 seq=10 action/ran node=- peer=- hash=04777468a52f2919 aux=0
             panic stack:
-            goroutine 22 [running]:
+            goroutine 8 [running]:
             runtime/debug.Stack()
             	/usr/local/go/src/runtime/debug/stack.go:26 +0x5e
             github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).guard.func1()
-            	/src/internal/sim/sim.go:436 +0x58
-            panic({0x56dee0?, 0x5b7eb0?})
+            	/src/internal/sim/sim.go:445 +0x58
+            panic({0x56dee0?, 0x5b7f30?})
             	/usr/local/go/src/runtime/panic.go:860 +0x13a
             github.com/nickstrad/decentralized-object-store/adversarial/reportfixture.TestFailure.func1.1.2()
             	/src/agent_work/adversarial/0b-simulator/reportfixture/failure_test.go:17 +0x25
-            github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).guard(0x26?, 0x5a82df?, {0x2895b93de0c0?, 0x5ab950?}, 0x43423c?)
-            	/src/internal/sim/sim.go:445 +0x56
-            github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).exec(0x2895b940a000, 0x2895b93d6840)
-            	/src/internal/sim/sim.go:550 +0x6d7
-            github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).Step(0x2895b940a000)
-            	/src/internal/sim/sim.go:474 +0x166
-            github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).RunUntilQuiet(0x2895b940a000)
-            	/src/internal/sim/sim.go:509 +0x2b
+            github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).guard(0x8476bc2eef83761e?, 0x5a82e5?, {0x22b3e78bc0c0?, 0x5ab95e?}, 0xa?)
+            	/src/internal/sim/sim.go:454 +0x56
+            github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).exec(0x22b3e78e2000, 0x22b3e78b6840)
+            	/src/internal/sim/sim.go:565 +0x705
+            github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).Step(0x22b3e78e2000)
+            	/src/internal/sim/sim.go:483 +0x166
+            github.com/nickstrad/decentralized-object-store/internal/sim.(*Sim).RunUntilQuiet(0x22b3e78e2000)
+            	/src/internal/sim/sim.go:521 +0x2b
             github.com/nickstrad/decentralized-object-store/adversarial/reportfixture.TestFailure.func1.1(0x10000000000?)
             	/src/agent_work/adversarial/0b-simulator/reportfixture/failure_test.go:18 +0x11a
-            github.com/nickstrad/decentralized-object-store/internal/sim/simtest.CheckDeterministic(0x17, 0x5b6688)
+            github.com/nickstrad/decentralized-object-store/internal/sim/simtest.CheckDeterministic(0x17, 0x5b6710)
             	/src/internal/sim/simtest/determinism.go:20 +0x35
-            github.com/nickstrad/decentralized-object-store/internal/sim/simtest.RequireDeterministic({0x5be438, 0x2895b9402488}, 0x17, 0x5b6688)
+            github.com/nickstrad/decentralized-object-store/internal/sim/simtest.RequireDeterministic({0x5be4d8, 0x22b3e78dc488}, 0x17, 0x5b6710)
             	/src/internal/sim/simtest/determinism.go:34 +0x3e
             github.com/nickstrad/decentralized-object-store/adversarial/reportfixture.TestFailure.func1(0x4ef793?, 0x4a70d3?)
             	/src/agent_work/adversarial/0b-simulator/reportfixture/failure_test.go:11 +0x27
-            github.com/nickstrad/decentralized-object-store/internal/sim/simtest.Sweep.func1(0x2895b9402488?)
+            github.com/nickstrad/decentralized-object-store/internal/sim/simtest.Sweep.func1(0x22b3e78dc488?)
             	/src/internal/sim/simtest/seeds.go:131 +0x1b
-            testing.tRunner(0x2895b9402488, 0x2895b93ba0d8)
+            testing.tRunner(0x22b3e78dc488, 0x22b3e782e0f0)
             	/usr/local/go/src/testing/testing.go:2036 +0xea
-            created by testing.(*T).Run in goroutine 21
+            created by testing.(*T).Run in goroutine 7
             	/usr/local/go/src/testing/testing.go:2101 +0x4c5
             PIN: echo '23 TestFailure/seed=23' >> testdata/seeds.txt
             REPLAY: go test ./reportfixture -run '^TestFailure$/^seed=23$' -seed=23 -count=1

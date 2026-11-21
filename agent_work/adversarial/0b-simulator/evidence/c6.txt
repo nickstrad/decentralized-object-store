@@ -1,4 +1,4 @@
-BROKEN C6 nemesis-callback-panic: seed=43 nemesis bit-rot Budget.GroupOf panic escaped RunUntilQuiet=group-probe; Sim.Err=<nil>
+HELD C6 nemesis-callback-panic: nemesis callback panic captured as seeded sticky PanicError
 HELD C6 empty-stall: seed=37 returned the expected sticky stall with seed before the 200-step cap
 HELD C6 deadline-stall: seed=37 returned the expected sticky stall with seed before the 200-step cap
 HELD C6 zero-timer-stall: seed=37 returned the expected sticky stall with seed before the 200-step cap
@@ -12,7 +12,7 @@ HELD C6 panic-action: seed=41 panic became a sticky PanicError naming the seed
 HELD C6 panic-invariant: seed=41 panic became a sticky PanicError naming the seed
 HELD C6 panic-predicate: seed=41 panic became a sticky PanicError naming the seed
 HELD C6 panic-encode: seed=41 panic became a sticky PanicError naming the seed
-BROKEN C2 huge-latency-range: seed=1 valid latency [0,MaxInt64] send failed: sim: seed 1: panic in action send at node "" t=0: invalid argument to Int64N
-BROKEN C6 clock-overflow: seed=1 skew=MaxInt64 RunUntil(0)->RunUntil(1) local clock went from 9223372036854775807 to -9223372036854775808 with no error
-BROKEN C6 timer-duration-clamp: seed=1 AfterFunc((1<<62)+1) fired at 4611686018427387904 one ns early
+HELD C2 huge-latency-range: full nonnegative int64 latency range delivered without overflow
+BROKEN C6 clock-overflow: sim: add node 0: skew 9223372036854775807 outside ±2305843009213693952: invalid argument
+HELD C6 timer-duration-clamp: huge valid timer did not fire before its duration elapsed
 HELD C6 global-time-past-events: past events and negative RunFor did not move global time backwards
