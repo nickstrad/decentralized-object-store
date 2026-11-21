@@ -89,9 +89,15 @@ func checkLaws(a, b, c *occ.Doc) error {
 		}
 	}
 	for _, k := range append(a.ScalarKeys(), b.ScalarKeys()...) {
-		sa, _ := a.Scalar(k)
-		sb, _ := b.Scalar(k)
+		sa, okA := a.Scalar(k)
+		sb, okB := b.Scalar(k)
 		want := sa.Merge(sb)
+		switch {
+		case !okA:
+			want = sb
+		case !okB:
+			want = sa
+		}
 		got, _ := ab.Scalar(k)
 		if got.Compare(want) != 0 {
 			return fmt.Errorf("scalar %q is not the last writer", k)

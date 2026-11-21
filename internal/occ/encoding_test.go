@@ -240,7 +240,15 @@ func TestMergeIsTotalOnDecodedStates(t *testing.T) {
 	g := goldenDoc()
 	s, _ := newTestStore(t, "a", 1, 1)
 	mustPut(t, s, "k", "honest", occ.IfNoneMatch())
-	states := []*occ.Doc{cycle, g, s.Doc().Clone(), occ.NewDoc()}
+	past := occ.NewDoc()
+	past.MergeScalar("route/b", occ.Scalar{Stamp: occ.Stamp{Wall: -25}})
+	if back, err := occ.Decode(past.Encode()); err != nil || !back.Equal(past) {
+		t.Fatalf("a scalar stamped before the epoch must decode: %v", err)
+	}
+	if m := mergeDocs(occ.NewDoc(), past); !m.Equal(past) {
+		t.Fatal("a scalar stamped before the epoch must not lose to an absent scalar")
+	}
+	states := []*occ.Doc{cycle, g, s.Doc().Clone(), occ.NewDoc(), past}
 	for _, a := range states {
 		for _, b := range states {
 			for _, c := range states {
