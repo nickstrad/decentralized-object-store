@@ -74,15 +74,17 @@ and duel scenario drivers). No other package was touched.
     resumes. A second `Recover` in the same incarnation is a no-op.
 - **Errors.** `ErrPermanent`, `ErrSagaNotFound`, `ErrLogCorrupt`, `ErrRootMismatch`;
   `*StepError{Saga, Step, Attempt, Compensation, Err}` (the brief's four fields plus
-  `Compensation`). Wire codes via `saga.Codes()`: `CodePermanent` = 112,
-  `CodeSagaNotFound` = 113, `CodeLogCorrupt` = 114 (`CodeAppMin+48..50`). Invalid
+  `Compensation`). Wire codes via `saga.Codes()`: `CodePermanent` = 144,
+  `CodeSagaNotFound` = 145, `CodeLogCorrupt` = 146 (`CodeAppMin+80..82`, inside the
+  saga block 144–159; moved in the repair round). Invalid
   arguments wrap `env.ErrInvalidArgument`; oversized records `env.ErrTooLarge`; a frozen
   engine's `Begin` `env.ErrClosed`.
 
 ### `internal/saga` — the migration workflow (`Migration(ops) Definition`)
 
 Five steps, pivot at index 3, input `MigrationInput{Bucket, From, To}` (length-prefixed
-codec, `DecodeMigrationInput`, `Validate`: non-empty, `From != To`). Ops are five small
+codec, `DecodeMigrationInput`, `Validate`: non-empty, `From != To`, each field at most
+1024 bytes, the codec's own limit). Ops are five small
 interfaces declared here (`Allocator`, `Copier`, `Verifier`, `Router`, `Retirer`,
 combined as `MigrationOps`); nothing from storage/merkle/occ/gossip is imported.
 
@@ -118,8 +120,8 @@ to one value that exactly one migration reads as its own.
   sealed, retired), the claiming owner, the sealer, source registrations, objects; plus
   a pointer replica per bucket (LWW by stamp, then writer, then location). State is one
   blob, rewritten and synced on every mutation. Ops over `env.Transport` request/
-  response with errors through the code table (`sagasim.Codes()` adds `ErrBusy` 120,
-  `ErrMoved` 121, `ErrUnsettled` 122, `ErrMalformed` 123 to the saga rows). Every
+  response with errors through the code table (`sagasim.Codes()` adds `ErrBusy` 152,
+  `ErrMoved` 153, `ErrUnsettled` 154, `ErrMalformed` 155 to the saga rows). Every
   operation is idempotent per saga ID. A release of a claim that still holds objects
   leaves them as visible orphans, so every compensation is necessary (the canary relies
   on this). Copies are fenced by a per-bucket generation (a late dump reply is refused
@@ -134,7 +136,9 @@ to one value that exactly one migration reads as its own.
   `sagasim/one-live-location` (never two live copies), every 20 events.
 - **Exported for Chunk 6**: `Harness` / `Cluster` / `BuildOptions`, `Cells()`, `Cell`
   (`Name`, `Want`), `Run(h, cell, RunOptions) func(seed) *sim.Sim` (failures land in
-  `s.Err()`, wrapped with `ErrCheck`), `MatrixPolicy()`, `ModelHarness()`, and the
+  `s.Err()`, wrapped with `ErrCheck`; the migration begins 20 ms after the simulator's
+  time when `Build` returns, so `Build` may warm the cluster up first; `RunOptions`
+  overrides `Bound`, `Settle` and `Policy`), `MatrixPolicy()`, `ModelHarness()`, and the
   scenario drivers `NemesisRun(NemesisParams, *NemesisReport)` and
   `DuelRun(DuelParams, *DuelReport)`. Chunk 6 implements `Harness.Build` with real
   components and calls `Run` for every cell; fault injection wraps the
@@ -228,6 +232,16 @@ also handles).
   replica, the loser's target empty. Winners: b 761, c 747; outcomes always one `moved`
   and one `superseded` (no run needed a compensation). Finish after the heal: max 3.34 s,
   mean 1.71 s (base-1 sweep); bound `duelAfterHeal` = 10 s, `duelConverge` = 90 s.
+- **Repair-round re-measure** (base-1 500-seed sweep after the repair; the nemesis now
+  seeds 40 objects, so with its writes the bucket ends with 41–64 objects, mean 57.9):
+  500 runs, 2,245 migrations, 1,781 Completed, 464 Compensated, 2–7 per run; settle
+  after the last heal max 2.85 s, mean 0.94 s; mean 17.8 acked writes; `Do` calls
+  allocate 2,657, copy 2,643, verify 2,004, flip 3,072, delete-source 4,220. Duel: winners
+  b 254, c 246, always one `moved` and one `superseded`, finish after heal max 3.34 s,
+  mean 1.71 s. Matrix: 39,000 runs, every cell 500/500 in its expected state, 24,196 runs
+  recovered from a partial record, worst 5.58 s (`copy` fail-mid-compensation torn).
+  The figures above this bullet are the pre-repair three-base sweep with 8 seeded
+  objects and are kept for comparison.
 - **Wall time**: `go test ./internal/saga/...` at default seeds about 1 s; the
   500-seed sweep of `internal/saga` 43–49 s per base (about 52 s wall including the
   container); rapid at 2,000 checks per property under 1 s each.
@@ -303,6 +317,17 @@ it. With step 1 skipped, the cell `flip-fail-before-action-untorn` fails `ErrChe
   operation that relays (like the copy) must be fenced so a late execution cannot land
   after its compensation. Over the simulated network the per-link FIFO order protects
   the direct requests; the two-hop copy needed the explicit fence.
+- **Idempotency-key scope for Chunk 6's `MigrationOps`** (review finding 9). A `Call`'s
+  key is `{Saga, Step}` of the step that makes the call, not of the operation. Step 4
+  (`delete-source`) calls `Discard`, `Unclaim`, `Copy` and `Root` with `Step: 4`, while
+  step 0 calls `Claim`/`Unclaim` with `Step: 0` and step 1 calls `Copy`/`Discard` with
+  `Step: 1`. So: ownership, claim, registration, discard, seal and retire checks must
+  key on `c.Key.Saga` alone (the model's stores do: owner, sealer and registrations are
+  saga IDs), or step 4's cleanup of a superseded target is refused as "not yours". Any
+  idempotency cache for `Copy` must key on the whole `c.Key` (or `c.Key` plus attempt
+  where a fresh run is wanted): step 4's catch-up copy is a second, different copy that
+  must not be answered from step 1's cached result, or writes that reached the source
+  between the two copies are lost.
 
 ## Errors intentionally ignored (`_ =`)
 
@@ -333,8 +358,8 @@ run never takes.
 
 ## Requests to the orchestrator
 
-- Wire code block: saga uses `CodeAppMin+48..50`, sagasim `CodeAppMin+56..59`. Chunk 6
-  must merge these with the other chunks' rows; please record the allocation.
+- Wire code block: done in the repair round per the allocation (saga 144–159): saga
+  144–146 (`CodeAppMin+80..82`), sagasim 152–155 (`CodeAppMin+88..91`).
 - No simulator change request.
 
 ## Gate run
@@ -356,3 +381,62 @@ gate: overall=pass counts_for_landing=true
 
 Gate wall time 413 s. Result files are under `agent_work/05-saga/gates/` (not committed).
 The only commit after the gated one adds this section to the notes.
+
+## Repair round (REVIEW-1, verdict FAIL)
+
+Each finding got a regression test first (commit `075c7aa`, tests only), then the fix
+(commit `12287b6`). For `internal/saga` the new tests failed on the old code with the
+expected messages (run with the old `dst_test.go`, which the new one needs the new API
+for). The `sagasim` tests use new API fields so they could not compile against the old
+code; a throwaway probe in a temporary worktree at `7d7c7c9` (not committed) showed the
+old behaviour: a 25 s warm-up made `Run` stall with `sim.ErrDeadline` at t=25 s; a
+harness that drops `Wrap` passed `delete-source-fail-after-action-untorn`; a 33-object
+migration ended Compensated with `remote error (code 123): sagasim: objects: sagasim:
+malformed message`; `NemesisRun(p, nil)` panicked with a nil dereference.
+
+| finding | test that proves the fix | what changed |
+|---|---|---|
+| 1 MAJOR, absolute matrix times | `TestRunnerOnAWarmedUpCluster` (all 78 cells on a harness whose `Build` runs to t=25 s; checks start after the warm-up, elapsed within the bound, settle exactly `MatrixSettle`), `TestRunOptionsOverrideBoundSettleAndPolicy`, `TestRunnerFaultsTouchOnlyTheMatrixSaga`, `TestRunnerSurvivesAHarnessWithoutASim` | `Run` begins at `s.Now()+20ms` and bounds/reports relative to it; `RunOptions.Bound/Settle/Policy` (zero = `MatrixBound`, `MatrixSettle`, `MatrixPolicy()`); the injected lost-response count and the mid-compensation failure count use the effective policy's `MaxAttempts`; the hook and the step wrapper act only on `matrixSaga` (other sagas pass through untouched and uncounted); a nil sim is replaced by a fresh one before `Fail`, a nil cluster with no error is an error; a sim already failed by `Build` is returned as is |
+| 2 MAJOR, 32-object cliff | `TestObjectListCodecHasNoCliff` (0, 1, 33, 300, 4096 objects round-trip; 4097 refused; the largest possible list fits in `sim.DefaultMaxMessage`; malformed/over-bound input is `ErrMalformed`), `TestStoreReloadsAndCopiesABucketAboveTheOldLimit` (300+33 objects, restart, dump), `TestStoreWritePathEnforcesTheBound` (every bound reached exactly, the next write refused with `env.ErrTooLarge`, the state at every bound reloads), `TestBuildRefusesAnUnstorableBucket`, `TestMigrationOfABucketAboveTheOldLimit` (33 and 300 objects with a target crash/restart, Completed and `CheckMoved`), `TestMigrationUnderNemesisDST` (now 40 seeded objects; asserts the final bucket holds more than 32) | new `sagasim/codec.go`: a length-prefixed reader/writer for the store state (version byte 2) and the object list, independent of the RPC field codec. Stated bounds: `MaxObjects` 4096 per bucket, `MaxKey` 128 bytes, `MaxValue` 512 bytes, `MaxName` 1024 bytes (bucket, saga ID, location, writer), `MaxRegs` 64 registrations per bucket, `MaxBuckets` 64 buckets and 64 pointers per store. The largest list is about 2.6 MB, under the 16 MiB message limit, so a full bucket can always be dumped. The write path refuses past every bound with `env.ErrTooLarge` (put of a new key, register, claim of a new bucket, flip of a new pointer, any over-long request field); the encoder also refuses (so `persist` would fail rather than write something unreadable), and `Build` refuses `Objects > MaxObjects` with `env.ErrInvalidArgument` |
+| 3 NIT, spurious `ErrNotFound` | `TestBeginWriteFailureOnSimDiskIsNotNotFound` (sim disk, append fails / sync fails: `ErrIO`, not `ErrNotFound`, no log left, a later `Begin` works) | `Begin`'s cleanup ignores `env.ErrNotFound` from `Delete`/`Sync` |
+| 4 NIT, abort without an intent | three new rows in `TestStateMachineTable` | `RecAbort` requires an open intent |
+| 5 NIT, aliased `Call` buffers | `TestStepCannotCorruptTheEngineSnapshot` | `Engine.call` passes `bytes.Clone` of the input and a deep copy of the outputs |
+| 6 NIT, `Validate` vs codec | `TestMigrationInputValidateMatchesTheCodec` | `Validate` refuses fields over 1024 bytes |
+| 7 NIT, property never exhausts | `TestPropTerminalState` now draws, per step, a 1-in-6 chance of `MaxAttempts+2` failures (pre-pivot: expected Compensated from that step; at or after the pivot: still Completed) and up to 3 post-pivot `ErrPermanent` answers (expected Completed), and fails unless both were reached during the run | `scenario.slow` removed; `postPerm`, `exhausts` added (test only) |
+| 8 NIT, unfired faults, nil reports | `TestRunnerFailsACellWhoseFaultNeverFired` (every cell under a harness that drops `Wrap` and under one that drops the hook: each cell whose fault depends on the dropped part fails with `ErrCheck`, the rest pass), `TestRunnerFailsADoubleCellWithoutASecondCrash` (all 32 double cells with the second crash suppressed), `TestScenarioDriversAcceptNilReports` | `cellState.injected`: a cell fails unless its crash point fired, its pivot refusal fired (mid-compensation kinds), its failure fired (fail kinds), its torn crash happened (torn fail kinds) and its second crash happened (double cells); `NemesisRun`/`DuelRun` use a local report when given nil |
+| 9 NOTE, key scope | written under "Stated limitations" above | notes only |
+| wire codes | `TestCodesLieInTheSagaBlock` in both packages (every code in 144–159, exact values, no duplicates, the joined table builds) | saga 144–146, sagasim 152–155 |
+
+**API changes (all additive except the codes):** `RunOptions.Bound`, `.Settle`, `.Policy`;
+`Report.Start`, `Report.CompFails`; `NemesisParams.Objects`; `NemesisReport.Stored`;
+constants `MaxObjects`, `MaxKey`, `MaxValue`, `MaxName`, `MaxRegs`, `MaxBuckets`; code
+values of `saga.Code*` and `sagasim.Code*`; the store's on-disk state format (version byte
+2; nothing persisted by the old format needs reading). Behaviour: `Run` on a harness whose
+`Build` leaves the sim at t=T begins at T+20 ms (T=0 for the model, so the model's timings
+are unchanged); a harness that does not wire `Wrap` or the hook now fails the cells it
+cannot inject.
+
+**Numbers that moved:** coverage `internal/saga` 95.2% → 95.5%, `sagasim` 87.6% → 91.3%;
+nemesis figures (more objects; see "Repair-round re-measure" under Measurements); matrix
+and duel figures re-measured on base 1 and unchanged in substance (worst 5.58 s, the
+bound stays 20 s). Default `go test ./internal/saga/...` about 3 s (both packages); the
+base-1 500-seed DST sweep of `internal/saga` 55.9 s (59 s wall with the container).
+
+**Not done, and why:**
+- The decoder does not require object keys to be sorted and unique; every writer keeps
+  them sorted (`opPut` inserts in order, seeds are generated sorted), and the root is
+  computed over the list as stored, so an unsorted list could only come from a bug the
+  checks would already catch.
+- A pointer flip refused for exceeding `MaxBuckets` at the pivot would be retried
+  forever; no test creates more than one migrated bucket per store, and the bound
+  exists so the state stays readable, not as a product limit.
+- `TestRunnerFaultsTouchOnlyTheMatrixSaga` drives the hook and the step wrapper
+  directly with a foreign saga ID; there is no end-to-end run with a second saga on the
+  coordinator because the model cluster seeds one bucket.
+- I did not re-run the bases 7700000 and 31337000000 sweeps; the pre-repair table keeps
+  those counts.
+
+**Adversarial harness** (`agent_work/adversarial/05-saga/run-all.sh`, not edited; its
+rewritten `evidence/run-all.txt` was restored so the harness tree is unchanged):
+`SUMMARY held=125 broken=0 setup_errors=0 elapsed_seconds=22`. No check pinned an old code
+number or old runner behaviour.
