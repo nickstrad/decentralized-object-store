@@ -259,6 +259,31 @@ func TestBudgetGroupLimit(t *testing.T) {
 			t.Fatal("unnamed rot on a node with only ungrouped blobs refused")
 		}
 	})
+	t.Run("a nemesis read error never ambushes a blob written after it", func(t *testing.T) {
+		for seed := int64(1); seed <= 30; seed++ {
+			h := newHarness(t, sim.Config{Seed: seed, Net: fixedNet()}, spec("a", "r"), spec("b", "r"), spec("c", "r"))
+			b := sim.Budget{MaxDamagedDisks: 3, MaxDamagedPerGroup: 1, GroupOf: stripeOf}
+			n, err := h.s.StartNemesis(sim.NemesisConfig{Start: 0, Phases: 1, Chaos: 100 * time.Millisecond, MaxGap: 10 * time.Millisecond, Kinds: []sim.FaultKind{sim.FaultReadError}, Budget: b})
+			mustNil(t, err)
+			h.s.AddInvariant("budget", 1, func() error { return b.Check(h.s) })
+			for i, id := range []env.NodeID{"a", "b", "c"} {
+				id := id
+				h.s.At(env.Time(time.Duration(20*(i+1))*time.Millisecond), "put "+string(id), func() {
+					d := h.rec(id).e.Disk
+					mustNil(t, d.Write("shard/"+string(id), []byte("s")))
+					mustNil(t, d.Sync("shard/"+string(id)))
+				})
+			}
+			if err := h.s.RunUntil(n.QuietAt()); err != nil {
+				t.Fatalf("seed %d: %v\nhistory %v", seed, err, n.History())
+			}
+			for _, st := range n.History() {
+				if st.Fault.Kind == sim.FaultReadError && st.Outcome == sim.OutcomeApplied && st.Fault.Blob == "" {
+					t.Fatalf("seed %d: whole-node read error applied with a group budget: %v", seed, st)
+				}
+			}
+		}
+	})
 }
 
 func TestNemesisConfigValidation(t *testing.T) {

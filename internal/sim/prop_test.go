@@ -254,7 +254,8 @@ func TestPropHealedNetworkDelivers(t *testing.T) {
 
 type withUngroupedBlobs struct {
 	env.Process
-	e env.Env
+	e      env.Env
+	shards time.Duration
 }
 
 func (w *withUngroupedBlobs) Start() {
@@ -262,7 +263,27 @@ func (w *withUngroupedBlobs) Start() {
 		_ = w.e.Disk.Write(name, []byte(name))
 		_ = w.e.Disk.Sync(name)
 	}
+	if w.shards > 0 {
+		w.e.Clock.AfterFunc(w.shards, w.putShard)
+	}
 	w.Process.Start()
+}
+
+func (w *withUngroupedBlobs) putShard() {
+	name := fmt.Sprintf("shard/%d", int64(w.e.Clock.Now())/int64(w.shards))
+	_ = w.e.Disk.Write(name, []byte(name))
+	_ = w.e.Disk.Sync(name)
+	w.e.Clock.AfterFunc(w.shards, w.putShard)
+}
+
+func shardGroups(_ env.NodeID, blob string) string {
+	if blob == simtoy.Blob {
+		return "one"
+	}
+	if strings.HasPrefix(blob, "shard/") {
+		return "stripe/" + strings.TrimPrefix(blob, "shard/")
+	}
+	return ""
 }
 
 func (w *withUngroupedBlobs) Unwrap() env.Process { return w.Process }
@@ -315,8 +336,12 @@ func TestPropNemesisRespectsBudget(t *testing.T) {
 		s := sim.New(sim.Config{Seed: rapid.Int64().Draw(t, "seed")})
 		ids := sim.NodeIDs(n)
 		toy := simtoy.Factory(simtoy.Config{Peers: ids})
+		var shards time.Duration
+		if rapid.Bool().Draw(t, "newGroups") {
+			shards = time.Duration(rapid.IntRange(50, 400).Draw(t, "shardEveryMs")) * time.Millisecond
+		}
 		if err := s.AddCluster(ids, 3, func(e env.Env) env.Process {
-			return &withUngroupedBlobs{Process: toy(e), e: e}
+			return &withUngroupedBlobs{Process: toy(e), e: e, shards: shards}
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -326,12 +351,7 @@ func TestPropNemesisRespectsBudget(t *testing.T) {
 			MaxDamagedPerGroup: rapid.IntRange(0, 3).Draw(t, "perGroup"),
 		}
 		if rapid.Bool().Draw(t, "groups") {
-			b.GroupOf = func(_ env.NodeID, blob string) string {
-				if blob == simtoy.Blob {
-					return "one"
-				}
-				return ""
-			}
+			b.GroupOf = shardGroups
 		}
 		kinds := sim.ChaosKinds()
 		if rapid.Bool().Draw(t, "diskHeavy") {
@@ -744,6 +764,104 @@ func TestPropStreamOrderPerConnection(t *testing.T) {
 			}
 			if len(m.recs[a].replies) != total {
 				t.Fatalf("%s got %d replies for %d requests", a, len(m.recs[a].replies), total)
+			}
+		}
+	})
+}
+
+type scribblePlan struct {
+	blobs int
+	every time.Duration
+}
+
+type scribbler struct {
+	e    env.Env
+	plan scribblePlan
+}
+
+func (w *scribbler) Start() {
+	for i := 0; i < w.plan.blobs; i++ {
+		name := fmt.Sprintf("b/%d", i)
+		_ = w.e.Disk.Write(name, []byte(name))
+		_ = w.e.Disk.Sync(name)
+	}
+	if w.plan.every > 0 {
+		w.e.Clock.AfterFunc(w.plan.every, w.tick)
+	}
+}
+
+func (w *scribbler) tick() {
+	name := fmt.Sprintf("t/%d", int64(w.e.Clock.Now())/int64(w.plan.every))
+	_ = w.e.Disk.Write(name, []byte(name))
+	_ = w.e.Disk.Sync(name)
+	w.e.Clock.AfterFunc(w.plan.every, w.tick)
+}
+
+func (w *scribbler) OnDatagram(env.NodeID, []byte)           {}
+func (w *scribbler) OnRequest(env.NodeID, []byte, env.Reply) {}
+func (w *scribbler) EncodeState() []byte                     { return nil }
+
+func scribbleGroups(_ env.NodeID, blob string) string {
+	if i := strings.IndexByte(blob, '/'); i > 0 {
+		return "g" + blob[i+1:]
+	}
+	return ""
+}
+
+func TestPropNemesisTimingIgnoresInventory(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		seed := rapid.Int64().Draw(t, "seed")
+		n := rapid.IntRange(2, 6).Draw(t, "n")
+		budget := sim.Budget{Lifted: true}
+		if rapid.Bool().Draw(t, "budget") {
+			budget = sim.Budget{
+				MinLive:            rapid.IntRange(0, n).Draw(t, "minLive"),
+				MaxDamagedDisks:    rapid.IntRange(0, n).Draw(t, "maxDisks"),
+				MaxDamagedPerGroup: rapid.IntRange(0, 2).Draw(t, "perGroup"),
+			}
+			if rapid.Bool().Draw(t, "groups") {
+				budget.GroupOf = scribbleGroups
+			}
+		}
+		plan := func(label string) []scribblePlan {
+			out := make([]scribblePlan, n)
+			for i := range out {
+				out[i].blobs = rapid.IntRange(0, 3).Draw(t, fmt.Sprintf("%s/blobs/%d", label, i))
+				out[i].every = time.Duration(rapid.IntRange(0, 300).Draw(t, fmt.Sprintf("%s/everyMs/%d", label, i))) * time.Millisecond
+			}
+			return out
+		}
+		run := func(p []scribblePlan) []sim.NemesisStep {
+			s := sim.New(sim.Config{Seed: seed})
+			ids := sim.NodeIDs(n)
+			for i, id := range ids {
+				w := p[i]
+				if err := s.AddNode(sim.NodeSpec{ID: id, Region: env.Region(fmt.Sprintf("r%d", i%2))}, func(e env.Env) env.Process {
+					return &scribbler{e: e, plan: w}
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			nem, err := s.StartNemesis(sim.NemesisConfig{
+				Start: 0, Phases: 2, Chaos: 2 * time.Second, Heal: time.Second, MaxGap: 50 * time.Millisecond, Budget: budget,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.RunUntil(nem.QuietAt()); err != nil {
+				t.Fatal(err)
+			}
+			return nem.History()
+		}
+		a, b := run(plan("a")), run(plan("b"))
+		if len(a) != len(b) {
+			t.Fatalf("nemesis lengths %d vs %d", len(a), len(b))
+		}
+		for i := range a {
+			fa, fb := a[i].Fault, b[i].Fault
+			fa.Blob, fb.Blob = "", ""
+			if a[i].At != b[i].At || !bytes.Equal(fa.Encode(), fb.Encode()) {
+				t.Fatalf("step %d: %v vs %v", i, a[i], b[i])
 			}
 		}
 	})

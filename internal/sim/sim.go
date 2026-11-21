@@ -17,6 +17,8 @@ const (
 	DefaultMaxSteps = 10_000_000
 	DefaultLogCap   = 1 << 20
 	MaxDriftPPM     = 100_000
+	MaxSkew         = time.Duration(1 << 61)
+	Horizon         = env.Time(1 << 62)
 )
 
 var (

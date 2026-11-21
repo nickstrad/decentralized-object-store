@@ -183,6 +183,34 @@ func TestPanicInActionAndInvariantIsReported(t *testing.T) {
 	expectPanic(t, s2.RunUntilQuiet(), "")
 }
 
+func TestPanicInABudgetCallbackFailsTheRun(t *testing.T) {
+	for _, kind := range []sim.FaultKind{sim.FaultBitRot, sim.FaultReadError, sim.FaultWipeDisk, sim.FaultCrash} {
+		t.Run(kind.String(), func(t *testing.T) {
+			h := newHarness(t, sim.Config{Seed: 4, Net: fixedNet()}, spec("a", "r"))
+			d := h.rec("a").e.Disk
+			mustNil(t, d.Write("x", []byte{1}))
+			mustNil(t, d.Sync("x"))
+			b := sim.Budget{MaxDamagedDisks: 1, MaxDamagedPerGroup: 1, GroupOf: func(env.NodeID, string) string { panic("boom in GroupOf") }}
+			mustNil(t, h.s.BitRot("a", "x"))
+			_, err := h.s.StartNemesis(sim.NemesisConfig{Start: 1, Phases: 1, Chaos: 2, Heal: 1, MaxGap: 1, Kinds: []sim.FaultKind{kind}, Budget: b})
+			mustNil(t, err)
+			var escaped any
+			func() {
+				defer func() { escaped = recover() }()
+				err = h.s.RunUntilQuiet()
+			}()
+			if escaped != nil {
+				t.Fatalf("panic escaped the loop: %v", escaped)
+			}
+			expectPanic(t, err, "")
+			expectPanic(t, h.s.Err(), "")
+			if !strings.Contains(err.Error(), "nemesis") {
+				t.Fatalf("error does not name the nemesis: %v", err)
+			}
+		})
+	}
+}
+
 func TestFailIsSticky(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1})
 	want := errors.New("scenario says no")
