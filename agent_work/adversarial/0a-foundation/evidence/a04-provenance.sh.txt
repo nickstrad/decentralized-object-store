@@ -1,0 +1,14 @@
+ Container objstore-dev-run-0ee807ed97c0 Creating 
+ Container objstore-dev-run-0ee807ed97c0 Created 
+HELD C5 forged-provenance: Unversioned copy with GATE_SHA=not-a-commit GATE_DIRTY=false GATE_IMAGE_ID=invented-image; counts_for_landing=False.
+HELD C5 partial: GATE_ONLY='G0', overrides={}; counts_for_landing=False.
+HELD C5 invalid-gate: GATE_ONLY='G99', overrides={}; counts_for_landing=False.
+HELD C5 dirty: GATE_ONLY='', overrides={'GATE_DIRTY': 'true'}; counts_for_landing=False.
+HELD C5 unknown-sha: GATE_ONLY='', overrides={'GATE_SHA': 'unknown'}; counts_for_landing=False.
+HELD C5 unmatched-property: TestInvariant always fails but G2 -run Laws|Prop selects zero tests; G2 fail.
+HELD C5 unicode-fuzz: go test discovers FuzzÉ but ASCII scan runs zero targets; G3 fail.
+HELD C5 indirect-dst: Scenario imports bridge which imports sim; direct-import package scan skips consumer; G5 fail.
+HELD C5 coverage-no-tests: Uncovered simulator package has no tests; G1 fail.
+BROKEN C5 stale-usage-failure: A prior result remains counts_for_landing=true after gate exits 2 for missing chunk; consumers must bind result to invocation.
+HELD C5 stale-module-failure: Invalid go.mod aborts after result cleanup; stale landing result must be gone.
+

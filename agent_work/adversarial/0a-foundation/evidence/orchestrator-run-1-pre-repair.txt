@@ -1,0 +1,110 @@
+HELD C2 alias-clock: import clock "time"; var X = clock.Now (exit 1).
+HELD C2 dot-clock: import . "time"; var X = Now (exit 1).
+HELD C2 struct-function: import "time"; var X = struct{ F func() time.Time }{time.Now} (exit 1).
+HELD C2 map-function: import "os"; var X = map[string]func()int{"pid":os.Getpid} (exit 1).
+HELD C2 embedded-sync: import "sync"; type X struct {sync.Mutex} (exit 1).
+HELD C2 sync-map: import "sync"; var X sync.Map (exit 1).
+HELD C2 reflect-pointer: import "reflect"; func X(p *int) uintptr {return reflect.ValueOf(p).Pointer()} (exit 1).
+BROKEN C2 reflect-mapkeys: import "reflect"; func X(m map[string]int) []reflect.Value {return reflect.ValueOf(m).MapKeys()} (exit 0).
+HELD C2 unsafe-address: import "unsafe"; func X(p *int) uintptr {return uintptr(unsafe.Pointer(p))} (exit 1).
+HELD C2 maphash: import "hash/maphash"; var X = maphash.MakeSeed() (exit 1).
+HELD C2 percent-p: import "fmt"; func X(p *int) string {return fmt.Sprintf("%p",p)} (exit 1).
+BROKEN C2 percent-v-pointer: import "fmt"; func X(p *int) string {return fmt.Sprintf("%v",p)} (exit 0).
+BROKEN C2 percent-v-map-pointer-keys: import "fmt"; func X(m map[*int]int) string {return fmt.Sprintf("%v",m)} (exit 0).
+BROKEN C2 format-function-value: import "fmt"; func X(p *int) string {f:=fmt.Sprintf;return f("%p",p)} (exit 0).
+HELD C2 select: func X(){select{default:}} (exit 1).
+HELD C2 getpid: import "os"; var X = os.Getpid() (exit 1).
+HELD C2 maps-keys: import "maps"; func X(m map[string]int) string {for k:=range maps.Keys(m){return k};return ""} (exit 1).
+HELD C2 helper-map-range: func helper(s string)string{return s}; func X(m map[string]int)string {for k:=range m{return helper(k)};return ""} (exit 1).
+BROKEN C2 sort-ties: import "sort"; func X(m map[string]int)[]string {var a []string;for k:=range m{a=append(a,k)};sort.Slice(a,func(i,j int)bool{return false});return a} (exit 0).
+BROKEN C2 sortedfunc-ties: import("maps";"slices"); func X(m map[string]int)[]string{return slices.SortedFunc(maps.Keys(m),func(a,b string)int{return 0})} (exit 0).
+HELD C2 afterfunc: import "time"; func X(){time.AfterFunc(0,func(){})} (exit 1).
+BROKEN C2 context-afterfunc: import "context"; func X(c context.Context){context.AfterFunc(c,func(){})} (exit 0).
+HELD C2 context-timeout: import("context";"time"); func X(){context.WithTimeout(context.Background(),time.Second)} (exit 1).
+HELD C2 runtime-cpu: import "runtime"; var X = runtime.NumCPU() (exit 1).
+BROKEN C2 runtime-memstats: import "runtime"; func X()uint64{var m runtime.MemStats;runtime.ReadMemStats(&m);return m.HeapAlloc} (exit 0).
+HELD C2 named-float: type Real float64; func X(a Real)Real{return a+1} (exit 1).
+HELD C2 generic-float: func X[T ~float64](a T)T{return a+a} (exit 1).
+BROKEN C2 test-only-clock: import "time"; var X=time.Now() (exit 0).
+BROKEN C2 tagged-clock: import "time"; var X=time.Now() (exit 0).
+BROKEN C2 ignored-filename-clock: import "time"; var X=time.Now() (exit 0).
+HELD C2 cgo-clock: import "C"; import "time"; var X=time.Now() (exit 1).
+BROKEN C2 helper-subpackage: Checked env imports helper.Now containing time.Now; helper is typechecked but not linted (exit 0).
+HELD C2 scalar-map-control: Scalar-key map formatting accepted; fmt orders these keys, so this is a deterministic control.
+HELD C1 unformatted: Plant internal/buildcheck/attack.go: package buildcheck; func   Attack( )int{return 1}; G0 fail.
+HELD C1 vet-format: Plant internal/buildcheck/attack.go: package buildcheck; import "fmt"; func Attack() {fmt.Printf("%d", "bad")}; G0 fail.
+HELD C1 build-error: Plant internal/buildcheck/attack.go: package buildcheck; var Attack = undefined; G0 fail.
+HELD C1 direct-panic: Plant internal/buildcheck/attack.go: package buildcheck; func Attack(){panic("bad")}; G0 fail.
+HELD C1 rapid-product: Plant internal/buildcheck/attack.go: package buildcheck; import "pgregory.net/rapid"; var Attack = rapid.Int(); G0 fail.
+HELD C1 comment: Plant internal/buildcheck/attack.go: package buildcheck; // ordinary prose; var Attack = 1; G0 fail.
+HELD C1 readme-machine: Plant README.md: # Probe; /root/secret; G0 fail.
+HELD C3 unknown-go-directive: Plant internal/buildcheck/attack.go: package buildcheck; //go:This is ordinary prose disguised as an unknown directive; var Attack = 1; G0 fail.
+HELD C3 block-comment: Plant internal/buildcheck/attack.go: package buildcheck; /* prose */; var Attack = 1; G0 fail.
+HELD C3 spaced-directive: Plant internal/buildcheck/attack.go: package buildcheck; // go:prose; var Attack = 1; G0 fail.
+HELD C3 hidden-comment: Plant internal/buildcheck/_attack.go: package buildcheck; // prose; G0 fail.
+HELD C3 dot-directory-comment: Plant .hidden/x.go: package hidden; // prose; G0 fail.
+HELD C3 underscore-directory-comment: Plant _hidden/x.go: package hidden; // prose; G0 fail.
+BROKEN C3 testdata-comment: Plant internal/buildcheck/testdata/x.go: package fixture; // prose; G0 pass.
+BROKEN C3 generated-header: Plant internal/buildcheck/attack.go: // Code generated arbitrary human prose DO NOT EDIT.; package buildcheck; G0 pass.
+HELD C3 invalid-hidden-go: Plant _broken.go: this is not Go; G0 fail.
+HELD C3 tagged-external-import: Plant internal/buildcheck/attack.go: //go:build missingtag; ; package buildcheck; import _ "example.org/evil"; G0 fail.
+HELD C3 go-work: Plant go.work: go 1.26.11; use .; G0 fail.
+HELD C3 vendor: Plant vendor/modules.txt: ; G0 aborted (exit 2).
+BROKEN C3 nested-module-require: Plant extras/go.mod: module example.org/extra; go 1.26.0; require example.org/evil v1.0.0; G0 pass.
+BROKEN C1 test-only-entropy: Plant internal/sim/attack_test.go: package sim; import "time"; var Attack=time.Now(); G0 pass.
+BROKEN C1 tagged-entropy: Plant internal/sim/attack.go: //go:build missingtag; ; package sim; import "time"; var Attack=time.Now(); G0 pass.
+HELD C3 replace: replace pgregory.net/rapid => pgregory.net/rapid v1.2.0; G0 fail.
+HELD C3 tool: tool pgregory.net/rapid; G0 fail.
+HELD C3 extra-require: require example.org/evil v1.0.0; G0 fail.
+BROKEN C1 panic-shadow-tag: A build-excluded func panic(any) suppresses the active builtin panic in another file; G0 pass.
+HELD C4 string-literal: Changed x.go from 'package p\nvar X="a"' to 'package p\nvar X="b"' (exit 1).
+HELD C4 struct-tag: Changed x.go from 'package p\ntype X struct {A int `json:"a"`}' to 'package p\ntype X struct {A int `json:"b"`}' (exit 1).
+HELD C4 build-tag: Changed x.go from '//go:build linux\n\npackage p' to '//go:build darwin\n\npackage p' (exit 1).
+HELD C4 embed-directive: Changed x.go from 'package p\nimport _ "embed"\n//go:embed a.txt\nvar X string' to 'package p\nimport _ "embed"\n//go:embed b.txt\nvar X string' (exit 1).
+BROKEN C4 embed-payload: Changed help.txt from 'old runtime help' to 'new runtime help' (exit 0).
+BROKEN C4 module-change: Changed go.mod from 'module example.org/a' to 'module example.org/b' (exit 0).
+BROKEN C4 assembly-change: Changed x.s from 'TEXT ·X(SB),$0-8\nMOVQ $1, ret+0(FP)\nRET' to 'TEXT ·X(SB),$0-8\nMOVQ $2, ret+0(FP)\nRET' (exit 0).
+BROKEN C4 cgo-preamble: Changed x.go from 'package p\n/* int x() {return 1;} */\nimport "C"\nfunc X()int{return int(C.x())}' to 'package p\n/* int x() {return 2;} */\nimport "C"\nfunc X()int{return int(C.x())}' (exit 0).
+HELD C4 comment-control: An ordinary comment-only edit is accepted.
+BROKEN C5 forged-provenance: Unversioned copy with GATE_SHA=not-a-commit GATE_DIRTY=false GATE_IMAGE_ID=invented-image; counts_for_landing=True.
+HELD C5 partial: GATE_ONLY='G0', overrides={}; counts_for_landing=False.
+HELD C5 invalid-gate: GATE_ONLY='G99', overrides={}; counts_for_landing=False.
+HELD C5 dirty: GATE_ONLY='', overrides={'GATE_DIRTY': 'true'}; counts_for_landing=False.
+HELD C5 unknown-sha: GATE_ONLY='', overrides={'GATE_SHA': 'unknown'}; counts_for_landing=False.
+BROKEN C5 unmatched-property: TestInvariant always fails but G2 -run Laws|Prop selects zero tests; G2 pass.
+BROKEN C5 unicode-fuzz: go test discovers FuzzÉ but ASCII scan runs zero targets; G3 pass.
+BROKEN C5 indirect-dst: Scenario imports bridge which imports sim; direct-import package scan skips consumer; G5 pass.
+HELD C5 coverage-no-tests: Uncovered simulator package has no tests; G1 fail.
+BROKEN C5 stale-usage-failure: A prior result remains counts_for_landing=true after gate exits 2 for missing chunk; consumers must bind result to invocation.
+HELD C5 stale-module-failure: Invalid go.mod aborts after result cleanup; stale landing result must be gone.
+HELD C6 missing-chapter: Manifest lists absent chapter; lint exit 1.
+HELD C6 unlisted-chapter: Unlisted markdown chapter; lint exit 1.
+HELD C6 broken-link: Chapter links to nonexistent file; lint exit 1.
+BROKEN C6 missing-anchor: Chapter links to nonexistent heading; lint exit 0.
+HELD C6 machine-reference: Chapter names a machine path; lint exit 1.
+HELD C6 manifest-traversal: Manifest file ../STATE.md; lint exit 1.
+BROKEN C6 chapter-symlink-docs: Manifest chapter symlinks to docs/knowledge/private.md; lint exit 0, private sentinel published=True.
+BROKEN C6 chapter-symlink-agent_work: Manifest chapter symlinks to agent_work/private.md; lint exit 0, private sentinel published=True.
+BROKEN C6 chapter-symlink-kb: Manifest chapter symlinks to kb/private.md; lint exit 0, private sentinel published=True.
+BROKEN C6 chapter-symlink-STATE.md: Manifest chapter symlinks to STATE.md; lint exit 0, private sentinel published=True.
+BROKEN C6 asset-symlink: Linked book/asset.txt symlinks to private knowledge; lint exit 0, private sentinel published=True.
+HELD C6 private-link: Link to private knowledge is rewritten to GitHub (content sentinel must remain unpublished); lint exit 0, private sentinel published=False.
+HELD C4 preexisting-comment: Throwaway commit range tests preexisting-comment; prose-check exit 1.
+HELD C4 prose-code-change: Throwaway commit range tests prose-code-change; prose-check exit 1.
+HELD C4 post-readme: Throwaway commit range tests post-readme; prose-check exit 1.
+BROKEN C4 post-docs: Throwaway commit range tests post-docs; prose-check exit 0.
+BROKEN C4 post-comment-deletion: Throwaway commit range tests post-comment-deletion; prose-check exit 0.
+BROKEN C4 post-comment-duplication: Throwaway commit range tests post-comment-duplication; prose-check exit 0.
+BROKEN C4 embedded-help: Throwaway commit range tests embedded-help; prose-check exit 0.
+BROKEN C4 merge-comment: Throwaway commit range tests merge-comment; prose-check exit 0.
+BROKEN C1 g0-reflect-mapkeys: import "reflect"; func X()[]reflect.Value{return reflect.ValueOf(map[int]int{1:1,2:2}).MapKeys()}; full G0 pass.
+BROKEN C1 g0-context-afterfunc: import "context"; func X(c context.Context){context.AfterFunc(c,func(){})}; full G0 pass.
+BROKEN C1 g0-pointer-value: import "fmt"; func X(p *int)string{return fmt.Sprintf("%v",p)}; full G0 pass.
+BROKEN C1 g0-clock-helper: import "github.com/nickstrad/decentralized-object-store/internal/hiddenhelper"; func X()int64{return hiddenhelper.Now()}; full G0 pass.
+BROKEN C1 g0-assembly-clock: x_amd64.s implements func X() uint64 with RDTSC; full G0 pass.
+BROKEN C1 g0-comment-stage-typo: GATE_STAGE=buidl skips comment check; // prose written during build; var X=1; full G0 pass.
+HELD C1 g0-linkname: import _ "unsafe"; //go:linkname X runtime.nanotime; func X() int64; full G0 fail.
+BROKEN C5 fuzz-filter: FUZZ_ONLY=^Nothing$ filters an always-failing FuzzAttack out of the runner; exit 0.
+BROKEN C5 fuzz-no-packages: Root module with no Go packages; fuzz runner exit 0.
+SUMMARY held=62 broken=46 seconds=241 exit=1
+rc=1

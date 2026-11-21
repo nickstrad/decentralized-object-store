@@ -1,0 +1,33 @@
+HELD C2 alias-clock: import clock "time"; var X = clock.Now (exit 1).
+HELD C2 dot-clock: import . "time"; var X = Now (exit 1).
+HELD C2 struct-function: import "time"; var X = struct{ F func() time.Time }{time.Now} (exit 1).
+HELD C2 map-function: import "os"; var X = map[string]func()int{"pid":os.Getpid} (exit 1).
+HELD C2 embedded-sync: import "sync"; type X struct {sync.Mutex} (exit 1).
+HELD C2 sync-map: import "sync"; var X sync.Map (exit 1).
+HELD C2 reflect-pointer: import "reflect"; func X(p *int) uintptr {return reflect.ValueOf(p).Pointer()} (exit 1).
+HELD C2 reflect-mapkeys: import "reflect"; func X(m map[string]int) []reflect.Value {return reflect.ValueOf(m).MapKeys()} (exit 1).
+HELD C2 unsafe-address: import "unsafe"; func X(p *int) uintptr {return uintptr(unsafe.Pointer(p))} (exit 1).
+HELD C2 maphash: import "hash/maphash"; var X = maphash.MakeSeed() (exit 1).
+HELD C2 percent-p: import "fmt"; func X(p *int) string {return fmt.Sprintf("%p",p)} (exit 1).
+HELD C2 percent-v-pointer: import "fmt"; func X(p *int) string {return fmt.Sprintf("%v",p)} (exit 1).
+HELD C2 percent-v-map-pointer-keys: import "fmt"; func X(m map[*int]int) string {return fmt.Sprintf("%v",m)} (exit 1).
+HELD C2 format-function-value: import "fmt"; func X(p *int) string {f:=fmt.Sprintf;return f("%p",p)} (exit 1).
+HELD C2 select: func X(){select{default:}} (exit 1).
+HELD C2 getpid: import "os"; var X = os.Getpid() (exit 1).
+HELD C2 maps-keys: import "maps"; func X(m map[string]int) string {for k:=range maps.Keys(m){return k};return ""} (exit 1).
+HELD C2 helper-map-range: func helper(s string)string{return s}; func X(m map[string]int)string {for k:=range m{return helper(k)};return ""} (exit 1).
+HELD C2 sort-ties: import "sort"; func X(m map[string]int)[]string {var a []string;for k:=range m{a=append(a,k)};sort.Slice(a,func(i,j int)bool{return false});return a} (exit 1).
+HELD C2 sortedfunc-ties: import("maps";"slices"); func X(m map[string]int)[]string{return slices.SortedFunc(maps.Keys(m),func(a,b string)int{return 0})} (exit 1).
+HELD C2 afterfunc: import "time"; func X(){time.AfterFunc(0,func(){})} (exit 1).
+HELD C2 context-afterfunc: import "context"; func X(c context.Context){context.AfterFunc(c,func(){})} (exit 1).
+HELD C2 context-timeout: import("context";"time"); func X(){context.WithTimeout(context.Background(),time.Second)} (exit 1).
+HELD C2 runtime-cpu: import "runtime"; var X = runtime.NumCPU() (exit 1).
+HELD C2 runtime-memstats: import "runtime"; func X()uint64{var m runtime.MemStats;runtime.ReadMemStats(&m);return m.HeapAlloc} (exit 1).
+HELD C2 named-float: type Real float64; func X(a Real)Real{return a+1} (exit 1).
+HELD C2 generic-float: func X[T ~float64](a T)T{return a+a} (exit 1).
+BROKEN C2 test-only-clock: import "time"; var X=time.Now() (exit 0).
+HELD C2 tagged-clock: import "time"; var X=time.Now() (exit 1).
+HELD C2 ignored-filename-clock: import "time"; var X=time.Now() (exit 1).
+HELD C2 cgo-clock: import "C"; import "time"; var X=time.Now() (exit 1).
+BROKEN C2 helper-subpackage: Checked env imports helper.Now containing time.Now; helper is typechecked but not linted (exit 0).
+HELD C2 scalar-map-control: Scalar-key map formatting accepted; fmt orders these keys, so this is a deterministic control.

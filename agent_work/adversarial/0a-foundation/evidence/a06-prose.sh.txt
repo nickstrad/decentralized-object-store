@@ -1,0 +1,8 @@
+HELD C4 preexisting-comment: Throwaway commit range tests preexisting-comment; prose-check exit 1.
+HELD C4 prose-code-change: Throwaway commit range tests prose-code-change; prose-check exit 1.
+HELD C4 post-readme: Throwaway commit range tests post-readme; prose-check exit 1.
+HELD C4 post-docs: Throwaway commit range tests post-docs; prose-check exit 1.
+BROKEN C4 post-comment-deletion: Throwaway commit range tests post-comment-deletion; prose-check exit 0.
+HELD C4 post-comment-duplication: Throwaway commit range tests post-comment-duplication; prose-check exit 1.
+BROKEN C4 embedded-help: Throwaway commit range tests embedded-help; prose-check exit 0.
+HELD C4 merge-comment: Throwaway commit range tests merge-comment; prose-check exit 1.

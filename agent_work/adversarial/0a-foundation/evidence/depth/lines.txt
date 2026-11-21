@@ -1,0 +1,9 @@
+HELD C1 g0-reflect-mapkeys: import "reflect"; func X()[]reflect.Value{return reflect.ValueOf(map[int]int{1:1,2:2}).MapKeys()}; full G0 fail.
+HELD C1 g0-context-afterfunc: import "context"; func X(c context.Context){context.AfterFunc(c,func(){})}; full G0 fail.
+HELD C1 g0-pointer-value: import "fmt"; func X(p *int)string{return fmt.Sprintf("%v",p)}; full G0 fail.
+HELD C1 g0-clock-helper: import "github.com/nickstrad/decentralized-object-store/internal/hiddenhelper"; func X()int64{return hiddenhelper.Now()}; full G0 fail.
+HELD C1 g0-assembly-clock: x_amd64.s implements func X() uint64 with RDTSC; full G0 fail.
+HELD C1 g0-comment-stage-typo: // prose written during build; var X=1; gate refused to run (exit 2, no result file).
+HELD C1 g0-linkname: import _ "unsafe"; //go:linkname X runtime.nanotime; func X() int64; full G0 fail.
+BROKEN C5 fuzz-filter: FUZZ_ONLY=^Nothing$ filters an always-failing FuzzAttack out of the runner; exit 0.
+HELD C5 fuzz-no-packages: Root module with no Go packages; fuzz runner exit 1.
