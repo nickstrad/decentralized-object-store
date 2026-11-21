@@ -3,6 +3,7 @@ package sim_test
 import (
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"strconv"
 	"strings"
 	"testing"
@@ -414,5 +415,59 @@ func TestUnknownServerErrorArrivesAsErrRemote(t *testing.T) {
 	var re *env.RemoteError
 	if !errors.As(reps[0].err, &re) || re.Code != env.CodeRemote || re.Msg != "disk on fire" {
 		t.Fatalf("remote error %#v", reps[0].err)
+	}
+}
+
+type mutator struct{ e env.Env }
+
+func zero(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+func (m *mutator) Start()                              {}
+func (m *mutator) OnDatagram(_ env.NodeID, msg []byte) { zero(msg) }
+func (m *mutator) EncodeState() []byte                 { return nil }
+func (m *mutator) OnRequest(_ env.NodeID, req []byte, reply env.Reply) {
+	zero(req)
+	reply([]byte("pong"), nil)
+}
+
+func TestEventLogHashesThePayloadAsItCrossedTheWire(t *testing.T) {
+	s := sim.New(sim.Config{Seed: 1, Net: fixedNet()})
+	procs := map[env.NodeID]*mutator{}
+	for _, id := range []env.NodeID{"a", "b"} {
+		mustNil(t, s.AddNode(sim.NodeSpec{ID: id, Region: "r"}, func(e env.Env) env.Process {
+			m := &mutator{e: e}
+			procs[e.ID] = m
+			return m
+		}))
+	}
+	mustNil(t, s.RunUntil(0))
+	mustNil(t, procs["a"].e.Net.Send("b", []byte("hello")))
+	procs["a"].e.Net.Request("b", []byte("ping"), time.Second, func(reply []byte, err error) {
+		mustNil(t, err)
+		zero(reply)
+	})
+	mustNil(t, s.RunUntilQuiet())
+	want := [][2]string{{"datagram/ran", "hello"}, {"request/ran", "ping"}, {"response/ran", "pong"}}
+	seen := 0
+	for _, line := range s.LogTail(100) {
+		for _, kp := range want {
+			kind, payload := kp[0], kp[1]
+			if !strings.Contains(line, " "+kind+" ") {
+				continue
+			}
+			h := fnv.New64a()
+			_, _ = h.Write([]byte(payload))
+			if !strings.Contains(line, fmt.Sprintf("hash=%016x", h.Sum64())) {
+				t.Fatalf("%s logged with the handler's bytes, not %q: %s", kind, payload, line)
+			}
+			seen++
+		}
+	}
+	if seen != len(want) {
+		t.Fatalf("found %d of %d payload records in %q", seen, len(want), s.LogTail(100))
 	}
 }
