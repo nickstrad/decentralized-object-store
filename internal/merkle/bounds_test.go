@@ -96,7 +96,7 @@ func TestDiffBoundsPinned(t *testing.T) {
 	t.Run("C12 the first extra batch appears exactly when the leaf bytes pass one reply", func(t *testing.T) {
 		fits := func(k int) bool {
 			sh := expectedShape(1, nil, paddedKeys(k, merkle.MaxKeyLen))
-			return sh.leafBytes+3+uvarintLen(sh.leaves) <= merkle.MaxReplyBytes
+			return sh.leafBytes+2+uvarintLen(sh.leaves) <= merkle.MaxReplyBytes
 		}
 		lo, hi := 1, 2000
 		for lo+1 < hi {
@@ -205,9 +205,9 @@ func TestDiffRejectsCheapCuts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		body := resp[4:]
+		body := resp[3:]
 		kl := int(body[1])
-		cut := append([]byte{0x03, 1, 1, 1, 1}, body[1:2+kl+32]...)
+		cut := append([]byte{0x05, 1, 1, 1}, body[1:2+kl+32]...)
 		if err := s.Feed(cut); !errors.Is(err, merkle.ErrMalformed) {
 			t.Fatalf("a one-entry cut reply = %v, want ErrMalformed", err)
 		}
@@ -233,7 +233,7 @@ func TestDiffRejectsCheapCuts(t *testing.T) {
 			if aerr != nil {
 				t.Fatal(aerr)
 			}
-			if resp[0] == 0x03 && resp[2] == 0 {
+			if resp[0] == 0x03 {
 				resp, aerr = bt.Answer(req)
 				if aerr != nil {
 					t.Fatal(aerr)
@@ -265,7 +265,7 @@ func TestDiffRejectsARepeatedPiece(t *testing.T) {
 		}
 		trips++
 		if req[2] == 1 {
-			req = []byte{0x01, 1, 1, 1, req[4], 0x00}
+			req = []byte{0x01, 1, 1, 1, req[4]}
 		}
 		resp, aerr := rt.Answer(req)
 		if aerr != nil {
@@ -282,20 +282,20 @@ func TestDiffRejectsARepeatedPiece(t *testing.T) {
 
 func firstLeafOnly(t *testing.T, resp []byte) []byte {
 	t.Helper()
-	if resp[2] != 0 || resp[3] < 1 {
-		t.Fatalf("unexpected leaf reply header % x", resp[:4])
+	if resp[0] != 0x03 || resp[2] < 1 {
+		t.Fatalf("unexpected leaf reply header % x", resp[:3])
 	}
-	if resp[3] == 1 {
+	if resp[2] == 1 {
 		return resp
 	}
-	body := resp[4:]
+	body := resp[3:]
 	m := int(body[0])
 	end := 1
 	for i := 0; i < m; i++ {
 		kl := int(body[end])
 		end += 1 + kl + 32
 	}
-	return append([]byte{0x03, resp[1], 0, 1}, body[:end]...)
+	return append([]byte{0x03, resp[1], 1}, body[:end]...)
 }
 
 func genLongPair(t *rapid.T) mapPair {

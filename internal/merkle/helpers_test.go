@@ -135,7 +135,7 @@ func checkComplete(local, remote map[string]merkle.Hash, res merkle.Result) erro
 
 const (
 	leafItemMax      = 2 + merkle.MaxKeyLen + 32 + 2
-	leafFrameMax     = 5
+	leafFrameMax     = 4
 	leafPackingBytes = merkle.MaxReplyBytes - leafItemMax - leafFrameMax - 2
 )
 
@@ -231,7 +231,7 @@ func drive(t fataler, local, remote *merkle.Tree, l merkle.Limits) driven {
 			t.Fatalf("Answer: %v", err)
 		}
 		out.maxReply = max(out.maxReply, len(resp))
-		if resp[0] == 0x03 {
+		if resp[0] == 0x03 || resp[0] == 0x05 {
 			out.leafSizes = append(out.leafSizes, len(resp))
 		}
 		if err := s.Feed(resp); err != nil {
@@ -273,7 +273,7 @@ func checkShape(t fataler, depth int, local, remote map[string]merkle.Hash, dr d
 	if l > leafReplyBound(sh.leafBytes) {
 		t.Fatalf("%d leaf replies for %d leaf bytes, bound %d", l, sh.leafBytes, leafReplyBound(sh.leafBytes))
 	}
-	if sh.leafBytes+3+uvarintLen(sh.leaves) <= merkle.MaxReplyBytes && l != 1 {
+	if sh.leafBytes+2+uvarintLen(sh.leaves) <= merkle.MaxReplyBytes && l != 1 {
 		t.Fatalf("%d leaf bytes fit one reply but took %d", sh.leafBytes, l)
 	}
 	for i, n := range dr.leafSizes[:l-1] {

@@ -11,6 +11,7 @@ const (
 	msgInner   byte = 0x02
 	msgLeaves  byte = 0x03
 	msgEqual   byte = 0x04
+	msgCut     byte = 0x05
 )
 
 const (
@@ -52,13 +53,9 @@ func encodeRequest(r request) []byte {
 		binary.BigEndian.PutUint64(x[:], p)
 		b = append(b, x[:w]...)
 	}
-	if r.level != r.depth {
+	if r.level != r.depth || !r.resume {
 		return b
 	}
-	if !r.resume {
-		return append(b, 0)
-	}
-	b = append(b, 1)
 	b = binary.AppendUvarint(b, uint64(len(r.after)))
 	return append(b, r.after...)
 }
@@ -109,11 +106,11 @@ func encodeResponse(r response) []byte {
 		}
 		return b
 	case msgLeaves:
-		more := byte(0)
+		kind := msgLeaves
 		if r.more {
-			more = 1
+			kind = msgCut
 		}
-		b := []byte{msgLeaves, byte(r.level), more}
+		b := []byte{kind, byte(r.level)}
 		b = binary.AppendUvarint(b, uint64(len(r.leaves)))
 		for _, es := range r.leaves {
 			b = encodeLeaf(b, es)
@@ -197,11 +194,7 @@ func decodeRequest(b []byte) (request, error) {
 		return request{}, malformed("request node count")
 	}
 	w := pathBytes(level)
-	tail := uint64(0)
-	if level == depth {
-		tail = 1
-	}
-	if uint64(len(r.b)) < n*uint64(w)+tail || (level != depth && uint64(len(r.b)) != n*uint64(w)) {
+	if uint64(len(r.b)) < n*uint64(w) || (level != depth && uint64(len(r.b)) != n*uint64(w)) {
 		return request{}, malformed("request path bytes")
 	}
 	req.paths = make([]uint64, 0, n)
@@ -217,21 +210,15 @@ func decodeRequest(b []byte) (request, error) {
 		}
 		req.paths = append(req.paths, p)
 	}
-	if level != depth {
+	if len(r.b) == 0 {
 		return req, nil
 	}
-	switch r.u8() {
-	case 0:
-	case 1:
-		kl := r.uvarint()
-		if r.bad || kl > MaxKeyLen {
-			return request{}, malformed("resume key length")
-		}
-		req.resume = true
-		req.after = string(r.take(int(kl)))
-	default:
-		return request{}, malformed("resume flag")
+	kl := r.uvarint()
+	if r.bad || kl > MaxKeyLen {
+		return request{}, malformed("resume key length")
 	}
+	req.resume = true
+	req.after = string(r.take(int(kl)))
 	if r.bad || len(r.b) != 0 {
 		return request{}, malformed("request length")
 	}
@@ -250,14 +237,14 @@ func decodeResponse(b []byte) (response, error) {
 		}
 		return response{kind: msgEqual}, nil
 	}
-	if kind != msgInner && kind != msgLeaves {
+	if kind != msgInner && kind != msgLeaves && kind != msgCut {
 		return response{}, malformed("unknown response kind")
 	}
-	level := int(r.u8())
-	more := byte(0)
-	if kind == msgLeaves {
-		more = r.u8()
+	more := kind == msgCut
+	if more {
+		kind = msgLeaves
 	}
+	level := int(r.u8())
 	n := r.uvarint()
 	if r.bad {
 		return response{}, malformed("short response header")
@@ -265,13 +252,10 @@ func decodeResponse(b []byte) (response, error) {
 	if level > MaxDepth {
 		return response{}, fmt.Errorf("merkle: decode: response level %d: %w", level, ErrDepth)
 	}
-	if more > 1 {
-		return response{}, malformed("more flag")
-	}
 	if n == 0 || n > MaxRequestNodes {
 		return response{}, malformed("response node count")
 	}
-	resp := response{kind: kind, level: level, more: more == 1}
+	resp := response{kind: kind, level: level, more: more}
 	if kind == msgInner {
 		if uint64(len(r.b)) < 2*n {
 			return response{}, malformed("inner nodes truncated")

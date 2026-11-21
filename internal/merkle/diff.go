@@ -96,7 +96,7 @@ func (t *Tree) Answer(b []byte) ([]byte, error) {
 
 func (t *Tree) packLeaves(req request) response {
 	resp := response{kind: msgLeaves, level: req.level}
-	size := 3 + uvarintLen(len(req.paths))
+	size := 2 + uvarintLen(len(req.paths))
 	for j, p := range req.paths {
 		var es []Entry
 		if n := t.nodeAt(req.level, p); n != nil {

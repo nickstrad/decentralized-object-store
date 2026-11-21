@@ -79,7 +79,7 @@ func TestReplySizeBound(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		out, err := tr.Answer([]byte{0x01, 1, 1, 1, 0x00, 0x00})
+		out, err := tr.Answer([]byte{0x01, 1, 1, 1, 0x00})
 		if err != nil {
 			t.Fatal(err)
 		}

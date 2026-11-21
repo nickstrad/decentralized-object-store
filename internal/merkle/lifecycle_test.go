@@ -207,7 +207,7 @@ func (truncatingPeer) OnRequest(_ env.NodeID, req []byte, reply env.Reply) {
 	}
 	level := req[3]
 	if level == 2 {
-		reply([]byte{0x03, 2, 0, 1, 0}, nil)
+		reply([]byte{0x03, 2, 1, 0}, nil)
 		return
 	}
 	out := []byte{0x02, level, 1, 0xff, 0xff}

@@ -40,11 +40,7 @@ func TestDiffProtocolSteps(t *testing.T) {
 		if level == 0 && len(req) != 3+32 {
 			t.Fatalf("root request is %d bytes, want 35", len(req))
 		}
-		wantLen := 4 + (level+1)/2
-		if level == 2 {
-			wantLen++
-		}
-		if level > 0 && (req[3] != 1 || len(req) != wantLen) {
+		if level > 0 && (req[3] != 1 || len(req) != 4+(level+1)/2) {
 			t.Fatalf("level %d: request % x names more than the one mismatched node", level, req)
 		}
 		resp, err := remote.Answer(req)
@@ -293,7 +289,7 @@ func forgeLeafReply(t *testing.T, req, honest []byte) []byte {
 		t.Fatalf("expected a leaf reply, got % x", honest[:2])
 	}
 	n := int(req[3])
-	out := []byte{0x03, 1, 0, byte(n)}
+	out := []byte{0x03, 1, byte(n)}
 	for i := 0; i < n; i++ {
 		out = append(out, 1, 1, 'Z')
 		h := sum("forged")

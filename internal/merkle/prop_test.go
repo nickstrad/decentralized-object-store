@@ -133,7 +133,7 @@ func TestPropHostileRepliesEndTheSession(t *testing.T) {
 					t.Fatal(err)
 				}
 				if resp[0] == 0x03 {
-					resp[2] = 1
+					resp[0] = 0x05
 				}
 			default:
 				other := genPair(t)
