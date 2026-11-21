@@ -315,9 +315,12 @@ and the simulator reports it as a `PanicError`.)
 
 ## Repair round (review 1: FAIL, four MAJOR; adversarial C30 BROKEN)
 
-Fresh Opus builder. Tests first: commit `4b7ac61` adds the regression tests and fails on the
-reviewed code (each failure listed below was run and seen); `30c9689` fixes; `aad5cc0` adds
-the object-buffer release; `096560a` fixes a bug in the new model test (not the store).
+Fresh Opus builder. Tests first: commit "storage, erasure: add failing regression tests for the
+review-1 findings and C30" adds the regression tests and fails on the reviewed code (each
+failure listed below was run and seen); "storage, erasure: fix the review-1 findings and bound
+what Window claims" fixes; "storage: release the object buffer when a PUT finishes" adds the
+object-buffer release; "storage: track unsynced writes in the chunk-store model" fixes a bug
+in the new model test (not the store).
 
 ### Finding 1 (MAJOR) — `Put` acknowledged bytes that were only in the unsynced layer
 - Tests (fail on the old code): `TestChunkStorePutOfUnsyncedIdenticalBytesIsDurable` (the
@@ -445,7 +448,9 @@ What it does not bound, stated plainly:
   stripes launched in the last `RequestTimeout`, and over a whole PUT by
   `stripes × (N − AckQuorum)`.
 - Memory per outstanding request: the request message, `1 + 1 + len(blob name) + 64 +
-  ceil(L/k)` bytes (≈ 256 KiB + 70 B at the default 1 MiB stripe), held by the transport,
+  ceil(L/k)` bytes (at the default 1 MiB stripe, 256 KiB + 98 B for bucket `b`, version 1, stripe 0, shard 0;
+  the blob name grows with the bucket length and the version and stripe digits, so about
+  256 KiB + 100–170 B in practice), held by the transport,
   plus a closure of a few words in the coordinator. As a fraction of the object: at most
   `(N − AckQuorum)/k` of its size (25 % at 4+2, quorum 5), held for at most
   `RequestTimeout` per request.
@@ -474,7 +479,8 @@ What it does not bound, stated plainly:
 
 ### Determinism lint on `internal/storage` (by hand; the gate does not cover it)
 `docker compose run --rm -T dev bash -c 'cd agent_work/gates/detlint && go build -o /tmp/dl . && cd /src && /tmp/dl -root /src internal/storage internal/erasure'`
-→ `detlint: checked 12 files in 2 packages`, no findings (run on `30c9689`; the later
+→ `detlint: checked 12 files in 2 packages`, no findings (run on the commit "storage, erasure: fix the review-1 findings
+and bound what Window claims"; the later
 commits add no product code except `op.data = nil`).
 
 ### API changes
@@ -550,7 +556,7 @@ The only commit after the gated one adds this file (operational notes, no Go).
 ### Repair-round gate result
 
 `agent_work/gates/gate.sh 02-erasure` from the host on commit
-`6cb7dc9db3a5056dc2153cce6cd61fabc9bf8957` (clean tree; `result.json` left uncommitted):
+"agent_work: record the 02-erasure repair round in the build notes" (clean tree; `result.json` left uncommitted):
 **overall=pass, counts_for_landing=true**, image `sha256:8dde8ea7…60eacc55`, go1.26.11,
 comment baseline `a184b38`, seed 119536936137637. G0 all pass (detlint, panics, comments,
 deps, selfcontained); G1 unit pass 12 s, coverage erasure 98.4 %, storage 97.8 %; G2 rapid
@@ -558,3 +564,19 @@ deps, selfcontained); G1 unit pass 12 s, coverage erasure 98.4 %, storage 97.8 %
 249 s; G6 docker pass. (A first gate run was killed by my shell's 10-minute limit during G5
 and left no result; the run above is a full re-run.) The only commit after the gated one
 adds this paragraph.
+
+## REVIEW-2 nits
+
+- Finding 1: `putOp.fill` counted a stripe as awaiting quorum (`inflight`, `PutAwaitingPeak`)
+  before `launch`, so a PUT whose first stripe could not be placed reported a peak of 1 with
+  nothing sent. Test first: `TestNodePutUnlaunchableStripeLeavesAwaitingPeakZero` (3 members,
+  4+2 layout; failed with peak 1). Fix: `fill` calls `launch` first and counts only on
+  success. Safe because `launch` fails only before sending any shard request (EncodeStripe or
+  Place), and the simulator's `Request` never calls back re-entrantly. GET side checked:
+  `getOp.fill` has no failing launch step and no peak counter, so no change.
+- Finding 2: the C30 per-request byte figure now matches the exact formula including the
+  blob name (256 KiB + 98 B for bucket `b`).
+- Finding 3: the repair-round narrative names commits by subject instead of SHA.
+- Checks through Docker: `gofmt -l .` empty, `go vet ./...` clean,
+  `go test ./internal/erasure/... ./internal/storage/...` pass, and the same with
+  `-rapid.checks=2000` pass.
