@@ -21,9 +21,10 @@ A leaderless, multi-region object store with a local-first metadata sync layer �
 plus a small Figma-style sync — written in Go on the standard library alone, in which every
 node can accept reads and writes without asking a leader or a quorum of a consensus group.
 Membership comes from SWIM gossip, durability from Reed-Solomon striping, self-healing from
-Merkle-tree anti-entropy, metadata that never loses a write silently from optimistic
-concurrency control (conditional writes, version vectors, and concurrent versions kept as
-siblings — Nick's OCC amendment, which replaces the spec's CRDT layer), and multi-step
+Merkle-tree anti-entropy, metadata that always converges to one version per key from
+optimistic concurrency control (conditional writes, version vectors to detect concurrency,
+and last-writer-wins by hybrid logical clock with every discarded concurrent write counted
+and logged — Nick's OCC amendment and LWW ruling, which replace the spec's CRDT layer), and multi-step
 cluster changes from compensating Sagas. The repository's claim is that these properties are **proven, not
 asserted**: a deterministic simulator runs 20–100 nodes through partitions, packet loss,
 bit-rot and crashes in milliseconds from one `int64` seed; property tests and fuzzers check
@@ -169,7 +170,7 @@ registers its own (2.2).
 | Reed-Solomon | **round-trip**: for any payload, any valid `(k, m)`, any erasure set of size ≤ m, decode returns the exact bytes; **MDS**: every `k×k` submatrix of the coding matrix is invertible (exhaustive for small `k+m`, sampled above); **failure boundary**: more than `m` losses returns `ErrTooFewShards`, never a panic and never wrong bytes; **corruption**: up to `m` corrupted shards are detected by checksum and treated as erasures (7.3); systematic: the first `k` shards are the data |
 | Merkle | **completeness**: diff returns exactly the keys whose hashes differ or that exist on one side (zero missed, zero spurious); **efficiency**: hashes exchanged ≤ `c·d·log N` for `d` differing keys, and round trips ≤ tree depth; root equality ⇔ map equality; incremental update equals rebuild from scratch; insertion order does not change the root |
 | Gossip | **convergence**: after faults stop, all live nodes hold identical membership views within `c·log₂N` protocol periods; incarnation numbers never decrease; a node never declares itself dead; no eviction under a single asymmetric link; a crashed node is declared dead by all within a bound; a dead verdict is only overturned by a higher incarnation |
-| OCC metadata | **check-and-set**: on one replica a conditional write succeeds exactly when its precondition (`If-Match` ETag / `If-None-Match`) holds against the current state, checked against a reference model; **version vectors** form a partial order (reflexive, antisymmetric, transitive; `Concurrent` is symmetric); **no silent loss**: every acknowledged write is either present as a sibling or is dominated by a version whose writer had seen it — never dropped by a merge; replica `Merge` is commutative, associative and idempotent and keeps every non-dominated sibling; **convergence**: replicas that have received the same set of versions, in any order, with any duplication, encode to identical bytes and report the same ETag; a resolving write that names all siblings collapses them to one version; scalar fields are last-writer-wins by hybrid logical clock with a deterministic tie-break; quota counter updates are check-and-set and never apply a stale read; encode/decode round-trip |
+| OCC metadata | **check-and-set**: on one replica a conditional write succeeds exactly when its precondition (`If-Match` ETag / `If-None-Match`) holds against the current state, checked against a reference model; **version vectors** form a partial order (reflexive, antisymmetric, transitive; `Concurrent` is symmetric); **single winner**: replica `Merge` is commutative, associative and idempotent and its result for a key is exactly one version, the last-writer-wins maximum by hybrid logical clock stamp with node ID as tie-break — a pure function of the versions, never of arrival order; **convergence**: replicas that have received the same set of versions, in any order, with any duplication, encode to identical bytes and report the same ETag; **every loss recorded**: every acknowledged write is, in the end, the current version, or causally superseded by a version whose writer had seen it, or named as the loser in a node's discard log (counted and logged — never invisible); a write that saw a version always beats it; causally ordered writes never count a discard; quota counter updates are check-and-set and never apply a stale read; encode/decode round-trip |
 | Saga | **terminal-state invariant**: every saga ends Completed (all forward effects present) or Compensated (no forward effect remains), for every failure point; recovery from any log prefix is idempotent (recovering twice equals once); compensations run in reverse order of completed steps; no step runs after the saga reaches a terminal state |
 | Simulator | replay (2.1); a healed network delivers every message sent after the heal; virtual time never goes backwards |
 
@@ -213,7 +214,7 @@ operation sequences against a simple reference model and compare after every ste
 | `FuzzMerkleDiff` (spec) | merkle | completeness and the hash-count bound over arbitrary maps and mutation scripts |
 | `FuzzMerkleWire` | merkle | arbitrary bytes as diff-protocol messages never panic or loop |
 | `FuzzOCCConditionalWrite` (replaces the spec's `FuzzCRDTLaws`) | occ | fuzz bytes become a schedule of conditional writes, deletes and merges across replicas, checked against a reference model: a write succeeds only when its precondition holds; no acknowledged version is lost without a descendant that saw it; replicas with the same versions are byte-identical |
-| `FuzzOCCMergeLaws` | occ | `Merge` is commutative, associative and idempotent on arbitrary decoded states A, B, C and never drops a non-dominated sibling |
+| `FuzzOCCMergeLaws` | occ | `Merge` is commutative, associative and idempotent on arbitrary decoded states A, B, C and always yields the single last-writer-wins maximum per key |
 | `FuzzOCCDecode` | occ | decode never panics; decode∘encode is the identity; merging a decoded hostile state keeps the laws |
 | `FuzzGossipWire` | gossip | decode never panics; round-trip; an arbitrary inbound packet never breaks a node's invariants |
 | `FuzzSagaLogRecover` | saga | arbitrary, truncated or corrupted log bytes: recovery returns a valid prefix or a typed error, never a panic |
@@ -321,10 +322,10 @@ server, and `cmd/`.
 | `erasure` | `ErrInvalidConfig`, `ErrTooFewShards`, `ErrShardSize`; `*ShardError{Index, Err}` | decoding is total: any input gives bytes or one of these |
 | `storage` (chunk store) | `ErrNotFound`, `ErrCorrupt`, `ErrExists`; `*ObjectError{Op, Bucket, Key, Err}` | a checksum mismatch is `ErrCorrupt`, never silently returned bytes |
 | `merkle` | `ErrMalformed`, `ErrDepth`; peer failures surface as transport errors | a failed round is abandoned whole; the next round is the retry |
-| `occ` | `ErrPreconditionFailed` (a conditional write whose `If-Match`/`If-None-Match` does not hold), `ErrMalformed` (decode only), `ErrNotFound`; `*ConflictError{Key, Siblings}` where a caller asked for a single value and several siblings exist | replica `Merge` has no error return — it is total by construction, and that is a tested property |
+| `occ` | `ErrPreconditionFailed` (a conditional write whose `If-Match`/`If-None-Match` does not hold), `ErrMalformed` (decode only), `ErrNotFound` (there is no conflict error: a key holds one version) | replica `Merge` has no error return — it is total by construction, and that is a tested property |
 | `gossip` | `ErrMalformed`, `ErrNotMember`, `ErrClosed` | a bad packet is counted and dropped, never fatal |
 | `saga` | `*StepError{Saga, Step, Attempt, Err}`, `ErrPermanent`, `ErrSagaNotFound`, `ErrLogCorrupt` | steps classify failures as retryable or permanent; only the engine retries |
-| object API | maps the above to HTTP status in one table (`ErrNotFound`→404, `ErrPreconditionFailed`→412, siblings on a single-value read→300 with every sibling's version ID and ETag listed, `ErrUnavailable`→503, `ErrCorrupt`→500 with repair triggered, quota→507 …) | the table is tested row by row |
+| object API | maps the above to HTTP status in one table (`ErrNotFound`→404, `ErrPreconditionFailed`→412, `ErrUnavailable`→503, `ErrCorrupt`→500 with repair triggered, quota→507 …) | the table is tested row by row |
 | `env`/transport | `ErrTimeout`, `ErrUnreachable`, `ErrClosed`, `ErrTooLarge` | the same sentinels from the simulated and the real transport |
 
 **Crossing the network boundary.** Go error values never cross. A response carries a
@@ -368,13 +369,13 @@ share one scenario definition where they can:
 | # | Scenario | Tier | Pass criteria |
 |---|---|---|---|
 | E1 | Multi-region put/get | S, R | objects of 0 B, 1 B, prime sizes and multi-MB written through a node in each region are read back byte-identical through every other node; shards are spread so no region holds more than `m` of a stripe |
-| E2 | Partition and heal | S, R | during a region partition both sides keep accepting metadata writes and any object write/read the surviving shards allow; anything else returns `ErrUnavailable`, never wrong bytes; after heal all nodes reach identical membership, identical metadata bytes (sibling sets included) and identical Merkle roots within the stated bound; no acknowledged write is lost |
+| E2 | Partition and heal | S, R | during a region partition both sides keep accepting metadata writes and any object write/read the surviving shards allow; anything else returns `ErrUnavailable`, never wrong bytes; after heal all nodes reach identical membership, identical metadata bytes (one version per key) and identical Merkle roots within the stated bound; no acknowledged object write is lost, and every metadata write discarded by last-writer-wins is counted and logged |
 | E3 | Bit-rot detection and repair | S, R | with up to `m` shards per stripe corrupted on disk, every GET still returns correct bytes; background anti-entropy restores every corrupted shard within the bound; bytes moved for repair are proportional to the damage, not the bucket |
 | E4 | Bucket migration, success | S, R | bucket moves from region A to B under live traffic; ends with verified equal Merkle roots, routing pointer on B at every node, zero shards of the bucket left in A, every object readable |
 | E5 | Bucket migration, rollback | S (every failure point), R (kill target mid-copy, kill coordinator mid-saga) | the saga ends Compensated: pointer still A, zero orphan shards in B, source intact; a restarted coordinator resumes from its log and reaches the same end |
 | E6 | Node crash and restart | S, R | `SIGKILL` during writes: acknowledged objects survive; the restarted node rejoins with a higher incarnation, catches up by anti-entropy, and serves reads; a wiped node is refilled |
 | E7 | Nemesis and healing cycles | S (long, many seeds) | alternating chaos and heal for many cycles: safety invariants hold at every step, availability holds within the fault budget, full convergence after each heal; seeds swept in the hundreds per gate and far more in hardening |
-| E8 | Local-first metadata sync (node-level only, OQ-7) | S, R | two regions edit tags, ACL entries, quotas and object metadata while disconnected, using conditional writes; after reconnect all nodes hold identical bytes; **no silent loss — conflicts surface as siblings**: every acknowledged concurrent version is readable as a sibling until a resolving write names them all; scalar fields settle by last-writer-wins. There is no client replica |
+| E8 | Local-first metadata sync (node-level only, OQ-7) | S, R | two regions edit tags, ACL entries, quotas and object metadata while disconnected, using conditional writes; **no split-brain — after healing, all replicas converge to the same single version of every object; every discarded concurrent write is counted and logged** (last-writer-wins by hybrid logical clock, node ID as tie-break; the test checks each lost write against the nodes' discard logs). There is no client replica |
 | E9 | Shutdown and cancellation | R | SIGTERM under load: in-flight requests finish or fail cleanly, the process exits within the deadline with no goroutine left, restart is clean |
 
 Tier S scenarios run under `RequireDeterministic`. Tier R runs under `-race` builds of the
@@ -447,7 +448,7 @@ explanatory prose around the diagrams is Neon's.
 | `internal/gossip/` | SWIM membership: probe, indirect probe, suspicion state machine, piggybacked dissemination |
 | `internal/erasure/` | GF(2^8) arithmetic and the Reed-Solomon encoder/decoder |
 | `internal/merkle/` | Merkle tree builder, diff protocol, anti-entropy repair worker |
-| `internal/occ/` | optimistic concurrency control for metadata (replaces the spec's `internal/crdt`; name chosen at Step 0 of Phase 2 because the package is the OCC primitive itself, not a storage detail): version vectors, version IDs and ETags, conditional check-and-set, sibling sets, last-writer-wins scalar fields on a hybrid logical clock, OCC-checked quota counters, canonical encoding, replica merge and state replication |
+| `internal/occ/` | optimistic concurrency control for metadata (replaces the spec's `internal/crdt`; name chosen at Step 0 of Phase 2 because the package is the OCC primitive itself, not a storage detail): version vectors, version IDs and ETags, conditional check-and-set, last-writer-wins resolution of concurrent versions on a hybrid logical clock with a discard counter and log, OCC-checked quota counters, canonical encoding, replica merge and state replication |
 | `internal/saga/` | durable Saga orchestrator, log, recovery; the bucket-migration workflow definition |
 | `internal/storage/` | local chunk store, shard placement, object put/get paths, HTTP object API |
 | `internal/node/` | wiring of all primitives into one node; the real runtime (UDP/TCP transports, file disk, wall clock, node loop) (addition; 7.1) |
@@ -489,14 +490,14 @@ explanatory prose around the diagrams is Neon's.
 | Structure: `internal/gossip` | 1 | |
 | Structure: `internal/erasure` | 2 | |
 | Structure: `internal/merkle` | 3 | |
-| Structure: `internal/crdt` (LWW-Element-Set, OR-Set, PN-Counter, LWW-Register) | 4, as `internal/occ` | **REPLACED by Nick's OCC amendment (2026-11-21):** the four CRDT types are not built. Metadata is protected by optimistic concurrency control — ETags, conditional writes, version vectors, siblings — with last-writer-wins kept only for scalar fields. This is a deliberate, signed-off departure from the spec |
+| Structure: `internal/crdt` (LWW-Element-Set, OR-Set, PN-Counter, LWW-Register) | 4, as `internal/occ` | **REPLACED by Nick's OCC amendment (2026-11-21):** the four CRDT types are not built. Metadata is protected by optimistic concurrency control — ETags, conditional writes, version vectors — and concurrent versions that could not be prevented settle by last-writer-wins, the discard counted and logged (Nick's LWW ruling, 2026-11-21; siblings are out). This is a deliberate, signed-off departure from the spec |
 | Structure: `internal/saga` | 5 | |
 | Structure: `internal/storage` (chunk store + HTTP/RPC object API) | 2 (chunk store), 6 (object API) | split because the chunk store is needed by Chunks 2 and 3 and the API needs everything |
 | Commit 0 + its replay meta-test | 0b | |
 | Commit 1 + 20-node convergence tests | 1 | |
 | Commit 2 + round-trip tests | 2; distribution across gossip-discovered peers finishes in 6 | Chunk 2 places shards on a membership list behind an interface; the real gossip view is wired in 6 (reason: lets 1 and 2 build concurrently) |
 | Commit 3 + fault-injection tests | 3; applied to erasure-coded objects in 6 | same reason |
-| Commit 4 + random-order property tests | 4 (as OCC: random-order, duplicated delivery of versions converges to identical bytes with every concurrent version kept as a sibling); membership-driven peer choice wired in 6 | same reason; scope per the OCC amendment |
+| Commit 4 + random-order property tests | 4 (as OCC: random-order, duplicated delivery of versions converges to identical bytes holding the single last-writer-wins version per key); membership-driven peer choice wired in 6 | same reason; scope per the OCC amendment |
 | Commit 5 + failure-injection tests | 5 (engine + workflow against a model of the cluster); 6 (the same failure matrix against the real components) | the spec's terminal-state claim is only fully proven when Chunk 6 lands; Chunk 5's write-up says so and is updated in 6 |
 | DST core: single-threaded simulation driven by `-seed` | 0b | |
 | DST core: continuous nemesis and healing cycles | 0b (mechanism), 7 (whole-cluster cycles) | |
@@ -504,7 +505,7 @@ explanatory prose around the diagrams is Neon's.
 | SWIM suite: convergence property; asymmetry resilience | 1 | |
 | RS suite: `FuzzErasureCoding` round-trip; failure boundary | 2 | |
 | Merkle suite: `FuzzMerkleDiff` completeness and efficiency; self-healing DST | 3 (replicated chunks); 6–7 (erasure-coded objects under traffic) | |
-| CRDT suite: `FuzzCRDTLaws`; multi-region convergence DST | 4 | restated for OCC: `FuzzOCCConditionalWrite` and `FuzzOCCMergeLaws`; the multi-region convergence DST asserts byte-identical metadata with siblings preserved |
+| CRDT suite: `FuzzCRDTLaws`; multi-region convergence DST | 4 | restated for OCC: `FuzzOCCConditionalWrite` and `FuzzOCCMergeLaws`; the multi-region convergence DST asserts byte-identical metadata, one version per key, and every discarded concurrent write on record |
 | Saga suite: exhaustive failure points; terminal-state invariant | 5, re-run on real components in 6 | |
 | Mission: E2E as final build phase | 7 | |
 | Mission: write-up per paradigm, Pages incremental | every chunk writes its book chapter draft; site in 0a; book assembled in 8 | book ruling: the chapter drafts replace standalone write-ups |
@@ -671,74 +672,90 @@ the same chunks); Chunk 6 points the same code at erasure-coded objects.
 
 #### Chunk 4 — Optimistic concurrency control for metadata (replaces spec Commit 4)
 
-Nick's OCC amendment (2026-11-21) replaces the CRDT metadata layer. The rule the chunk
-proves: **no write is ever lost silently.** A writer states what it believes the current
-version is; if it is wrong the write is refused; if two writers could not see each other
-(a partition), both versions are kept as siblings until someone resolves them.
+Nick's OCC amendment (2026-11-21) replaces the CRDT metadata layer, and his LWW ruling of
+the same day removes siblings. The rule the chunk proves: **replicas always converge to one
+version per key, and no write is ever lost invisibly.** A writer states what it believes the
+current version is; if it is wrong the write is refused; if two writers could not see each
+other (a partition), last-writer-wins picks one version deterministically, the other is
+discarded, and the discard is counted and logged.
 
 **Deliverable.** `internal/occ` (7.5):
 - **version vectors** (`actor → counter`) with `Compare` giving Equal / Before / After /
-  Concurrent, and a hybrid logical clock for scalar fields;
-- a **versioned record** per key: a set of siblings, each with a version ID, the version
+  Concurrent — the concurrency *detection* mechanism — and a hybrid logical clock;
+- a **versioned record** per key holding exactly one version: a version ID, the version
   vector it was written at, a value (or a tombstone) and an HLC stamp; the record's **ETag**
-  is a deterministic hash of its sibling set, so equal states have equal ETags on every
+  is a deterministic function of that version, so equal states have equal ETags on every
   node;
 - **check-and-set**: `Put`/`Delete` take a precondition — `If-Match: <etag>`,
   `If-None-Match: *` (create only), or none — and are applied atomically against the local
   state; a failed precondition returns `ErrPreconditionFailed` and changes nothing. A
-  successful write's vector dominates every sibling the writer's ETag covered, so it
-  replaces exactly what the writer saw; an unconditional write is recorded as concurrent
-  with what it did not read rather than overwriting it;
-- **replica merge**: union of siblings minus any sibling dominated by another — commutative,
-  associative, idempotent, total; concurrent versions survive as siblings, never silently
-  overwritten; a **resolving write** that names the current ETag collapses the siblings;
+  successful write causally supersedes the version its node held and carries a strictly
+  higher HLC stamp, so a write that saw a version always beats it;
+- **replica merge**: for each key the single last-writer-wins maximum under one total
+  order — HLC stamp, then node ID — a pure function of the versions, so merge is
+  commutative, associative, idempotent and total, and replicas holding the same versions
+  are byte-identical. A replaced version that the winner's writer had seen is an ordinary
+  overwrite; one it had not seen is an **LWW discard**: an acknowledged write lost to a
+  concurrent one;
+- **the discard record**: every LWW discard increments a per-node counter and writes a log
+  line naming the key, the losing version and the winning version; a hook reports it to
+  the integrated node. The loss is observable and auditable, never invisible;
 - **scalar metadata fields** (routing pointer, per-object content type and similar small
-  fields): last-writer-wins by HLC with node-ID tie-break — the only place LWW applies;
+  fields) settle by the same last-writer-wins rule;
 - **quota counters as OCC-checked updates**: usage changes are read-modify-write with
-  `If-Match` and bounded retry; concurrent partition-side updates surface as siblings and
-  are resolved by a recompute hook (the integrated node recounts from manifests in
-  Chunk 6), never by guessing;
+  `If-Match` and bounded retry; concurrent partition-side updates settle by
+  last-writer-wins and the discard triggers a recompute hook (the integrated node recounts
+  from manifests in Chunk 6) that writes nothing when the stored usage is already right;
 - canonical encoding so equal states are equal bytes; a typed metadata document (tags, ACL
   entries, quotas, object metadata, manifests) built from these records; and a replicator
   that exchanges state with random peers from a `Membership` interface (digest first, state
   on mismatch).
 - Tests first:
   - unit: `TestVersionVectorCompareTable`; `TestConditionalPutTable` and
-    `TestConditionalDeleteTable` (every precondition × state row, including tombstones and
-    siblings); `TestETagDeterministic`; `TestResolveCollapsesSiblings`; `TestHLCRules`;
-    `TestLWWScalarTieBreak`; `TestQuotaCheckAndSet`; `TestCanonicalEncoding`; decode
-    malformed table;
+    `TestConditionalDeleteTable` (every precondition × state row, including tombstones);
+    `TestETagDeterministic`; `TestLWWWinnerTable`; `TestLWWDiscardCountedAndLogged`;
+    `TestCausalOverwriteIsNotADiscard`; `TestHLCRules`; `TestQuotaCheckAndSet`;
+    `TestCanonicalEncoding`; decode malformed table (a record with more than one version
+    is malformed);
   - property (rapid): `TestPropVersionVectorPartialOrder`; `TestPropCheckAndSetModel`
     (single replica against a reference model: success iff the precondition holds);
-    `TestPropMergeLaws` (commutative, associative, idempotent); `TestPropNoSilentLoss`
-    (random conditional writes on several replicas, random merges: every acknowledged
-    version is a sibling or has a descendant whose writer saw it);
-    `TestPropConvergence` (random, duplicated, reordered delivery → identical bytes and
-    ETags); `TestPropSiblingsOnlyWhenConcurrent` (causally ordered writes never leave
-    siblings); `TestPropQuotaNoStaleApply`; `TestPropHLCMonotonic`;
+    `TestPropMergeLaws` (commutative, associative, idempotent; the result is the single
+    LWW maximum, on arbitrary decoded states too); `TestPropEveryLossRecorded` (random
+    conditional writes on several replicas, random merges: every acknowledged version is
+    current, or causally superseded by a version whose writer saw it, or named in a
+    discard log); `TestPropConvergence` (random, duplicated, reordered delivery →
+    identical bytes and ETags); `TestPropCausalWriteAlwaysWins`;
+    `TestPropNoDiscardWithoutConcurrency` (causally ordered writes never count a
+    discard); `TestPropQuotaNoStaleApply`; `TestPropHLCMonotonic`;
   - fuzz: `FuzzOCCConditionalWrite` (headline), `FuzzOCCMergeLaws`, `FuzzOCCDecode`;
   - DST: `TestMultiRegionConvergenceDST` (3 regions, concurrent conditional writes,
     partitions, reordering, duplication, clock skew; byte-identical metadata on all
-    replicas after heal, every acknowledged write present as a sibling or causally
-    superseded); `TestOfflineRegionDST` (a region edits alone for a long time, then syncs:
-    its versions arrive as siblings of the other side's, none dropped);
+    replicas after heal, one version per key, every lost write found in a discard log);
+    `TestOfflineRegionDST` (a region edits alone for a long time, then syncs: each of its
+    versions either wins or is recorded as discarded);
     `TestConditionalWriteRaceDST` (two writers holding the same ETag: on one node exactly
     one wins and the other gets `ErrPreconditionFailed`; across a partition both are
-    acknowledged and both survive as siblings); canary `TestCanaryMergeDropsSibling`;
-  - errors: `ErrPreconditionFailed` on every failing precondition row; `*ConflictError`
-    fields; decode failures; a test asserts `Merge` cannot fail on any decoded state.
-- Adversarial (Astra): find any schedule in which an acknowledged write disappears without
-  a descendant that saw it; an actor ID reused after a wipe (counter reset making a new
-  write look dominated — the classic version-vector hazard); hostile decoded states that
-  break a merge law or forge dominance; ETag collisions between different sibling sets;
-  sibling explosion measured (how many siblings can a partitioned workload create, and is
-  it bounded by writers rather than writes); clock skew and HLC overflow making a scalar
-  field pick a surprising winner; quota overshoot size under partition; a conditional
-  write succeeding against a stale ETag.
+    acknowledged, one wins everywhere and the other's discard is recorded); canaries
+    `TestCanaryDiscardNotRecorded` and `TestCanaryMergePrefersLocal`;
+  - errors: `ErrPreconditionFailed` on every failing precondition row; decode failures; a
+    test asserts `Merge` cannot fail on any decoded state.
+- Adversarial (Astra): find any schedule in which an acknowledged write disappears with
+  neither a descendant that saw it nor a discard record; replicas that hold the same
+  versions but different bytes; an actor ID reused after a wipe (counter reset making a
+  concurrent discard look like a causal overwrite — the classic version-vector hazard);
+  decoded states that break a merge law or make the winner depend on arrival order; ETag
+  collisions between different versions; clock skew and HLC overflow making
+  last-writer-wins pick a surprising winner, and a far-future stamp pinning a key;
+  discards measured (how many acknowledged writes a partitioned workload loses, and that
+  the count matches the logs); quota overshoot size under partition; a conditional write
+  succeeding against a stale ETag.
 - Book chapter: `05-optimistic-concurrency-control` (the OCC chapter, replacing the
-  planned CRDT chapter; it says why the project chose OCC over CRDTs and what that costs).
+  planned CRDT chapter; it says why the project chose OCC over CRDTs, why siblings were
+  rejected in favour of last-writer-wins, and what that costs: an acknowledged write can
+  be lost to a concurrent write under partition; the system guarantees convergence and a
+  record of the loss, not preservation).
 - C4: the component diagram drawn at kickoff for `internal/crdt`
-  (`docs/c4/07-component-crdt.md`) is redrawn as the OCC component in this chunk's landing.
+  (`docs/c4/07-component-crdt.md`) is redrawn as the OCC component in this chunk's landing (no sibling component).
 - Size: about 1,300 code + 2,100 tests.
 
 #### Chunk 5 — Saga engine and the bucket-migration workflow (spec Commit 5)
@@ -786,11 +803,11 @@ runtime: UDP transport, TCP request/response transport, file-backed disk, wall c
 node loop. `internal/storage` gains the HTTP object API (put/get/head/delete/list, bucket
 create, tags and ACL, quota, metadata, migration start/status, membership and health) and
 conditional requests (`If-Match` / `If-None-Match` on PUT and DELETE, `ETag` and version ID
-on every response, siblings listed when a key is in conflict). Metadata sync is node to
+on every response; a key always reads as one version). Metadata sync is node to
 node only — there is no client replica or `/v1/sync` client document (OQ-7). `cmd/objnode` runs a node from flags or a config
 file. The cross-links deferred from Chunks 2–5 are made here: shards placed on the gossip
 view; Merkle trees over manifests and over each node's shard inventory (7.4); OCC metadata
-replication to gossip-chosen peers; quota recompute on sibling resolution; migration steps on real components.
+replication to gossip-chosen peers; quota recompute when a quota update is discarded by last-writer-wins; the discard counter and log exposed through the node's health/metrics surface; migration steps on real components.
 - Tests first:
   - unit: HTTP status table, config validation, wire-code ↔ sentinel round-trip, frame
     codec, flag parsing;
@@ -804,9 +821,9 @@ replication to gossip-chosen peers; quota recompute on sibling resolution; migra
     shutdown tests, leak checks, `-race -count=3`; runtime conformance (same scenario on
     simulator and loopback);
   - errors: the whole 2.6 API table through HTTP.
-- Adversarial (Astra): concurrent PUTs to one key from two regions (both must survive as
-  siblings with their shards intact until resolved; are a resolved-away sibling's shards
-  collected?); conditional PUT races through HTTP; GET during repair and during migration; malformed and
+- Adversarial (Astra): concurrent PUTs to one key from two regions (every node must end on the same
+  single winner, the loser's discard counted and logged; are the discarded version's shards
+  collected, and never the winner's?); conditional PUT races through HTTP; GET during repair and during migration; malformed and
   slow HTTP clients; shutdown races; goroutine leaks under churn; cross-feature
   interleavings (migration during partition during bit-rot); quota overshoot size under
   partition; real-socket behaviour the simulator does not model (short reads, connection
@@ -1034,8 +1051,8 @@ runtime needs one that is not `internal/storage`.
   Shards no manifest refers to are collected after a grace period.
 - Trade-offs accepted, to be stated in the book: every node holds all metadata (simple
   and fine at 100 nodes, not at 10,000); concurrent PUTs to one key that could not see each
-  other are both kept as siblings (their shards too) until a resolving write, so readers of
-  a conflicted key must choose or resolve; a precondition is checked at one node, so it
+  other settle by last-writer-wins: one acknowledged PUT is discarded (counted and logged,
+  its shards collected after the grace period); a precondition is checked at one node, so it
   guards against writers that node has heard from, not against the other side of a
   partition; no read-your-writes across regions.
 
@@ -1075,45 +1092,58 @@ runtime needs one that is not `internal/storage`.
   wording) would not work with erasure coding; this is the adaptation, and Chunk 3 proves
   the library on plain replicas first.
 
-### 7.5 OCC choices (replaces "CRDT choices"; Nick's amendment)
+### 7.5 OCC choices (replaces "CRDT choices"; Nick's amendment and LWW ruling)
 
 - **Why OCC instead of CRDTs.** The spec asked for CRDTs so that concurrent metadata edits
   merge automatically. Nick replaced that with optimistic concurrency control: a client
-  says which version it read (`If-Match`), the store refuses the write if that is stale,
-  and where staleness could not be detected in time — two regions writing during a
-  partition — both versions are kept and shown as siblings. The store never picks a winner
-  between concurrent values behind the client's back. This is the model of S3 conditional
-  writes joined with Dynamo/Riak-style sibling handling. The cost: a conflicted key needs a
-  reader or a resolver to settle it, where a CRDT would have settled it by rule.
-- **Version vectors** detect concurrency. Each replica is an actor; a write increments the
-  writing node's counter in a vector that starts from the versions the writer's ETag
-  covered. Vector A dominates B when it is ≥ everywhere and > somewhere; neither dominating
-  means concurrent. Hazard recorded for the adversarial pass: an actor that loses its disk
-  and reuses its ID would reissue old counters, so the actor ID carries a durable epoch
-  that a wiped node cannot reuse (it takes a fresh one on rejoin).
+  says which version it read (`If-Match`), and the store refuses the write if that is
+  stale. This is the model of S3 conditional writes.
+- **Why last-writer-wins instead of siblings.** Where staleness could not be detected in
+  time — two regions writing one key during a partition — the first design kept both
+  versions as Dynamo/Riak-style siblings for a reader to resolve. Nick ruled that out
+  (2026-11-21): surfacing conflicts to readers as co-equal versions is a bad design for
+  this store. Instead **last-writer-wins decides, deterministically**: the version with
+  the higher hybrid logical clock stamp wins, node ID breaks ties, and the rule is a pure
+  function of the two versions, so every replica that sees the same pair picks the same
+  winner with no coordination. The losing version is discarded — not kept, not returned
+  on reads, not resolvable later. The cost, stated plainly in the book: **an acknowledged
+  write can be lost to a concurrent write under partition; the system guarantees
+  convergence and a record of the loss, not preservation.**
+- **The discard is on the record.** Every LWW discard is counted (a runtime counter per
+  node) and logged (key, losing version, winning version), and recorded in the chunk's
+  work notes as a measured number. The counter and log are local observations, not part
+  of the replicated state.
+- **Version vectors** detect concurrency; they do not pick winners. Each replica is an
+  actor; a write increments the writing node's counter in a vector that starts from the
+  version the writer's node held. They tell an ordinary overwrite (the winner's writer
+  had seen the loser) from an LWW discard (it had not). Hazard recorded for the
+  adversarial pass: an actor that loses its disk and reuses its ID would reissue old
+  counters and make a discard look like an overwrite, so the actor ID carries a durable
+  epoch that a wiped node cannot reuse (it takes a fresh one on rejoin).
+- **Clock and causality agree.** A write takes an HLC stamp strictly above the version it
+  replaces, so a write that saw a version always beats it under last-writer-wins. "Last"
+  means highest HLC `(wall, counter, node ID)`, not last in real time; with skewed clocks
+  a later concurrent write can lose. The simulator's clock skew makes this visible and
+  the book states it.
 - **ETag and version ID.** A version ID is derived from the writing actor, its counter and
-  the content hash. A record's ETag is a hash over its sorted sibling version IDs, so it is
-  the same on every node holding the same siblings, and a single-version record's ETag
-  changes exactly when the version does.
-- **Last-writer-wins only for scalar fields.** Small single-valued fields where a sibling
-  set would be noise (the bucket routing pointer, content type) take the highest hybrid
-  logical clock `(wall, counter, node ID)`. "Last" means highest HLC, not last in real
-  time; with skewed clocks a later write can lose. The simulator's clock skew makes this
-  visible and the book states it.
+  the content hash. A record's ETag is a function of its one version, so it is the same
+  on every node holding that version and changes exactly when the version does.
 - **Quota counters** are OCC-checked: usage is updated by read, compute, write-`If-Match`,
   with bounded retry on `ErrPreconditionFailed`. Regions can still overshoot a quota while
-  partitioned (each side checks against what it can see); after heal the two usage
-  versions are siblings and the node recomputes usage from the manifests it now holds and
-  writes the resolution. Stated as a trade-off, measured by an adversarial test.
+  partitioned (each side checks against what it can see); after heal last-writer-wins
+  keeps one side's usage figure, the discard triggers a recount from the manifests the
+  node now holds, and the recount writes only if the stored figure is wrong. Stated as a
+  trade-off, measured by an adversarial test.
 - **Replication:** each period a node sends a digest of its metadata state to a random live
-  peer and exchanges full state on mismatch (push-pull), merging with the sibling-keeping
+  peer and exchanges full state on mismatch (push-pull), merging with the last-writer-wins
   merge. SWIM's piggyback channel is too small for metadata state, so "disseminated over
   gossip" is implemented as this epidemic exchange using gossip's membership for peer
-  choice. The merge is still a join (commutative, associative, idempotent), which is what
-  makes any-order, duplicated delivery converge.
+  choice. The merge is a join — a maximum under a total order (commutative, associative,
+  idempotent) — which is what makes any-order, duplicated delivery converge.
 - **Tombstones.** A delete is a version carrying a tombstone; it obeys the same
-  preconditions and can be a sibling of a concurrent write (the write is not lost).
-  Tombstones are kept for a retention period, then collected.
+  preconditions and competes under last-writer-wins like any write (a delete can discard
+  a concurrent put and the reverse; either way the discard is recorded). Tombstones are
+  kept for a retention period, then collected.
 
 ### 7.6 Property testing, fuzz budget, Docker, Go version (as ruled)
 
@@ -1294,7 +1324,22 @@ counters become OCC-checked updates. E8's guarantee is restated as "no silent lo
 conflicts surface as siblings". The book's CRDT chapter becomes the OCC chapter, and the
 C4 component diagram for `internal/crdt` is redrawn as the OCC component when Chunk 4
 lands. Package name chosen: `internal/occ`. Folded into 1, 2.2, 2.3, 2.6, 2.7, 3, 4, 7.2
-and 7.5 of this plan.
+and 7.5 of this plan. *The sibling sentences of this amendment are superseded by the LWW
+ruling below.*
+
+**LWW ruling (Nick, 2026-11-21 16:14 CT; amends the OCC amendment for Chunk 4 and
+everything downstream).** Concurrent versions are NOT preserved as siblings. When two
+concurrent versions of the same object or metadata meet, last-writer-wins decides
+deterministically — hybrid logical clock stamp, node ID as tie-break, a pure function of
+the two versions — the losing version is discarded, and every discard is counted and
+logged. Conditional writes (ETags, `If-Match` / `If-None-Match`, version IDs,
+check-and-set) are unchanged. E8 is restated: "no split-brain — after healing, all
+replicas converge to the same single version of every object; every discarded concurrent
+write is counted and logged." Chunk 4's merge law becomes: merge is commutative,
+associative and idempotent, its result is the single LWW winner, and replicas holding the
+same version sets are byte-identical. No reader-facing text describes siblings as the
+design; the OCC chapter explains why siblings were rejected. Folded into 1, 2.2, 2.3,
+2.6, 2.7, 3, 4.1, 4.2 (Chunks 4 and 6), 7.2 and 7.5.
 
 **Other rulings applied with the sign-off.** The book ruling (2026-11-20): each chunk's
 Neon prose stage produces a book chapter draft, Chunk 8 assembles the book, Pages presents

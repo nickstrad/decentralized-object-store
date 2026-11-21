@@ -3,15 +3,20 @@
 Goal: build Nick's "Decentralized Object Store & Local-First Sync Engine"
 (spec: docs/project-source.md) — a leaderless, multi-region object store in
 Go (SWIM gossip, Reed-Solomon erasure coding, Merkle-tree anti-entropy,
-optimistic concurrency control for metadata, Sagas), designed testing-first.
+optimistic concurrency control for metadata with last-writer-wins resolution, Sagas),
+designed testing-first.
 Plan: [PLAN.md](PLAN.md) — signed off by Nick 2026-11-21; his rulings are in
 PLAN.md section 9.1 and override the spec where they differ (notably: OCC
-replaces the CRDT layer; Docker is the one environment; the book is the
+replaces the CRDT layer; SIBLINGS ARE OUT — concurrent versions settle by
+last-writer-wins on the hybrid logical clock, every discard counted and logged
+(LWW ruling, 2026-11-21 16:14 CT, /root/briefs/objstore-lww-ruling-2026-11-21.md,
+folded into PLAN 9.1, 7.5 and Chunk 4); Docker is the one environment; the book is the
 learning artifact; C4 diagrams are kept current).
 
 Status: PHASE 2 (BUILD) RUNNING since 2026-11-21. LANDED: Step 0, Chunk 0a (foundation
 tooling, 8205edf + c5117c5), Chunk 0b (simulator, ceb5438, tag `freeze-0b`, book chapter 1
-live). Wave B is building: Chunks 1, 2 and 4 (Opus), then 3 and 5 as slots free.
+live). Wave B in flight: Chunks 1, 3, 5 building (Opus); Chunks 2 and 4 reviewed FAIL and
+waiting for their one repair round; the LWW ruling is in PLAN.md and in Chunk 4's repair brief.
 
 Seats (this project only): Fable orchestrates, gates and lands; Opus writes
 product Go (logic only, no comments), fresh agent and worktree per chunk, at
@@ -27,24 +32,27 @@ arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.
 | Step 0 | Sign-off rulings applied to PLAN.md | LANDED |
 | 0a | Foundation: go.mod, Docker environment, gate scripts and canaries, detlint, orchestration scripts, vendored kb, book site on Pages, CI | LANDED 8205edf (arbitration PASS; 50/50 canaries; adversarial 99 held / 9 narrowed); follow-up c5117c5 (SQLite header in the image so `kb-sync.sh index` works). CI green, site serving the new front page |
 | 0b | Deterministic simulator (internal/env, internal/sim, simtest, cmd/objsim) | LANDED ceb5438, tag `freeze-0b` (API frozen). Reviews FAIL → NITS → NITS closed; adversarial 58 of 60 hold, 1 narrowed, 1 repaired-but-scored-broken; chapter 1 live at book/deterministic-simulation.html; C4 marks sim + env as built |
-| 1 | SWIM gossip membership (internal/gossip) | Opus build running (`01-gossip-build`, worktree `01-gossip`) |
-| 2 | Reed-Solomon erasure coding and chunk store (internal/erasure, internal/storage) | Opus build running (`02-erasure-build`, worktree `02-erasure`) |
-| 3 | Merkle anti-entropy (internal/merkle) | not started; brief ready, waits for a builder slot (cap 3) |
-| 4 | Optimistic concurrency control for metadata (internal/occ) | Opus build running (`04-occ-build`, worktree `04-occ`) |
-| 5 | Saga engine and bucket migration (internal/saga) | not started; brief ready, waits for a builder slot (cap 3) |
+| 1 | SWIM gossip membership (internal/gossip) | Opus build running (`01-gossip-build`, worktree `01-gossip`; it is on its own gate runs) |
+| 2 | Reed-Solomon erasure coding and chunk store (internal/erasure, internal/storage) | Built; orchestrator gate green; Neon REVIEW-1 FAIL (4 majors, 4 nits); Astra adversarial written and run by Astra (41 held, 1 broken; harness still UNCOMMITTED in the worktree under agent_work/adversarial/02-erasure/). NEXT: commit the harness, add the broken attack to the repair brief (`agent_work/02-erasure/objstore-p2-02-erasure-repair1.md`), dispatch `02-erasure-repair1` when a builder slot frees |
+| 3 | Merkle anti-entropy (internal/merkle) | Opus build running (`03-merkle-build`, worktree `03-merkle`; on its gate runs) |
+| 4 | Optimistic concurrency control for metadata (internal/occ) | Built WITH SIBLINGS (now ruled out); Neon REVIEW-1 FAIL (3 majors, 3 nits). The one repair round carries the LWW rework plus the findings: brief /root/briefs/objstore-p2-04-occ-repair1.md (copied to agent_work/04-occ/). NEXT: dispatch `04-occ-repair1` (Opus) when a builder slot frees — it goes FIRST. Astra's first adversarial run was refused by the provider's content filter (exit 1, nothing usable); adversarial is re-briefed AFTER the repair, against the LWW design, in plain testing vocabulary |
+| 5 | Saga engine and bucket migration (internal/saga) | Opus build running (`05-saga-build`, worktree `05-saga`) |
 | 6 | Integration: node, real runtime, HTTP object API, cmd/objnode | not started (needs 1–5) |
 | 7 | E2E suite, nemesis cycles, fuzz hardening | not started |
 | 8 | Publishing finish: the assembled book | not started |
 
 ## In progress
 
-- Wave B builds (Opus, headless, dispatched 2026-11-21 after the freeze): `01-gossip-build`,
-  `02-erasure-build`, `04-occ-build`; briefs /root/briefs/objstore-p2-<slug>-build.md (also
-  copied into each worktree's agent_work/<slug>/). Briefs for 03-merkle and 05-saga are
-  written (same folder; generator agent_work/orch/mkbriefs.py) and are dispatched as slots
-  free: `git worktree add -b chunk/<slug> ../decentralized-object-store-work/<slug> main`,
-  copy the brief and /root/briefs/objstore-p2-builder-rules.md into agent_work/<slug>/,
-  commit, `agent_work/orch/launch.sh <slug>-build opus . <brief>`.
+- Wave B (dispatched 2026-11-21 after the freeze). Alive now: `01-gossip-build`,
+  `03-merkle-build`, `05-saga-build` (cap 3 — repairs count as builders). Queue for the
+  next free slots, in order: `04-occ-repair1`, then `02-erasure-repair1`. Build briefs
+  /root/briefs/objstore-p2-<slug>-build.md (copied into each worktree's agent_work/<slug>/);
+  stage briefs come from agent_work/orch/mkstage.py. Launch form:
+  `agent_work/orch/launch.sh <slug>-<stage> <seat> <worktree> <brief>`.
+- LWW ruling follow-ups still open: README.md and docs/index.md say "siblings" (Neon
+  corrects them — a small prose commit ahead of Chunk 4's landing); mkstage.py's paper list
+  for 04-occ and the chapter brief must present siblings as the road not taken; Chunk 6's
+  brief must use the LWW wording (PLAN 4.2 Chunk 6 is already amended).
 - Per chunk when its build exits 0 (see the 0b history in agent_work/0b-simulator/ for
   worked examples of every brief): rebase on main if main moved; orchestrator gate
   (`agent_work/gates/gate.sh <slug>`); Neon review (probe first); one Opus repair if
@@ -70,7 +78,7 @@ arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.
 
 ## Next steps, in order
 
-1. Wave B: finish and land chunks 1, 2, 4; dispatch 3 and 5 as builder slots free (cap 3).
+1. Wave B: finish and land chunks 1–5 (pipeline per chunk below); repairs for 4 then 2 as slots free.
 2. Chunks 6, 7, 8 in sequence.
 
 ## Open decisions / blockers
@@ -94,7 +102,7 @@ arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.
   /root/runs/objstore-p2-*. Progress log: /root/runs/objstore-phase2-progress.txt.
   Done marker (only at completion or cutoff): /root/runs/objstore-phase2-done.txt.
 - Worktrees: /root/Software/decentralized-object-store-work/NN-<slug>, branch
-  chunk/NN-<slug>. Live: 01-gossip, 02-erasure, 04-occ. Orchestration scripts: agent_work/orch/ (launch.sh,
+  chunk/NN-<slug>. Live: 01-gossip, 02-erasure, 03-merkle, 04-occ, 05-saga. Orchestration scripts: agent_work/orch/ (launch.sh,
   wait.sh, land.sh, seat-probe.sh). A second Neon FAIL goes to Astra arbitration; land.sh
   takes the newest ARBITRATION-N.md as the verdict when one exists. A NITS review needs a
   `NITS CLOSED` line appended by the orchestrator once each nit is closed.
@@ -106,7 +114,7 @@ arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.
   chapters as they are published (chapter 1 so far).
 - C4 set: docs/c4/ (c4-sdk bundle model.json, nine diagram files). The simulator and internal/env are marked built (status `existing`). The
   07-component-crdt diagram still shows the pre-amendment CRDT design and is
-  redrawn as the OCC component when Chunk 4 lands; other diagrams move from
+  redrawn as the OCC component (last-writer-wins, no sibling component) when Chunk 4 lands; other diagrams move from
   TARGET to as-built as their chunks land.
 - Neon routes: direct (google/gemini-4-neon via opencode) is primary;
   OpenRouter fallback is out of credits until 2026-12-01. Probe with
