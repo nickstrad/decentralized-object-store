@@ -389,7 +389,7 @@ Individual commands while building:
 - `go test -cover ./internal/gossip` → ok, 97.5%.
 - `DST_SEEDS=500` package run → PASS (numbers above).
 
-## Uncovered branches (97.5% before the repair; see the repair list below for now)
+## Uncovered branches (97.5% before the repair; repair-round list below)
 
 All are defensive and unreachable through the public API, or reachable only in ways the
 simulator does not produce:
@@ -408,7 +408,7 @@ simulator does not produce:
   error: only for a view of more than 65,535 members (the u16 count); messages built by the
   node are otherwise always valid.
 
-Repair round, 97.3% (`go test -cover`): the uncovered statements are `refute` while closed,
+Repair round, 97.4% (gate G1): the uncovered statements are `refute` while closed,
 `apply` with an empty ID or invalid state (`Decode` rejects both), the suspicion timer firing
 closed or stale, `nextTarget`'s final return, `onTick`/`onSync` while closed, `piggyback`'s
 lead-does-not-fit and comparator `return 0`, the `sendWith` encode error, the `syncWith`
@@ -449,9 +449,10 @@ None. No line added to `agent_work/gates/panic-allowlist.txt`.
 
 - Code table rows: gossip registers `CodeAppMin+16..+20` (80–84), inside its block 80–95
   (pinned by `TestRepairNits`).
-- The 500-seed sweep of this package takes about 8–11 minutes on the shared droplet; the
-  N=100 convergence sweep is the critical path. If the gate's G5 budget gets tight when all
-  Wave B packages land, the N=100 case is the one to move to a separate nightly sweep.
+- The 500-seed sweep of this package now takes about 6–8 minutes on the shared droplet
+  (352 s at load 6–8, 484 s in the gate; it was 8–12 minutes). It is CPU-bound: the N=100
+  convergence seeds run in four parallel shards. If G5 gets tight when all Wave B packages
+  land, the N=100 case is still the one to move to a separate nightly sweep.
 - No simulator change request. No detlint exemption needed.
 
 ## Repair round (review REVIEW-1 FAIL + adversarial run, one repair)
@@ -516,6 +517,48 @@ Two changes, neither touching coverage (same seeds, same assertions):
    Wall time 352 s at load 6–8.
 Default-seed `go test ./internal/gossip`: 14–15 s (it was 6–10 s; the 65,535-member view test
 and the 8,200-cycle tombstone-backlog test add about 2 s, the new DSTs the rest).
+
+### Gate and adversarial run (repair round)
+
+`agent_work/gates/gate.sh 01-gossip` from the host on `02be72f` (image
+`sha256:6b0fb0bbeb63…`, go1.26.11, rapid/DST seed 3016995830548):
+
+```
+G0  tools/gofmt/vet/build/detlint/panics/deps/comments/selfcontained  pass
+G1  unit           pass   13s   COVERAGE internal/gossip: 97.4%, internal/sim: 95.4%
+G2  property       pass   95s   rapid 2000 checks
+G3  fuzz           pass  101s   FuzzGossipWire, FuzzViewMergeLaws, FuzzSimSchedule, 30 s each
+G4  race           pass   75s
+G5  dst            pass  486s   500 seeds (gossip package 484.1 s, was 738.6 s)
+G6  docker         pass
+gate: overall=pass counts_for_landing=true
+```
+
+A first gate run on the same commit also passed every stage (G5 428 s) but reported
+`counts_for_landing=false` (`dirty_tree`): a `gossip.test` binary left at the repo root by a
+`go test -cpuprofile` profiling run. Removed; the run above is the counting one. Commits after
+`02be72f` change only this notes file.
+
+`agent_work/adversarial/01-gossip/run-all.sh` (harness not edited), on `02be72f`:
+
+`SUMMARY held=72 broken=1 setup_errors=0 elapsed_seconds=42` (was held=69 broken=4).
+
+- Now HELD: C4 `retention-monotonicity` ("incarnation stayed monotonic across purge"), C23
+  `stale-replay-after-purge` ("dead verdict survives stale replay after purge"), C19
+  `partition-heal-retained-false` (4 seeds re-merged within 120 s), C19
+  `default-retention-long-partition` ("default-retention partition healed"); the seed control
+  heals in 2.75 s (was 1.75 s); C21 wipe-after-5m30s still holds through the tombstone path.
+- Still BROKEN: C7 `relay-once-original-sequence` — **repaired, the driver expects the old
+  behaviour.** The driver relays a ping-req to `Target: "target"`, an ID that is not a
+  simulator node, so `env.Transport.Send` fails synchronously with `env.ErrUnreachable`; it
+  then expects the ack for that never-sent ping to be forwarded. Review finding 2 asked for
+  exactly the opposite ("no relay kept for a ping that was not sent"), pinned by
+  `TestRelayBounds/a relay whose ping could not be sent is not kept`. The forwarding rule the
+  attack meant to check (forward once, with the requester's sequence number) still holds and is
+  pinned by `TestProbeAndIndirectProbe/a ping-req is relayed and the target's ack forwarded…`
+  (which relays to a reachable member).
+- The run rewrites `agent_work/adversarial/01-gossip/evidence/`; those files were restored to
+  the adversary's committed record, and this section is the record of the repair-round run.
 
 ### API changes
 
