@@ -19,7 +19,7 @@ C = {
     papers="Merkle (1987) on tree signatures; the Dynamo paper (DeCandia et al.) on anti-entropy with Merkle trees; Cassandra and Riak repair write-ups; RFC 6962 on leaf/inner domain separation"),
  "04-occ":     dict(num=4, pkg="internal/occ", pkgs="`internal/occ`", plan="Chunk 4", name="optimistic concurrency control for metadata",
     chap="05-optimistic-concurrency-control", title="Optimistic Concurrency Control", c4="docs/c4/07-component-crdt.md (to be redrawn as the OCC component)",
-    papers="Kung and Robinson (1981) on optimistic concurrency control; Parker et al. on version vectors; the Dynamo paper on siblings; Kulkarni et al. on hybrid logical clocks; RFC 9110 on ETags and conditional requests; Shapiro et al. on CRDTs as the road not taken"),
+    papers="Kung and Robinson (1981) on optimistic concurrency control; Parker et al. on version vectors; Kulkarni et al. on hybrid logical clocks; RFC 9110 on ETags and conditional requests; the Dynamo paper on siblings and Shapiro et al. on CRDTs as the two roads NOT taken (the design is last-writer-wins with every discard counted and logged — no chapter may describe siblings as the design); Kleppmann on the lost-update cost of last-writer-wins"),
  "05-saga":    dict(num=5, pkg="internal/saga", pkgs="`internal/saga`", plan="Chunk 5", name="the Saga engine and bucket migration",
     chap="06-sagas", title="Sagas", c4="docs/c4/08-component-saga.md",
     papers="Garcia-Molina and Salem (1987), Sagas; Gray on compensating transactions; Helland, Life Beyond Distributed Transactions; write-ups on idempotency keys and durable workflow engines"),
