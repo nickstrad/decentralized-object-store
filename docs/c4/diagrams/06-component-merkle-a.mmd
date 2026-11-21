@@ -1,0 +1,6 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  WORKER[Anti-entropy worker] -->|1| DIFF[Diff protocol]
+  DIFF -->|2| TREE[Tree builder]
+  WORKER -->|3| REPAIRER[Repairer interface]
+  WORKER -->|7| ENV[internal/env]

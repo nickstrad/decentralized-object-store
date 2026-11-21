@@ -1,0 +1,6 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  MERKLE[Merkle anti-entropy] -->|11| STORAGE[Storage engine]
+  STORAGE -->|8| ERASURE[Erasure coding]
+  STORAGE -->|9| GOSSIP[Gossip membership]
+  STORAGE -->|10| CRDT[CRDT metadata]

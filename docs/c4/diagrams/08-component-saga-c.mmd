@@ -1,0 +1,6 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  RECOVERY[Recovery] -->|4| LOG[Saga log]
+  LOG -->|7| ENV[internal/env]
+  RECOVERY -->|5| ORCH[Orchestrator]
+  ORCH -->|8| ENV

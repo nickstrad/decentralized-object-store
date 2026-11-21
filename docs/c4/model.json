@@ -1,0 +1,3765 @@
+{
+  "schemaVersion": 1,
+  "id": "objstore",
+  "title": "Decentralized Object Store & Sync Engine — TARGET architecture (designed 2026-11-21, awaiting Nick's buy-in)",
+  "revision": "target-2026-11-21",
+  "defaultDiagramId": "context",
+  "model": {
+    "elements": [
+      {
+        "id": "api-client",
+        "kind": "person",
+        "name": "Object API client",
+        "description": "S3-style API consumer. Puts, gets, heads, deletes and lists objects through any node.",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "sync-client",
+        "kind": "person",
+        "name": "Sync client",
+        "description": "Client replica that edits a CRDT metadata document offline and syncs it.",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [
+          "Proposed in PLAN.md OQ-7; not decided."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "operator",
+        "kind": "person",
+        "name": "Operator",
+        "description": "Runs objnode processes, starts bucket migrations, reads membership and health.",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "developer",
+        "kind": "person",
+        "name": "Developer or reader",
+        "description": "Runs simulation scenarios and replays a failing seed with the printed command.",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "store",
+        "kind": "softwareSystem",
+        "name": "Decentralized Object Store & Sync Engine",
+        "description": "Leaderless, multi-region object store with a local-first metadata sync layer. A cluster of objnode peers; every node accepts reads and writes.",
+        "status": "planned",
+        "technology": "Go, standard library only",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "peers",
+        "kind": "softwareSystem",
+        "name": "Peer objnode nodes",
+        "description": "Other instances of the same system, in the same region and in other regions, as seen from one node.",
+        "status": "planned",
+        "tags": [
+          "external"
+        ],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "dst",
+        "kind": "softwareSystem",
+        "name": "DST harness",
+        "description": "Deterministic simulation harness (internal/sim, internal/sim/simtest, cmd/objsim). Test system: a single-threaded discrete-event loop with virtual clock, seeded PRNG streams, fault-injecting network and disk, and nemesis.",
+        "status": "planned",
+        "technology": "Go test code",
+        "tags": [
+          "external",
+          "test"
+        ],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "c-objnode",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "cmd/objnode",
+        "description": "CLI entry point for a storage and sync peer. Runs a node from flags or a config file.",
+        "technology": "Go CLI",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "c-node",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Node runtime (internal/node)",
+        "description": "Wires all primitives into one node and supplies the real runtime: UDP transport, TCP request/response transport, file-backed disk, wall clock, the node loop.",
+        "technology": "Go; UDP, TCP length-prefixed frames, files",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "c-api",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Object API (internal/storage)",
+        "description": "HTTP object API: put, get, head, delete, list, bucket create, tags and ACL, quota, metadata, migration start and status, membership and health; metadata sync endpoint.",
+        "technology": "Go, HTTP, S3-like path-style",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [
+          "API surface is PLAN.md OQ-6; metadata sync endpoint is OQ-7."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "c-storage",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Storage engine (internal/storage)",
+        "description": "Local chunk store, shard placement, object put and get paths.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "c-erasure",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Erasure coding (internal/erasure)",
+        "description": "GF(2^8) arithmetic and the Reed-Solomon encoder and decoder.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "c-gossip",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Gossip membership (internal/gossip)",
+        "description": "SWIM membership: probe, indirect probe, suspicion state machine, piggybacked dissemination.",
+        "technology": "Go, sans-IO state machine",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "c-merkle",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Merkle anti-entropy (internal/merkle)",
+        "description": "Merkle tree builder, diff protocol, anti-entropy repair worker.",
+        "technology": "Go, sans-IO state machine",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "c-crdt",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "CRDT metadata (internal/crdt)",
+        "description": "State-based CRDTs, hybrid logical clock, replication of CRDT state.",
+        "technology": "Go, sans-IO state machine",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "c-saga",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Saga engine (internal/saga)",
+        "description": "Durable Saga orchestrator, log, recovery; the bucket-migration workflow definition.",
+        "technology": "Go, sans-IO state machine",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "c-env",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Environment interfaces (internal/env)",
+        "description": "The four interfaces protocol code sees: Clock, Rand, Transport, Disk; shared sentinels.",
+        "technology": "Go interfaces",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "c-disk",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "datastore",
+        "name": "Node disk",
+        "description": "Named blobs on the node's own disk: shard files and the Saga log.",
+        "technology": "Files: temp file, fsync, rename",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "g-join",
+        "kind": "component",
+        "parentId": "c-gossip",
+        "name": "Join and leave",
+        "description": "Join through seed nodes; clean leave.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "g-probe",
+        "kind": "component",
+        "parentId": "c-gossip",
+        "name": "Probe",
+        "description": "Per-period randomized probe of one member in shuffled round-robin order.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "g-indirect",
+        "kind": "component",
+        "parentId": "c-gossip",
+        "name": "Indirect probe",
+        "description": "Indirect probe through k others on timeout.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "g-suspicion",
+        "kind": "component",
+        "parentId": "c-gossip",
+        "name": "Suspicion state machine",
+        "description": "Alive, suspect, dead; suspicion timeout scaled by log N; incarnation numbers for refutation.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "g-dissem",
+        "kind": "component",
+        "parentId": "c-gossip",
+        "name": "Piggybacked dissemination",
+        "description": "Piggybacked dissemination with a retransmit limit of lambda times log N.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "g-sync",
+        "kind": "component",
+        "parentId": "c-gossip",
+        "name": "Full-state sync",
+        "description": "Periodic full-state sync with one random peer, including previously dead and seed addresses.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "g-view",
+        "kind": "component",
+        "parentId": "c-gossip",
+        "name": "Membership view and change events",
+        "description": "The Membership view and change events that the package exposes.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "e-gf",
+        "kind": "component",
+        "parentId": "c-erasure",
+        "name": "GF(2^8) arithmetic",
+        "description": "Field GF(2^8), polynomial 0x11D, generator 2, exp/log tables.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "e-matrix",
+        "kind": "component",
+        "parentId": "c-erasure",
+        "name": "Matrix inversion",
+        "description": "Matrix inversion over GF(2^8).",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "e-cauchy",
+        "kind": "component",
+        "parentId": "c-erasure",
+        "name": "Systematic Cauchy coding matrix",
+        "description": "Coding matrix [I | C] with C a Cauchy matrix; k + m at most 256.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "e-encode",
+        "kind": "component",
+        "parentId": "c-erasure",
+        "name": "Encode",
+        "description": "Encodes a stripe into k data and m parity shards.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "e-reconstruct",
+        "kind": "component",
+        "parentId": "c-erasure",
+        "name": "Reconstruct",
+        "description": "Rebuilds a stripe from any k shards; more than m losses returns ErrTooFewShards.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "e-verify",
+        "kind": "component",
+        "parentId": "c-erasure",
+        "name": "Verify",
+        "description": "The Verify operation of the erasure package.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "m-tree",
+        "kind": "component",
+        "parentId": "c-merkle",
+        "name": "Tree builder",
+        "description": "SHA-256 hash tree over a key-to-hash map; fixed-fanout trie on the hash of the key; incremental update.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "m-diff",
+        "kind": "component",
+        "parentId": "c-merkle",
+        "name": "Diff protocol",
+        "description": "Exchanges roots and descends only mismatched branches, one level per round trip.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "m-worker",
+        "kind": "component",
+        "parentId": "c-merkle",
+        "name": "Anti-entropy worker",
+        "description": "Picks a peer each period, diffs, and repairs through the Repairer interface.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "m-repairer",
+        "kind": "component",
+        "parentId": "c-merkle",
+        "name": "Repairer interface",
+        "description": "Interface the merkle package declares; repairs go through it.",
+        "technology": "Go interface",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "x-pn",
+        "kind": "component",
+        "parentId": "c-crdt",
+        "name": "PN-Counter",
+        "description": "Storage quotas.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "x-orset",
+        "kind": "component",
+        "parentId": "c-crdt",
+        "name": "OR-Set",
+        "description": "Bucket tags, ACL memberships. Classic form: unique add-tags plus a tombstone set.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [
+          "Variant is PLAN.md OQ-12."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "x-lwwreg",
+        "kind": "component",
+        "parentId": "c-crdt",
+        "name": "LWW-Register",
+        "description": "Object metadata, routing pointers, object manifests.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "x-lwwset",
+        "kind": "component",
+        "parentId": "c-crdt",
+        "name": "LWW-Element-Set",
+        "description": "The fourth CRDT type in the spec's structure list.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "x-hlc",
+        "kind": "component",
+        "parentId": "c-crdt",
+        "name": "Hybrid logical clock",
+        "description": "LWW timestamps (wall, counter, node ID) with node-ID tie-break.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "x-enc",
+        "kind": "component",
+        "parentId": "c-crdt",
+        "name": "Canonical encoding",
+        "description": "Encoding in which equal states are equal bytes.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "x-doc",
+        "kind": "component",
+        "parentId": "c-crdt",
+        "name": "Typed metadata document",
+        "description": "A typed metadata document composed of the CRDT types.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "x-repl",
+        "kind": "component",
+        "parentId": "c-crdt",
+        "name": "Replicator",
+        "description": "Exchanges state with random peers from a Membership interface: digest first, state on mismatch.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "s-orch",
+        "kind": "component",
+        "parentId": "c-saga",
+        "name": "Orchestrator",
+        "description": "Durable orchestrator: bounded retry with clock-driven backoff; compensations in reverse order, retried until they succeed; idempotency keys (saga ID + step).",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "s-log",
+        "kind": "component",
+        "parentId": "c-saga",
+        "name": "Saga log",
+        "description": "Append-only, checksummed log on env.Disk.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "s-recovery",
+        "kind": "component",
+        "parentId": "c-saga",
+        "name": "Recovery",
+        "description": "Resumes or compensates from any log prefix.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "s-workflow",
+        "kind": "component",
+        "parentId": "c-saga",
+        "name": "Bucket-migration workflow",
+        "description": "Allocate target, copy shards, verify Merkle root, flip routing pointer (the pivot), delete source.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "s-steps",
+        "kind": "component",
+        "parentId": "c-saga",
+        "name": "Step interfaces",
+        "description": "Small step interfaces the workflow is defined against; bound to the real components in Chunk 6.",
+        "technology": "Go interfaces",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "t-format",
+        "kind": "component",
+        "parentId": "c-storage",
+        "name": "Shard file format",
+        "description": "64-byte header plus payload, with per-shard SHA-256.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "t-chunk",
+        "kind": "component",
+        "parentId": "c-storage",
+        "name": "Local chunk store",
+        "description": "Chunk store over env.Disk: atomic write, verified read, list, delete.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "t-stripe",
+        "kind": "component",
+        "parentId": "c-storage",
+        "name": "Object striping",
+        "description": "Fixed-size stripes of 1 MiB of data so multi-MB objects stream.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "t-manifest",
+        "kind": "component",
+        "parentId": "c-storage",
+        "name": "Object manifest",
+        "description": "Per object version: size, content SHA-256, k, m, stripe count, per-shard checksums, node chosen for each shard.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "t-place",
+        "kind": "component",
+        "parentId": "c-storage",
+        "name": "Placement",
+        "description": "Region-aware placement by rendezvous hashing over a Membership interface.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "t-paths",
+        "kind": "component",
+        "parentId": "c-storage",
+        "name": "Object put and get paths",
+        "description": "PUT succeeds at k+1 durable shard acknowledgements plus a local manifest; GET reads any k verified shards; delete writes a tombstone manifest.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [],
+        "plannedNotes": [
+          "Default k=4, m=2 and the k+1 write threshold are PLAN.md OQ-15."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "n-env",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Environment interfaces (internal/env)",
+        "description": "The same package as element c-env, shown as a neighbour in the component views of other packages. The four interfaces protocol code sees: Clock, Rand, Transport, Disk; shared sentinels.",
+        "technology": "Go interfaces",
+        "status": "planned",
+        "tags": [
+          "external",
+          "neighbour"
+        ],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "n-storage",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Storage engine (internal/storage)",
+        "description": "The same package as element c-storage, shown as a neighbour in the component views of other packages. Local chunk store, shard placement, object put and get paths.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [
+          "external",
+          "neighbour"
+        ],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "n-crdt",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "CRDT metadata (internal/crdt)",
+        "description": "The same package as element c-crdt, shown as a neighbour in the component views of other packages. State-based CRDTs, hybrid logical clock, replication of CRDT state.",
+        "technology": "Go, sans-IO state machine",
+        "status": "planned",
+        "tags": [
+          "external",
+          "neighbour"
+        ],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "n-saga",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Saga engine (internal/saga)",
+        "description": "The same package as element c-saga, shown as a neighbour in the component views of other packages. Durable Saga orchestrator, log, recovery; the bucket-migration workflow definition.",
+        "technology": "Go, sans-IO state machine",
+        "status": "planned",
+        "tags": [
+          "external",
+          "neighbour"
+        ],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "n-gossip",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Gossip membership (internal/gossip)",
+        "description": "The same package as element c-gossip, shown as a neighbour in the component views of other packages. SWIM membership: probe, indirect probe, suspicion state machine, piggybacked dissemination.",
+        "technology": "Go, sans-IO state machine",
+        "status": "planned",
+        "tags": [
+          "external",
+          "neighbour"
+        ],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "n-api",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Object API (internal/storage)",
+        "description": "The same package as element c-api, shown as a neighbour in the component views of other packages. HTTP object API: put, get, head, delete, list, bucket create, tags and ACL, quota, metadata, migration start and status, membership and health; metadata sync endpoint.",
+        "technology": "Go, HTTP, S3-like path-style",
+        "status": "planned",
+        "tags": [
+          "external",
+          "neighbour"
+        ],
+        "plannedNotes": [
+          "API surface is PLAN.md OQ-6; metadata sync endpoint is OQ-7."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "n-merkle",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Merkle anti-entropy (internal/merkle)",
+        "description": "The same package as element c-merkle, shown as a neighbour in the component views of other packages. Merkle tree builder, diff protocol, anti-entropy repair worker.",
+        "technology": "Go, sans-IO state machine",
+        "status": "planned",
+        "tags": [
+          "external",
+          "neighbour"
+        ],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "n-erasure",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Erasure coding (internal/erasure)",
+        "description": "The same package as element c-erasure, shown as a neighbour in the component views of other packages. GF(2^8) arithmetic and the Reed-Solomon encoder and decoder.",
+        "technology": "Go",
+        "status": "planned",
+        "tags": [
+          "external",
+          "neighbour"
+        ],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      }
+    ],
+    "relationships": [
+      {
+        "id": "r-client-store",
+        "sourceId": "api-client",
+        "targetId": "store",
+        "label": "Puts, gets, heads, deletes and lists objects; manages buckets, tags, ACL, quota and metadata",
+        "technology": "HTTP, S3-like path-style",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "r-sync-store",
+        "sourceId": "sync-client",
+        "targetId": "store",
+        "label": "Edits metadata offline, then syncs CRDT state",
+        "technology": "HTTP /v1/sync",
+        "status": "planned",
+        "plannedNotes": [
+          "Proposed in PLAN.md OQ-7; not decided."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "r-operator-store",
+        "sourceId": "operator",
+        "targetId": "store",
+        "label": "Runs nodes; starts and checks bucket migrations; reads membership and health",
+        "technology": "CLI flags or config file; HTTP",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "r-store-peers",
+        "sourceId": "store",
+        "targetId": "peers",
+        "label": "Gossips membership; sends and fetches shards; diffs Merkle trees; exchanges CRDT state; runs migration steps",
+        "technology": "UDP datagrams; TCP length-prefixed frames",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "r-dev-dst",
+        "sourceId": "developer",
+        "targetId": "dst",
+        "label": "Runs and replays scenarios from one int64 seed",
+        "technology": "go test -seed, DST_SEED, cmd/objsim",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "r-dst-store",
+        "sourceId": "dst",
+        "targetId": "store",
+        "label": "Runs the system's protocol code on 20 to 100 simulated nodes under injected faults",
+        "technology": "internal/env interfaces, in process",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "k-client-api",
+        "sourceId": "api-client",
+        "targetId": "c-api",
+        "label": "Puts, gets, heads, deletes and lists objects; manages buckets, tags, ACL, quota and metadata",
+        "technology": "HTTP, S3-like path-style",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "k-sync-api",
+        "sourceId": "sync-client",
+        "targetId": "c-api",
+        "label": "Syncs a client-side CRDT document",
+        "technology": "HTTP /v1/sync",
+        "status": "planned",
+        "plannedNotes": [
+          "Proposed in PLAN.md OQ-7; not decided."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "k-operator-api",
+        "sourceId": "operator",
+        "targetId": "c-api",
+        "label": "Starts and checks migrations; reads membership and health",
+        "technology": "HTTP",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "k-api-storage",
+        "sourceId": "c-api",
+        "targetId": "c-storage",
+        "label": "Object put, get, head, delete, list; bucket create",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-api-crdt",
+        "sourceId": "c-api",
+        "targetId": "c-crdt",
+        "label": "Tags, ACL, quota, metadata; metadata sync endpoint",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-api-saga",
+        "sourceId": "c-api",
+        "targetId": "c-saga",
+        "label": "Migration start and status",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-api-gossip",
+        "sourceId": "c-api",
+        "targetId": "c-gossip",
+        "label": "Membership and health",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-storage-erasure",
+        "sourceId": "c-storage",
+        "targetId": "c-erasure",
+        "label": "Encode, Reconstruct, Verify per stripe",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-storage-gossip",
+        "sourceId": "c-storage",
+        "targetId": "c-gossip",
+        "label": "Places shards by rendezvous hashing over the Membership view",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-storage-crdt",
+        "sourceId": "c-storage",
+        "targetId": "c-crdt",
+        "label": "Stores each object manifest as an LWW-Register value",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-merkle-storage",
+        "sourceId": "c-merkle",
+        "targetId": "c-storage",
+        "label": "Diffs manifest and shard-inventory trees; repairs through the Repairer interface",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-crdt-gossip",
+        "sourceId": "c-crdt",
+        "targetId": "c-gossip",
+        "label": "Picks replication peers from the Membership view",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-saga-storage",
+        "sourceId": "c-saga",
+        "targetId": "c-storage",
+        "label": "Migration steps: allocate target, copy shards, delete source",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-saga-merkle",
+        "sourceId": "c-saga",
+        "targetId": "c-merkle",
+        "label": "Migration step: verify Merkle root",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-saga-crdt",
+        "sourceId": "c-saga",
+        "targetId": "c-crdt",
+        "label": "Migration step: flip routing pointer (LWW-Register)",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-operator-objnode",
+        "sourceId": "operator",
+        "targetId": "c-objnode",
+        "label": "Starts a node from flags or a config file",
+        "technology": "CLI",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "k-objnode-node",
+        "sourceId": "c-objnode",
+        "targetId": "c-node",
+        "label": "Runs one node",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-node-env",
+        "sourceId": "c-node",
+        "targetId": "c-env",
+        "label": "Implements Clock, Rand, Transport, Disk for the real runtime",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-node-gossip",
+        "sourceId": "c-node",
+        "targetId": "c-gossip",
+        "label": "Wires into the node; drives from the node loop",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-node-storage",
+        "sourceId": "c-node",
+        "targetId": "c-storage",
+        "label": "Wires into the node; drives from the node loop",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-node-merkle",
+        "sourceId": "c-node",
+        "targetId": "c-merkle",
+        "label": "Wires into the node; drives from the node loop",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-node-crdt",
+        "sourceId": "c-node",
+        "targetId": "c-crdt",
+        "label": "Wires into the node; drives from the node loop",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-node-saga",
+        "sourceId": "c-node",
+        "targetId": "c-saga",
+        "label": "Wires into the node; drives from the node loop",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-node-peers",
+        "sourceId": "c-node",
+        "targetId": "peers",
+        "label": "Sends and receives datagrams and request/response frames",
+        "technology": "UDP; TCP length-prefixed frames",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "k-node-disk",
+        "sourceId": "c-node",
+        "targetId": "c-disk",
+        "label": "Reads and writes named blobs (file-backed Disk)",
+        "technology": "temp file, fsync, rename",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "k-gossip-env",
+        "sourceId": "c-gossip",
+        "targetId": "c-env",
+        "label": "Acts only through Clock, Rand, Transport, Disk",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-storage-env",
+        "sourceId": "c-storage",
+        "targetId": "c-env",
+        "label": "Acts only through Clock, Rand, Transport, Disk",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-merkle-env",
+        "sourceId": "c-merkle",
+        "targetId": "c-env",
+        "label": "Acts only through Clock, Rand, Transport, Disk",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-crdt-env",
+        "sourceId": "c-crdt",
+        "targetId": "c-env",
+        "label": "Acts only through Clock, Rand, Transport, Disk",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-saga-env",
+        "sourceId": "c-saga",
+        "targetId": "c-env",
+        "label": "Acts only through Clock, Rand, Transport, Disk",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-dst-env",
+        "sourceId": "dst",
+        "targetId": "c-env",
+        "label": "Implements Clock, Rand, Transport, Disk for every simulated node; its event loop calls the same protocol handlers",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go interface implementation"
+      },
+      {
+        "id": "g-r1",
+        "sourceId": "g-join",
+        "targetId": "g-view",
+        "label": "Joins through seed nodes; clean leave",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r2",
+        "sourceId": "g-probe",
+        "targetId": "g-view",
+        "label": "Picks one member per period, shuffled round-robin",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r3",
+        "sourceId": "g-probe",
+        "targetId": "g-indirect",
+        "label": "On timeout, probes through k others",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r4",
+        "sourceId": "g-probe",
+        "targetId": "g-suspicion",
+        "label": "Reports the probe result",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r5",
+        "sourceId": "g-indirect",
+        "targetId": "g-suspicion",
+        "label": "Reports the indirect probe result",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r6",
+        "sourceId": "g-suspicion",
+        "targetId": "g-view",
+        "label": "Sets alive, suspect or dead; incarnation numbers refute",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r7",
+        "sourceId": "g-suspicion",
+        "targetId": "g-dissem",
+        "label": "Hands over state changes to disseminate",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r8",
+        "sourceId": "g-sync",
+        "targetId": "g-view",
+        "label": "Merges full state with one random peer, including dead and seed addresses",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r9",
+        "sourceId": "g-probe",
+        "targetId": "n-env",
+        "label": "Datagrams, period timers, random order",
+        "technology": "Transport, Clock, Rand",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "g-r10",
+        "sourceId": "n-storage",
+        "targetId": "g-view",
+        "label": "Reads Membership for shard placement",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r11",
+        "sourceId": "n-crdt",
+        "targetId": "g-view",
+        "label": "Reads Membership for replication peer choice",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "e-r1",
+        "sourceId": "n-storage",
+        "targetId": "e-encode",
+        "label": "Encodes each stripe into k data and m parity shards",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "e-r2",
+        "sourceId": "n-storage",
+        "targetId": "e-reconstruct",
+        "label": "Rebuilds a stripe from any k verified shards",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "e-r3",
+        "sourceId": "n-storage",
+        "targetId": "e-verify",
+        "label": "Calls Verify",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "e-r4",
+        "sourceId": "e-encode",
+        "targetId": "e-cauchy",
+        "label": "Uses the coding matrix [I | C]",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "e-r5",
+        "sourceId": "e-reconstruct",
+        "targetId": "e-cauchy",
+        "label": "Takes the rows of the surviving shards",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "e-r6",
+        "sourceId": "e-reconstruct",
+        "targetId": "e-matrix",
+        "label": "Inverts the k-by-k submatrix",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "e-r7",
+        "sourceId": "e-verify",
+        "targetId": "e-cauchy",
+        "label": "Uses the coding matrix",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "e-r8",
+        "sourceId": "e-cauchy",
+        "targetId": "e-gf",
+        "label": "Field arithmetic",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "e-r9",
+        "sourceId": "e-matrix",
+        "targetId": "e-gf",
+        "label": "Field arithmetic",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "m-r1",
+        "sourceId": "m-worker",
+        "targetId": "m-diff",
+        "label": "Each period: picks a peer and diffs",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "m-r2",
+        "sourceId": "m-diff",
+        "targetId": "m-tree",
+        "label": "Compares roots; descends mismatched branches",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "m-r3",
+        "sourceId": "m-worker",
+        "targetId": "m-repairer",
+        "label": "Repairs the differing keys",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "m-r4",
+        "sourceId": "n-storage",
+        "targetId": "m-repairer",
+        "label": "Implements: rebuilds rotted or missing shards from any k good shards",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "m-r5",
+        "sourceId": "n-storage",
+        "targetId": "m-tree",
+        "label": "Supplies manifest and shard-inventory key-to-hash maps",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "m-r6",
+        "sourceId": "m-diff",
+        "targetId": "n-env",
+        "label": "Request/response rounds with the peer, one tree level each",
+        "technology": "Transport",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "m-r7",
+        "sourceId": "m-worker",
+        "targetId": "n-env",
+        "label": "Period timer",
+        "technology": "Clock",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "m-r8",
+        "sourceId": "n-saga",
+        "targetId": "m-diff",
+        "label": "Migration verify step: compares source and target roots",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "x-r1",
+        "sourceId": "x-doc",
+        "targetId": "x-pn",
+        "label": "Storage quotas",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "x-r2",
+        "sourceId": "x-doc",
+        "targetId": "x-orset",
+        "label": "Bucket tags, ACL memberships",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "x-r3",
+        "sourceId": "x-doc",
+        "targetId": "x-lwwreg",
+        "label": "Object metadata, routing pointers, manifests",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "x-r4",
+        "sourceId": "x-doc",
+        "targetId": "x-lwwset",
+        "label": "Composed of",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "x-r5",
+        "sourceId": "x-lwwreg",
+        "targetId": "x-hlc",
+        "label": "LWW timestamps",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "x-r6",
+        "sourceId": "x-lwwset",
+        "targetId": "x-hlc",
+        "label": "LWW timestamps",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "x-r7",
+        "sourceId": "x-doc",
+        "targetId": "x-enc",
+        "label": "Equal states encode to equal bytes",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "x-r8",
+        "sourceId": "x-repl",
+        "targetId": "x-doc",
+        "label": "Sends a digest first; merges full state on mismatch",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "x-r9",
+        "sourceId": "x-repl",
+        "targetId": "n-gossip",
+        "label": "Picks a random live peer from Membership",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "x-r10",
+        "sourceId": "x-repl",
+        "targetId": "n-env",
+        "label": "Periodic push-pull exchange with the peer",
+        "technology": "Clock, Rand, Transport",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "x-r11",
+        "sourceId": "n-api",
+        "targetId": "x-doc",
+        "label": "Tags, ACL, quota and metadata edits",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "x-r12",
+        "sourceId": "n-storage",
+        "targetId": "x-doc",
+        "label": "Object manifests",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "x-r13",
+        "sourceId": "n-saga",
+        "targetId": "x-doc",
+        "label": "Routing pointer flip",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "s-r1",
+        "sourceId": "n-api",
+        "targetId": "s-orch",
+        "label": "Migration start and status",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "s-r2",
+        "sourceId": "s-orch",
+        "targetId": "s-workflow",
+        "label": "Runs steps; bounded retry with backoff; compensates in reverse order",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "s-r3",
+        "sourceId": "s-orch",
+        "targetId": "s-log",
+        "label": "Writes and syncs intent before a step acts",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "s-r4",
+        "sourceId": "s-recovery",
+        "targetId": "s-log",
+        "label": "Reads any log prefix",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "s-r5",
+        "sourceId": "s-recovery",
+        "targetId": "s-orch",
+        "label": "Resumes or compensates",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "s-r6",
+        "sourceId": "s-workflow",
+        "targetId": "s-steps",
+        "label": "Allocate, copy, verify, flip pointer (pivot), delete source",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "s-r7",
+        "sourceId": "s-log",
+        "targetId": "n-env",
+        "label": "Append-only checksummed log",
+        "technology": "Disk",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "s-r8",
+        "sourceId": "s-orch",
+        "targetId": "n-env",
+        "label": "Backoff timers",
+        "technology": "Clock",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "s-r9",
+        "sourceId": "s-steps",
+        "targetId": "n-storage",
+        "label": "Allocate target, copy shards, delete source",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "s-r10",
+        "sourceId": "s-steps",
+        "targetId": "n-merkle",
+        "label": "Verify Merkle root",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "s-r11",
+        "sourceId": "s-steps",
+        "targetId": "n-crdt",
+        "label": "Flip routing pointer (LWW-Register)",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r1",
+        "sourceId": "n-api",
+        "targetId": "t-paths",
+        "label": "Object put, get, head, delete, list",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r2",
+        "sourceId": "t-paths",
+        "targetId": "t-stripe",
+        "label": "Cuts objects into 1 MiB stripes",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r3",
+        "sourceId": "t-stripe",
+        "targetId": "n-erasure",
+        "label": "Encode and Reconstruct per stripe",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r4",
+        "sourceId": "t-paths",
+        "targetId": "t-place",
+        "label": "Chooses a node for each shard",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r5",
+        "sourceId": "t-place",
+        "targetId": "n-gossip",
+        "label": "Rendezvous hashing over Membership; at most m shards of a stripe per region",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r6",
+        "sourceId": "t-paths",
+        "targetId": "t-chunk",
+        "label": "Stores and reads local shards",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r7",
+        "sourceId": "t-paths",
+        "targetId": "n-env",
+        "label": "Sends shards to peers and fetches shards from peers",
+        "technology": "Transport",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "t-r8",
+        "sourceId": "t-chunk",
+        "targetId": "t-format",
+        "label": "Header plus payload; SHA-256 verified on every read",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r9",
+        "sourceId": "t-chunk",
+        "targetId": "n-env",
+        "label": "Atomic write, verified read, list, delete",
+        "technology": "Disk",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "t-r10",
+        "sourceId": "t-paths",
+        "targetId": "t-manifest",
+        "label": "Writes the manifest; tombstone manifest on delete",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r11",
+        "sourceId": "t-manifest",
+        "targetId": "n-crdt",
+        "label": "Value of the key's LWW-Register",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r12",
+        "sourceId": "n-merkle",
+        "targetId": "t-chunk",
+        "label": "Repairs rotted or missing shards (Repairer)",
+        "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      }
+    ]
+  },
+  "diagrams": [
+    {
+      "id": "context",
+      "kind": "context",
+      "scopeId": "store",
+      "status": "planned",
+      "title": "System Context — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "nodes": [
+        {
+          "elementId": "api-client"
+        },
+        {
+          "elementId": "sync-client"
+        },
+        {
+          "elementId": "operator"
+        },
+        {
+          "elementId": "store",
+          "detail": {
+            "diagramId": "container"
+          }
+        },
+        {
+          "elementId": "peers"
+        },
+        {
+          "elementId": "developer"
+        },
+        {
+          "elementId": "dst"
+        }
+      ],
+      "edges": [
+        {
+          "relationshipId": "r-client-store"
+        },
+        {
+          "relationshipId": "r-sync-store"
+        },
+        {
+          "relationshipId": "r-operator-store"
+        },
+        {
+          "relationshipId": "r-store-peers"
+        },
+        {
+          "relationshipId": "r-dev-dst"
+        },
+        {
+          "relationshipId": "r-dst-store"
+        }
+      ],
+      "legend": {
+        "title": "Context key",
+        "entries": [
+          {
+            "id": "person",
+            "label": "Person or client",
+            "description": "A user or client of the system",
+            "swatch": {
+              "shape": "person",
+              "tone": "default",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "accent",
+            "label": "System in focus",
+            "description": "The scope of this view",
+            "swatch": {
+              "shape": "box",
+              "tone": "accent",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "external",
+            "label": "External element",
+            "description": "Outside the scope of this view",
+            "swatch": {
+              "shape": "box",
+              "tone": "external",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "edge",
+            "label": "Relationship",
+            "description": "The arrow points to the supplier",
+            "swatch": {
+              "shape": "line",
+              "tone": "default",
+              "stroke": "solid",
+              "arrow": "forward"
+            }
+          },
+          {
+            "id": "planned",
+            "label": "Planned",
+            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "dashed"
+            }
+          }
+        ]
+      },
+      "docIds": [],
+      "sourceIds": [
+        "plan"
+      ],
+      "layout": {
+        "mode": "auto",
+        "direction": "TB"
+      }
+    },
+    {
+      "id": "container",
+      "kind": "container",
+      "scopeId": "store",
+      "status": "planned",
+      "parent": {
+        "diagramId": "context"
+      },
+      "title": "Container, domain view — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "nodes": [
+        {
+          "elementId": "api-client"
+        },
+        {
+          "elementId": "sync-client"
+        },
+        {
+          "elementId": "operator"
+        },
+        {
+          "elementId": "c-api"
+        },
+        {
+          "elementId": "c-storage",
+          "detail": {
+            "diagramId": "component-storage"
+          }
+        },
+        {
+          "elementId": "c-erasure",
+          "detail": {
+            "diagramId": "component-erasure"
+          }
+        },
+        {
+          "elementId": "c-gossip",
+          "detail": {
+            "diagramId": "component-gossip"
+          }
+        },
+        {
+          "elementId": "c-merkle",
+          "detail": {
+            "diagramId": "component-merkle"
+          }
+        },
+        {
+          "elementId": "c-crdt",
+          "detail": {
+            "diagramId": "component-crdt"
+          }
+        },
+        {
+          "elementId": "c-saga",
+          "detail": {
+            "diagramId": "component-saga"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "relationshipId": "k-client-api"
+        },
+        {
+          "relationshipId": "k-sync-api"
+        },
+        {
+          "relationshipId": "k-operator-api"
+        },
+        {
+          "relationshipId": "k-api-storage"
+        },
+        {
+          "relationshipId": "k-api-crdt"
+        },
+        {
+          "relationshipId": "k-api-saga"
+        },
+        {
+          "relationshipId": "k-api-gossip"
+        },
+        {
+          "relationshipId": "k-storage-erasure"
+        },
+        {
+          "relationshipId": "k-storage-gossip"
+        },
+        {
+          "relationshipId": "k-storage-crdt"
+        },
+        {
+          "relationshipId": "k-merkle-storage"
+        },
+        {
+          "relationshipId": "k-crdt-gossip"
+        },
+        {
+          "relationshipId": "k-saga-storage"
+        },
+        {
+          "relationshipId": "k-saga-merkle"
+        },
+        {
+          "relationshipId": "k-saga-crdt"
+        }
+      ],
+      "legend": {
+        "title": "Container key",
+        "entries": [
+          {
+            "id": "person",
+            "label": "Person or client",
+            "description": "A user or client of the system",
+            "swatch": {
+              "shape": "person",
+              "tone": "default",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "box",
+            "label": "Container",
+            "description": "A Go package or binary inside the objnode process",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "edge",
+            "label": "Relationship",
+            "description": "The arrow points to the supplier",
+            "swatch": {
+              "shape": "line",
+              "tone": "default",
+              "stroke": "solid",
+              "arrow": "forward"
+            }
+          },
+          {
+            "id": "planned",
+            "label": "Planned",
+            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "dashed"
+            }
+          }
+        ]
+      },
+      "docIds": [],
+      "sourceIds": [
+        "plan"
+      ],
+      "layout": {
+        "mode": "auto",
+        "direction": "TB"
+      }
+    },
+    {
+      "id": "container-runtime",
+      "kind": "container",
+      "scopeId": "store",
+      "status": "planned",
+      "parent": {
+        "diagramId": "context"
+      },
+      "title": "Container, runtime and environment view — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "nodes": [
+        {
+          "elementId": "operator"
+        },
+        {
+          "elementId": "c-objnode"
+        },
+        {
+          "elementId": "c-node"
+        },
+        {
+          "elementId": "c-gossip"
+        },
+        {
+          "elementId": "c-storage"
+        },
+        {
+          "elementId": "c-merkle"
+        },
+        {
+          "elementId": "c-crdt"
+        },
+        {
+          "elementId": "c-saga"
+        },
+        {
+          "elementId": "c-env"
+        },
+        {
+          "elementId": "c-disk"
+        },
+        {
+          "elementId": "peers"
+        },
+        {
+          "elementId": "dst"
+        }
+      ],
+      "edges": [
+        {
+          "relationshipId": "k-operator-objnode"
+        },
+        {
+          "relationshipId": "k-objnode-node"
+        },
+        {
+          "relationshipId": "k-node-env"
+        },
+        {
+          "relationshipId": "k-node-gossip"
+        },
+        {
+          "relationshipId": "k-node-storage"
+        },
+        {
+          "relationshipId": "k-node-merkle"
+        },
+        {
+          "relationshipId": "k-node-crdt"
+        },
+        {
+          "relationshipId": "k-node-saga"
+        },
+        {
+          "relationshipId": "k-node-peers"
+        },
+        {
+          "relationshipId": "k-node-disk"
+        },
+        {
+          "relationshipId": "k-gossip-env"
+        },
+        {
+          "relationshipId": "k-storage-env"
+        },
+        {
+          "relationshipId": "k-merkle-env"
+        },
+        {
+          "relationshipId": "k-crdt-env"
+        },
+        {
+          "relationshipId": "k-saga-env"
+        },
+        {
+          "relationshipId": "k-dst-env"
+        }
+      ],
+      "legend": {
+        "title": "Container key",
+        "entries": [
+          {
+            "id": "person",
+            "label": "Person",
+            "description": "A user of the system",
+            "swatch": {
+              "shape": "person",
+              "tone": "default",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "box",
+            "label": "Container",
+            "description": "A Go package or binary inside the objnode process",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "database",
+            "label": "Data store",
+            "description": "Durable state on the node's disk",
+            "swatch": {
+              "shape": "database",
+              "tone": "default",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "external",
+            "label": "External element",
+            "description": "Peer nodes and the test harness",
+            "swatch": {
+              "shape": "box",
+              "tone": "external",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "edge",
+            "label": "Relationship",
+            "description": "The arrow points to the supplier",
+            "swatch": {
+              "shape": "line",
+              "tone": "default",
+              "stroke": "solid",
+              "arrow": "forward"
+            }
+          },
+          {
+            "id": "planned",
+            "label": "Planned",
+            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "dashed"
+            }
+          }
+        ]
+      },
+      "docIds": [],
+      "sourceIds": [
+        "plan"
+      ],
+      "layout": {
+        "mode": "auto",
+        "direction": "TB"
+      }
+    },
+    {
+      "id": "component-gossip",
+      "kind": "component",
+      "scopeId": "c-gossip",
+      "status": "planned",
+      "parent": {
+        "diagramId": "container"
+      },
+      "title": "Component, gossip — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "nodes": [
+        {
+          "elementId": "g-join"
+        },
+        {
+          "elementId": "g-probe"
+        },
+        {
+          "elementId": "g-indirect"
+        },
+        {
+          "elementId": "g-suspicion"
+        },
+        {
+          "elementId": "g-dissem"
+        },
+        {
+          "elementId": "g-sync"
+        },
+        {
+          "elementId": "g-view"
+        },
+        {
+          "elementId": "n-env",
+          "related": [
+            {
+              "diagramId": "container-runtime",
+              "elementId": "c-env",
+              "label": "Container view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-storage",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-storage",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-storage",
+              "label": "Component view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-crdt",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-crdt",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-crdt",
+              "label": "Component view"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "relationshipId": "g-r1"
+        },
+        {
+          "relationshipId": "g-r2"
+        },
+        {
+          "relationshipId": "g-r3"
+        },
+        {
+          "relationshipId": "g-r4"
+        },
+        {
+          "relationshipId": "g-r5"
+        },
+        {
+          "relationshipId": "g-r6"
+        },
+        {
+          "relationshipId": "g-r7"
+        },
+        {
+          "relationshipId": "g-r8"
+        },
+        {
+          "relationshipId": "g-r9"
+        },
+        {
+          "relationshipId": "g-r10"
+        },
+        {
+          "relationshipId": "g-r11"
+        }
+      ],
+      "legend": {
+        "title": "Component key",
+        "entries": [
+          {
+            "id": "box",
+            "label": "Component",
+            "description": "A part of the package that PLAN.md names",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "external",
+            "label": "Neighbouring container",
+            "description": "Another package of the system",
+            "swatch": {
+              "shape": "box",
+              "tone": "external",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "edge",
+            "label": "Relationship",
+            "description": "The arrow points to the supplier",
+            "swatch": {
+              "shape": "line",
+              "tone": "default",
+              "stroke": "solid",
+              "arrow": "forward"
+            }
+          },
+          {
+            "id": "planned",
+            "label": "Planned",
+            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "dashed"
+            }
+          }
+        ]
+      },
+      "docIds": [],
+      "sourceIds": [
+        "plan"
+      ],
+      "layout": {
+        "mode": "auto",
+        "direction": "TB"
+      }
+    },
+    {
+      "id": "component-erasure",
+      "kind": "component",
+      "scopeId": "c-erasure",
+      "status": "planned",
+      "parent": {
+        "diagramId": "container"
+      },
+      "title": "Component, erasure — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "nodes": [
+        {
+          "elementId": "n-storage",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-storage",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-storage",
+              "label": "Component view"
+            }
+          ]
+        },
+        {
+          "elementId": "e-encode"
+        },
+        {
+          "elementId": "e-reconstruct"
+        },
+        {
+          "elementId": "e-verify"
+        },
+        {
+          "elementId": "e-cauchy"
+        },
+        {
+          "elementId": "e-matrix"
+        },
+        {
+          "elementId": "e-gf"
+        }
+      ],
+      "edges": [
+        {
+          "relationshipId": "e-r1"
+        },
+        {
+          "relationshipId": "e-r2"
+        },
+        {
+          "relationshipId": "e-r3"
+        },
+        {
+          "relationshipId": "e-r4"
+        },
+        {
+          "relationshipId": "e-r5"
+        },
+        {
+          "relationshipId": "e-r6"
+        },
+        {
+          "relationshipId": "e-r7"
+        },
+        {
+          "relationshipId": "e-r8"
+        },
+        {
+          "relationshipId": "e-r9"
+        }
+      ],
+      "legend": {
+        "title": "Component key",
+        "entries": [
+          {
+            "id": "box",
+            "label": "Component",
+            "description": "A part of the package that PLAN.md names",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "external",
+            "label": "Neighbouring container",
+            "description": "Another package of the system",
+            "swatch": {
+              "shape": "box",
+              "tone": "external",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "edge",
+            "label": "Relationship",
+            "description": "The arrow points to the supplier",
+            "swatch": {
+              "shape": "line",
+              "tone": "default",
+              "stroke": "solid",
+              "arrow": "forward"
+            }
+          },
+          {
+            "id": "planned",
+            "label": "Planned",
+            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "dashed"
+            }
+          }
+        ]
+      },
+      "docIds": [],
+      "sourceIds": [
+        "plan"
+      ],
+      "layout": {
+        "mode": "auto",
+        "direction": "TB"
+      }
+    },
+    {
+      "id": "component-merkle",
+      "kind": "component",
+      "scopeId": "c-merkle",
+      "status": "planned",
+      "parent": {
+        "diagramId": "container"
+      },
+      "title": "Component, merkle — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "nodes": [
+        {
+          "elementId": "m-worker"
+        },
+        {
+          "elementId": "m-diff"
+        },
+        {
+          "elementId": "m-tree"
+        },
+        {
+          "elementId": "m-repairer"
+        },
+        {
+          "elementId": "n-storage",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-storage",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-storage",
+              "label": "Component view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-env",
+          "related": [
+            {
+              "diagramId": "container-runtime",
+              "elementId": "c-env",
+              "label": "Container view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-saga",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-saga",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-saga",
+              "label": "Component view"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "relationshipId": "m-r1"
+        },
+        {
+          "relationshipId": "m-r2"
+        },
+        {
+          "relationshipId": "m-r3"
+        },
+        {
+          "relationshipId": "m-r4"
+        },
+        {
+          "relationshipId": "m-r5"
+        },
+        {
+          "relationshipId": "m-r6"
+        },
+        {
+          "relationshipId": "m-r7"
+        },
+        {
+          "relationshipId": "m-r8"
+        }
+      ],
+      "legend": {
+        "title": "Component key",
+        "entries": [
+          {
+            "id": "box",
+            "label": "Component",
+            "description": "A part of the package that PLAN.md names",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "external",
+            "label": "Neighbouring container",
+            "description": "Another package of the system",
+            "swatch": {
+              "shape": "box",
+              "tone": "external",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "edge",
+            "label": "Relationship",
+            "description": "The arrow points to the supplier",
+            "swatch": {
+              "shape": "line",
+              "tone": "default",
+              "stroke": "solid",
+              "arrow": "forward"
+            }
+          },
+          {
+            "id": "planned",
+            "label": "Planned",
+            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "dashed"
+            }
+          }
+        ]
+      },
+      "docIds": [],
+      "sourceIds": [
+        "plan"
+      ],
+      "layout": {
+        "mode": "auto",
+        "direction": "TB"
+      }
+    },
+    {
+      "id": "component-crdt",
+      "kind": "component",
+      "scopeId": "c-crdt",
+      "status": "planned",
+      "parent": {
+        "diagramId": "container"
+      },
+      "title": "Component, crdt — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "nodes": [
+        {
+          "elementId": "x-doc"
+        },
+        {
+          "elementId": "x-pn"
+        },
+        {
+          "elementId": "x-orset"
+        },
+        {
+          "elementId": "x-lwwreg"
+        },
+        {
+          "elementId": "x-lwwset"
+        },
+        {
+          "elementId": "x-hlc"
+        },
+        {
+          "elementId": "x-enc"
+        },
+        {
+          "elementId": "x-repl"
+        },
+        {
+          "elementId": "n-gossip",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-gossip",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-gossip",
+              "label": "Component view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-env",
+          "related": [
+            {
+              "diagramId": "container-runtime",
+              "elementId": "c-env",
+              "label": "Container view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-api",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-api",
+              "label": "Container view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-storage",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-storage",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-storage",
+              "label": "Component view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-saga",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-saga",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-saga",
+              "label": "Component view"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "relationshipId": "x-r1"
+        },
+        {
+          "relationshipId": "x-r2"
+        },
+        {
+          "relationshipId": "x-r3"
+        },
+        {
+          "relationshipId": "x-r4"
+        },
+        {
+          "relationshipId": "x-r5"
+        },
+        {
+          "relationshipId": "x-r6"
+        },
+        {
+          "relationshipId": "x-r7"
+        },
+        {
+          "relationshipId": "x-r8"
+        },
+        {
+          "relationshipId": "x-r9"
+        },
+        {
+          "relationshipId": "x-r10"
+        },
+        {
+          "relationshipId": "x-r11"
+        },
+        {
+          "relationshipId": "x-r12"
+        },
+        {
+          "relationshipId": "x-r13"
+        }
+      ],
+      "legend": {
+        "title": "Component key",
+        "entries": [
+          {
+            "id": "box",
+            "label": "Component",
+            "description": "A part of the package that PLAN.md names",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "external",
+            "label": "Neighbouring container",
+            "description": "Another package of the system",
+            "swatch": {
+              "shape": "box",
+              "tone": "external",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "edge",
+            "label": "Relationship",
+            "description": "The arrow points to the supplier",
+            "swatch": {
+              "shape": "line",
+              "tone": "default",
+              "stroke": "solid",
+              "arrow": "forward"
+            }
+          },
+          {
+            "id": "planned",
+            "label": "Planned",
+            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "dashed"
+            }
+          }
+        ]
+      },
+      "docIds": [],
+      "sourceIds": [
+        "plan"
+      ],
+      "layout": {
+        "mode": "auto",
+        "direction": "TB"
+      }
+    },
+    {
+      "id": "component-saga",
+      "kind": "component",
+      "scopeId": "c-saga",
+      "status": "planned",
+      "parent": {
+        "diagramId": "container"
+      },
+      "title": "Component, saga — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "nodes": [
+        {
+          "elementId": "n-api",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-api",
+              "label": "Container view"
+            }
+          ]
+        },
+        {
+          "elementId": "s-orch"
+        },
+        {
+          "elementId": "s-recovery"
+        },
+        {
+          "elementId": "s-log"
+        },
+        {
+          "elementId": "s-workflow"
+        },
+        {
+          "elementId": "s-steps"
+        },
+        {
+          "elementId": "n-env",
+          "related": [
+            {
+              "diagramId": "container-runtime",
+              "elementId": "c-env",
+              "label": "Container view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-storage",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-storage",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-storage",
+              "label": "Component view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-merkle",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-merkle",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-merkle",
+              "label": "Component view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-crdt",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-crdt",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-crdt",
+              "label": "Component view"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "relationshipId": "s-r1"
+        },
+        {
+          "relationshipId": "s-r2"
+        },
+        {
+          "relationshipId": "s-r3"
+        },
+        {
+          "relationshipId": "s-r4"
+        },
+        {
+          "relationshipId": "s-r5"
+        },
+        {
+          "relationshipId": "s-r6"
+        },
+        {
+          "relationshipId": "s-r7"
+        },
+        {
+          "relationshipId": "s-r8"
+        },
+        {
+          "relationshipId": "s-r9"
+        },
+        {
+          "relationshipId": "s-r10"
+        },
+        {
+          "relationshipId": "s-r11"
+        }
+      ],
+      "legend": {
+        "title": "Component key",
+        "entries": [
+          {
+            "id": "box",
+            "label": "Component",
+            "description": "A part of the package that PLAN.md names",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "external",
+            "label": "Neighbouring container",
+            "description": "Another package of the system",
+            "swatch": {
+              "shape": "box",
+              "tone": "external",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "edge",
+            "label": "Relationship",
+            "description": "The arrow points to the supplier",
+            "swatch": {
+              "shape": "line",
+              "tone": "default",
+              "stroke": "solid",
+              "arrow": "forward"
+            }
+          },
+          {
+            "id": "planned",
+            "label": "Planned",
+            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "dashed"
+            }
+          }
+        ]
+      },
+      "docIds": [],
+      "sourceIds": [
+        "plan"
+      ],
+      "layout": {
+        "mode": "auto",
+        "direction": "TB"
+      }
+    },
+    {
+      "id": "component-storage",
+      "kind": "component",
+      "scopeId": "c-storage",
+      "status": "planned",
+      "parent": {
+        "diagramId": "container"
+      },
+      "title": "Component, storage — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "nodes": [
+        {
+          "elementId": "n-api",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-api",
+              "label": "Container view"
+            }
+          ]
+        },
+        {
+          "elementId": "t-paths"
+        },
+        {
+          "elementId": "t-stripe"
+        },
+        {
+          "elementId": "t-place"
+        },
+        {
+          "elementId": "t-manifest"
+        },
+        {
+          "elementId": "t-chunk"
+        },
+        {
+          "elementId": "t-format"
+        },
+        {
+          "elementId": "n-erasure",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-erasure",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-erasure",
+              "label": "Component view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-gossip",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-gossip",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-gossip",
+              "label": "Component view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-crdt",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-crdt",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-crdt",
+              "label": "Component view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-merkle",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-merkle",
+              "label": "Container view"
+            },
+            {
+              "diagramId": "component-merkle",
+              "label": "Component view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-env",
+          "related": [
+            {
+              "diagramId": "container-runtime",
+              "elementId": "c-env",
+              "label": "Container view"
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "relationshipId": "t-r1"
+        },
+        {
+          "relationshipId": "t-r2"
+        },
+        {
+          "relationshipId": "t-r3"
+        },
+        {
+          "relationshipId": "t-r4"
+        },
+        {
+          "relationshipId": "t-r5"
+        },
+        {
+          "relationshipId": "t-r6"
+        },
+        {
+          "relationshipId": "t-r7"
+        },
+        {
+          "relationshipId": "t-r8"
+        },
+        {
+          "relationshipId": "t-r9"
+        },
+        {
+          "relationshipId": "t-r10"
+        },
+        {
+          "relationshipId": "t-r11"
+        },
+        {
+          "relationshipId": "t-r12"
+        }
+      ],
+      "legend": {
+        "title": "Component key",
+        "entries": [
+          {
+            "id": "box",
+            "label": "Component",
+            "description": "A part of the package that PLAN.md names",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "external",
+            "label": "Neighbouring container",
+            "description": "Another package of the system",
+            "swatch": {
+              "shape": "box",
+              "tone": "external",
+              "stroke": "solid"
+            }
+          },
+          {
+            "id": "edge",
+            "label": "Relationship",
+            "description": "The arrow points to the supplier",
+            "swatch": {
+              "shape": "line",
+              "tone": "default",
+              "stroke": "solid",
+              "arrow": "forward"
+            }
+          },
+          {
+            "id": "planned",
+            "label": "Planned",
+            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
+            "swatch": {
+              "shape": "box",
+              "tone": "default",
+              "stroke": "dashed"
+            }
+          }
+        ]
+      },
+      "docIds": [],
+      "sourceIds": [
+        "plan"
+      ],
+      "layout": {
+        "mode": "auto",
+        "direction": "TB"
+      }
+    }
+  ],
+  "documents": [],
+  "sources": [
+    {
+      "id": "plan",
+      "title": "PLAN.md — testing-first plan, Phase 1",
+      "url": "https://github.com/nickstrad/decentralized-object-store/blob/main/PLAN.md",
+      "notes": "Sections 1, 2.1, 3, 4.2 and 7 define the target architecture drawn here."
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  MERKLE[Merkle anti-entropy] -->|12| CHUNK[Local chunk store]
+  CHUNK -->|8| FORMAT[Shard file format]
+  CHUNK -->|9| ENV[internal/env]

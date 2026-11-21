@@ -1,0 +1,5 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  STRIPE[Object striping] -->|3| ERASURE[Erasure coding]
+  PLACE[Placement] -->|5| GOSSIP[Gossip membership]
+  MANIFEST[Object manifest] -->|11| CRDT[CRDT metadata]

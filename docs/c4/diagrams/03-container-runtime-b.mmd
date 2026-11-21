@@ -1,0 +1,7 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  NODE[Node runtime] -->|4| GOSSIP[Gossip]
+  NODE -->|5| STORAGE[Storage]
+  NODE -->|6| MERKLE[Merkle]
+  NODE -->|7| CRDT[CRDT]
+  NODE -->|8| SAGA[Saga]

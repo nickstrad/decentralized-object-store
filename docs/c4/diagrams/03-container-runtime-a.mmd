@@ -1,0 +1,7 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  OPER[Operator] -->|1| CMD[cmd/objnode]
+  CMD -->|2| NODE[Node runtime]
+  NODE -->|3| ENV[internal/env]
+  NODE -->|9| PEERS[Peer nodes]
+  NODE -->|10| DISK[Node disk]

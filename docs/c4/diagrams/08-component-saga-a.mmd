@@ -1,0 +1,5 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  API[Object API] -->|1| ORCH[Orchestrator]
+  ORCH -->|2| WORKFLOW[Bucket-migration workflow]
+  ORCH -->|3| LOG[Saga log]

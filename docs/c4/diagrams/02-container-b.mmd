@@ -1,0 +1,6 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  API[Object API] -->|4| STORAGE[Storage engine]
+  API -->|5| CRDT[CRDT metadata]
+  API -->|6| SAGA[Saga engine]
+  API -->|7| GOSSIP[Gossip membership]
