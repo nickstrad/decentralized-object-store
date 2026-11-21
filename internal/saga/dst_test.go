@@ -23,6 +23,8 @@ const (
 	nemesisConverge = 60 * time.Second
 	nemesisWrites   = 24
 	nemesisWriteGap = 600 * time.Millisecond
+	nemesisTick     = 100 * time.Millisecond
+	nemesisMinSagas = 3
 	duelConverge    = 90 * time.Second
 	duelMaxStagger  = 300 * time.Millisecond
 	duelMinPart     = 2 * time.Second
@@ -93,6 +95,16 @@ func TestCanarySkippedCompensation(t *testing.T) {
 		t.Fatalf("canary cell %s does not compensate", cell.Name())
 	}
 	plant := func(cfg *saga.Config) { saga.PlantSkippedCompensation(cfg, 1) }
+	for _, step := range []int{0, 2} {
+		other := func(cfg *saga.Config) { saga.PlantSkippedCompensation(cfg, step) }
+		_, err := simtest.CheckDeterministic(1, sagasim.Run(h, cell, sagasim.RunOptions{Configure: other}))
+		if step == 0 && !errors.Is(err, sagasim.ErrCheck) {
+			t.Fatalf("skipping the allocate compensation went unnoticed: %v", err)
+		}
+		if step == 2 && err != nil {
+			t.Fatalf("skipping the verify compensation, which undoes nothing, failed: %v", err)
+		}
+	}
 	for _, seed := range []int64{1, 2, 3} {
 		if _, err := simtest.CheckDeterministic(seed, sagasim.Run(h, cell, sagasim.RunOptions{})); err != nil {
 			t.Fatalf("seed %d: the clean cell fails: %v", seed, err)
@@ -120,16 +132,17 @@ func nemesisKinds() []sim.FaultKind {
 }
 
 type nemesisResult struct {
-	state    saga.State
-	outcome  string
-	settled  time.Duration
-	attempts []int
-	acked    int
+	sagas       int
+	completed   int
+	compensated int
+	settled     time.Duration
+	attempts    []int
+	acked       int
+	final       string
 }
 
 func nemesisRun(res *nemesisResult) func(seed int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
-		in := saga.MigrationInput{Bucket: sagasim.Bucket, From: "a", To: "b"}
 		s, m, err := sagasim.Build(seed, sagasim.Options{
 			Coordinators: []sim.NodeSpec{{ID: "c1", Region: "ra"}},
 			Stores:       []sim.NodeSpec{{ID: "a", Region: "ra"}, {ID: "b", Region: "rb"}, {ID: "c", Region: "rc"}},
@@ -143,12 +156,6 @@ func nemesisRun(res *nemesisResult) func(seed int64) *sim.Sim {
 			return s
 		}
 		m.AddInvariants(s)
-		s.At(env.Time(50*time.Millisecond), "begin", func() {
-			if err := m.Begin("c1", "m1", in); err != nil {
-				s.Fail(err)
-			}
-		})
-		s.Workload(env.Time(100*time.Millisecond), nemesisWrites, nemesisWriteGap, func(i int) { m.Write(i) })
 		nem, err := s.StartNemesis(sim.NemesisConfig{
 			Start: nemesisStart, Phases: nemesisPhases, Chaos: nemesisChaos, Heal: nemesisHeal, MaxGap: nemesisMaxGap,
 			Kinds:  nemesisKinds(),
@@ -158,33 +165,55 @@ func nemesisRun(res *nemesisResult) func(seed int64) *sim.Sim {
 			s.Fail(err)
 			return s
 		}
+		stores := m.Stores()
+		cur := string(stores[0])
+		var last saga.ID
+		var lastIn saga.MigrationInput
+		next := 0
+		var tick func()
+		tick = func() {
+			if last != "" {
+				st, ok := m.Status("c1", last)
+				if !ok || !st.State.Terminal() {
+					s.At(s.Now().Add(nemesisTick), "migrate", tick)
+					return
+				}
+				if st.State == saga.StateCompleted {
+					cur = lastIn.To
+					res.completed++
+				} else {
+					res.compensated++
+				}
+				last = ""
+			}
+			if s.Now() >= nem.QuietAt() {
+				return
+			}
+			next++
+			in := saga.MigrationInput{Bucket: sagasim.Bucket, From: cur, To: string(stores[(slices.Index(stores, env.NodeID(cur))+1)%len(stores)])}
+			id := saga.ID(fmt.Sprintf("m%d", next))
+			if err := m.Begin("c1", id, in); err == nil {
+				last, lastIn = id, in
+				res.sagas++
+			}
+			s.At(s.Now().Add(nemesisTick), "migrate", tick)
+		}
+		s.At(env.Time(50*time.Millisecond), "migrate", tick)
+		s.Workload(env.Time(100*time.Millisecond), nemesisWrites, nemesisWriteGap, func(i int) { m.Write(i) })
 		if err := s.RunUntil(nem.QuietAt()); err != nil {
 			return s
 		}
-		done := func() bool {
-			st, ok := m.Status("c1", "m1")
-			return ok && st.State.Terminal() && m.WritesIdle()
-		}
+		done := func() bool { return last == "" && m.WritesIdle() }
 		if err := s.RunUntilConverged(nem.QuietAt().Add(nemesisConverge), done); err != nil {
 			return s
 		}
-		st, _ := m.Status("c1", "m1")
-		res.state = st.State
 		res.settled = s.Now().Sub(nem.QuietAt())
 		res.attempts = m.Attempts("c1")
 		res.acked = m.Acked()
-		if len(st.Outputs) == saga.MigrationSteps {
-			res.outcome = string(st.Outputs[saga.MigrationSteps-1])
-		}
-		var cerr error
-		switch st.State {
-		case saga.StateCompleted:
-			cerr = m.CheckMoved(in)
-		default:
-			cerr = m.CheckCompensated(in)
-		}
+		res.final = cur
+		cerr := m.CheckAt(sagasim.Bucket, cur)
 		if cerr == nil {
-			cerr = m.CheckWrites(in, st.State)
+			cerr = m.CheckWrites(sagasim.Bucket, cur)
 		}
 		if cerr != nil {
 			s.Fail(cerr)
@@ -197,13 +226,13 @@ func TestMigrationUnderNemesisDST(t *testing.T) {
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
 		res := &nemesisResult{}
 		simtest.RequireDeterministic(t, seed, nemesisRun(res))
-		if res.outcome != "" && res.outcome != saga.OutcomeMoved {
-			t.Fatalf("a lone migration ended %q", res.outcome)
+		if res.sagas < nemesisMinSagas {
+			t.Fatalf("only %d migrations ran under the nemesis", res.sagas)
 		}
 		if res.settled > nemesisConverge {
 			t.Fatalf("settled %v after the last heal, bound %v", res.settled, nemesisConverge)
 		}
-		t.Logf("NEMESIS seed=%d state=%v settled=%v acked=%d attempts=%v", seed, res.state, res.settled, res.acked, res.attempts)
+		t.Logf("NEMESIS seed=%d sagas=%d completed=%d compensated=%d settled=%v acked=%d final=%s attempts=%v", seed, res.sagas, res.completed, res.compensated, res.settled, res.acked, res.final, res.attempts)
 	})
 }
 

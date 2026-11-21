@@ -42,9 +42,9 @@ func TestStateMachineTable(t *testing.T) {
 		{"compensations walk down the steps", []saga.Record{begin(), intent(0, 1), done(0, 1), intent(1, 1), abort(1), cintent(1, 1), cdone(1, 1)}, want{comp, 0, 0, saga.ActCompensate, 0}, nil},
 		{"compensation past step zero ends the saga compensated", []saga.Record{begin(), intent(0, 1), abort(0), cintent(0, 1), cintent(0, 2), cdone(0, 2)}, want{comp, -1, 0, saga.ActEnd, saga.StateCompensated}, nil},
 		{"a definitive pivot failure aborts from the step below the pivot", []saga.Record{begin(), intent(0, 1), done(0, 1), intent(1, 1), done(1, 1), intent(2, 1), abort(1)}, want{comp, 1, 0, saga.ActCompensate, 0}, nil},
-		{"an abort before any step compensates nothing", []saga.Record{begin(), abort(-1)}, want{comp, -1, 0, saga.ActEnd, saga.StateCompensated}, nil},
+		{"a saga whose first step failed ends compensated once that step is undone", []saga.Record{begin(), intent(0, 1), abort(0), cintent(0, 1), cdone(0, 1)}, want{comp, -1, 0, saga.ActEnd, saga.StateCompensated}, nil},
 		{"a completed saga has nothing left to do", []saga.Record{begin(), intent(0, 1), done(0, 1), intent(1, 1), done(1, 1), intent(2, 1), done(2, 1), intent(3, 1), done(3, 1), end(saga.StateCompleted)}, want{saga.StateCompleted, 4, 0, saga.ActNone, 0}, nil},
-		{"a compensated saga has nothing left to do", []saga.Record{begin(), abort(-1), end(saga.StateCompensated)}, want{saga.StateCompensated, -1, 0, saga.ActNone, 0}, nil},
+		{"a compensated saga has nothing left to do", []saga.Record{begin(), intent(0, 1), abort(0), cintent(0, 1), cdone(0, 1), end(saga.StateCompensated)}, want{saga.StateCompensated, -1, 0, saga.ActNone, 0}, nil},
 		{"no records is corrupt", nil, want{}, saga.ErrLogCorrupt},
 		{"a log that does not start with begin is corrupt", []saga.Record{intent(0, 1)}, want{}, saga.ErrLogCorrupt},
 		{"a second begin is corrupt", []saga.Record{begin(), begin()}, want{}, saga.ErrLogCorrupt},
@@ -56,7 +56,7 @@ func TestStateMachineTable(t *testing.T) {
 		{"an intent beyond the last step is corrupt", []saga.Record{begin(), intent(0, 1), done(0, 1), intent(1, 1), done(1, 1), intent(2, 1), done(2, 1), intent(3, 1), done(3, 1), intent(4, 1)}, want{}, saga.ErrLogCorrupt},
 		{"an abort from a step that is not the current one is corrupt", []saga.Record{begin(), intent(0, 1), done(0, 1), abort(0)}, want{}, saga.ErrLogCorrupt},
 		{"an abort after the pivot is done is corrupt", []saga.Record{begin(), intent(0, 1), done(0, 1), intent(1, 1), done(1, 1), intent(2, 1), done(2, 1), abort(2)}, want{}, saga.ErrLogCorrupt},
-		{"an intent after an abort is corrupt", []saga.Record{begin(), abort(-1), intent(0, 1)}, want{}, saga.ErrLogCorrupt},
+		{"an intent after an abort is corrupt", []saga.Record{begin(), intent(0, 1), abort(0), intent(0, 2)}, want{}, saga.ErrLogCorrupt},
 		{"a compensation record while running is corrupt", []saga.Record{begin(), cintent(0, 1)}, want{}, saga.ErrLogCorrupt},
 		{"a compensation done without an intent is corrupt", []saga.Record{begin(), intent(0, 1), abort(0), cdone(0, 1)}, want{}, saga.ErrLogCorrupt},
 		{"a compensation out of order is corrupt", []saga.Record{begin(), intent(0, 1), done(0, 1), intent(1, 1), abort(1), cintent(0, 1)}, want{}, saga.ErrLogCorrupt},
@@ -64,8 +64,8 @@ func TestStateMachineTable(t *testing.T) {
 		{"a completed end before the last step is corrupt", []saga.Record{begin(), end(saga.StateCompleted)}, want{}, saga.ErrLogCorrupt},
 		{"a compensated end while running is corrupt", []saga.Record{begin(), end(saga.StateCompensated)}, want{}, saga.ErrLogCorrupt},
 		{"a compensated end before compensation finished is corrupt", []saga.Record{begin(), intent(0, 1), abort(0), end(saga.StateCompensated)}, want{}, saga.ErrLogCorrupt},
-		{"an end naming a state that is not terminal is corrupt", []saga.Record{begin(), abort(-1), end(saga.StateRunning)}, want{}, saga.ErrLogCorrupt},
-		{"any record after the end is corrupt", []saga.Record{begin(), abort(-1), end(saga.StateCompensated), intent(0, 1)}, want{}, saga.ErrLogCorrupt},
+		{"an end naming a state that is not terminal is corrupt", []saga.Record{begin(), intent(0, 1), abort(0), cintent(0, 1), cdone(0, 1), end(saga.StateRunning)}, want{}, saga.ErrLogCorrupt},
+		{"any record after the end is corrupt", []saga.Record{begin(), intent(0, 1), abort(0), cintent(0, 1), cdone(0, 1), end(saga.StateCompensated), intent(0, 1)}, want{}, saga.ErrLogCorrupt},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -96,9 +96,18 @@ func TestStateMachineTable(t *testing.T) {
 		}
 	})
 	t.Run("the abort cause is kept", func(t *testing.T) {
-		snap, err := saga.Resume([]saga.Record{begin(), abort(-1)}, steps, pivot, maxA)
+		snap, err := saga.Resume([]saga.Record{begin(), intent(0, 1), abort(0)}, steps, pivot, maxA)
 		if err != nil || snap.Cause != "cause" {
 			t.Fatalf("cause %q err %v", snap.Cause, err)
+		}
+	})
+	t.Run("a pivot at step zero aborts with nothing to compensate", func(t *testing.T) {
+		snap, err := saga.Resume([]saga.Record{begin(), intent(0, 1), abort(-1)}, 2, 0, maxA)
+		if err != nil || snap.Next != saga.ActEnd || snap.End != saga.StateCompensated || snap.Step != -1 {
+			t.Fatalf("snapshot %+v err %v", snap, err)
+		}
+		if _, err := saga.Resume([]saga.Record{begin(), abort(-1)}, steps, pivot, maxA); !errors.Is(err, saga.ErrLogCorrupt) {
+			t.Fatalf("abort from -1 below a later pivot: %v", err)
 		}
 	})
 	t.Run("invalid shapes are refused", func(t *testing.T) {
@@ -206,6 +215,7 @@ func TestRetryBackoffSchedule(t *testing.T) {
 		pol := saga.Policy{MaxAttempts: 2, BaseDelay: 10 * time.Millisecond, MaxDelay: 10 * time.Millisecond, StepTimeout: time.Second}
 		u := newSingle(t, 1, f, saga.Config{Policy: pol})
 		u.begin(t, beginAt, "slow", nil)
+		u.s.At(env.Time(2500*time.Millisecond), "speed up", func() { f.latency = stepLatency })
 		u.run(t, 30*time.Second)
 		st := u.status(t, "slow")
 		if st.State != saga.StateCompensated {
