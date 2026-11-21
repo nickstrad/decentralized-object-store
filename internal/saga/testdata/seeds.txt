@@ -1,0 +1,4 @@
+26 TestMigrationUnderNemesisDST: acknowledged write lost when a retried catch-up copy overwrote a promoted target (fixed: retire before promote)
+53 TestMigrationUnderNemesisDST: same lost-write bug, second seed
+13 TestMigrationUnderNemesisDST: same lost-write bug, reproduced with the scenario as moved into sagasim.NemesisRun
+16 TestMigrationUnderNemesisDST: same lost-write bug, scenario as moved into sagasim.NemesisRun

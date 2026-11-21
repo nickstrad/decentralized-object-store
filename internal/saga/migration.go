@@ -193,17 +193,12 @@ func finish(ops MigrationOps, c Call, m MigrationInput, done func([]byte, error)
 		}
 		return err != nil
 	}
-	moved := func() {
+	promote := func() {
 		ops.Promote(c, m, func(err error) {
 			if fail(err) {
 				return
 			}
-			ops.Retire(c, m, func(err error) {
-				if fail(err) {
-					return
-				}
-				done([]byte(OutcomeMoved), nil)
-			})
+			done([]byte(OutcomeMoved), nil)
 		})
 	}
 	ops.Pointer(c, m.Bucket, func(loc string, err error) {
@@ -229,7 +224,7 @@ func finish(ops MigrationOps, c Call, m MigrationInput, done func([]byte, error)
 				return
 			}
 			if retired {
-				moved()
+				promote()
 				return
 			}
 			ops.Copy(c, m, func(_ []byte, err error) {
@@ -248,7 +243,12 @@ func finish(ops MigrationOps, c Call, m MigrationInput, done func([]byte, error)
 							fail(fmt.Errorf("saga: catch-up %s: %s and %s: %w", m.Bucket, m.From, m.To, ErrRootMismatch))
 							return
 						}
-						moved()
+						ops.Retire(c, m, func(err error) {
+							if fail(err) {
+								return
+							}
+							promote()
+						})
 					})
 				})
 			})

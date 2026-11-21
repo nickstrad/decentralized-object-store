@@ -487,7 +487,7 @@ func (s *Store) handle(op byte, f [][]byte) ([]byte, bool, error) {
 func (s *Store) copyFrom(name, sagaID string, from env.NodeID, reply env.Reply) {
 	owned := func() *bucketState {
 		bk := s.st.bucket(name)
-		if bk == nil || bk.Owner != sagaID || (bk.Status != statusStaging && bk.Status != statusLive) {
+		if bk == nil || bk.Owner != sagaID || bk.Status != statusStaging {
 			return nil
 		}
 		return bk
