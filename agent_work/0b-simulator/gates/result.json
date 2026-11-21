@@ -1,16 +1,16 @@
 {
   "chunk": "0b-simulator",
-  "sha": "72de8804ac2e1f41468225f7d8b961942f9da787",
+  "sha": "d7bc691cb9fcc2ff0c7aa6b2bdbcfdb16f8ccd78",
   "stage": "final",
   "comment_baseline": "none",
-  "started": "2026-11-21T20:22:42Z",
-  "finished": "2026-11-21T20:26:51Z",
+  "started": "2026-11-21T20:27:17Z",
+  "finished": "2026-11-21T20:31:21Z",
   "go_version": "go version go1.26.11 linux/amd64",
-  "image_id": "sha256:1d836f1374dc6ff925419433d1c8c8b80e9c46aaccf51ced1f029b346206b6d4",
+  "image_id": "sha256:afbbf7aaacb5f6a08c22b72eb29e57e33d719d7df6a788b836985f82db407553",
   "in_container": true,
   "partial": false,
   "dirty_tree": false,
-  "seed_from_sha": 126300090313774,
+  "seed_from_sha": 237204217313788,
   "fuzz_seconds": 30,
   "overall": "pass",
   "counts_for_landing": true,
@@ -19,14 +19,14 @@
       "gate": "G0",
       "check": "tools",
       "status": "pass",
-      "seconds": 0,
+      "seconds": 1,
       "note": ""
     },
     {
       "gate": "G0",
       "check": "gofmt",
       "status": "pass",
-      "seconds": 1,
+      "seconds": 0,
       "note": ""
     },
     {
@@ -82,36 +82,36 @@
       "gate": "G1",
       "check": "unit",
       "status": "pass",
-      "seconds": 9,
+      "seconds": 6,
       "note": ""
     },
     {
       "gate": "G2",
       "check": "property",
       "status": "pass",
-      "seconds": 58,
-      "note": "rapid seed 126300090313774, 2000 checks, 1 packages"
+      "seconds": 54,
+      "note": "rapid seed 237204217313788, 2000 checks, 1 packages"
     },
     {
       "gate": "G3",
       "check": "fuzz",
       "status": "pass",
-      "seconds": 37,
+      "seconds": 34,
       "note": "1 fuzz targets, 30s each"
     },
     {
       "gate": "G4",
       "check": "race",
       "status": "pass",
-      "seconds": 34,
+      "seconds": 29,
       "note": ""
     },
     {
       "gate": "G5",
       "check": "dst",
       "status": "pass",
-      "seconds": 103,
-      "note": "500 seeds from base 126300090313774"
+      "seconds": 112,
+      "note": "500 seeds from base 237204217313788"
     },
     {
       "gate": "G6",
