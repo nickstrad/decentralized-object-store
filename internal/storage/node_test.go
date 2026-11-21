@@ -265,6 +265,24 @@ func TestNodePutWithTooFewMembers(t *testing.T) {
 	}
 }
 
+func TestNodePutUnlaunchableStripeLeavesAwaitingPeakZero(t *testing.T) {
+	codes, err := storage.Codes()
+	mustNil(t, err)
+	s := sim.New(sim.Config{Seed: 1, Codes: codes})
+	ids := sim.NodeIDs(3)
+	cfg := storage.Config{Layout: smallLayout(), Members: clusterMembers(ids, 3)}
+	mustNil(t, s.AddCluster(ids, 3, nodeFactory(cfg)))
+	mustNil(t, s.RunUntilQuiet())
+	n := nodeOf(t, s, ids[0])
+	p := put(t, s, n, "b", "k", []byte("six shards, three members"))
+	if !errors.Is(p.err, storage.ErrUnavailable) {
+		t.Fatalf("put with three members for six shards: %v", p.err)
+	}
+	if st := n.Stats(); st.PutAwaitingPeak != 0 || st.PutOutstanding != 0 {
+		t.Fatalf("a put whose first stripe never launched left awaiting peak %d, outstanding %d", st.PutAwaitingPeak, st.PutOutstanding)
+	}
+}
+
 func TestNodeDetectsContentMismatch(t *testing.T) {
 	s, ids, _ := newCluster(t, 6, 6, 3, smallLayout())
 	p := put(t, s, nodeOf(t, s, ids[0]), "b", "k", []byte("content"))
