@@ -1,24 +1,25 @@
 {
   "chunk": "0a-foundation",
-  "sha": "9ce04e922a39589ddb8df671e4221be5a3f1090c",
-  "stage": "build",
-  "started": "2026-11-21T18:35:15Z",
-  "finished": "2026-11-21T18:35:30Z",
+  "sha": "1d0b3ce8357ae1882f1e207c35fd9b87a7094bec",
+  "stage": "final",
+  "comment_baseline": "none",
+  "started": "2026-11-21T19:11:27Z",
+  "finished": "2026-11-21T19:11:37Z",
   "go_version": "go version go1.26.11 linux/amd64",
-  "image_id": "sha256:efae85a0c05cb256470d158fe5b85e467c77779db87e0f6aba46292a3fdca09f",
+  "image_id": "sha256:fa8fa2feaf6be7b87d2d83a1676e9780c7a314a83fa8b9fc87f3ad82a604ab3d",
   "in_container": true,
   "partial": false,
-  "dirty_tree": true,
-  "seed_from_sha": 172487204809273,
+  "dirty_tree": false,
+  "seed_from_sha": 31934103696762,
   "fuzz_seconds": 30,
   "overall": "pass",
-  "counts_for_landing": false,
+  "counts_for_landing": true,
   "checks": [
     {
       "gate": "G0",
       "check": "tools",
       "status": "pass",
-      "seconds": 2,
+      "seconds": 1,
       "note": ""
     },
     {
@@ -32,7 +33,7 @@
       "gate": "G0",
       "check": "vet",
       "status": "pass",
-      "seconds": 1,
+      "seconds": 0,
       "note": ""
     },
     {
@@ -68,13 +69,13 @@
       "check": "comments",
       "status": "pass",
       "seconds": 0,
-      "note": ""
+      "note": "stage=final, comment rule is checked by prose-check.sh"
     },
     {
       "gate": "G0",
       "check": "selfcontained",
       "status": "pass",
-      "seconds": 6,
+      "seconds": 5,
       "note": ""
     },
     {
@@ -88,14 +89,14 @@
       "gate": "G2",
       "check": "property",
       "status": "pass",
-      "seconds": 1,
-      "note": "rapid seed 172487204809273, 2000 checks, 1 packages"
+      "seconds": 0,
+      "note": "rapid seed 31934103696762, 2000 checks, 1 packages"
     },
     {
       "gate": "G3",
       "check": "fuzz",
       "status": "pass",
-      "seconds": 1,
+      "seconds": 0,
       "note": "0 fuzz targets, 30s each"
     },
     {
