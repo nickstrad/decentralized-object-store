@@ -229,7 +229,11 @@ func decodeResponse(b []byte) (response, error) {
 		}
 		resp.inner = make([][Fanout]Hash, n)
 		for j := range resp.inner {
-			bitmap := binary.BigEndian.Uint16(r.take(2))
+			raw := r.take(2)
+			if r.bad {
+				return response{}, malformed("inner bitmap truncated")
+			}
+			bitmap := binary.BigEndian.Uint16(raw)
 			if len(r.b) < 32*bits.OnesCount16(bitmap) {
 				return response{}, malformed("inner hashes truncated")
 			}

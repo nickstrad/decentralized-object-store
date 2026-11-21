@@ -126,6 +126,7 @@ func TestWireMalformed(t *testing.T) {
 		{"inner with a present zero hash", append([]byte{0x02, 0, 1, 0x80, 0x00}, zero...), ErrMalformed},
 		{"inner with trailing bytes", append(append([]byte{0x02, 0, 1, 0x80, 0x00}, nonzero...), 1), ErrMalformed},
 		{"inner count larger than the bytes", []byte{0x02, 0, 3, 0, 0}, ErrMalformed},
+		{"inner bitmap truncated after a full node", append(append([]byte{0x02, 0, 2, 0x80, 0x00}, nonzero...), 0x00), ErrMalformed},
 		{"leaves with no nodes", []byte{0x03, 1, 0}, ErrMalformed},
 		{"leaves over the entry limit", []byte{0x03, 1, 1, 0x81, 0x40}, ErrMalformed},
 		{"leaf entry count larger than the bytes", []byte{0x03, 1, 1, 2, 0}, ErrMalformed},
