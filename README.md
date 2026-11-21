@@ -47,11 +47,20 @@ docker compose run --rm dev <command>
 
 ### Landing gates and canaries
 
-Run the seven landing gates inside the container:
+Run the seven landing gates from the repository root on the host. The script
+builds the image and re-runs itself inside the container. On a checkout of
+`main`, run the `final` stage (`<name>` only labels the output under
+`agent_work/<name>/gates/result.json`):
 
 ```sh
-agent_work/gates/gate.sh <name>
+GATE_STAGE=final agent_work/gates/gate.sh <name>
 ```
+
+The default `build` stage (`agent_work/gates/gate.sh <name>`) is for a chunk
+branch before its comments are written: it requires product Go to add no
+comments beyond the commit the branch started from. It stops on `main` because
+a commit cannot be checked against itself; `GATE_STAGE=final` runs G0 through
+G6 without that comment check.
 
 The script runs G0 through G6 in order and records a machine-readable result:
 
