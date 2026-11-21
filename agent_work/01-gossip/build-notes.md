@@ -270,7 +270,25 @@ three N sizes of the convergence test run in parallel instead. Peak 82–132 MB.
 
 ## Gate commands run (through `docker compose run --rm dev`)
 
-(see the section "Gate result" below for the gate run; individual commands while building:)
+Final gate: `agent_work/gates/gate.sh 01-gossip` from the host on commit `8199b0e`
+(image `sha256:d445694d2ac5…`, go1.26.11), comment baseline `ceb5438`:
+
+```
+G0  tools/gofmt/vet/build/detlint/panics/deps/comments/selfcontained  pass
+G1  unit           pass   12s   COVERAGE internal/gossip: 97.5%, internal/sim: 95.4%
+G2  property       pass   93s   rapid 2000 checks, seed 142497097537330 (gossip package 8.9 s)
+G3  fuzz           pass  102s   FuzzGossipWire, FuzzViewMergeLaws, FuzzSimSchedule, 30 s each
+G4  race           pass   65s   (gossip package 59.4 s)
+G5  dst            pass  740s   500 seeds from base 142497097537330 (gossip package 738.6 s)
+G6  docker         pass
+gate: overall=pass counts_for_landing=true
+```
+
+The gossip package's 500-seed sweep took 738.6 s in the gate, above the ~10-minute target in
+the builder rules, on the shared droplet (see Requests). The result files stay uncommitted
+under `agent_work/01-gossip/gates/`.
+
+Individual commands while building:
 - `gofmt -l internal/gossip` → empty; `go vet ./internal/gossip` → clean.
 - detlint `-root /src -allow agent_work/gates/detlint-allow.txt internal/env internal/sim
   internal/gossip` → 0 findings (19 files, 3 packages); `nocomments` → clean;
@@ -320,9 +338,8 @@ None. No line added to `agent_work/gates/panic-allowlist.txt`.
   the timeout, as in SWIM; when isolation ends it learns its death from the first packet led
   by its own entry or from a heal sync, and refutes.
 - Sync messages carry the whole view; at most 65,535 members (the u16 count).
-- The node does not deduplicate seeds that are also live members in the heal list (a live
-  seed is excluded; a dead one may be picked twice as often if it is both dead and a seed —
-  harmless).
+- The heal list is {dead members} ∪ {seeds not live}, sorted and deduplicated; left members
+  are not contacted (they left on purpose).
 - `Config.MaxPacket` is assumed equal across the cluster: an inbound packet larger than
   this node's own limit is dropped as malformed.
 
