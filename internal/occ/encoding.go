@@ -50,17 +50,11 @@ func (e *encoder) version(v Version) {
 	e.bytes(v.value)
 }
 
-func (e *encoder) record(r Record) {
-	e.uvarint(uint64(len(r.siblings)))
-	for _, v := range r.siblings {
-		e.version(v)
-	}
-}
-
 type decoder struct {
 	b   []byte
 	off int
 	err error
+	ops int
 }
 
 func (d *decoder) fail(what string) {
@@ -72,6 +66,7 @@ func (d *decoder) fail(what string) {
 func (d *decoder) rest() int { return len(d.b) - d.off }
 
 func (d *decoder) byte() byte {
+	d.ops++
 	if d.err != nil {
 		return 0
 	}
@@ -85,6 +80,7 @@ func (d *decoder) byte() byte {
 }
 
 func (d *decoder) uvarint() uint64 {
+	d.ops++
 	if d.err != nil {
 		return 0
 	}
@@ -98,6 +94,7 @@ func (d *decoder) uvarint() uint64 {
 }
 
 func (d *decoder) varint() int64 {
+	d.ops++
 	if d.err != nil {
 		return 0
 	}
@@ -129,6 +126,7 @@ func (d *decoder) bytes() []byte {
 	}
 	p := d.b[d.off : d.off+n]
 	d.off += n
+	d.ops += n
 	return p
 }
 
@@ -173,12 +171,30 @@ func (d *decoder) stamp() Stamp {
 
 func (d *decoder) vector() VersionVector {
 	n := d.count(3)
+	if d.err != nil || n == 0 {
+		return VersionVector{}
+	}
 	es := make([]Entry, 0, n)
 	for i := 0; i < n && d.err == nil; i++ {
 		a := d.actor()
-		es = append(es, Entry{Actor: a, Counter: d.uvarint()})
+		c := d.uvarint()
+		if d.err != nil {
+			break
+		}
+		if c == 0 {
+			d.fail("context entry with a zero counter")
+			break
+		}
+		if i > 0 && es[i-1].Actor.Compare(a) >= 0 {
+			d.fail("context entries out of order")
+			break
+		}
+		es = append(es, Entry{Actor: a, Counter: c})
 	}
-	return NewVersionVector(es...)
+	if d.err != nil {
+		return VersionVector{}
+	}
+	return VersionVector{entries: es}
 }
 
 func (d *decoder) version() Version {
@@ -194,19 +210,10 @@ func (d *decoder) version() Version {
 	if d.err == nil && tomb && len(val) > 0 {
 		d.fail("tombstone value")
 	}
+	if d.err != nil {
+		return Version{}
+	}
 	return NewVersion(Dot{Actor: a, Counter: c}, ctx, tomb, val, st)
-}
-
-func (d *decoder) record() Record {
-	n := d.count(8)
-	if d.err == nil && n == 0 {
-		d.fail("empty record")
-	}
-	vs := make([]Version, 0, n)
-	for i := 0; i < n && d.err == nil; i++ {
-		vs = append(vs, d.version())
-	}
-	return NewRecord(vs...)
 }
 
 func (d *decoder) end() {

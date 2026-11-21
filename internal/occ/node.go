@@ -25,6 +25,8 @@ type Config struct {
 	Timeout    time.Duration
 	Fanout     int
 	MaxDelta   int
+	Log        func(line string)
+	OnDiscard  func(key string, winner, loser Version)
 }
 
 const (
@@ -35,8 +37,6 @@ const (
 	DefaultMaxDelta = 60000
 	LoadRetry       = 100 * time.Millisecond
 )
-
-var stateMagic = []byte("OCCS")
 
 var hazardReuseEpoch bool
 
@@ -86,9 +86,8 @@ func NewNode(e env.Env, cfg Config) *Node {
 	return &Node{e: e, cfg: cfg.withDefaults()}
 }
 
-func (n *Node) Ready() bool   { return n.store != nil }
-func (n *Node) Store() *Store { return n.store }
-func (n *Node) Stats() Stats  { return n.stats }
+func (n *Node) Ready() bool  { return n.store != nil }
+func (n *Node) Stats() Stats { return n.stats }
 
 func (n *Node) Digest() [32]byte {
 	if n.store == nil {
@@ -97,36 +96,53 @@ func (n *Node) Digest() [32]byte {
 	return n.store.doc.Digest()
 }
 
-func encodeState(epoch uint64, doc []byte) []byte {
-	var p encoder
-	p.uvarint(epoch)
-	p.raw(doc)
-	sum := sha256.Sum256(p.b)
-	out := append(slices.Clone(stateMagic), sum[:]...)
-	return append(out, p.b...)
+func (n *Node) Reader() (Reader, error) {
+	if n.store == nil {
+		return Reader{}, fmt.Errorf("occ: read on %s: %w", n.e.ID, ErrNotReady)
+	}
+	return n.store.Reader, nil
 }
 
-func decodeState(b []byte) (uint64, *Doc, error) {
-	if !bytes.HasPrefix(b, stateMagic) || len(b) < len(stateMagic)+sha256.Size {
-		return 0, nil, fmt.Errorf("occ: state blob header: %w", ErrMalformed)
+func (n *Node) Record(key string) Record {
+	if n.store == nil {
+		return Record{}
 	}
-	payload := b[len(stateMagic)+sha256.Size:]
-	if sum := sha256.Sum256(payload); !bytes.Equal(sum[:], b[len(stateMagic):len(stateMagic)+sha256.Size]) {
-		return 0, nil, fmt.Errorf("occ: state blob checksum: %w", ErrMalformed)
+	return n.store.Record(key)
+}
+
+func (n *Node) Doc() *Doc {
+	if n.store == nil {
+		return nil
 	}
-	d := &decoder{b: payload}
-	epoch := d.uvarint()
-	if d.err == nil && epoch == 0 {
-		d.fail("epoch")
+	return n.store.Doc()
+}
+
+func (n *Node) Actor() Actor {
+	if n.store == nil {
+		return Actor{}
 	}
-	if d.err != nil {
-		return 0, nil, d.err
+	return n.store.actor
+}
+
+func (n *Node) LWWDiscards() uint64 {
+	if n.store == nil {
+		return 0
 	}
-	doc, err := Decode(payload[d.off:])
-	if err != nil {
-		return 0, nil, err
+	return n.store.discards
+}
+
+func (n *Node) DiscardTail() []Discard {
+	if n.store == nil {
+		return nil
 	}
-	return epoch, doc, nil
+	return n.store.DiscardTail()
+}
+
+func (n *Node) AheadStamps() int {
+	if n.store == nil {
+		return 0
+	}
+	return n.store.ahead
 }
 
 func (n *Node) Start() { n.load() }
@@ -135,15 +151,15 @@ func (n *Node) load() {
 	b, err := n.e.Disk.Read(StateBlob)
 	switch {
 	case err == nil:
-		epoch, doc, derr := decodeState(b)
+		st, derr := decodeState(b)
 		if derr == nil {
-			n.open(epoch, doc, false)
+			n.open(st, false)
 			return
 		}
 		n.stats.Corrupt++
-		n.open(0, NewDoc(), true)
+		n.open(persisted{doc: NewDoc()}, true)
 	case errors.Is(err, env.ErrNotFound):
-		n.open(0, NewDoc(), true)
+		n.open(persisted{doc: NewDoc()}, true)
 	case errors.Is(err, env.ErrClosed):
 	default:
 		n.stats.LoadErrors++
@@ -151,22 +167,32 @@ func (n *Node) load() {
 	}
 }
 
-func (n *Node) open(epoch uint64, doc *Doc, fresh bool) {
+func (n *Node) open(st persisted, fresh bool) {
 	if fresh {
 		n.stats.Fresh++
 		if hazardReuseEpoch {
-			epoch = 1
+			st.epoch = 1
 		}
 	}
-	n.store = newStore(n.e.ID, epoch, n.e.Clock, n.e.Rand, doc)
+	n.store = newStore(StoreConfig{
+		Node:      n.e.ID,
+		Epoch:     st.epoch,
+		Counter:   st.counter,
+		Discards:  st.discards,
+		Clock:     n.e.Clock,
+		Rand:      n.e.Rand,
+		Doc:       st.doc,
+		Persist:   n.persist,
+		Log:       n.cfg.Log,
+		OnDiscard: n.cfg.OnDiscard,
+	})
 	if fresh {
-		_ = n.persist()
+		_ = n.persist(n.store.EncodeState())
 	}
 	n.arm()
 }
 
-func (n *Node) persist() error {
-	blob := encodeState(n.store.actor.Epoch, n.store.doc.Encode())
+func (n *Node) persist(blob []byte) error {
 	if err := n.e.Disk.Write(StateBlob, blob); err != nil {
 		n.stats.DiskErrors++
 		return fmt.Errorf("occ: persist %s: %w", StateBlob, err)
@@ -193,7 +219,8 @@ func (n *Node) peers() []env.NodeID {
 			out = append(out, p)
 		}
 	}
-	return out
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 func (n *Node) round() {
@@ -210,6 +237,9 @@ func (n *Node) round() {
 }
 
 func (n *Node) onDigestReply(peer env.NodeID, reply []byte, err error) {
+	if n.store == nil {
+		return
+	}
 	if err != nil {
 		n.stats.NetErrors++
 		return
@@ -229,8 +259,8 @@ func (n *Node) onDigestReply(peer env.NodeID, reply []byte, err error) {
 		return
 	}
 	n.stats.Pulls++
-	if n.store.Merge(doc) {
-		_ = n.persist()
+	if _, err := n.store.Merge(doc); err != nil {
+		return
 	}
 	if n.Digest() != stateDigest(state) {
 		n.stats.Pushes++
@@ -256,9 +286,7 @@ func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 		return
 	}
 	n.stats.Deltas++
-	if n.store.Merge(doc) {
-		_ = n.persist()
-	}
+	_, _ = n.store.Merge(doc)
 }
 
 func (n *Node) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
@@ -288,11 +316,9 @@ func (n *Node) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 			reply(nil, fmt.Errorf("occ: push from %s: %w", from, err))
 			return
 		}
-		if n.store.Merge(doc) {
-			if err := n.persist(); err != nil {
-				reply(nil, err)
-				return
-			}
+		if _, err := n.store.Merge(doc); err != nil {
+			reply(nil, err)
+			return
 		}
 		reply([]byte{replyAck}, nil)
 	case msgOp:
@@ -315,11 +341,11 @@ func (n *Node) serveOp(from env.NodeID, req []byte, reply env.Reply) {
 	case opPut:
 		var v Version
 		v, err = n.Put(o.key, o.value, o.pre)
-		r.Version, r.ETag = v.ID(), n.store.Record(o.key).ETag()
+		r.Version, r.ETag = v.ID(), v.ETag()
 	default:
 		var v Version
 		v, err = n.Delete(o.key, o.pre)
-		r.Version, r.ETag = v.ID(), n.store.Record(o.key).ETag()
+		r.Version, r.ETag = v.ID(), v.ETag()
 	}
 	if err != nil {
 		reply(nil, err)
@@ -328,13 +354,10 @@ func (n *Node) serveOp(from env.NodeID, req []byte, reply env.Reply) {
 	reply(encodeResult(r), nil)
 }
 
-func (n *Node) commit(key string) error {
-	if err := n.persist(); err != nil {
-		return err
-	}
+func (n *Node) broadcast(key string) {
 	delta := append([]byte{msgDelta}, n.store.doc.Subset(key).Encode()...)
 	if len(delta) > n.cfg.MaxDelta {
-		return nil
+		return
 	}
 	ps := n.peers()
 	for i := 0; i < n.cfg.Fanout && len(ps) > 0; i++ {
@@ -342,7 +365,6 @@ func (n *Node) commit(key string) error {
 			n.stats.NetErrors++
 		}
 	}
-	return nil
 }
 
 func (n *Node) notReady(op, key string) error {
@@ -364,9 +386,7 @@ func (n *Node) Put(key string, value []byte, p Precondition) (Version, error) {
 	if err != nil {
 		return Version{}, err
 	}
-	if err := n.commit(key); err != nil {
-		return Version{}, err
-	}
+	n.broadcast(key)
 	return v, nil
 }
 
@@ -378,38 +398,50 @@ func (n *Node) Delete(key string, p Precondition) (Version, error) {
 	if err != nil {
 		return Version{}, err
 	}
-	if err := n.commit(key); err != nil {
-		return Version{}, err
-	}
+	n.broadcast(key)
 	return v, nil
 }
 
-func (n *Node) SetScalar(key string, value []byte) (Scalar, error) {
-	if n.store == nil {
-		return Scalar{}, n.notReady("set scalar", key)
-	}
-	sc, err := n.store.SetScalar(key, value)
-	if err != nil {
-		return Scalar{}, err
-	}
-	if err := n.commit(key); err != nil {
-		return Scalar{}, err
-	}
-	return sc, nil
+func (n *Node) SetScalar(key string, value []byte) (Version, error) {
+	return n.Put(key, value, Unconditional())
 }
 
-func (n *Node) UpdateQuota(key string, attempts int, recount Recount, fn func(Usage) (Usage, error)) (Usage, error) {
+func (n *Node) UpdateQuota(key string, attempts int, fn func(Usage) (Usage, error)) (Usage, error) {
 	if n.store == nil {
 		return Usage{}, n.notReady("update quota", key)
 	}
-	u, err := n.store.UpdateQuota(key, attempts, recount, fn)
-	if err != nil {
-		return Usage{}, err
+	return updateQuota(n, n.store.Reader, key, attempts, fn)
+}
+
+func (n *Node) RecountQuota(key string, attempts int, recount Recount) (Usage, bool, error) {
+	if n.store == nil {
+		return Usage{}, false, n.notReady("recount quota", key)
 	}
-	if err := n.commit(key); err != nil {
-		return Usage{}, err
-	}
-	return u, nil
+	return recountQuota(n, n.store.Reader, key, attempts, recount)
+}
+
+func (n *Node) PutTag(bucket, object, name, value string, p Precondition) (Version, error) {
+	return putTag(n, bucket, object, name, value, p)
+}
+
+func (n *Node) PutACL(bucket, principal string, perm Permission, p Precondition) (Version, error) {
+	return putACL(n, bucket, principal, perm, p)
+}
+
+func (n *Node) PutObjectMeta(bucket, object string, m ObjectMeta, p Precondition) (Version, error) {
+	return putObjectMeta(n, bucket, object, m, p)
+}
+
+func (n *Node) PutManifest(bucket, object string, manifest []byte, p Precondition) (Version, error) {
+	return putManifest(n, bucket, object, manifest, p)
+}
+
+func (n *Node) SetRoute(bucket string, region env.Region) (Version, error) {
+	return setRoute(n, bucket, region)
+}
+
+func (n *Node) SetContentType(bucket, object, contentType string) (Version, error) {
+	return setContentType(n, bucket, object, contentType)
 }
 
 func (n *Node) EncodeState() []byte {
@@ -419,6 +451,9 @@ func (n *Node) EncodeState() []byte {
 	} else {
 		e.byte(1)
 		e.actor(n.store.actor)
+		e.uvarint(n.store.counter)
+		e.uvarint(n.store.discards)
+		e.uvarint(uint64(n.store.ahead))
 		e.bytes(n.store.doc.Encode())
 	}
 	s := n.stats

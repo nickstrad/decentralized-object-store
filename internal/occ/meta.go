@@ -124,24 +124,64 @@ func DecodeObjectMeta(b []byte) (ObjectMeta, error) {
 	return m, nil
 }
 
-func (s *Store) PutTag(bucket, object, name, value string, p Precondition) (Version, error) {
-	return s.Put(TagKey(bucket, object, name), []byte(value), p)
+func putTag(w putter, bucket, object, name, value string, p Precondition) (Version, error) {
+	return w.Put(TagKey(bucket, object, name), []byte(value), p)
 }
 
-func (s *Store) Tag(bucket, object, name string) (string, ETag, error) {
-	b, e, err := s.Get(TagKey(bucket, object, name))
-	return string(b), e, err
-}
-
-func (s *Store) PutACL(bucket, principal string, perm Permission, p Precondition) (Version, error) {
+func putACL(w putter, bucket, principal string, perm Permission, p Precondition) (Version, error) {
 	if perm&^permAll != 0 {
 		return Version{}, fmt.Errorf("occ: put acl %s/%s: permission %d: %w", bucket, principal, perm, env.ErrInvalidArgument)
 	}
-	return s.Put(ACLKey(bucket, principal), []byte{byte(perm)}, p)
+	return w.Put(ACLKey(bucket, principal), []byte{byte(perm)}, p)
 }
 
-func (s *Store) ACL(bucket, principal string) (Permission, ETag, error) {
-	b, e, err := s.Get(ACLKey(bucket, principal))
+func putObjectMeta(w putter, bucket, object string, m ObjectMeta, p Precondition) (Version, error) {
+	return w.Put(ObjectKey(bucket, object), m.Encode(), p)
+}
+
+func putManifest(w putter, bucket, object string, manifest []byte, p Precondition) (Version, error) {
+	return w.Put(ManifestKey(bucket, object), manifest, p)
+}
+
+func setRoute(w putter, bucket string, region env.Region) (Version, error) {
+	return w.Put(RouteKey(bucket), []byte(region), Unconditional())
+}
+
+func setContentType(w putter, bucket, object, contentType string) (Version, error) {
+	return w.Put(ContentTypeKey(bucket, object), []byte(contentType), Unconditional())
+}
+
+func (s *Store) PutTag(bucket, object, name, value string, p Precondition) (Version, error) {
+	return putTag(s, bucket, object, name, value, p)
+}
+
+func (s *Store) PutACL(bucket, principal string, perm Permission, p Precondition) (Version, error) {
+	return putACL(s, bucket, principal, perm, p)
+}
+
+func (s *Store) PutObjectMeta(bucket, object string, m ObjectMeta, p Precondition) (Version, error) {
+	return putObjectMeta(s, bucket, object, m, p)
+}
+
+func (s *Store) PutManifest(bucket, object string, manifest []byte, p Precondition) (Version, error) {
+	return putManifest(s, bucket, object, manifest, p)
+}
+
+func (s *Store) SetRoute(bucket string, region env.Region) (Version, error) {
+	return setRoute(s, bucket, region)
+}
+
+func (s *Store) SetContentType(bucket, object, contentType string) (Version, error) {
+	return setContentType(s, bucket, object, contentType)
+}
+
+func (r Reader) Tag(bucket, object, name string) (string, ETag, error) {
+	b, e, err := r.Get(TagKey(bucket, object, name))
+	return string(b), e, err
+}
+
+func (r Reader) ACL(bucket, principal string) (Permission, ETag, error) {
+	b, e, err := r.Get(ACLKey(bucket, principal))
 	if err != nil {
 		return 0, e, err
 	}
@@ -151,12 +191,8 @@ func (s *Store) ACL(bucket, principal string) (Permission, ETag, error) {
 	return Permission(b[0]), e, nil
 }
 
-func (s *Store) PutObjectMeta(bucket, object string, m ObjectMeta, p Precondition) (Version, error) {
-	return s.Put(ObjectKey(bucket, object), m.Encode(), p)
-}
-
-func (s *Store) ObjectMeta(bucket, object string) (ObjectMeta, ETag, error) {
-	b, e, err := s.Get(ObjectKey(bucket, object))
+func (r Reader) ObjectMeta(bucket, object string) (ObjectMeta, ETag, error) {
+	b, e, err := r.Get(ObjectKey(bucket, object))
 	if err != nil {
 		return ObjectMeta{}, e, err
 	}
@@ -164,48 +200,33 @@ func (s *Store) ObjectMeta(bucket, object string) (ObjectMeta, ETag, error) {
 	return m, e, err
 }
 
-func (s *Store) PutManifest(bucket, object string, manifest []byte, p Precondition) (Version, error) {
-	return s.Put(ManifestKey(bucket, object), manifest, p)
+func (r Reader) Manifest(bucket, object string) ([]byte, ETag, error) {
+	return r.Get(ManifestKey(bucket, object))
 }
 
-func (s *Store) Manifest(bucket, object string) ([]byte, ETag, error) {
-	return s.Get(ManifestKey(bucket, object))
-}
-
-func (s *Store) SetRoute(bucket string, region env.Region) (Scalar, error) {
-	return s.SetScalar(RouteKey(bucket), []byte(region))
-}
-
-func (s *Store) Route(bucket string) (env.Region, error) {
-	b, _, err := s.Scalar(RouteKey(bucket))
+func (r Reader) Route(bucket string) (env.Region, error) {
+	b, _, err := r.Scalar(RouteKey(bucket))
 	return env.Region(b), err
 }
 
-func (s *Store) SetContentType(bucket, object, contentType string) (Scalar, error) {
-	return s.SetScalar(ContentTypeKey(bucket, object), []byte(contentType))
-}
-
-func (s *Store) ContentType(bucket, object string) (string, error) {
-	b, _, err := s.Scalar(ContentTypeKey(bucket, object))
+func (r Reader) ContentType(bucket, object string) (string, error) {
+	b, _, err := r.Scalar(ContentTypeKey(bucket, object))
 	return string(b), err
 }
 
-func (s *Store) RecountObjects(bucket string) (Usage, error) {
+func (r Reader) RecountObjects(bucket string) (Usage, error) {
 	var u Usage
-	for _, k := range s.doc.KeysWithPrefix(BucketPrefix(KindObject, bucket)) {
-		var size uint64
-		live := s.doc.Record(k).Live()
-		for _, v := range live {
-			m, err := DecodeObjectMeta(v.value)
-			if err != nil {
-				return Usage{}, fmt.Errorf("occ: recount %s: %w", bucket, err)
-			}
-			size = max(size, m.Size)
+	for _, k := range r.doc.KeysWithPrefix(BucketPrefix(KindObject, bucket)) {
+		rec := r.doc.Record(k)
+		if !rec.Live() {
+			continue
 		}
-		if len(live) > 0 {
-			u.Objects++
-			u.Bytes += size
+		m, err := DecodeObjectMeta(rec.v.value)
+		if err != nil {
+			return Usage{}, fmt.Errorf("occ: recount %s: %w", bucket, err)
 		}
+		u.Objects++
+		u.Bytes += m.Size
 	}
 	return u, nil
 }

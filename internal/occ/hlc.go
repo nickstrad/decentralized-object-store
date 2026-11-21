@@ -30,6 +30,20 @@ func (s Stamp) Compare(t Stamp) int {
 
 func (s Stamp) IsZero() bool { return s == Stamp{} }
 
+func (s Stamp) After(t Stamp) bool {
+	return s.Wall > t.Wall || (s.Wall == t.Wall && s.Logical > t.Logical)
+}
+
+func (s Stamp) successor(node env.NodeID) (Stamp, error) {
+	switch {
+	case s.Logical < math.MaxUint32:
+		return Stamp{Wall: s.Wall, Logical: s.Logical + 1, Node: node}, nil
+	case s.Wall < math.MaxInt64:
+		return Stamp{Wall: s.Wall + 1, Node: node}, nil
+	}
+	return Stamp{}, fmt.Errorf("occ: no stamp after %s: %w", s.String(), ErrClockExhausted)
+}
+
 func (s Stamp) String() string {
 	return strconv.FormatInt(s.Wall, 10) + "." + strconv.FormatUint(uint64(s.Logical), 10) + "@" + string(s.Node)
 }
@@ -68,6 +82,14 @@ func (h *HLC) Now() (Stamp, error) {
 	h.wall, h.logic = h.wall+1, 0
 	return h.Last(), nil
 }
+
+type hlcState struct {
+	wall  int64
+	logic uint32
+}
+
+func (h *HLC) state() hlcState    { return hlcState{wall: h.wall, logic: h.logic} }
+func (h *HLC) restore(s hlcState) { h.wall, h.logic = s.wall, s.logic }
 
 func (h *HLC) Observe(s Stamp) error {
 	pt := int64(h.clock.Now())
