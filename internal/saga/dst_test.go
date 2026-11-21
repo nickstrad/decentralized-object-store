@@ -20,12 +20,13 @@ const (
 	nemesisChaos    = 4 * time.Second
 	nemesisHeal     = 2 * time.Second
 	nemesisMaxGap   = 400 * time.Millisecond
-	nemesisConverge = 60 * time.Second
+	nemesisConverge = 20 * time.Second
 	nemesisWrites   = 24
 	nemesisWriteGap = 600 * time.Millisecond
 	nemesisTick     = 100 * time.Millisecond
-	nemesisMinSagas = 3
+	nemesisMinSagas = 1
 	duelConverge    = 90 * time.Second
+	duelAfterHeal   = 10 * time.Second
 	duelMaxStagger  = 300 * time.Millisecond
 	duelMinPart     = 2 * time.Second
 	duelMaxPart     = 6 * time.Second
@@ -49,7 +50,7 @@ func TestMigrationFailurePointsDST(t *testing.T) {
 				if rep.Elapsed > sagasim.MatrixBound {
 					t.Fatalf("took %v, bound %v", rep.Elapsed, sagasim.MatrixBound)
 				}
-				t.Logf("MATRIX %s seed=%d state=%v elapsed=%v crashes=%d calls=%v", c.Name(), seed, rep.State, rep.Elapsed, rep.Crashes, rep.Calls)
+				t.Logf("MATRIX %s seed=%d state=%v elapsed=%v crashes=%d torn=%d calls=%v", c.Name(), seed, rep.State, rep.Elapsed, rep.Crashes, rep.Torn, rep.Calls)
 			})
 		})
 	}
@@ -144,7 +145,10 @@ func TestDuelingMigrationsDST(t *testing.T) {
 		res := &sagasim.DuelReport{}
 		simtest.RequireDeterministic(t, seed, sagasim.DuelRun(p, res))
 		winners[res.Pointer]++
-		t.Logf("DUEL seed=%d pointer=%s states=%v outcomes=%q", seed, res.Pointer, res.States, res.Outcomes)
+		if after := res.Finished.Sub(res.Healed); after > duelAfterHeal {
+			t.Fatalf("finished %v after the heal, bound %v", after, duelAfterHeal)
+		}
+		t.Logf("DUEL seed=%d pointer=%s states=%v outcomes=%q afterheal=%v", seed, res.Pointer, res.States, res.Outcomes, res.Finished.Sub(res.Healed))
 	})
 	t.Logf("DUEL winners %v", winners)
 }

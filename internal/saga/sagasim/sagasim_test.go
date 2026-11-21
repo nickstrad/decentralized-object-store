@@ -57,10 +57,19 @@ type nopTimer struct{}
 func (nopTimer) Stop() bool               { return false }
 func (nopTimer) Reset(time.Duration) bool { return false }
 
+type heldNet struct {
+	reqs []func([]byte, error)
+}
+
+func (n *heldNet) Send(env.NodeID, []byte) error { return nil }
+func (n *heldNet) Request(_ env.NodeID, _ []byte, _ time.Duration, cb func([]byte, error)) {
+	n.reqs = append(n.reqs, cb)
+}
+
 func newTestStore(id env.NodeID, d *mapDisk) (*Store, *nopClock) {
 	clk := &nopClock{}
 	seeds := []BucketSeed{{Name: Bucket, Loc: "a", Objs: objects(2)}}
-	s := NewStore(seeds)(env.Env{ID: id, Clock: clk, Disk: d}).(*Store)
+	s := NewStore(seeds)(env.Env{ID: id, Clock: clk, Disk: d, Net: &heldNet{}}).(*Store)
 	s.Start()
 	return s, clk
 }
@@ -231,9 +240,40 @@ func TestStoreOperations(t *testing.T) {
 				t.Fatalf("release of a live bucket: %v", err)
 			}
 		}},
+		{"a copy overtaken by a discard, a release or a newer copy is not applied", func(t *testing.T) {
+			for _, between := range []byte{opDiscard, opRelease, opCopy} {
+				s, _ := newTestStore("b", &mapDisk{blobs: map[string][]byte{}})
+				net := s.e.Net.(*heldNet)
+				if _, err := ask(s, opClaim, Bucket, "s1"); err != nil {
+					t.Fatal(err)
+				}
+				var late error
+				s.OnRequest("x", encodeFields(opCopy, []byte(Bucket), []byte("s1"), []byte("a")), func(_ []byte, err error) { late = err })
+				if between == opCopy {
+					s.OnRequest("x", encodeFields(opCopy, []byte(Bucket), []byte("s1"), []byte("a")), func([]byte, error) {})
+				} else if _, err := ask(s, between, Bucket, "s1"); err != nil {
+					t.Fatal(err)
+				}
+				net.reqs[0](encodeObjs(objects(3)), nil)
+				if !errors.Is(late, ErrBusy) || s.fenced != 1 {
+					t.Fatalf("op %d: late copy err %v fenced %d", between, late, s.fenced)
+				}
+				if bk := s.st.bucket(Bucket); bk != nil && len(bk.Objs) != 0 {
+					t.Fatalf("op %d: late copy left %d objects", between, len(bk.Objs))
+				}
+				if between == opCopy {
+					var fresh []byte
+					net.reqs[1](encodeObjs(objects(2)), nil)
+					fresh = Root(s.st.bucket(Bucket).Objs)
+					if string(fresh) != string(Root(objects(2))) {
+						t.Fatal("the newest copy was not applied")
+					}
+				}
+			}
+		}},
 		{"pointer replicas keep the write with the larger stamp", func(t *testing.T) {
 			s, _ := newTestStore("c", &mapDisk{blobs: map[string][]byte{}})
-			for _, f := range [][4]string{{Bucket, "b", stamp(10), "x"}, {Bucket, "c", stamp(5), "y"}, {Bucket, "c", stamp(10), "a"}, {Bucket, "d", stamp(10), "z"}} {
+			for _, f := range [][4]string{{Bucket, "b", stamp(10), "x"}, {Bucket, "c", stamp(5), "y"}, {Bucket, "c", stamp(10), "a"}, {Bucket, "d", stamp(10), "z"}, {Bucket, "c", stamp(10), "z"}, {Bucket, "a", stamp(10), "z"}} {
 				if _, err := ask(s, opFlip, f[0], f[1], f[2], f[3]); err != nil {
 					t.Fatal(err)
 				}

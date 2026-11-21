@@ -142,6 +142,8 @@ type DuelReport struct {
 	States   [2]saga.State
 	Outcomes [2]string
 	Pointer  string
+	Healed   env.Time
+	Finished env.Time
 }
 
 func DuelRun(p DuelParams, res *DuelReport) func(seed int64) *sim.Sim {
@@ -173,6 +175,7 @@ func DuelRun(p DuelParams, res *DuelReport) func(seed int64) *sim.Sim {
 				s.Fail(err)
 			}
 		})
+		res.Healed = at.Add(part)
 		s.At(at.Add(part), "heal", s.HealNet)
 		for i := range coords {
 			begin := at.Add(10 * time.Millisecond)
@@ -205,6 +208,7 @@ func DuelRun(p DuelParams, res *DuelReport) func(seed int64) *sim.Sim {
 			}
 		}
 		res.Pointer = m.Pointer(Bucket)
+		res.Finished = s.Now()
 		if err := m.CheckDuel(ins[:], res.States[:], res.Outcomes[:]); err != nil {
 			s.Fail(err)
 		}

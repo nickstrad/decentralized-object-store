@@ -14,7 +14,7 @@ const (
 	MigrationSteps = saga.MigrationSteps
 	MatrixObjects  = 8
 	MatrixCells    = 78
-	MatrixBound    = 60 * time.Second
+	MatrixBound    = 20 * time.Second
 	MatrixSettle   = 2 * time.Second
 	matrixBegin    = env.Time(20 * time.Millisecond)
 	matrixSaga     = saga.ID("mig-1")
@@ -196,6 +196,7 @@ type Report struct {
 	Outcome string
 	Elapsed time.Duration
 	Crashes int
+	Torn    int
 	Calls   []int
 }
 
@@ -211,6 +212,7 @@ type cellState struct {
 	lost        int
 	compFails   int
 	crashes     int
+	torn        int
 	calls       []int
 	lastComp    int
 	err         error
@@ -242,7 +244,14 @@ func (st *cellState) crash(torn bool) {
 			_ = st.s.Crash(id)
 		}
 	})
-	st.s.At(now.Add(restartDelay), "restart coordinator", func() { _ = st.s.Restart(id) })
+	st.s.At(now.Add(restartDelay), "restart coordinator", func() {
+		if b, ok := st.s.Disk(id).PeekDurable(st.cl.LogName(matrixSaga)); ok {
+			if _, valid, err := saga.DecodeLog(b); err == nil && valid < len(b) {
+				st.torn++
+			}
+		}
+		_ = st.s.Restart(id)
+	})
 }
 
 func (st *cellState) hook(p saga.Point) bool {
@@ -385,7 +394,7 @@ func Run(h Harness, c Cell, o RunOptions) func(seed int64) *sim.Sim {
 			return s
 		}
 		if o.Report != nil {
-			*o.Report = Report{State: sta.State, Elapsed: end.Sub(matrixBegin), Crashes: st.crashes, Calls: st.calls}
+			*o.Report = Report{State: sta.State, Elapsed: end.Sub(matrixBegin), Crashes: st.crashes, Torn: st.torn, Calls: st.calls}
 			if len(sta.Outputs) == MigrationSteps {
 				o.Report.Outcome = string(sta.Outputs[MigrationSteps-1])
 			}

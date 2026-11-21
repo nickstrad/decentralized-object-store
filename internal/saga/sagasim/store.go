@@ -248,6 +248,16 @@ func (st *storeState) pointer(bucket string) (pointerState, int) {
 	return pointerState{Bucket: bucket}, -1
 }
 
+func newer(a, b pointerState) bool {
+	if a.TS != b.TS {
+		return a.TS > b.TS
+	}
+	if a.Writer != b.Writer {
+		return a.Writer > b.Writer
+	}
+	return a.Loc > b.Loc
+}
+
 type BucketSeed struct {
 	Name string
 	Loc  env.NodeID
@@ -258,13 +268,20 @@ type Store struct {
 	e        env.Env
 	seeds    []BucketSeed
 	st       storeState
+	gens     map[string]uint64
 	loaded   bool
 	loadErrs int
 	served   int
+	fenced   int
 }
 
 func NewStore(seeds []BucketSeed) func(env.Env) env.Process {
-	return func(e env.Env) env.Process { return &Store{e: e, seeds: seeds} }
+	return func(e env.Env) env.Process { return &Store{e: e, seeds: seeds, gens: map[string]uint64{}} }
+}
+
+func (s *Store) fence(bucket string) uint64 {
+	s.gens[bucket]++
+	return s.gens[bucket]
 }
 
 func (s *Store) Start() { s.load() }
@@ -318,6 +335,7 @@ func (s *Store) EncodeState() []byte {
 		b = append(b, s.st.encode()...)
 	}
 	b = binary.AppendUvarint(b, uint64(s.loadErrs))
+	b = binary.AppendUvarint(b, uint64(s.fenced))
 	return binary.AppendUvarint(b, uint64(s.served))
 }
 
@@ -345,6 +363,10 @@ func (s *Store) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	if op == opCopy {
 		s.copyFrom(string(f[0]), string(f[1]), env.NodeID(f[2]), reply)
 		return
+	}
+	switch op {
+	case opClaim, opRelease, opDiscard, opPromote:
+		s.fence(string(f[0]))
 	}
 	resp, changed, err := s.handle(op, f)
 	if err == nil && changed {
@@ -422,7 +444,7 @@ func (s *Store) handle(op byte, f [][]byte) ([]byte, bool, error) {
 		}
 		p, i := s.st.pointer(name)
 		np := pointerState{Bucket: name, Loc: string(f[1]), TS: int64(binary.BigEndian.Uint64(f[2])), Writer: string(f[3])}
-		if i >= 0 && (p.TS > np.TS || (p.TS == np.TS && p.Writer >= np.Writer)) {
+		if i >= 0 && !newer(np, p) {
 			return nil, false, nil
 		}
 		if i < 0 {
@@ -496,7 +518,13 @@ func (s *Store) copyFrom(name, sagaID string, from env.NodeID, reply env.Reply) 
 		reply(nil, permanent("copy %s into %s: not claimed by %s", name, s.e.ID, sagaID))
 		return
 	}
+	gen := s.fence(name)
 	s.e.Net.Request(from, encodeFields(opDump, []byte(name)), dumpTimeout, func(resp []byte, err error) {
+		if s.gens[name] != gen {
+			s.fenced++
+			reply(nil, fmt.Errorf("sagasim: copy %s into %s: overtaken by a later operation: %w", name, s.e.ID, ErrBusy))
+			return
+		}
 		if err != nil {
 			reply(nil, fmt.Errorf("sagasim: copy %s from %s: %w", name, from, err))
 			return
