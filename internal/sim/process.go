@@ -2,6 +2,7 @@ package sim
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
@@ -56,6 +57,9 @@ func (s *Sim) Restart(id env.NodeID) error {
 	if n.up {
 		return fmt.Errorf("sim: restart %s: %w", id, ErrNodeUp)
 	}
+	if n.lastIncarnation() {
+		return fmt.Errorf("sim: restart %s: incarnation %d is the last: %w", id, n.inc, env.ErrInvalidArgument)
+	}
 	s.boot(n)
 	return nil
 }
@@ -87,6 +91,9 @@ func (s *Sim) WipeRejoin(id env.NodeID) error {
 	if err != nil {
 		return fmt.Errorf("sim: wipe-rejoin: %w", err)
 	}
+	if n.lastIncarnation() {
+		return fmt.Errorf("sim: wipe-rejoin %s: incarnation %d is the last: %w", id, n.inc, env.ErrInvalidArgument)
+	}
 	if n.up {
 		s.crash(n, false)
 	}
@@ -99,7 +106,9 @@ func (s *Sim) HealAll() {
 	s.HealNet()
 	for _, n := range s.nodes {
 		if !n.up {
-			s.boot(n)
+			if !n.lastIncarnation() {
+				s.boot(n)
+			}
 		} else if n.paused {
 			n.paused = false
 			s.releaseNode(n)
@@ -107,3 +116,5 @@ func (s *Sim) HealAll() {
 		n.disk.clearReadFaults()
 	}
 }
+
+func (n *node) lastIncarnation() bool { return n.inc == math.MaxUint32 }

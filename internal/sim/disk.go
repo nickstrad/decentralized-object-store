@@ -2,6 +2,7 @@ package sim
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -331,9 +332,16 @@ func (s *Sim) FailReads(id env.NodeID, name string, count int) error {
 		return fmt.Errorf("sim: fail reads on %s: count %d: %w", id, count, env.ErrInvalidArgument)
 	}
 	if name == "" {
-		n.disk.failAny += count
+		n.disk.failAny = addSat(n.disk.failAny, count)
 		return nil
 	}
-	n.disk.failReads[name] += count
+	n.disk.failReads[name] = addSat(n.disk.failReads[name], count)
 	return nil
+}
+
+func addSat(a, b int) int {
+	if a > math.MaxInt-b {
+		return math.MaxInt
+	}
+	return a + b
 }
