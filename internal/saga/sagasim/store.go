@@ -23,10 +23,10 @@ var (
 )
 
 const (
-	CodeBusy      env.Code = env.CodeAppMin + 56
-	CodeMoved     env.Code = env.CodeAppMin + 57
-	CodeUnsettled env.Code = env.CodeAppMin + 58
-	CodeMalformed env.Code = env.CodeAppMin + 59
+	CodeBusy      env.Code = env.CodeAppMin + 88
+	CodeMoved     env.Code = env.CodeAppMin + 89
+	CodeUnsettled env.Code = env.CodeAppMin + 90
+	CodeMalformed env.Code = env.CodeAppMin + 91
 )
 
 func Codes() []env.CodeEntry {
@@ -131,26 +131,6 @@ func decodeFields(b []byte) (byte, [][]byte, error) {
 	return op, out, nil
 }
 
-func encodeObjs(objs []KV) []byte {
-	var fields [][]byte
-	for _, o := range objs {
-		fields = append(fields, []byte(o.Key), o.Val)
-	}
-	return encodeFields(0, fields...)
-}
-
-func decodeObjs(b []byte) ([]KV, error) {
-	_, f, err := decodeFields(b)
-	if err != nil || len(f)%2 != 0 {
-		return nil, fmt.Errorf("sagasim: objects: %w", ErrMalformed)
-	}
-	var out []KV
-	for i := 0; i < len(f); i += 2 {
-		out = append(out, KV{Key: string(f[i]), Val: bytes.Clone(f[i+1])})
-	}
-	return out, nil
-}
-
 func Root(objs []KV) []byte {
 	h := sha256.New()
 	for _, o := range objs {
@@ -161,58 +141,6 @@ func Root(objs []KV) []byte {
 		h.Write(o.Val)
 	}
 	return h.Sum(nil)
-}
-
-func (st *storeState) encode() []byte {
-	var fields [][]byte
-	for _, bk := range st.Buckets {
-		fields = append(fields, encodeFields(bk.Status, []byte(bk.Name), []byte(bk.Owner), []byte(bk.Sealer),
-			[]byte(strings.Join(bk.Regs, "\x00")), encodeObjs(bk.Objs)))
-	}
-	var ptrs [][]byte
-	for _, p := range st.Ptrs {
-		ptrs = append(ptrs, encodeFields(0, []byte(p.Bucket), []byte(p.Loc), binary.BigEndian.AppendUint64(nil, uint64(p.TS)), []byte(p.Writer)))
-	}
-	return encodeFields(1, encodeFields(0, fields...), encodeFields(0, ptrs...))
-}
-
-func decodeState(b []byte) (storeState, error) {
-	var st storeState
-	_, top, err := decodeFields(b)
-	if err != nil || len(top) != 2 {
-		return st, fmt.Errorf("sagasim: state: %w", ErrMalformed)
-	}
-	_, bks, err := decodeFields(top[0])
-	if err != nil {
-		return st, err
-	}
-	for _, raw := range bks {
-		status, f, err := decodeFields(raw)
-		if err != nil || len(f) != 5 {
-			return st, fmt.Errorf("sagasim: bucket: %w", ErrMalformed)
-		}
-		objs, err := decodeObjs(f[4])
-		if err != nil {
-			return st, err
-		}
-		bk := &bucketState{Name: string(f[0]), Status: status, Owner: string(f[1]), Sealer: string(f[2]), Objs: objs}
-		if len(f[3]) > 0 {
-			bk.Regs = strings.Split(string(f[3]), "\x00")
-		}
-		st.Buckets = append(st.Buckets, bk)
-	}
-	_, ps, err := decodeFields(top[1])
-	if err != nil {
-		return st, err
-	}
-	for _, raw := range ps {
-		_, f, err := decodeFields(raw)
-		if err != nil || len(f) != 4 || len(f[2]) != 8 {
-			return st, fmt.Errorf("sagasim: pointer: %w", ErrMalformed)
-		}
-		st.Ptrs = append(st.Ptrs, pointerState{Bucket: string(f[0]), Loc: string(f[1]), TS: int64(binary.BigEndian.Uint64(f[2])), Writer: string(f[3])})
-	}
-	return st, nil
 }
 
 func (st *storeState) bucket(name string) *bucketState {
@@ -320,7 +248,11 @@ func (s *Store) retryLoad() {
 }
 
 func (s *Store) persist() error {
-	if err := s.e.Disk.Write(stateBlob, s.st.encode()); err != nil {
+	b, err := s.st.encode()
+	if err != nil {
+		return err
+	}
+	if err := s.e.Disk.Write(stateBlob, b); err != nil {
 		return err
 	}
 	return s.e.Disk.Sync(stateBlob)
@@ -332,7 +264,11 @@ func (s *Store) EncodeState() []byte {
 	b := []byte{0}
 	if s.loaded {
 		b[0] = 1
-		b = append(b, s.st.encode()...)
+		enc, err := s.st.encode()
+		if err != nil {
+			b[0] = 2
+		}
+		b = append(b, enc...)
 	}
 	b = binary.AppendUvarint(b, uint64(s.loadErrs))
 	b = binary.AppendUvarint(b, uint64(s.fenced))
@@ -360,6 +296,10 @@ func (s *Store) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 		reply(nil, fmt.Errorf("sagasim: op %d with %d fields: %w", op, len(f), ErrMalformed))
 		return
 	}
+	if err := checkRequest(op, f); err != nil {
+		reply(nil, err)
+		return
+	}
 	if op == opCopy {
 		s.copyFrom(string(f[0]), string(f[1]), env.NodeID(f[2]), reply)
 		return
@@ -379,6 +319,24 @@ func (s *Store) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	reply(resp, nil)
 }
 
+func checkRequest(op byte, f [][]byte) error {
+	for i, x := range f {
+		switch {
+		case op == opPut && i == 1:
+			if len(x) > MaxKey {
+				return tooLarge("object key", len(x), MaxKey)
+			}
+		case op == opPut && i == 2:
+			if len(x) > MaxValue {
+				return tooLarge("object value", len(x), MaxValue)
+			}
+		case len(x) > MaxName:
+			return tooLarge("request field", len(x), MaxName)
+		}
+	}
+	return nil
+}
+
 func (s *Store) handle(op byte, f [][]byte) ([]byte, bool, error) {
 	name := string(f[0])
 	bk := s.st.bucket(name)
@@ -394,6 +352,9 @@ func (s *Store) handle(op byte, f [][]byte) ([]byte, bool, error) {
 		if slices.Contains(bk.Regs, sagaID) {
 			return nil, false, nil
 		}
+		if len(bk.Regs) >= MaxRegs {
+			return nil, false, fmt.Errorf("register %s at %s: %w", name, s.e.ID, tooLarge("registration list", len(bk.Regs)+1, MaxRegs))
+		}
 		bk.Regs = append(bk.Regs, sagaID)
 		slices.Sort(bk.Regs)
 		return nil, true, nil
@@ -405,6 +366,8 @@ func (s *Store) handle(op byte, f [][]byte) ([]byte, bool, error) {
 		return nil, true, nil
 	case opClaim:
 		switch {
+		case bk == nil && len(s.st.Buckets) >= MaxBuckets:
+			return nil, false, fmt.Errorf("claim %s at %s: %w", name, s.e.ID, tooLarge("bucket list", len(s.st.Buckets)+1, MaxBuckets))
 		case bk == nil || bk.Status == statusRetired:
 			s.st.put(&bucketState{Name: name, Status: statusStaging, Owner: sagaID})
 			return nil, true, nil
@@ -426,7 +389,8 @@ func (s *Store) handle(op byte, f [][]byte) ([]byte, bool, error) {
 		if bk == nil || (bk.Status != statusLive && bk.Status != statusSealed) {
 			return nil, false, permanent("dump %s at %s: no source data", name, s.e.ID)
 		}
-		return encodeObjs(bk.Objs), false, nil
+		b, err := encodeObjs(bk.Objs)
+		return b, false, err
 	case opDiscard:
 		if bk != nil && bk.Status == statusStaging && bk.Owner == sagaID && len(bk.Objs) > 0 {
 			bk.Objs = nil
@@ -446,6 +410,9 @@ func (s *Store) handle(op byte, f [][]byte) ([]byte, bool, error) {
 		np := pointerState{Bucket: name, Loc: string(f[1]), TS: int64(binary.BigEndian.Uint64(f[2])), Writer: string(f[3])}
 		if i >= 0 && !newer(np, p) {
 			return nil, false, nil
+		}
+		if i < 0 && len(s.st.Ptrs) >= MaxBuckets {
+			return nil, false, fmt.Errorf("flip %s at %s: %w", name, s.e.ID, tooLarge("pointer list", len(s.st.Ptrs)+1, MaxBuckets))
 		}
 		if i < 0 {
 			s.st.Ptrs = append(s.st.Ptrs, np)
@@ -498,6 +465,8 @@ func (s *Store) handle(op byte, f [][]byte) ([]byte, bool, error) {
 		i, found := slices.BinarySearchFunc(bk.Objs, kv.Key, func(o KV, k string) int { return strings.Compare(o.Key, k) })
 		if found {
 			bk.Objs[i] = kv
+		} else if len(bk.Objs) >= MaxObjects {
+			return nil, false, fmt.Errorf("put %s at %s: %w", name, s.e.ID, tooLarge("object list", len(bk.Objs)+1, MaxObjects))
 		} else {
 			bk.Objs = slices.Insert(bk.Objs, i, kv)
 		}

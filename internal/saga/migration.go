@@ -32,7 +32,8 @@ type MigrationInput struct {
 }
 
 func (m MigrationInput) Validate() error {
-	if m.Bucket == "" || m.From == "" || m.To == "" || m.From == m.To {
+	if m.Bucket == "" || m.From == "" || m.To == "" || m.From == m.To ||
+		len(m.Bucket) > maxInputField || len(m.From) > maxInputField || len(m.To) > maxInputField {
 		return fmt.Errorf("saga: migration %q from %q to %q: %w", m.Bucket, m.From, m.To, env.ErrInvalidArgument)
 	}
 	return nil

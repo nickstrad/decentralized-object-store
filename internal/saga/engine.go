@@ -253,6 +253,9 @@ func (g *Engine) Begin(id ID, def string, input []byte) error {
 		if derr == nil {
 			derr = g.e.Disk.Sync(name)
 		}
+		if errors.Is(derr, env.ErrNotFound) {
+			derr = nil
+		}
 		return errors.Join(fmt.Errorf("saga: begin %s: %w", id, err), derr)
 	}
 	if !ok {
@@ -389,8 +392,8 @@ func (g *Engine) call(r *run, step, attempt int) Call {
 		Key:     Key{Saga: r.id, Step: step},
 		Attempt: attempt,
 		Begun:   r.snap.Begun,
-		Input:   r.snap.Input,
-		Outputs: slices.Clone(r.snap.Outputs),
+		Input:   bytes.Clone(r.snap.Input),
+		Outputs: cloneOutputs(r.snap.Outputs),
 	}
 }
 
@@ -599,6 +602,17 @@ func (g *Engine) retryPending() {
 	if len(g.pending) == 0 {
 		g.retryAttempt = 0
 	}
+}
+
+func cloneOutputs(outs [][]byte) [][]byte {
+	if outs == nil {
+		return nil
+	}
+	out := make([][]byte, len(outs))
+	for i, o := range outs {
+		out[i] = bytes.Clone(o)
+	}
+	return out
 }
 
 func (g *Engine) status(r *run) Status {

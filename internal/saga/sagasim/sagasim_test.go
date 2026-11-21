@@ -109,17 +109,21 @@ func TestWireRejectsMalformed(t *testing.T) {
 			t.Fatalf("case %d (%x): %v", i, b, err)
 		}
 	}
-	if _, err := decodeObjs(encodeFields(0, []byte("k"))); !errors.Is(err, ErrMalformed) {
-		t.Fatalf("odd object fields: %v", err)
+	if _, err := decodeObjs([]byte{1, 1, 'k'}); !errors.Is(err, ErrMalformed) {
+		t.Fatalf("an object without a value: %v", err)
 	}
-	for i, b := range [][]byte{encodeFields(1, []byte("x")), encodeFields(1, encodeFields(0, []byte("x")), encodeFields(0)),
-		encodeFields(1, encodeFields(0), encodeFields(0, encodeFields(0, []byte("b"))))} {
+	for i, b := range [][]byte{nil, {1, 0, 0}, {stateVersion}, {stateVersion, 0, 1, 0, 0}, {stateVersion, 1, statusLive, 1, 'b', 0, 0, 0, 0},
+		{stateVersion, 0, 1, 1, 'b', 1, 'a', 0, 0, 0}, {stateVersion, 0, 0, 0}} {
 		if _, err := decodeState(b); !errors.Is(err, ErrMalformed) {
 			t.Fatalf("state %d: %v", i, err)
 		}
 	}
 	st := storeState{Buckets: []*bucketState{{Name: "b", Status: statusLive, Regs: []string{"r1", "r2"}, Objs: objects(3)}}, Ptrs: []pointerState{{Bucket: "b", Loc: "a", TS: -5, Writer: "w"}}}
-	back, err := decodeState(st.encode())
+	enc, err := st.encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := decodeState(enc)
 	if err != nil || !slices.Equal(back.Buckets[0].Regs, []string{"r1", "r2"}) || back.Ptrs[0] != st.Ptrs[0] || string(Root(back.Buckets[0].Objs)) != string(Root(st.Buckets[0].Objs)) {
 		t.Fatalf("state round trip: %+v %v", back, err)
 	}
@@ -254,7 +258,8 @@ func TestStoreOperations(t *testing.T) {
 				} else if _, err := ask(s, between, Bucket, "s1"); err != nil {
 					t.Fatal(err)
 				}
-				net.reqs[0](encodeObjs(objects(3)), nil)
+				three, _ := encodeObjs(objects(3))
+				net.reqs[0](three, nil)
 				if !errors.Is(late, ErrBusy) || s.fenced != 1 {
 					t.Fatalf("op %d: late copy err %v fenced %d", between, late, s.fenced)
 				}
@@ -263,7 +268,8 @@ func TestStoreOperations(t *testing.T) {
 				}
 				if between == opCopy {
 					var fresh []byte
-					net.reqs[1](encodeObjs(objects(2)), nil)
+					two, _ := encodeObjs(objects(2))
+					net.reqs[1](two, nil)
 					fresh = Root(s.st.bucket(Bucket).Objs)
 					if string(fresh) != string(Root(objects(2))) {
 						t.Fatal("the newest copy was not applied")

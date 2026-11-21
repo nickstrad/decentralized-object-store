@@ -99,6 +99,9 @@ func Build(seed int64, o Options) (*sim.Sim, *Model, error) {
 	if o.Objects <= 0 {
 		o.Objects = defaultObjects
 	}
+	if o.Objects > MaxObjects {
+		return s, nil, fmt.Errorf("sagasim: build: %d objects, at most %d: %w", o.Objects, MaxObjects, env.ErrInvalidArgument)
+	}
 	m := &Model{s: s, o: o, initial: objects(o.Objects), calls: map[env.NodeID][]int{}}
 	for _, sp := range o.Stores {
 		m.stores = append(m.stores, sp.ID)

@@ -16,7 +16,7 @@ const (
 	MatrixCells    = 78
 	MatrixBound    = 20 * time.Second
 	MatrixSettle   = 2 * time.Second
-	matrixBegin    = env.Time(20 * time.Millisecond)
+	matrixBegin    = 20 * time.Millisecond
 	matrixSaga     = saga.ID("mig-1")
 	restartDelay   = 500 * time.Millisecond
 	lostAfterPivot = 2
@@ -189,19 +189,46 @@ func (c *modelCluster) CheckCompensated() error   { return c.m.CheckCompensated(
 type RunOptions struct {
 	Configure func(*saga.Config)
 	Report    *Report
+	Bound     time.Duration
+	Settle    time.Duration
+	Policy    saga.Policy
+}
+
+func (o RunOptions) bound() time.Duration {
+	if o.Bound == 0 {
+		return MatrixBound
+	}
+	return o.Bound
+}
+
+func (o RunOptions) settle() time.Duration {
+	if o.Settle == 0 {
+		return MatrixSettle
+	}
+	return o.Settle
+}
+
+func (o RunOptions) policy() saga.Policy {
+	if o.Policy == (saga.Policy{}) {
+		return MatrixPolicy()
+	}
+	return o.Policy
 }
 
 type Report struct {
-	State   saga.State
-	Outcome string
-	Elapsed time.Duration
-	Crashes int
-	Torn    int
-	Calls   []int
+	State     saga.State
+	Outcome   string
+	Start     env.Time
+	Elapsed   time.Duration
+	Crashes   int
+	Torn      int
+	CompFails int
+	Calls     []int
 }
 
 type cellState struct {
 	cell        Cell
+	policy      saga.Policy
 	s           *sim.Sim
 	cl          Cluster
 	fired       bool
@@ -256,6 +283,9 @@ func (st *cellState) crash(torn bool) {
 
 func (st *cellState) hook(p saga.Point) bool {
 	c := st.cell
+	if p.Saga != matrixSaga {
+		return false
+	}
 	if st.doubleArmed {
 		st.doubleArmed = false
 		st.crash(true)
@@ -290,6 +320,10 @@ func injected(what string, err error) error {
 
 func (s *injStep) Do(c saga.Call, done func([]byte, error)) {
 	st, cell := s.st, s.st.cell
+	if c.Key.Saga != matrixSaga {
+		s.Step.Do(c, done)
+		return
+	}
 	st.calls[s.i]++
 	if st.ended() {
 		st.note(fmt.Errorf("sagasim: step %d ran after the end record: %w", s.i, ErrCheck))
@@ -316,17 +350,21 @@ func (s *injStep) Do(c saga.Call, done func([]byte, error)) {
 
 func (st *cellState) lostLimit() int {
 	if st.cell.Step < saga.MigrationPivot {
-		return MatrixPolicy().MaxAttempts
+		return st.policy.MaxAttempts
 	}
 	return lostAfterPivot
 }
 
 func (s *injStep) Compensate(c saga.Call, done func(error)) {
 	st, cell := s.st, s.st.cell
+	if c.Key.Saga != matrixSaga {
+		s.Step.Compensate(c, done)
+		return
+	}
 	if st.ended() {
 		st.note(fmt.Errorf("sagasim: compensation %d ran after the end record: %w", s.i, ErrCheck))
 	}
-	if cell.Kind == FailMidCompensation && s.i == cell.Step && st.compFails < 2*MatrixPolicy().MaxAttempts {
+	if cell.Kind == FailMidCompensation && s.i == cell.Step && st.compFails < 2*st.policy.MaxAttempts {
 		s.Step.Compensate(c, func(error) {
 			st.compFails++
 			st.failFired = true
@@ -356,9 +394,9 @@ func (st *cellState) wrap(d saga.Definition) saga.Definition {
 
 func Run(h Harness, c Cell, o RunOptions) func(seed int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
-		st := &cellState{cell: c, calls: make([]int, MigrationSteps), lastComp: MigrationSteps}
+		st := &cellState{cell: c, policy: o.policy(), calls: make([]int, MigrationSteps), lastComp: MigrationSteps}
 		s, cl, err := h.Build(seed, BuildOptions{
-			Policy: MatrixPolicy(),
+			Policy: st.policy,
 			Wrap:   st.wrap,
 			Configure: func(cfg *saga.Config) {
 				cfg.Hook = st.hook
@@ -367,12 +405,22 @@ func Run(h Harness, c Cell, o RunOptions) func(seed int64) *sim.Sim {
 				}
 			},
 		})
+		if s == nil {
+			s = sim.New(sim.Config{Seed: seed})
+		}
+		if err == nil && cl == nil {
+			err = fmt.Errorf("sagasim: cell %s: the harness built no cluster: %w", c.Name(), env.ErrInvalidArgument)
+		}
 		if err != nil {
 			s.Fail(err)
 			return s
 		}
+		if err := s.Err(); err != nil {
+			return s
+		}
 		st.s, st.cl = s, cl
-		s.At(matrixBegin, "begin", func() {
+		start := s.Now().Add(matrixBegin)
+		s.At(start, "begin", func() {
 			if err := cl.Begin(matrixSaga); err != nil {
 				s.Fail(err)
 			}
@@ -381,11 +429,11 @@ func Run(h Harness, c Cell, o RunOptions) func(seed int64) *sim.Sim {
 			sta, ok := cl.Status(matrixSaga)
 			return ok && sta.State.Terminal()
 		}
-		if err := s.RunUntilConverged(matrixBegin.Add(MatrixBound), done); err != nil {
+		if err := s.RunUntilConverged(start.Add(o.bound()), done); err != nil {
 			return s
 		}
 		end := s.Now()
-		if err := s.RunFor(MatrixSettle); err != nil {
+		if err := s.RunFor(o.settle()); err != nil {
 			return s
 		}
 		sta, ok := cl.Status(matrixSaga)
@@ -394,7 +442,7 @@ func Run(h Harness, c Cell, o RunOptions) func(seed int64) *sim.Sim {
 			return s
 		}
 		if o.Report != nil {
-			*o.Report = Report{State: sta.State, Elapsed: end.Sub(matrixBegin), Crashes: st.crashes, Torn: st.torn, Calls: st.calls}
+			*o.Report = Report{State: sta.State, Start: start, Elapsed: end.Sub(start), Crashes: st.crashes, Torn: st.torn, CompFails: st.compFails, Calls: st.calls}
 			if len(sta.Outputs) == MigrationSteps {
 				o.Report.Outcome = string(sta.Outputs[MigrationSteps-1])
 			}
@@ -413,8 +461,8 @@ func (st *cellState) check(cl Cluster, sta saga.Status) error {
 	if sta.State != st.cell.Want() {
 		return fmt.Errorf("ended %v, want %v: %w", sta.State, st.cell.Want(), ErrCheck)
 	}
-	if st.cell.Kind.crash() && !st.fired {
-		return fmt.Errorf("the crash point was never reached: %w", ErrCheck)
+	if err := st.injected(); err != nil {
+		return err
 	}
 	if sta.State == saga.StateCompleted {
 		if len(sta.Outputs) != MigrationSteps || string(sta.Outputs[MigrationSteps-1]) != saga.OutcomeMoved {
@@ -423,4 +471,21 @@ func (st *cellState) check(cl Cluster, sta saga.Status) error {
 		return cl.CheckMoved()
 	}
 	return cl.CheckCompensated()
+}
+
+func (st *cellState) injected() error {
+	c := st.cell
+	switch {
+	case c.Kind.crash() && !st.fired:
+		return fmt.Errorf("the crash point was never reached: %w", ErrCheck)
+	case c.Kind.midComp() && !st.trig:
+		return fmt.Errorf("the pivot refusal that starts compensation was never injected: %w", ErrCheck)
+	case !c.Kind.crash() && !st.failFired:
+		return fmt.Errorf("the %s failure was never injected: %w", c.Kind, ErrCheck)
+	case c.Torn && !c.Kind.crash() && !st.tornDone:
+		return fmt.Errorf("the torn crash after the failure never happened: %w", ErrCheck)
+	case c.Double && st.crashes < 2:
+		return fmt.Errorf("the second crash of a double cell never happened (%d crashes): %w", st.crashes, ErrCheck)
+	}
+	return nil
 }

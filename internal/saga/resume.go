@@ -96,7 +96,7 @@ func (s *Snapshot) apply(r Record, sh shape) error {
 		s.Outputs = append(slices.Clip(s.Outputs), bytes.Clone(r.Data))
 		s.Step, s.Attempt, s.Open = s.Step+1, 0, false
 	case RecAbort:
-		if s.State != StateRunning || s.Step >= sh.steps || s.Step > sh.pivot || r.Step != sh.abortFrom(s.Step) {
+		if s.State != StateRunning || !s.Open || s.Step >= sh.steps || s.Step > sh.pivot || r.Step != sh.abortFrom(s.Step) {
 			return bad(fmt.Sprintf("abort from %d at step %d", r.Step, s.Step))
 		}
 		s.State, s.Step, s.Attempt, s.Open, s.Cause = StateCompensating, r.Step, 0, false, string(r.Data)

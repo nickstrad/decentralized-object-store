@@ -204,9 +204,10 @@ type hookFilter struct{ keep int }
 
 func (h hookFilter) Build(seed int64, o BuildOptions) (*sim.Sim, Cluster, error) {
 	inner := o.Configure
+	fired := 0
 	o.Configure = func(cfg *saga.Config) {
 		inner(cfg)
-		hook, fired := cfg.Hook, 0
+		hook := cfg.Hook
 		cfg.Hook = func(p saga.Point) bool {
 			if fired >= h.keep {
 				return false

@@ -14,9 +14,9 @@ var (
 )
 
 const (
-	CodePermanent    env.Code = env.CodeAppMin + 48
-	CodeSagaNotFound env.Code = env.CodeAppMin + 49
-	CodeLogCorrupt   env.Code = env.CodeAppMin + 50
+	CodePermanent    env.Code = env.CodeAppMin + 80
+	CodeSagaNotFound env.Code = env.CodeAppMin + 81
+	CodeLogCorrupt   env.Code = env.CodeAppMin + 82
 )
 
 func Codes() []env.CodeEntry {

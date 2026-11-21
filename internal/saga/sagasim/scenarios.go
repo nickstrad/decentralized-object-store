@@ -32,6 +32,7 @@ type NemesisParams struct {
 	Writes   int
 	WriteGap time.Duration
 	Tick     time.Duration
+	Objects  int
 }
 
 type NemesisReport struct {
@@ -41,6 +42,7 @@ type NemesisReport struct {
 	Settled     time.Duration
 	Attempts    []int
 	Acked       int
+	Stored      int
 	Final       string
 }
 
@@ -50,13 +52,20 @@ func threeStores() []sim.NodeSpec {
 
 func NemesisRun(p NemesisParams, res *NemesisReport) func(seed int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
+		if res == nil {
+			res = &NemesisReport{}
+		}
 		*res = NemesisReport{}
+		objs := p.Objects
+		if objs == 0 {
+			objs = MatrixObjects
+		}
 		s, m, err := Build(seed, Options{
 			Coordinators: []sim.NodeSpec{{ID: "c1", Region: "ra"}},
 			Stores:       threeStores(),
 			Client:       &sim.NodeSpec{ID: "cl", Region: "rb"},
 			Source:       "a",
-			Objects:      MatrixObjects,
+			Objects:      objs,
 			Policy:       MatrixPolicy(),
 		})
 		if err != nil {
@@ -120,6 +129,11 @@ func NemesisRun(p NemesisParams, res *NemesisReport) func(seed int64) *sim.Sim {
 		res.Attempts = m.Attempts("c1")
 		res.Acked = m.Acked()
 		res.Final = cur
+		if st, ok := m.view(cur); ok {
+			if bk := st.bucket(Bucket); bk != nil {
+				res.Stored = len(bk.Objs)
+			}
+		}
 		cerr := m.CheckAt(Bucket, cur)
 		if cerr == nil {
 			cerr = m.CheckWrites(Bucket, cur)
@@ -148,6 +162,9 @@ type DuelReport struct {
 
 func DuelRun(p DuelParams, res *DuelReport) func(seed int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
+		if res == nil {
+			res = &DuelReport{}
+		}
 		*res = DuelReport{}
 		ins := [2]saga.MigrationInput{{Bucket: Bucket, From: "a", To: "b"}, {Bucket: Bucket, From: "a", To: "c"}}
 		coords := [2]env.NodeID{"c1", "c2"}
