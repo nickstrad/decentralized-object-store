@@ -15,12 +15,13 @@ up=${KB_REPO:-/root/Software/kb}
 sha_file="$repo/agent_work/kb-vendor.sha"
 bin="$repo/.kb/bin/kb"
 
-in_dev() { (cd "$repo" && docker compose build -q dev && docker compose run --rm -T dev bash -c "$1"); }
+in_dev() { (cd "$repo" && docker compose run --rm -T dev bash -c "$1"); }
 build() {
   local sha stamp="$repo/.kb/bin/.built-sha"
   sha=$(cat "$sha_file")
   if [ -x "$bin" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$sha" ]; then return; fi
   mkdir -p "$repo/.kb/bin"
+  (cd "$repo" && docker compose build -q dev)  # the image must match this checkout's Dockerfile before kb is compiled in it
   in_dev 'cd kb && CGO_ENABLED=1 go build -buildvcs=false -tags fts5 -o /src/.kb/bin/kb ./cmd/kb'
   echo "$sha" > "$stamp"
 }
