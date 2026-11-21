@@ -271,6 +271,7 @@ func mustNil(t testing.TB, err error) {
 type chunkModel struct {
 	written, durable map[storage.ShardID][]byte
 	rotW, rotD       map[storage.ShardID]bool
+	dirty            map[storage.ShardID]bool
 }
 
 func (m *chunkModel) has(id storage.ShardID) bool {
@@ -282,6 +283,7 @@ func (m *chunkModel) setBoth(id storage.ShardID, p []byte) {
 	m.written[id], m.durable[id] = p, p
 	delete(m.rotW, id)
 	delete(m.rotD, id)
+	delete(m.dirty, id)
 }
 
 func (m *chunkModel) dropBoth(id storage.ShardID) {
@@ -289,24 +291,26 @@ func (m *chunkModel) dropBoth(id storage.ShardID) {
 	delete(m.durable, id)
 	delete(m.rotW, id)
 	delete(m.rotD, id)
+	delete(m.dirty, id)
 }
 
 func (m *chunkModel) clean(id storage.ShardID) bool {
 	w, okW := m.written[id]
 	d, okD := m.durable[id]
-	return okW && okD && bytes.Equal(w, d) && !m.rotW[id] && !m.rotD[id]
+	return okW && okD && bytes.Equal(w, d) && !m.rotW[id] && !m.rotD[id] && !m.dirty[id]
 }
 
 func (m *chunkModel) crash() {
 	m.written = maps.Clone(m.durable)
 	m.rotW = maps.Clone(m.rotD)
+	m.dirty = map[storage.ShardID]bool{}
 }
 
 func TestPropChunkStoreModel(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		rd := newRestartableDisk(rt)
 		st := storage.NewChunkStore(rd.disk)
-		m := &chunkModel{written: map[storage.ShardID][]byte{}, durable: map[storage.ShardID][]byte{}, rotW: map[storage.ShardID]bool{}, rotD: map[storage.ShardID]bool{}}
+		m := &chunkModel{written: map[storage.ShardID][]byte{}, durable: map[storage.ShardID][]byte{}, rotW: map[storage.ShardID]bool{}, rotD: map[storage.ShardID]bool{}, dirty: map[storage.ShardID]bool{}}
 		ids := make([]storage.ShardID, 0, 8)
 		for v := 1; v <= 2; v++ {
 			for idx := 0; idx < 4; idx++ {
@@ -382,6 +386,7 @@ func TestPropChunkStoreModel(t *testing.T) {
 					rt.Fatal(err)
 				}
 				m.written[id] = p
+				m.dirty[id] = true
 				delete(m.rotW, id)
 			},
 			"unsynced delete": func(rt *rapid.T) {
@@ -393,6 +398,7 @@ func TestPropChunkStoreModel(t *testing.T) {
 					rt.Fatal(err)
 				}
 				delete(m.written, id)
+				m.dirty[id] = true
 				delete(m.rotW, id)
 			},
 			"crash": func(rt *rapid.T) {
