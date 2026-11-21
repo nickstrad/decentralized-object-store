@@ -5,7 +5,7 @@ Spec: PLAN.md 4.2 "Chunk 4", 7.5, 2.2/2.3/2.6, OCC amendment in 9.1; brief
 `agent_work/04-occ/objstore-p2-04-occ-build.md`.
 
 History: tests first (`079bab7`, does not compile), then the implementation (`cd718fb`), then
-coverage, benchmark and notes commits (see `git log`).
+coverage/benchmark (`3ab2715`), notes, and the oracle fix found by the gate (see `git log`).
 
 ## What was built
 
@@ -275,4 +275,39 @@ floats, and only strings, integers and errors are passed to `fmt`. No exemption 
 
 ## Gate and commands
 
-GATE_PLACEHOLDER
+All through `docker compose run --rm dev` unless noted.
+
+| Command | Result |
+|---|---|
+| `gofmt -l .` | empty |
+| `go vet ./...`, `go build ./...` | clean |
+| `go test -count=1 -cover ./...` | ok; `internal/occ` 97.3% |
+| `go test -race -count=1 ./internal/occ` | ok, 14 s |
+| `go test -count=1 ./internal/occ -rapid.checks=2000` | ok, 8 s |
+| `go test ./internal/occ -run '^$' -fuzz '^<T>$' -fuzztime 30s -fuzzminimizetime 5s` | `FuzzOCCConditionalWrite` 78,156 execs, `FuzzOCCMergeLaws` 45,006, `FuzzOCCDecode` 164,241; no crasher (before the gate run below) |
+| `DST_SEEDS=500 go test -count=1 -v -run 'DST\|Canary' ./internal/occ` | ok, 134 s |
+| `go test -run '^$' -bench BenchmarkMergeDoc -benchmem ./internal/occ` | numbers above |
+
+**First gate run** (`agent_work/gates/gate.sh 04-occ` on `2e861d2`): `overall=fail`. G3's
+`FuzzOCCDecode` found an input: a decoded scalar stamped before the epoch (negative wall).
+The test oracle `checkLaws` treated a scalar missing on one side as the zero `Scalar`, which
+sorts above a negative stamp. So the oracle expected the zero value to win, while the product
+(correctly) keeps the only present scalar. G4 and G5 failed only because they replayed that
+committed crasher. Fixed in the oracle (presence respected). The crasher stays under
+`testdata/fuzz/FuzzOCCDecode/3133d79c9e91e633` as a regression, and
+`TestMergeIsTotalOnDecodedStates` gained the pre-epoch case. Product code unchanged.
+
+**Final gate run** on `b1d2b0d5ec7301e05d62aefd32a80241145b55ee` (clean tree):
+`gate: overall=pass counts_for_landing=true`.
+
+| Gate | Result |
+|---|---|
+| G0 tools, gofmt, vet, build, detlint, panics, deps, comments (baseline `ceb5438`), selfcontained | pass |
+| G1 unit + coverage | pass; `internal/occ` 97.3%, `internal/sim` 95.4% |
+| G2 rapid 2,000 checks (seed 195518468058227) | pass, 82 s (2 packages) |
+| G3 fuzz 30 s | pass; `FuzzOCCDecode` 99,762 execs, `FuzzOCCConditionalWrite` 8,459, `FuzzOCCMergeLaws` 4,535 (the shared machine was loaded; the standalone runs above were faster), `FuzzSimSchedule` 11,638 |
+| G4 race | pass, 45 s |
+| G5 500 seeds (base 195518468058227) | pass; `internal/occ` 192 s |
+| G6 docker | pass |
+
+The result files under `agent_work/04-occ/gates/` are left uncommitted, as the brief asks.
