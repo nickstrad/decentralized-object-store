@@ -8,7 +8,8 @@ designed testing-first. Plan: [PLAN.md](PLAN.md).
 
 Status: Phase 1 COMPLETE (2026-11-21) — PLAN.md committed and pushed.
 STOPPED at the hard gate: waiting for Nick's sign-off on the plan. Nothing
-is running. No product code exists. Do not dispatch builders.
+is running. No product code exists. Do not dispatch builders. The initial
+C4 diagram set is landed in docs/c4/ and waits for Nick's buy-in (see Done).
 
 Seats (Nick, 2026-11-20, this project only): Fable orchestrates; Opus
 writes Go code (logic only), a fresh agent and worktree per chunk,
@@ -27,8 +28,20 @@ Done:
   OpenRouter down until 2026-12-01, Astra live). Commit SHA is in
   /root/runs/objstore-plan-done.txt and `git log`.
 
+- 2026-11-21: initial C4 diagram set designed with c4-sdk and LANDED at
+  b11d841 (docs/c4/; TARGET architecture, awaiting Nick's buy-in):
+  model.json (c4-sdk bundle, schemaVersion 1), nine diagram files (01
+  system context; 02 and 03 container views; 04–09 component diagrams for
+  gossip, erasure, merkle, crdt, saga, storage), 25 diagrams/*.mmd terminal
+  sources, README.md index. Validated: model.json decodes with c4-sdk
+  0.1.0 `decodeArchitecture` (ok, 0 errors, 0 warnings) and all 9 diagrams
+  build a scene; all Mermaid blocks parse (Mermaid 11); all 25 draw-visual
+  embeds are rendered and pass `render.py --check` at 80 columns. Results,
+  repeat commands and model notes: docs/c4/README.md. Marker:
+  /root/runs/objstore-c4-done.txt (status COMPLETE).
+
 In progress:
-- Nothing.
+- Nothing running.
 
 Next steps (only after Nick's ruling arrives as a follow-up brief file):
 1. Apply Nick's answers to PLAN.md section 9 (open questions) and any edits.
@@ -40,11 +53,19 @@ Next steps (only after Nick's ruling arrives as a follow-up brief file):
 Open decisions / blockers:
 - C4 RULING (Nick, 2026-11-21, via Twin): this project keeps a C4
   diagrams section on its GitHub Pages site, up to date per landing,
-  designed with Nick's c4-ask tool; designing the initial diagrams is
-  part of kickoff and they go to Nick for buy-in together with the plan
-  sign-off. Full ruling: /root/briefs/objstore-c4-ruling-2026-11-21.md. A bounded diagram-design run
-  follows this entry; diagrams land in docs/c4/ labelled TARGET
-  architecture, awaiting Nick's buy-in.
+  designed with Nick's c4-sdk tool (/root/Software/c4-sdk, npm
+  c4-sdk@0.1.0); designing the initial diagrams is part of kickoff and
+  they go to Nick for buy-in together with the plan sign-off. Full ruling:
+  /root/briefs/objstore-c4-ruling-2026-11-21.md. The diagrams are landed in
+  docs/c4/ (see Done), labelled TARGET architecture. C4 buy-in — owner:
+  Nick; Phase 2 needs it as well as the plan sign-off.
+- c4-sdk neighbour elements — owner: Nick. c4-sdk 0.1.0 has no per-view
+  external tag, so model.json carries eight `n-*` elements that stand for
+  neighbouring containers in component views. Keep the workaround or
+  change c4-sdk. Detail: docs/c4/README.md, "Model notes".
+- PLAN.md section 3 (repo layout) does not list docs/c4/ yet, and the
+  per-chunk landing gate has no C4-accuracy check yet; apply both with
+  Nick's other plan edits (ruling items 1 and 5).
 - BOOK RULING (Nick, 2026-11-20, via Twin): in addition to the per-chunk
   Neon write-ups, Neon assembles a concise Leanpub-style BOOK as the
   project's canonical learning artifact - per-chunk write-ups become book
