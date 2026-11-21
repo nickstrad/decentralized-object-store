@@ -24,6 +24,7 @@ const (
 	convergeLossMaxPPM        = 100_000
 	convergeQuiet             = env.Time(30 * time.Second)
 	convergeC                 = 8
+	convergeShards            = 4
 	maxMilliMsgsPerNodePeriod = 5_000
 
 	asymRun = 300 * time.Second
@@ -407,6 +408,28 @@ func convergeRun(n int, out *convergeOut) func(seed int64) *sim.Sim {
 	}
 }
 
+func shardedSweep(t *testing.T, shards int64, fn func(t *testing.T, seed int64)) {
+	t.Helper()
+	seeds := simtest.Seeds(t)
+	for k := range shards {
+		var mine []int64
+		for _, seed := range seeds {
+			if ((seed%shards)+shards)%shards == k {
+				mine = append(mine, seed)
+			}
+		}
+		if len(mine) == 0 {
+			continue
+		}
+		t.Run(fmt.Sprintf("shard=%d", k), func(t *testing.T) {
+			t.Parallel()
+			for _, seed := range mine {
+				t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) { fn(t, seed) })
+			}
+		})
+	}
+}
+
 func TestSWIMConvergenceDST(t *testing.T) {
 	t.Parallel()
 	for _, n := range []int{20, 50, 100} {
@@ -418,7 +441,7 @@ func TestSWIMConvergenceDST(t *testing.T) {
 				t.Logf("MEASURE converge N=%d milli-datagrams per node per period %s", n, msgs.summary())
 				t.Logf("MEASURE converge N=%d false Died events (healthy nodes, any observer) %s", n, falseDead.summary())
 			})
-			simtest.Sweep(t, func(t *testing.T, seed int64) {
+			shardedSweep(t, convergeShards, func(t *testing.T, seed int64) {
 				var out convergeOut
 				simtest.RequireDeterministic(t, seed, convergeRun(n, &out))
 				periods.add(out.periods)
