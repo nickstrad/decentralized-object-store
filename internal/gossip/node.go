@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
@@ -83,10 +84,24 @@ type queued struct {
 }
 
 type relay struct {
-	seq       uint32
 	origin    env.NodeID
 	originSeq uint32
 	expires   env.Time
+}
+
+type relayRef struct {
+	seq     uint32
+	expires env.Time
+}
+
+type tomb struct {
+	m     Member
+	order uint64
+}
+
+type tombRef struct {
+	id    env.NodeID
+	order uint64
 }
 
 type probeState struct {
@@ -104,17 +119,25 @@ type Node struct {
 	view  *View
 	local map[env.NodeID]*memberLocal
 
-	queue  []queued
+	queue  []*queued
+	qindex map[env.NodeID]*queued
 	qorder uint64
+
+	tombs    map[env.NodeID]tomb
+	tombFIFO []tombRef
+	tombSeq  uint64
 
 	nextPurge env.Time
 
-	probe    probeState
-	rotation []env.NodeID
-	rotIdx   int
-	seq      uint32
-	relays   []relay
+	probe     probeState
+	rotation  []env.NodeID
+	rotIdx    int
+	rotating  map[env.NodeID]bool
+	seq       uint32
+	relays    map[uint32]relay
+	relayFIFO []relayRef
 
+	seeds     []env.NodeID
 	subs      []func(Event)
 	tick      env.Timer
 	syncTimer env.Timer
@@ -142,14 +165,30 @@ func New(e env.Env, cfg Config) (*Node, error) {
 		return nil, fmt.Errorf("gossip: new node %s: environment lacks a clock, transport or random stream: %w", e.ID, env.ErrInvalidArgument)
 	}
 	n := &Node{
-		e:     e,
-		cfg:   cfg,
-		self:  Member{ID: e.ID, Region: e.Region, State: StateAlive},
-		view:  NewView(),
-		local: map[env.NodeID]*memberLocal{},
+		e:        e,
+		cfg:      cfg,
+		self:     Member{ID: e.ID, Region: e.Region, State: StateAlive},
+		view:     NewView(),
+		local:    map[env.NodeID]*memberLocal{},
+		qindex:   map[env.NodeID]*queued{},
+		tombs:    map[env.NodeID]tomb{},
+		rotating: map[env.NodeID]bool{},
+		relays:   map[uint32]relay{},
 	}
+	n.remember(cfg.Seeds)
 	n.view.Apply(n.self)
 	return n, nil
+}
+
+func (n *Node) remember(seeds []env.NodeID) {
+	for _, s := range seeds {
+		if len(n.seeds) >= MaxSeeds {
+			return
+		}
+		if s != n.self.ID && s != "" && !slices.Contains(n.seeds, s) {
+			n.seeds = append(n.seeds, s)
+		}
+	}
 }
 
 func (n *Node) Start() {
@@ -160,8 +199,8 @@ func (n *Node) Start() {
 	n.enqueue(n.self)
 	n.tick = n.e.Clock.AfterFunc(randDuration(n, n.cfg.ProbeInterval), n.onTick)
 	n.syncTimer = n.e.Clock.AfterFunc(n.cfg.SyncInterval/2+randDuration(n, n.cfg.SyncInterval), n.onSync)
-	if len(n.cfg.Seeds) > 0 {
-		n.join(n.cfg.Seeds, nil)
+	if len(n.seeds) > 0 {
+		n.join(n.seeds, nil)
 	}
 }
 
@@ -175,7 +214,16 @@ func (n *Node) Members() []Member { return n.view.Live() }
 
 func (n *Node) All() []Member { return n.view.All() }
 
-func (n *Node) Tombstones() []Member { return nil }
+func (n *Node) Tombstones() []Member {
+	out := make([]Member, 0, len(n.tombs))
+	for _, r := range n.tombFIFO {
+		if t, ok := n.tombs[r.id]; ok && t.order == r.order {
+			out = append(out, t.m)
+		}
+	}
+	slices.SortFunc(out, func(a, b Member) int { return strings.Compare(string(a.ID), string(b.ID)) })
+	return out
+}
 
 func (n *Node) LiveCount() int { return n.view.LiveCount() }
 
@@ -246,14 +294,43 @@ func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 	}
 }
 
+func (n *Node) pruneRelays(now env.Time) {
+	i := 0
+	for i < len(n.relayFIFO) && now > n.relayFIFO[i].expires {
+		ref := n.relayFIFO[i]
+		if r, ok := n.relays[ref.seq]; ok && r.expires == ref.expires {
+			delete(n.relays, ref.seq)
+		}
+		i++
+	}
+	n.relayFIFO = n.relayFIFO[i:]
+	if len(n.relayFIFO) > 2*MaxRelays {
+		n.relayFIFO = slices.DeleteFunc(n.relayFIFO, func(ref relayRef) bool {
+			r, ok := n.relays[ref.seq]
+			return !ok || r.expires != ref.expires
+		})
+	}
+}
+
 func (n *Node) onPingReq(from env.NodeID, m Message) {
 	if m.Target == n.self.ID {
 		n.send(from, Message{Kind: KindAck, Seq: m.Seq})
 		return
 	}
+	now := n.e.Clock.Now()
+	n.pruneRelays(now)
+	if len(n.relays) >= MaxRelays {
+		n.stats.RelaysDropped++
+		return
+	}
 	n.seq++
-	n.relays = append(n.relays, relay{seq: n.seq, origin: from, originSeq: m.Seq, expires: n.e.Clock.Now().Add(n.cfg.ProbeInterval)})
-	n.send(m.Target, Message{Kind: KindPing, Seq: n.seq})
+	seq := n.seq
+	if !n.sendWith(m.Target, Message{Kind: KindPing, Seq: seq}, nil) {
+		return
+	}
+	expires := now.Add(n.cfg.ProbeInterval)
+	n.relays[seq] = relay{origin: from, originSeq: m.Seq, expires: expires}
+	n.relayFIFO = append(n.relayFIFO, relayRef{seq: seq, expires: expires})
 }
 
 func (n *Node) onAck(seq uint32) {
@@ -264,15 +341,13 @@ func (n *Node) onAck(seq uint32) {
 		}
 		return
 	}
-	for i, r := range n.relays {
-		if r.seq != seq {
-			continue
-		}
-		n.relays = slices.Delete(n.relays, i, i+1)
-		if n.e.Clock.Now() <= r.expires {
-			n.send(r.origin, Message{Kind: KindAck, Seq: r.originSeq})
-		}
+	r, ok := n.relays[seq]
+	if !ok {
 		return
+	}
+	delete(n.relays, seq)
+	if n.e.Clock.Now() <= r.expires {
+		n.send(r.origin, Message{Kind: KindAck, Seq: r.originSeq})
 	}
 }
 
@@ -288,7 +363,7 @@ func (n *Node) refute(u Member) {
 	if n.closed {
 		return
 	}
-	if u.Incarnation < n.self.Incarnation || (u.Incarnation == n.self.Incarnation && u.State == StateAlive) {
+	if u.Incarnation < n.self.Incarnation || (u.Incarnation == n.self.Incarnation && u.State == StateAlive && u.Region == n.self.Region) {
 		return
 	}
 	if u.Incarnation == math.MaxUint32 {
@@ -315,16 +390,47 @@ func (n *Node) localOf(id env.NodeID) *memberLocal {
 	return l
 }
 
+func (n *Node) admit(id env.NodeID) bool {
+	if n.view.Len() < n.cfg.MaxMembers {
+		return true
+	}
+	n.record(&n.stats.ViewFull, fmt.Errorf("gossip: member %s: view holds %d members: %w", id, n.view.Len(), ErrViewFull))
+	return false
+}
+
+func (n *Node) markChanged(id env.NodeID, m Member) *memberLocal {
+	l := n.localOf(id)
+	l.changed = n.e.Clock.Now()
+	if !m.State.Live() {
+		n.nextPurge = min(n.nextPurge, l.changed.Add(n.cfg.DeadRetention))
+	}
+	return l
+}
+
 func (n *Node) apply(u Member) bool {
+	if u.ID == "" || !u.State.valid() {
+		return false
+	}
 	cur, had := n.view.Get(u.ID)
+	if !had {
+		if t, ok := n.tombs[u.ID]; ok && !Supersedes(u, t.m) {
+			if u.State.Live() && n.admit(u.ID) {
+				delete(n.tombs, u.ID)
+				n.view.Apply(t.m)
+				n.markChanged(u.ID, t.m)
+				n.stats.Reinstated++
+			}
+			return false
+		}
+		if !n.admit(u.ID) {
+			return false
+		}
+		delete(n.tombs, u.ID)
+	}
 	if !n.view.Apply(u) {
 		return false
 	}
-	l := n.localOf(u.ID)
-	l.changed = n.e.Clock.Now()
-	if !u.State.Live() {
-		n.nextPurge = min(n.nextPurge, l.changed.Add(n.cfg.DeadRetention))
-	}
+	l := n.markChanged(u.ID, u)
 	wasLive, isLive := had && cur.State.Live(), u.State.Live()
 	if u.State == StateSuspect {
 		if !(had && cur.State == StateSuspect && cur.Incarnation == u.Incarnation) {
@@ -354,7 +460,9 @@ func (n *Node) apply(u Member) bool {
 			n.emit(EventLeft, u)
 		}
 	}
-	n.enqueue(u)
+	if had || isLive {
+		n.enqueue(u)
+	}
 	return true
 }
 
@@ -377,11 +485,14 @@ func (n *Node) startSuspicion(l *memberLocal, u Member) {
 }
 
 func (n *Node) addToRotation(id env.NodeID) {
-	if slices.Contains(n.rotation[n.rotIdx:], id) {
+	if n.rotating[id] {
 		return
 	}
-	at := n.rotIdx + n.e.Rand.IntN(len(n.rotation)-n.rotIdx+1)
-	n.rotation = slices.Insert(n.rotation, at, id)
+	n.rotation = append(n.rotation, id)
+	last := len(n.rotation) - 1
+	at := n.rotIdx + n.e.Rand.IntN(last-n.rotIdx+1)
+	n.rotation[at], n.rotation[last] = n.rotation[last], n.rotation[at]
+	n.rotating[id] = true
 }
 
 func (n *Node) nextTarget() (env.NodeID, bool) {
@@ -389,6 +500,7 @@ func (n *Node) nextTarget() (env.NodeID, bool) {
 		for n.rotIdx < len(n.rotation) {
 			id := n.rotation[n.rotIdx]
 			n.rotIdx++
+			delete(n.rotating, id)
 			if m, ok := n.view.Get(id); ok && m.State.Live() && id != n.self.ID {
 				return id, true
 			}
@@ -397,6 +509,7 @@ func (n *Node) nextTarget() (env.NodeID, bool) {
 		for _, m := range n.view.Live() {
 			if m.ID != n.self.ID {
 				n.rotation = append(n.rotation, m.ID)
+				n.rotating[m.ID] = true
 			}
 		}
 		n.e.Rand.Shuffle(len(n.rotation), func(i, j int) { n.rotation[i], n.rotation[j] = n.rotation[j], n.rotation[i] })
@@ -420,11 +533,11 @@ func (n *Node) onTick() {
 	}
 	n.probe = probeState{}
 	now := n.e.Clock.Now()
-	n.relays = slices.DeleteFunc(n.relays, func(r relay) bool { return now > r.expires })
+	n.pruneRelays(now)
 	n.purge(now)
-	if n.view.LiveCount() <= 1 && len(n.cfg.Seeds) > 0 && n.joins == 0 {
+	if n.view.LiveCount() <= 1 && len(n.seeds) > 0 && n.joins == 0 {
 		n.stats.Rejoins++
-		n.join(n.cfg.Seeds, nil)
+		n.join(n.seeds, nil)
 	}
 	if target, ok := n.nextTarget(); ok {
 		n.seq++
@@ -476,42 +589,71 @@ func (n *Node) purge(now env.Time) {
 	if n.view.Len() == n.view.LiveCount() || now < n.nextPurge {
 		return
 	}
-	var expired []env.NodeID
+	var expired []Member
 	next := env.Time(math.MaxInt64)
-	for _, id := range n.view.ids {
-		m := n.view.byID[id]
-		if id == n.self.ID || m.State.Live() {
+	for _, m := range n.view.All() {
+		if m.ID == n.self.ID || m.State.Live() {
 			continue
 		}
-		due := n.localOf(id).changed.Add(n.cfg.DeadRetention)
+		due := n.localOf(m.ID).changed.Add(n.cfg.DeadRetention)
 		if now < due {
 			next = min(next, due)
 			continue
 		}
-		expired = append(expired, id)
+		expired = append(expired, m)
 	}
 	n.nextPurge = next
-	for _, id := range expired {
-		n.view.Remove(id)
-		delete(n.local, id)
-		n.queue = slices.DeleteFunc(n.queue, func(q queued) bool { return q.m.ID == id })
+	if len(expired) == 0 {
+		return
+	}
+	for _, m := range expired {
+		n.view.Remove(m.ID)
+		delete(n.local, m.ID)
+		delete(n.qindex, m.ID)
+		n.bury(m)
 		n.stats.Purged++
+	}
+	n.queue = slices.DeleteFunc(n.queue, func(q *queued) bool { return n.qindex[q.m.ID] != q })
+}
+
+func (n *Node) bury(m Member) {
+	for len(n.tombs) >= MaxTombstones {
+		ref := n.tombFIFO[0]
+		n.tombFIFO = n.tombFIFO[1:]
+		if t, ok := n.tombs[ref.id]; ok && t.order == ref.order {
+			delete(n.tombs, ref.id)
+			n.stats.TombstonesEvicted++
+		}
+	}
+	n.tombSeq++
+	n.tombs[m.ID] = tomb{m: m, order: n.tombSeq}
+	n.tombFIFO = append(n.tombFIFO, tombRef{id: m.ID, order: n.tombSeq})
+	if len(n.tombFIFO) > 2*MaxTombstones {
+		n.tombFIFO = slices.DeleteFunc(n.tombFIFO, func(r tombRef) bool {
+			t, ok := n.tombs[r.id]
+			return !ok || t.order != r.order
+		})
 	}
 }
 
 func (n *Node) enqueue(m Member) {
-	n.queue = slices.DeleteFunc(n.queue, func(q queued) bool { return q.m.ID == m.ID })
 	n.qorder++
-	n.queue = append(n.queue, queued{m: m, order: n.qorder})
+	if q, ok := n.qindex[m.ID]; ok {
+		q.m, q.transmits, q.order = m, 0, n.qorder
+		return
+	}
+	q := &queued{m: m, order: n.qorder}
+	n.qindex[m.ID] = q
+	n.queue = append(n.queue, q)
 }
 
 func (n *Node) piggyback(to env.NodeID, size int, lead []Member) []Member {
 	budget := n.cfg.MaxPacket - size
-	out := make([]Member, 0, min(len(n.queue)+len(lead)+1, budget/minUpdateSize+1))
+	out := make([]Member, 0, min(len(n.queue)+len(lead)+1, budget/minUpdateSize+1, MaxUpdates))
 	var first []Member
 	take := func(m Member) bool {
 		s := UpdateSize(m)
-		if s > budget {
+		if s > budget || len(out) >= MaxUpdates {
 			return false
 		}
 		budget -= s
@@ -526,7 +668,7 @@ func (n *Node) piggyback(to env.NodeID, size int, lead []Member) []Member {
 	if m, ok := n.view.Get(to); ok && to != n.self.ID && m.State != StateAlive && !slices.Contains(first, m) && take(m) {
 		first = append(first, m)
 	}
-	slices.SortFunc(n.queue, func(a, b queued) int {
+	slices.SortFunc(n.queue, func(a, b *queued) int {
 		if a.transmits != b.transmits {
 			return a.transmits - b.transmits
 		}
@@ -539,8 +681,7 @@ func (n *Node) piggyback(to env.NodeID, size int, lead []Member) []Member {
 		return 0
 	})
 	limit := n.cfg.RetransmitLimit(n.view.LiveCount())
-	for i := range n.queue {
-		q := &n.queue[i]
+	for _, q := range n.queue {
 		if len(first) > 0 && slices.Contains(first, q.m) {
 			q.transmits++
 			continue
@@ -549,7 +690,13 @@ func (n *Node) piggyback(to env.NodeID, size int, lead []Member) []Member {
 			q.transmits++
 		}
 	}
-	n.queue = slices.DeleteFunc(n.queue, func(q queued) bool { return q.transmits >= limit })
+	n.queue = slices.DeleteFunc(n.queue, func(q *queued) bool {
+		if q.transmits < limit {
+			return false
+		}
+		delete(n.qindex, q.m.ID)
+		return true
+	})
 	return out
 }
 
@@ -557,24 +704,26 @@ func (n *Node) send(to env.NodeID, m Message) {
 	n.sendWith(to, m, nil)
 }
 
-func (n *Node) sendWith(to env.NodeID, m Message, lead []Member) {
+func (n *Node) sendWith(to env.NodeID, m Message, lead []Member) bool {
 	m.Updates = n.piggyback(to, m.Size(), lead)
 	b, err := m.Encode()
 	if err != nil {
 		n.record(&n.stats.SendErrors, fmt.Errorf("gossip: send %s to %s: %w", m.Kind.String(), to, err))
-		return
+		return false
 	}
 	if err := n.e.Net.Send(to, b); err != nil {
 		n.record(&n.stats.SendErrors, fmt.Errorf("gossip: send %s to %s: %w", m.Kind.String(), to, err))
-		return
+		return false
 	}
 	n.stats.Sent++
+	return true
 }
 
 func (n *Node) Join(seeds []env.NodeID, done func(error)) error {
 	if n.closed {
 		return fmt.Errorf("gossip: join: %w", ErrClosed)
 	}
+	n.remember(seeds)
 	n.join(seeds, done)
 	return nil
 }
@@ -590,7 +739,13 @@ func (n *Node) join(seeds []env.NodeID, done func(error)) {
 		}
 	}
 	if len(targets) == 0 {
-		n.e.Clock.AfterFunc(0, func() { done(nil) })
+		n.e.Clock.AfterFunc(0, func() {
+			if n.closed {
+				done(fmt.Errorf("gossip: join: %w", ErrClosed))
+				return
+			}
+			done(nil)
+		})
 		return
 	}
 	remaining, ok := len(targets), false
@@ -619,7 +774,8 @@ func (n *Node) syncWith(peer env.NodeID, cb func(error)) {
 	req, err := Message{Kind: KindSyncReq, Updates: n.view.All()}.Encode()
 	if err != nil {
 		n.record(&n.stats.SyncErrors, fmt.Errorf("gossip: sync with %s: %w", peer, err))
-		cb(n.lastErr)
+		failed := n.lastErr
+		n.e.Clock.AfterFunc(0, func() { cb(failed) })
 		return
 	}
 	n.e.Net.Request(peer, req, n.cfg.SyncTimeout, func(reply []byte, err error) {
@@ -654,18 +810,22 @@ func (n *Node) onSync() {
 		return
 	}
 	var live, heal []env.NodeID
-	for _, id := range n.view.IDs() {
-		m, _ := n.view.Get(id)
+	for _, m := range n.view.All() {
 		switch {
-		case id == n.self.ID:
+		case m.ID == n.self.ID:
 		case m.State.Live():
-			live = append(live, id)
+			live = append(live, m.ID)
 		case m.State == StateDead:
-			heal = append(heal, id)
+			heal = append(heal, m.ID)
 		}
 	}
-	for _, s := range n.cfg.Seeds {
-		if m, ok := n.view.Get(s); s != n.self.ID && (!ok || !m.State.Live()) {
+	for _, r := range n.tombFIFO {
+		if t, ok := n.tombs[r.id]; ok && t.order == r.order && t.m.State == StateDead {
+			heal = append(heal, r.id)
+		}
+	}
+	for _, s := range n.seeds {
+		if m, ok := n.view.Get(s); !ok || !m.State.Live() {
 			heal = append(heal, s)
 		}
 	}
@@ -712,6 +872,7 @@ func (n *Node) Leave() error {
 	}
 	n.self.State = StateLeft
 	n.view.Apply(n.self)
+	n.enqueue(n.self)
 	for _, m := range n.view.Live() {
 		n.sendWith(m.ID, Message{Kind: KindGossip}, []Member{n.self})
 	}
@@ -744,10 +905,21 @@ func (n *Node) EncodeState() []byte {
 		b = appendMember(b, q.m)
 		b = binary.AppendUvarint(b, uint64(q.transmits))
 	}
+	tombs := n.Tombstones()
+	b = binary.BigEndian.AppendUint32(b, uint32(len(tombs)))
+	for _, m := range tombs {
+		b = appendMember(b, m)
+	}
+	b = binary.BigEndian.AppendUint32(b, uint32(len(n.relays)))
+	b = binary.BigEndian.AppendUint32(b, uint32(len(n.seeds)))
+	for _, s := range n.seeds {
+		b = appendStr(b, string(s))
+	}
 	for _, v := range []uint64{
 		n.stats.Sent, n.stats.SendErrors, n.stats.Received, n.stats.Malformed, n.stats.DroppedClosed,
 		n.stats.Probes, n.stats.IndirectProbes, n.stats.Suspicions, n.stats.Refutations,
 		n.stats.RefuteOverflows, n.stats.Syncs, n.stats.SyncErrors, n.stats.Purged, n.stats.Rejoins,
+		n.stats.RelaysDropped, n.stats.ViewFull, n.stats.TombstonesEvicted, n.stats.Reinstated,
 	} {
 		b = binary.AppendUvarint(b, v)
 	}

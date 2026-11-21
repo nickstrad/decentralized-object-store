@@ -52,13 +52,14 @@ func Supersedes(a, b Member) bool {
 }
 
 type View struct {
-	byID map[env.NodeID]Member
-	ids  []env.NodeID
-	live int
+	byID   map[env.NodeID]Member
+	ids    []env.NodeID
+	sorted bool
+	live   int
 }
 
 func NewView() *View {
-	return &View{byID: map[env.NodeID]Member{}}
+	return &View{byID: map[env.NodeID]Member{}, sorted: true}
 }
 
 func (v *View) Apply(u Member) bool {
@@ -70,8 +71,10 @@ func (v *View) Apply(u Member) bool {
 		return false
 	}
 	if !ok {
-		i, _ := slices.BinarySearch(v.ids, u.ID)
-		v.ids = slices.Insert(v.ids, i, u.ID)
+		if v.sorted && len(v.ids) > 0 && v.ids[len(v.ids)-1] >= u.ID {
+			v.sorted = false
+		}
+		v.ids = append(v.ids, u.ID)
 	} else if cur.State.Live() {
 		v.live--
 	}
@@ -80,6 +83,19 @@ func (v *View) Apply(u Member) bool {
 	}
 	v.byID[u.ID] = u
 	return true
+}
+
+func (v *View) order() []env.NodeID {
+	if !v.sorted {
+		slices.Sort(v.ids)
+		v.ids = slices.Compact(v.ids)
+		v.ids = slices.DeleteFunc(v.ids, func(id env.NodeID) bool {
+			_, ok := v.byID[id]
+			return !ok
+		})
+		v.sorted = true
+	}
+	return v.ids
 }
 
 func (v *View) Get(id env.NodeID) (Member, bool) {
@@ -96,26 +112,26 @@ func (v *View) Remove(id env.NodeID) {
 		v.live--
 	}
 	delete(v.byID, id)
-	if i, found := slices.BinarySearch(v.ids, id); found {
-		v.ids = slices.Delete(v.ids, i, i+1)
-	}
+	v.sorted = false
 }
 
-func (v *View) Len() int { return len(v.ids) }
+func (v *View) Len() int { return len(v.byID) }
 
 func (v *View) LiveCount() int { return v.live }
 
 func (v *View) All() []Member {
-	out := make([]Member, 0, len(v.ids))
-	for _, id := range v.ids {
+	ids := v.order()
+	out := make([]Member, 0, len(ids))
+	for _, id := range ids {
 		out = append(out, v.byID[id])
 	}
 	return out
 }
 
 func (v *View) Live() []Member {
+	ids := v.order()
 	out := make([]Member, 0, v.live)
-	for _, id := range v.ids {
+	for _, id := range ids {
 		if m := v.byID[id]; m.State.Live() {
 			out = append(out, m)
 		}
@@ -123,4 +139,4 @@ func (v *View) Live() []Member {
 	return out
 }
 
-func (v *View) IDs() []env.NodeID { return slices.Clone(v.ids) }
+func (v *View) IDs() []env.NodeID { return slices.Clone(v.order()) }

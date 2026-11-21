@@ -81,10 +81,24 @@ func TestPropViewMergeIsCommutative(t *testing.T) {
 }
 
 func viewMergeSeeds() [][]byte {
+	pattern := func(n int, f func(i int) byte) []byte {
+		b := make([]byte, n)
+		for i := range b {
+			b[i] = f(i)
+		}
+		return b
+	}
 	return [][]byte{
-		{},
-		{0, 0, 0, 0},
-		{255, 255, 255, 255, 255, 255, 255, 255},
+		pattern(64, func(int) byte { return 0 }),
+		pattern(256, func(int) byte { return 1 }),
+		pattern(1024, func(i int) byte { return byte(i % 2) }),
+		pattern(1024, func(i int) byte { return byte(i % 3) }),
+		pattern(1024, func(i int) byte {
+			if i%8 == 7 {
+				return byte(i * 13)
+			}
+			return 0
+		}),
 	}
 }
 
