@@ -467,8 +467,12 @@ func (s *Sim) Step() (bool, error) {
 		s.now = e.at
 	}
 	s.steps++
+	var wire uint64
+	if e.kind.network() {
+		wire = fnv64a(e.payload)
+	}
 	disp := s.exec(e)
-	s.record(e, disp)
+	s.record(e, disp, wire)
 	if !s.dropInvariants {
 		for _, inv := range s.invariants {
 			if s.err != nil {

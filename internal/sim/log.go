@@ -36,11 +36,11 @@ func (r record) bytes() [recordSize]byte {
 	return b
 }
 
-func (s *Sim) record(e *event, disp disposition) {
+func (s *Sim) record(e *event, disp disposition, wire uint64) {
 	r := record{at: s.now, seq: e.seq, kind: e.kind, disp: disp, node: e.node, peer: e.peer}
 	switch e.kind {
 	case kindDatagram, kindRequest, kindResponse, kindRefused:
-		r.hash = fnv64a(e.payload) ^ uint64(e.code)<<56
+		r.hash = wire ^ uint64(e.code)<<56
 		r.aux = e.call
 	case kindTimeout:
 		r.aux = e.call
