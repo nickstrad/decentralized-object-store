@@ -106,8 +106,96 @@ func TestDiskFaults(t *testing.T) {
 				t.Fatalf("Damaged = %v", dm)
 			}
 			mustNil(t, d.Write("blob", orig))
+			if dm := h.s.Disk("a").Damaged(); len(dm) != 1 {
+				t.Fatalf("an unsynced rewrite cleared the damage mark: %v", dm)
+			}
+			mustNil(t, d.Sync("blob"))
 			if dm := h.s.Disk("a").Damaged(); len(dm) != 0 {
-				t.Fatalf("rewrite did not clear damage: %v", dm)
+				t.Fatalf("a synced rewrite did not clear damage: %v", dm)
+			}
+		}},
+		{"a crash before the repair is synced leaves the blob damaged and marked", func(t *testing.T, h *harness) {
+			d := h.rec("a").e.Disk
+			orig := bytes.Repeat([]byte{0x55}, 64)
+			mustNil(t, d.Write("blob", orig))
+			mustNil(t, d.Sync("blob"))
+			mustNil(t, h.s.BitRot("a", "blob"))
+			mustNil(t, d.Write("blob", orig))
+			mustNil(t, h.s.Crash("a"))
+			mustNil(t, h.s.Restart("a"))
+			h.run(0)
+			got, err := h.rec("a").e.Disk.Read("blob")
+			if err != nil || bytes.Equal(got, orig) {
+				t.Fatalf("blob after crash = %x %v, want the rotted durable copy", got, err)
+			}
+			if dm := h.s.Disk("a").Damaged(); len(dm) != 1 || dm[0] != "blob" {
+				t.Fatalf("Damaged = %v", dm)
+			}
+		}},
+		{"an unsynced delete of a rotted blob resurrects it marked after a crash", func(t *testing.T, h *harness) {
+			d := h.rec("a").e.Disk
+			mustNil(t, d.Write("blob", []byte("payload")))
+			mustNil(t, d.Sync("blob"))
+			mustNil(t, h.s.BitRot("a", "blob"))
+			mustNil(t, d.Delete("blob"))
+			if dm := h.s.Disk("a").Damaged(); len(dm) != 1 {
+				t.Fatalf("an unsynced delete cleared the mark: %v", dm)
+			}
+			mustNil(t, h.s.Crash("a"))
+			if _, ok := h.s.Disk("a").Peek("blob"); !ok || len(h.s.Disk("a").Damaged()) != 1 {
+				t.Fatalf("rotted blob not resurrected with its mark: %v", h.s.Disk("a").Damaged())
+			}
+		}},
+		{"a synced delete clears the mark", func(t *testing.T, h *harness) {
+			d := h.rec("a").e.Disk
+			mustNil(t, d.Write("blob", []byte("payload")))
+			mustNil(t, d.Sync("blob"))
+			mustNil(t, h.s.BitRot("a", "blob"))
+			mustNil(t, d.Delete("blob"))
+			mustNil(t, d.Sync("blob"))
+			if dm := h.s.Disk("a").Damaged(); len(dm) != 0 {
+				t.Fatalf("Damaged = %v", dm)
+			}
+		}},
+		{"a wiped blob rewritten but not synced stays marked across a crash", func(t *testing.T, h *harness) {
+			d := h.rec("a").e.Disk
+			mustNil(t, d.Write("blob", []byte("payload")))
+			mustNil(t, d.Sync("blob"))
+			mustNil(t, h.s.WipeDisk("a"))
+			mustNil(t, d.Write("blob", []byte("payload")))
+			mustNil(t, h.s.Crash("a"))
+			if _, ok := h.s.Disk("a").Peek("blob"); ok || len(h.s.Disk("a").Damaged()) != 1 {
+				t.Fatalf("wiped blob after crash: Damaged = %v", h.s.Disk("a").Damaged())
+			}
+		}},
+		{"rot under a dirty blob is repaired by syncing it", func(t *testing.T, h *harness) {
+			d := h.rec("a").e.Disk
+			mustNil(t, d.Write("w", []byte("payload")))
+			mustNil(t, d.Sync("w"))
+			mustNil(t, d.Write("l", []byte("payload")))
+			mustNil(t, d.Sync("l"))
+			mustNil(t, d.Write("w", []byte("newer")))
+			mustNil(t, d.Append("l", []byte("+tail")))
+			mustNil(t, h.s.BitRot("a", "w"))
+			mustNil(t, h.s.BitRot("a", "l"))
+			mustNil(t, d.Sync("w"))
+			mustNil(t, d.Sync("l"))
+			if dm := h.s.Disk("a").Damaged(); len(dm) != 0 {
+				t.Fatalf("Damaged = %v", dm)
+			}
+			if got, _ := h.s.Disk("a").PeekDurable("l"); string(got) != "payload+tail" {
+				t.Fatalf("l = %q", got)
+			}
+		}},
+		{"appending onto a rotted blob and syncing keeps the mark", func(t *testing.T, h *harness) {
+			d := h.rec("a").e.Disk
+			mustNil(t, d.Write("l", []byte("payload")))
+			mustNil(t, d.Sync("l"))
+			mustNil(t, h.s.BitRot("a", "l"))
+			mustNil(t, d.Append("l", []byte("+tail")))
+			mustNil(t, d.Sync("l"))
+			if dm := h.s.Disk("a").Damaged(); len(dm) != 1 {
+				t.Fatalf("Damaged = %v", dm)
 			}
 		}},
 		{"bit-rot needs a durable blob with bytes", func(t *testing.T, h *harness) {
@@ -260,5 +348,31 @@ func TestTornCrashOnlyTearsAppendOnlyBlobs(t *testing.T) {
 	mustNil(t, h.s.CrashTorn("a"))
 	if got, _ := h.s.Disk("a").Peek("w"); string(got) != "old" {
 		t.Fatalf("overwrite torn: %q", got)
+	}
+}
+
+func TestTornCrashCanTearTheFirstAppendOfANewBlob(t *testing.T) {
+	const rec = "FIRST_RECORD"
+	absent, partial := 0, 0
+	for seed := int64(1); seed <= 60; seed++ {
+		h := oneNode(t, seed)
+		mustNil(t, h.rec("a").e.Disk.Append("saga/1", []byte(rec)))
+		mustNil(t, h.s.CrashTorn("a"))
+		got, ok := h.s.Disk("a").Peek("saga/1")
+		dur, dok := h.s.Disk("a").PeekDurable("saga/1")
+		if ok != dok || !bytes.Equal(got, dur) {
+			t.Fatalf("seed %d: written %q %v, durable %q %v", seed, got, ok, dur, dok)
+		}
+		switch {
+		case !ok:
+			absent++
+		case len(got) == 0 || !bytes.HasPrefix([]byte(rec), got):
+			t.Fatalf("seed %d: torn first record = %q", seed, got)
+		case len(got) < len(rec):
+			partial++
+		}
+	}
+	if absent == 0 || partial == 0 {
+		t.Fatalf("absent %d, partial %d: want both outcomes", absent, partial)
 	}
 }

@@ -288,6 +288,8 @@ type diskModelBlob struct {
 	written, durable  []byte
 	wExists, dExists  bool
 	dirty, appendOnly bool
+	dDamaged          bool
+	wDamaged          bool
 }
 
 type diskMachine struct {
@@ -329,6 +331,15 @@ func (m *diskMachine) check(t *rapid.T) {
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("List = %v, model %v", got, want)
+	}
+	var wantDamaged []string
+	for _, name := range m.names {
+		if b := m.model[name]; b != nil && b.dDamaged {
+			wantDamaged = append(wantDamaged, name)
+		}
+	}
+	if gotDamaged := m.s.Disk("a").Damaged(); fmt.Sprint(gotDamaged) != fmt.Sprint(wantDamaged) {
+		t.Fatalf("Damaged = %v, model %v", gotDamaged, wantDamaged)
 	}
 	for _, name := range m.names {
 		b := m.model[name]
@@ -372,6 +383,7 @@ func TestPropDiskModel(t *testing.T) {
 				}
 				b := m.blob(n)
 				b.written, b.wExists, b.dirty, b.appendOnly = append([]byte{}, d...), true, true, false
+				b.wDamaged = false
 			},
 			"append": func(t *rapid.T) {
 				n, d := name.Draw(t, "name"), data.Draw(t, "data")
@@ -380,7 +392,7 @@ func TestPropDiskModel(t *testing.T) {
 				}
 				b := m.blob(n)
 				if !b.dirty {
-					b.appendOnly = b.dExists
+					b.appendOnly = true
 				}
 				b.written = append(append([]byte{}, b.written...), d...)
 				b.wExists, b.dirty = true, true
@@ -399,6 +411,7 @@ func TestPropDiskModel(t *testing.T) {
 					t.Fatal(err)
 				}
 				b.durable, b.dExists, b.dirty, b.appendOnly = append([]byte{}, b.written...), b.wExists, false, false
+				b.dDamaged = b.wExists && b.wDamaged
 			},
 			"delete": func(t *rapid.T) {
 				n := name.Draw(t, "name")
@@ -414,6 +427,7 @@ func TestPropDiskModel(t *testing.T) {
 					t.Fatal(err)
 				}
 				b.written, b.wExists, b.dirty, b.appendOnly = nil, false, true, false
+				b.wDamaged = false
 			},
 			"crash": func(t *rapid.T) {
 				if err := m.s.Crash("a"); err != nil {
@@ -421,6 +435,7 @@ func TestPropDiskModel(t *testing.T) {
 				}
 				for _, b := range m.model {
 					b.written, b.wExists, b.dirty, b.appendOnly = append([]byte{}, b.durable...), b.dExists, false, false
+					b.wDamaged = b.dDamaged
 				}
 				m.restart(t)
 			},
@@ -435,13 +450,17 @@ func TestPropDiskModel(t *testing.T) {
 					}
 					if b.dirty && b.appendOnly && b.wExists {
 						got, ok := m.s.Disk("a").Peek(n)
-						if !ok || len(got) < len(b.durable) || !bytes.Equal(got[:len(b.durable)], b.durable) ||
-							!bytes.HasPrefix(b.written[len(b.durable):], got[len(b.durable):]) {
-							t.Fatalf("torn %s = %q, written %q durable %q", n, got, b.written, b.durable)
+						switch {
+						case !ok && !b.dExists:
+						case !ok || len(got) < len(b.durable) || !bytes.Equal(got[:len(b.durable)], b.durable) ||
+							!bytes.HasPrefix(b.written[len(b.durable):], got[len(b.durable):]):
+							t.Fatalf("torn %s = %q %v, written %q durable %q", n, got, ok, b.written, b.durable)
+						default:
+							b.durable, b.dExists = append([]byte{}, got...), true
 						}
-						b.durable = append([]byte{}, got...)
 					}
 					b.written, b.wExists, b.dirty, b.appendOnly = append([]byte{}, b.durable...), b.dExists, false, false
+					b.wDamaged = b.dDamaged
 				}
 				m.restart(t)
 			},
@@ -468,8 +487,21 @@ func TestPropDiskModel(t *testing.T) {
 				}
 				if !b.dirty {
 					b.written = append([]byte{}, got...)
+					b.wDamaged = true
 				}
 				b.durable = append([]byte{}, got...)
+				b.dDamaged = true
+			},
+			"wipe": func(t *rapid.T) {
+				if err := m.s.WipeDisk("a"); err != nil {
+					t.Fatal(err)
+				}
+				for _, b := range m.model {
+					if b.wExists || b.dExists {
+						b.dDamaged, b.wDamaged = true, true
+					}
+					b.written, b.wExists, b.durable, b.dExists, b.dirty, b.appendOnly = nil, false, nil, false, false, false
+				}
 			},
 			"failRead": func(t *rapid.T) {
 				n := name.Draw(t, "name")
