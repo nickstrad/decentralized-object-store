@@ -1,0 +1,12 @@
+ Container objstore-dev-run-9382fd509702 Creating 
+ Container objstore-dev-run-9382fd509702 Created 
+HELD C4 string-literal: Changed x.go from 'package p\nvar X="a"' to 'package p\nvar X="b"' (exit 1).
+HELD C4 struct-tag: Changed x.go from 'package p\ntype X struct {A int `json:"a"`}' to 'package p\ntype X struct {A int `json:"b"`}' (exit 1).
+HELD C4 build-tag: Changed x.go from '//go:build linux\n\npackage p' to '//go:build darwin\n\npackage p' (exit 1).
+HELD C4 embed-directive: Changed x.go from 'package p\nimport _ "embed"\n//go:embed a.txt\nvar X string' to 'package p\nimport _ "embed"\n//go:embed b.txt\nvar X string' (exit 1).
+BROKEN C4 embed-payload: Changed help.txt from 'old runtime help' to 'new runtime help' (exit 0).
+HELD C4 module-change: Changed go.mod from 'module example.org/a' to 'module example.org/b' (exit 1).
+HELD C4 assembly-change: Changed x.s from 'TEXT ·X(SB),$0-8\nMOVQ $1, ret+0(FP)\nRET' to 'TEXT ·X(SB),$0-8\nMOVQ $2, ret+0(FP)\nRET' (exit 1).
+HELD C4 cgo-preamble: Changed x.go from 'package p\n/* int x() {return 1;} */\nimport "C"\nfunc X()int{return int(C.x())}' to 'package p\n/* int x() {return 2;} */\nimport "C"\nfunc X()int{return int(C.x())}' (exit 1).
+HELD C4 comment-control: An ordinary comment-only edit is accepted.
+

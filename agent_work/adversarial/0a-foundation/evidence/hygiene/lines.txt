@@ -1,0 +1,26 @@
+HELD C1 unformatted: Plant internal/buildcheck/attack.go: package buildcheck; func   Attack( )int{return 1}; G0 fail.
+HELD C1 vet-format: Plant internal/buildcheck/attack.go: package buildcheck; import "fmt"; func Attack() {fmt.Printf("%d", "bad")}; G0 fail.
+HELD C1 build-error: Plant internal/buildcheck/attack.go: package buildcheck; var Attack = undefined; G0 fail.
+HELD C1 direct-panic: Plant internal/buildcheck/attack.go: package buildcheck; func Attack(){panic("bad")}; G0 fail.
+HELD C1 rapid-product: Plant internal/buildcheck/attack.go: package buildcheck; import "pgregory.net/rapid"; var Attack = rapid.Int(); G0 fail.
+HELD C1 comment: Plant internal/buildcheck/attack.go: package buildcheck; // ordinary prose; var Attack = 1; G0 fail.
+HELD C1 readme-machine: Plant README.md: # Probe; /root/secret; G0 fail.
+HELD C3 unknown-go-directive: Plant internal/buildcheck/attack.go: package buildcheck; //go:This is ordinary prose disguised as an unknown directive; var Attack = 1; G0 fail.
+HELD C3 block-comment: Plant internal/buildcheck/attack.go: package buildcheck; /* prose */; var Attack = 1; G0 fail.
+HELD C3 spaced-directive: Plant internal/buildcheck/attack.go: package buildcheck; // go:prose; var Attack = 1; G0 fail.
+HELD C3 hidden-comment: Plant internal/buildcheck/_attack.go: package buildcheck; // prose; G0 fail.
+HELD C3 dot-directory-comment: Plant .hidden/x.go: package hidden; // prose; G0 fail.
+HELD C3 underscore-directory-comment: Plant _hidden/x.go: package hidden; // prose; G0 fail.
+BROKEN C3 testdata-comment: Plant internal/buildcheck/testdata/x.go: package fixture; // prose; G0 pass.
+HELD C3 generated-header: Plant internal/buildcheck/attack.go: // Code generated arbitrary human prose DO NOT EDIT.; package buildcheck; G0 fail.
+HELD C3 invalid-hidden-go: Plant _broken.go: this is not Go; G0 fail.
+HELD C3 tagged-external-import: Plant internal/buildcheck/attack.go: //go:build missingtag; ; package buildcheck; import _ "example.org/evil"; G0 fail.
+HELD C3 go-work: Plant go.work: go 1.26.11; use .; G0 fail.
+HELD C3 vendor: Plant vendor/modules.txt: ; G0 aborted (exit 2).
+HELD C3 nested-module-require: Plant extras/go.mod: module example.org/extra; go 1.26.0; require example.org/evil v1.0.0; G0 fail.
+BROKEN C1 test-only-entropy: Plant internal/sim/attack_test.go: package sim; import "time"; var Attack=time.Now(); G0 pass.
+HELD C1 tagged-entropy: Plant internal/sim/attack.go: //go:build missingtag; ; package sim; import "time"; var Attack=time.Now(); G0 fail.
+HELD C3 replace: replace pgregory.net/rapid => pgregory.net/rapid v1.2.0; G0 fail.
+HELD C3 tool: tool pgregory.net/rapid; G0 fail.
+HELD C3 extra-require: require example.org/evil v1.0.0; G0 fail.
+HELD C1 panic-shadow-tag: A build-excluded func panic(any) suppresses the active builtin panic in another file; G0 fail.

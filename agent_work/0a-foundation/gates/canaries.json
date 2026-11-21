@@ -1,0 +1,307 @@
+{
+  "ran_at": "2026-11-21T19:10:53Z",
+  "go_version": "go version go1.26.11 linux/amd64",
+  "canaries": [
+    {
+      "canary": "clean",
+      "planted": "nothing (well-formed commit, clean tree, in the container)",
+      "expects": "all gates green, counts_for_landing=true",
+      "caught": true
+    },
+    {
+      "canary": "landed-prose",
+      "planted": "a comment that is also in the baseline commit",
+      "expects": "all gates green, counts_for_landing=true",
+      "caught": true
+    },
+    {
+      "canary": "gofmt",
+      "planted": "an unformatted Go file",
+      "expects": "G0/gofmt red with /zz_canary.go/",
+      "caught": true
+    },
+    {
+      "canary": "vet",
+      "planted": "a go vet failure",
+      "expects": "G0/vet red with /Sprintf format/",
+      "caught": true
+    },
+    {
+      "canary": "build",
+      "planted": "a compile error",
+      "expects": "G0/build red with /undefined: zzUndefined/",
+      "caught": true
+    },
+    {
+      "canary": "time-now",
+      "planted": "time.Now in a simulator package",
+      "expects": "G0/detlint red with /wallclock/",
+      "caught": true
+    },
+    {
+      "canary": "time-alias",
+      "planted": "time.Now through an aliased import and a function value",
+      "expects": "G0/detlint red with /wallclock/",
+      "caught": true
+    },
+    {
+      "canary": "goroutine",
+      "planted": "a go statement in a simulator package",
+      "expects": "G0/detlint red with /concurrency/",
+      "caught": true
+    },
+    {
+      "canary": "banned-import",
+      "planted": "package sync imported by a simulator package",
+      "expects": "G0/detlint red with / import: /",
+      "caught": true
+    },
+    {
+      "canary": "reflect",
+      "planted": "map keys read through reflect",
+      "expects": "G0/detlint red with / import: /",
+      "caught": true
+    },
+    {
+      "canary": "helper-package",
+      "planted": "a clock hidden in a helper package the simulator imports",
+      "expects": "G0/detlint red with /zzhelper.*wallclock/",
+      "caught": true
+    },
+    {
+      "canary": "tagged-clock",
+      "planted": "a clock behind a build tag in a simulator package",
+      "expects": "G0/detlint red with /buildtag/",
+      "caught": true
+    },
+    {
+      "canary": "tagged-only",
+      "planted": "the same clock as the ONLY file of a simulator package",
+      "expects": "G0/detlint red with /buildtag/",
+      "caught": true
+    },
+    {
+      "canary": "pointer-format",
+      "planted": "a pointer formatted with %v",
+      "expects": "G0/detlint red with /ptrfmt/",
+      "caught": true
+    },
+    {
+      "canary": "sort-ties",
+      "planted": "map keys sorted with a comparator that leaves ties",
+      "expects": "G0/detlint red with /maprange/",
+      "caught": true
+    },
+    {
+      "canary": "second-require",
+      "planted": "a second require line in go.mod",
+      "expects": "G0/deps red with /must require exactly/",
+      "caught": true
+    },
+    {
+      "canary": "rapid-in-product",
+      "planted": "rapid imported from a non-test file",
+      "expects": "G0/deps red with /pgregory.net/rapid/",
+      "caught": true
+    },
+    {
+      "canary": "tagged-import",
+      "planted": "an outside import hidden behind a build tag",
+      "expects": "G0/deps red with /klauspost/reedsolomon/",
+      "caught": true
+    },
+    {
+      "canary": "go-work",
+      "planted": "a go.work file",
+      "expects": "G0/deps red with /go.work present/",
+      "caught": true
+    },
+    {
+      "canary": "nested-module",
+      "planted": "a nested module with its own requirement",
+      "expects": "G0/deps red with /go.mod outside the root/",
+      "caught": true
+    },
+    {
+      "canary": "assembly",
+      "planted": "an assembly file reading the CPU timestamp counter",
+      "expects": "G0/deps red with /assembly, C or object files/",
+      "caught": true
+    },
+    {
+      "canary": "panic",
+      "planted": "a panic missing from the allowlist",
+      "expects": "G0/panics red with / panic: /",
+      "caught": true
+    },
+    {
+      "canary": "panic-shadow",
+      "planted": "a build-excluded func named panic hiding a real panic",
+      "expects": "G0/panics red with /panic/",
+      "caught": true
+    },
+    {
+      "canary": "stale-allow",
+      "planted": "an allowlist entry that matches no panic",
+      "expects": "G0/panics red with /stale-allow/",
+      "caught": true
+    },
+    {
+      "canary": "comment",
+      "planted": "a comment in pre-prose Go",
+      "expects": "G0/comments red with / comment: /",
+      "caught": true
+    },
+    {
+      "canary": "fake-directive",
+      "planted": "prose written as a //go: directive",
+      "expects": "G0/comments red with / comment: /",
+      "caught": true
+    },
+    {
+      "canary": "generated-header",
+      "planted": "prose written as a generated-code header",
+      "expects": "G0/comments red with / comment: /",
+      "caught": true
+    },
+    {
+      "canary": "doc-path",
+      "planted": "a /root/ path in the README",
+      "expects": "G0/selfcontained red with /machine-ref/",
+      "caught": true
+    },
+    {
+      "canary": "go-path",
+      "planted": "a machine path in a Go string",
+      "expects": "G0/selfcontained red with /machine references in Go/",
+      "caught": true
+    },
+    {
+      "canary": "broken-link",
+      "planted": "a front page linking to a missing page",
+      "expects": "G0/selfcontained red with /broken-link/",
+      "caught": true
+    },
+    {
+      "canary": "chapter-symlink",
+      "planted": "a chapter that is a symlink to STATE.md",
+      "expects": "G0/deps red with /symlinks in the product tree/",
+      "caught": true
+    },
+    {
+      "canary": "unit-fail",
+      "planted": "a failing unit test",
+      "expects": "G1/unit red with /planted/",
+      "caught": true
+    },
+    {
+      "canary": "coverage",
+      "planted": "a floor package under 85% coverage",
+      "expects": "G1/unit red with /under the 85% floor/",
+      "caught": true
+    },
+    {
+      "canary": "property",
+      "planted": "a property that fails only at 2,000 checks",
+      "expects": "G2/property red with /planted/",
+      "caught": true
+    },
+    {
+      "canary": "unnamed-property",
+      "planted": "the same property without Prop or Laws in its name",
+      "expects": "G2/property red with /planted/",
+      "caught": true
+    },
+    {
+      "canary": "fuzz",
+      "planted": "a fuzz target that fails on any mutated input",
+      "expects": "G3/fuzz red with /FUZZ FAIL/",
+      "caught": true
+    },
+    {
+      "canary": "unicode-fuzz",
+      "planted": "the same target under a non-ASCII name",
+      "expects": "G3/fuzz red with /FUZZ FAIL/",
+      "caught": true
+    },
+    {
+      "canary": "race",
+      "planted": "a data race",
+      "expects": "G4/race red with /DATA RACE/",
+      "caught": true
+    },
+    {
+      "canary": "dst-seeds",
+      "planted": "a test that fails only under the 500-seed sweep",
+      "expects": "G5/dst red with /planted/",
+      "caught": true
+    },
+    {
+      "canary": "indirect-dst",
+      "planted": "a scenario that reaches the simulator through a bridge",
+      "expects": "G5/dst red with /planted/",
+      "caught": true
+    },
+    {
+      "canary": "dirty-tree",
+      "planted": "a dirty tree reported by the host wrapper",
+      "expects": "all gates green, counts_for_landing=false",
+      "caught": true
+    },
+    {
+      "canary": "dirty-unknown",
+      "planted": "no clean-tree flag at all (gate called directly)",
+      "expects": "all gates green, counts_for_landing=false",
+      "caught": true
+    },
+    {
+      "canary": "short-fuzz",
+      "planted": "a fuzz budget under 30 s",
+      "expects": "all gates green, counts_for_landing=false",
+      "caught": true
+    },
+    {
+      "canary": "bad-sha",
+      "planted": "a commit that is not a full SHA",
+      "expects": "all gates green, counts_for_landing=false",
+      "caught": true
+    },
+    {
+      "canary": "partial-run",
+      "planted": "a green run of a subset of gates",
+      "expects": "does not count",
+      "caught": true
+    },
+    {
+      "canary": "outside-container",
+      "planted": "a full gate run outside the dev container",
+      "expects": "in_container=false, G6 red, does not count",
+      "caught": true
+    },
+    {
+      "canary": "bad-image",
+      "planted": "an invented image ID",
+      "expects": "G6 red",
+      "caught": true
+    },
+    {
+      "canary": "self-baseline",
+      "planted": "a commit used as its own comment baseline",
+      "expects": "gate exits 2, no result",
+      "caught": true
+    },
+    {
+      "canary": "unnamed-baseline",
+      "planted": "a comment baseline that names no commit",
+      "expects": "all gates green, counts_for_landing=false",
+      "caught": true
+    },
+    {
+      "canary": "stage-typo",
+      "planted": "GATE_STAGE=buidl with a comment in pre-prose Go",
+      "expects": "gate exits 2, no result",
+      "caught": true
+    }
+  ],
+  "all_caught": true
+}

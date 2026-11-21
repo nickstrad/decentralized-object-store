@@ -1,0 +1,12 @@
+HELD C6 missing-chapter: Manifest lists absent chapter; lint exit 1.
+HELD C6 unlisted-chapter: Unlisted markdown chapter; lint exit 1.
+HELD C6 broken-link: Chapter links to nonexistent file; lint exit 1.
+HELD C6 missing-anchor: Chapter links to nonexistent heading; lint exit 1.
+HELD C6 machine-reference: Chapter names a machine path; lint exit 1.
+HELD C6 manifest-traversal: Manifest file ../STATE.md; lint exit 1.
+HELD C6 chapter-symlink-docs: Manifest chapter symlinks to docs/knowledge/private.md; lint exit 1, private sentinel published=False.
+HELD C6 chapter-symlink-agent_work: Manifest chapter symlinks to agent_work/private.md; lint exit 1, private sentinel published=False.
+HELD C6 chapter-symlink-kb: Manifest chapter symlinks to kb/private.md; lint exit 1, private sentinel published=False.
+HELD C6 chapter-symlink-STATE.md: Manifest chapter symlinks to STATE.md; lint exit 1, private sentinel published=False.
+HELD C6 asset-symlink: Linked book/asset.txt symlinks to private knowledge; lint exit 1, private sentinel published=False.
+HELD C6 private-link: Link to private knowledge is rewritten to GitHub (content sentinel must remain unpublished); lint exit 1, private sentinel published=False.
