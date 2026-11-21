@@ -93,7 +93,7 @@ func codec() {
 			_, v, e := saga.DecodeLog(b)
 			check(v >= 0 && v <= len(b) && (e == nil || errors.Is(e, saga.ErrLogCorrupt)), "seed=91002 case=%d invalid result", n)
 		}
-		return "50000 deterministic hostile byte strings returned a prefix or corruption without panic (seed=91002)"
+		return "50000 deterministic malformed byte strings returned a prefix or corruption without panic (seed=91002)"
 	})
 	add("C5", "legal-sequences-and-deletions", func() string {
 		for n := 1; n <= 12; n++ {

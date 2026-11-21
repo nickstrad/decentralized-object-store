@@ -51,6 +51,10 @@ func (h harness) Build(seed int64, o sagasim.BuildOptions) (*sim.Sim, sagasim.Cl
 	s, m, e := sagasim.Build(seed, p)
 	if e == nil {
 		m.AddInvariants(s)
+		e = s.RunUntil(0)
+		if e == nil {
+			e = m.CheckCompensated(input())
+		}
 	}
 	return s, cluster{m}, e
 }

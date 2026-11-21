@@ -8,14 +8,14 @@ import (
 	"strings"
 )
 
-type attack struct {
+type scenarioCheck struct {
 	claim, name string
 	run         func() string
 }
 
-var attacks []attack
+var checks []scenarioCheck
 
-func add(c, n string, f func() string) { attacks = append(attacks, attack{c, n, f}) }
+func add(c, n string, f func() string) { checks = append(checks, scenarioCheck{c, n, f}) }
 func check(ok bool, f string, a ...any) {
 	if !ok {
 		panic(fmt.Sprintf(f, a...))
@@ -26,7 +26,7 @@ func must(err error) {
 		panic(err.Error())
 	}
 }
-func execute(a attack) (broken bool) {
+func execute(a scenarioCheck) (broken bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Printf("BROKEN %s %s: %s\n", a.claim, a.name, strings.ReplaceAll(fmt.Sprint(r), "\n", " "))
@@ -46,13 +46,15 @@ func main() {
 		codec()
 	case "engine":
 		engine()
+	case "supplement":
+		supplement()
 	case "migration":
 		migration()
 	default:
 		os.Exit(2)
 	}
 	bad := false
-	for _, a := range attacks {
+	for _, a := range checks {
 		if execute(a) {
 			bad = true
 		}

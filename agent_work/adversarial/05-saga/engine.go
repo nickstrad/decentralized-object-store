@@ -403,7 +403,7 @@ func engine() {
 		return "180 pivot/failure/retry combinations matched an independent terminal-state rule"
 	})
 	add("C11", "crash-and-double-crash-grid", func() string {
-		for point := 2; point <= 12; point++ {
+		for point := 2; point <= 9; point++ {
 			for _, torn := range []bool{false, true} {
 				f := fresh(94000+int64(point), 3, 2)
 				f.failAt = 0
@@ -428,9 +428,10 @@ func engine() {
 				f.launch()
 				f.run(time.Second)
 				st := f.status()
+				check(crashes >= 1 && (point == 9 || crashes == 2), "seed=%d point=%d torn=%v crashes=%d", 94000+point, point, torn, crashes)
 				check(st.State.Terminal(), "seed=%d point=%d torn=%v state=%v", 94000+point, point, torn, st.State)
 			}
 		}
-		return "22 append-boundary schedules including second crashes during recovery reached a legal terminal state"
+		return "16 reachable append-boundary schedules verified injection and reached a legal terminal state; pre-end points verified both crashes"
 	})
 }

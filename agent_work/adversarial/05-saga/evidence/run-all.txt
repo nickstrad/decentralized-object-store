@@ -1,7 +1,7 @@
 HELD C1 roundtrip-prefixes: 100 random records and every byte prefix decoded consistently (seed=91001)
 HELD C1 bit-corruption: every single-bit mutation of a complete four-record log was corrupt
 HELD C1 canonical-size-limits: oversized, invalid-field and correctly checksummed noncanonical records were rejected
-HELD C14 random-byte-decoding: 50000 deterministic hostile byte strings returned a prefix or corruption without panic (seed=91002)
+HELD C14 random-byte-decoding: 50000 deterministic malformed byte strings returned a prefix or corruption without panic (seed=91002)
 HELD C5 legal-sequences-and-deletions: all prefixes of 1..12-step traces accepted and each removed intent/done rejected
 HELD C5 retry-bound-and-pivot-plans: unknown outcomes abort at the pre-pivot bound and keep retrying at the pivot
 HELD C6 backoff-extremes: large delays saturated without wrap and seeded jitter replayed across 395 draws
@@ -25,95 +25,102 @@ HELD C3 corrupt-last-and-unknown-definition: last-record corruption and unknown 
 HELD C4 read-fault-recovery: 1, 2 and 17 transient read errors recovered on timers and executed the step once
 HELD C4 permanent-read-fault: 10000 injected read failures left the log unchanged and recovery pending
 HELD C11 terminal-reference-grid: 180 pivot/failure/retry combinations matched an independent terminal-state rule
-HELD C11 crash-and-double-crash-grid: 22 append-boundary schedules including second crashes during recovery reached a legal terminal state
-BROKEN C16 allocate-fail-before-action-untorn: seed=958920 objects=33 err=sagasim: cell allocate-fail-before-action-untorn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 allocate-fail-before-action-torn: seed=958920 objects=33 err=sagasim: cell allocate-fail-before-action-torn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 allocate-fail-after-action-untorn: seed=958920 objects=33 err=sagasim: cell allocate-fail-after-action-untorn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 allocate-fail-after-action-torn: seed=958920 objects=33 err=sagasim: cell allocate-fail-after-action-torn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 allocate-fail-mid-compensation-untorn: seed=958920 objects=33 err=sagasim: cell allocate-fail-mid-compensation-untorn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 allocate-fail-mid-compensation-torn: seed=958920 objects=33 err=sagasim: cell allocate-fail-mid-compensation-torn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 allocate-crash-before-action-untorn: seed=958920 objects=33 err=sagasim: cell allocate-crash-before-action-untorn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 allocate-crash-before-action-untorn-double: seed=958920 objects=33 err=sagasim: cell allocate-crash-before-action-untorn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 allocate-crash-before-action-torn: seed=958920 objects=33 err=sagasim: cell allocate-crash-before-action-torn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 allocate-crash-before-action-torn-double: seed=958920 objects=33 err=sagasim: cell allocate-crash-before-action-torn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 allocate-crash-after-action-untorn: seed=958920 objects=33 err=sagasim: cell allocate-crash-after-action-untorn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 allocate-crash-after-action-untorn-double: seed=958920 objects=33 err=sagasim: cell allocate-crash-after-action-untorn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 allocate-crash-after-action-torn: seed=958920 objects=33 err=sagasim: cell allocate-crash-after-action-torn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 allocate-crash-after-action-torn-double: seed=958920 objects=33 err=sagasim: cell allocate-crash-after-action-torn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 allocate-crash-mid-compensation-untorn: seed=958920 objects=33 err=sagasim: cell allocate-crash-mid-compensation-untorn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 allocate-crash-mid-compensation-untorn-double: seed=958920 objects=33 err=sagasim: cell allocate-crash-mid-compensation-untorn-double: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 allocate-crash-mid-compensation-torn: seed=958920 objects=33 err=sagasim: cell allocate-crash-mid-compensation-torn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 allocate-crash-mid-compensation-torn-double: seed=958920 objects=33 err=sagasim: cell allocate-crash-mid-compensation-torn-double: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 copy-fail-before-action-untorn: seed=958920 objects=33 err=sagasim: cell copy-fail-before-action-untorn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 copy-fail-before-action-torn: seed=958920 objects=33 err=sagasim: cell copy-fail-before-action-torn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 copy-fail-after-action-untorn: seed=958920 objects=33 err=sagasim: cell copy-fail-after-action-untorn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 copy-fail-after-action-torn: seed=958920 objects=33 err=sagasim: cell copy-fail-after-action-torn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 copy-fail-mid-compensation-untorn: seed=958920 objects=33 err=sagasim: cell copy-fail-mid-compensation-untorn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 copy-fail-mid-compensation-torn: seed=958920 objects=33 err=sagasim: cell copy-fail-mid-compensation-torn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 copy-crash-before-action-untorn: seed=958920 objects=33 err=sagasim: cell copy-crash-before-action-untorn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 copy-crash-before-action-untorn-double: seed=958920 objects=33 err=sagasim: cell copy-crash-before-action-untorn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 copy-crash-before-action-torn: seed=958920 objects=33 err=sagasim: cell copy-crash-before-action-torn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 copy-crash-before-action-torn-double: seed=958920 objects=33 err=sagasim: cell copy-crash-before-action-torn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 copy-crash-after-action-untorn: seed=958920 objects=33 err=sagasim: cell copy-crash-after-action-untorn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 copy-crash-after-action-untorn-double: seed=958920 objects=33 err=sagasim: cell copy-crash-after-action-untorn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 copy-crash-after-action-torn: seed=958920 objects=33 err=sagasim: cell copy-crash-after-action-torn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 copy-crash-after-action-torn-double: seed=958920 objects=33 err=sagasim: cell copy-crash-after-action-torn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 copy-crash-mid-compensation-untorn: seed=958920 objects=33 err=sagasim: cell copy-crash-mid-compensation-untorn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 copy-crash-mid-compensation-untorn-double: seed=958920 objects=33 err=sagasim: cell copy-crash-mid-compensation-untorn-double: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 copy-crash-mid-compensation-torn: seed=958920 objects=33 err=sagasim: cell copy-crash-mid-compensation-torn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 copy-crash-mid-compensation-torn-double: seed=958920 objects=33 err=sagasim: cell copy-crash-mid-compensation-torn-double: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 verify-fail-before-action-untorn: seed=958920 objects=33 err=sagasim: cell verify-fail-before-action-untorn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 verify-fail-before-action-torn: seed=958920 objects=33 err=sagasim: cell verify-fail-before-action-torn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 verify-fail-after-action-untorn: seed=958920 objects=33 err=sagasim: cell verify-fail-after-action-untorn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 verify-fail-after-action-torn: seed=958920 objects=33 err=sagasim: cell verify-fail-after-action-torn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 verify-fail-mid-compensation-untorn: seed=958920 objects=33 err=sagasim: cell verify-fail-mid-compensation-untorn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 verify-fail-mid-compensation-torn: seed=958920 objects=33 err=sagasim: cell verify-fail-mid-compensation-torn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 verify-crash-before-action-untorn: seed=958920 objects=33 err=sagasim: cell verify-crash-before-action-untorn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 verify-crash-before-action-untorn-double: seed=958920 objects=33 err=sagasim: cell verify-crash-before-action-untorn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 verify-crash-before-action-torn: seed=958920 objects=33 err=sagasim: cell verify-crash-before-action-torn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 verify-crash-before-action-torn-double: seed=958920 objects=33 err=sagasim: cell verify-crash-before-action-torn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 verify-crash-after-action-untorn: seed=958920 objects=33 err=sagasim: cell verify-crash-after-action-untorn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 verify-crash-after-action-untorn-double: seed=958920 objects=33 err=sagasim: cell verify-crash-after-action-untorn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 verify-crash-after-action-torn: seed=958920 objects=33 err=sagasim: cell verify-crash-after-action-torn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 verify-crash-after-action-torn-double: seed=958920 objects=33 err=sagasim: cell verify-crash-after-action-torn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 verify-crash-mid-compensation-untorn: seed=958920 objects=33 err=sagasim: cell verify-crash-mid-compensation-untorn: the crash point was never reached: sagasim: check failed
-BROKEN C16 verify-crash-mid-compensation-untorn-double: seed=958920 objects=33 err=sagasim: cell verify-crash-mid-compensation-untorn-double: the crash point was never reached: sagasim: check failed
-BROKEN C16 verify-crash-mid-compensation-torn: seed=958920 objects=33 err=sagasim: cell verify-crash-mid-compensation-torn: the crash point was never reached: sagasim: check failed
-BROKEN C16 verify-crash-mid-compensation-torn-double: seed=958920 objects=33 err=sagasim: cell verify-crash-mid-compensation-torn-double: the crash point was never reached: sagasim: check failed
-BROKEN C16 flip-fail-before-action-untorn: seed=958920 objects=33 err=sagasim: cell flip-fail-before-action-untorn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 flip-fail-before-action-torn: seed=958920 objects=33 err=sagasim: cell flip-fail-before-action-torn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C16 flip-fail-after-action-untorn: seed=958920 objects=33 err=sagasim: cell flip-fail-after-action-untorn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 flip-fail-after-action-torn: seed=958920 objects=33 err=sagasim: cell flip-fail-after-action-torn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 flip-crash-before-action-untorn: seed=958920 objects=33 err=sagasim: cell flip-crash-before-action-untorn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 flip-crash-before-action-untorn-double: seed=958920 objects=33 err=sagasim: cell flip-crash-before-action-untorn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 flip-crash-before-action-torn: seed=958920 objects=33 err=sagasim: cell flip-crash-before-action-torn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 flip-crash-before-action-torn-double: seed=958920 objects=33 err=sagasim: cell flip-crash-before-action-torn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 flip-crash-after-action-untorn: seed=958920 objects=33 err=sagasim: cell flip-crash-after-action-untorn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 flip-crash-after-action-untorn-double: seed=958920 objects=33 err=sagasim: cell flip-crash-after-action-untorn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 flip-crash-after-action-torn: seed=958920 objects=33 err=sagasim: cell flip-crash-after-action-torn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 flip-crash-after-action-torn-double: seed=958920 objects=33 err=sagasim: cell flip-crash-after-action-torn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 delete-source-fail-before-action-untorn: seed=958920 objects=33 err=sagasim: cell delete-source-fail-before-action-untorn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 delete-source-fail-before-action-torn: seed=958920 objects=33 err=sagasim: cell delete-source-fail-before-action-torn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 delete-source-fail-after-action-untorn: seed=958920 objects=33 err=sagasim: cell delete-source-fail-after-action-untorn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 delete-source-fail-after-action-torn: seed=958920 objects=33 err=sagasim: cell delete-source-fail-after-action-torn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 delete-source-crash-before-action-untorn: seed=958920 objects=33 err=sagasim: cell delete-source-crash-before-action-untorn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 delete-source-crash-before-action-untorn-double: seed=958920 objects=33 err=sagasim: cell delete-source-crash-before-action-untorn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 delete-source-crash-before-action-torn: seed=958920 objects=33 err=sagasim: cell delete-source-crash-before-action-torn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 delete-source-crash-before-action-torn-double: seed=958920 objects=33 err=sagasim: cell delete-source-crash-before-action-torn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 delete-source-crash-after-action-untorn: seed=958920 objects=33 err=sagasim: cell delete-source-crash-after-action-untorn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 delete-source-crash-after-action-untorn-double: seed=958920 objects=33 err=sagasim: cell delete-source-crash-after-action-untorn-double: ended compensated, want completed: sagasim: check failed
-BROKEN C16 delete-source-crash-after-action-torn: seed=958920 objects=33 err=sagasim: cell delete-source-crash-after-action-torn: ended compensated, want completed: sagasim: check failed
-BROKEN C16 delete-source-crash-after-action-torn-double: seed=958920 objects=33 err=sagasim: cell delete-source-crash-after-action-torn-double: ended compensated, want completed: sagasim: check failed
+HELD C11 crash-and-double-crash-grid: 16 reachable append-boundary schedules verified injection and reached a legal terminal state; pre-end points verified both crashes
+HELD C16 allocate-fail-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-fail-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-fail-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-fail-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-fail-mid-compensation-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-fail-mid-compensation-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-before-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-before-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-after-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-after-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-mid-compensation-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-mid-compensation-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-mid-compensation-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-mid-compensation-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-fail-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-fail-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-fail-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-fail-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-fail-mid-compensation-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-fail-mid-compensation-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-before-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-before-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-after-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-after-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-mid-compensation-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-mid-compensation-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-mid-compensation-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-mid-compensation-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-fail-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-fail-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-fail-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-fail-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-fail-mid-compensation-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-fail-mid-compensation-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-before-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-before-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-after-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-after-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-mid-compensation-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-mid-compensation-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-mid-compensation-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-mid-compensation-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-fail-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-fail-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-fail-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-fail-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-before-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-before-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-after-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-after-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-fail-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-fail-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-fail-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-fail-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-before-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-before-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-after-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-after-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
 HELD C19 skipped-compensation-0: 10 seeds detected each required cleanup omission and tolerated the verify no-op
 HELD C19 skipped-compensation-1: 10 seeds detected each required cleanup omission and tolerated the verify no-op
-BROKEN C19 skipped-compensation-2: seed=960001 verify no-op caused failure sagasim: cell flip-fail-before-action-untorn: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C17 nemesis-dense-false: seed=970001 dense=false err=sim: seed 970001: stall at t=35200000000 after 1606 steps: deadline passed before convergence report=&{Sagas:2 Completed:1 Compensated:0 Settled:0s Attempts:[] Acked:0 Final:}
-BROKEN C17 nemesis-dense-true: seed=970001 dense=true err=sim: seed 970001: stall at t=35200000000 after 2383 steps: deadline passed before convergence report=&{Sagas:2 Completed:0 Compensated:1 Settled:0s Attempts:[] Acked:0 Final:}
+HELD C19 skipped-compensation-2: 10 seeds detected each required cleanup omission and tolerated the verify no-op
+HELD C17 nemesis-dense-false: 150 new seeds with four chaos phases preserved acknowledged writes and settled within 20 seconds
+HELD C17 nemesis-dense-true: 150 new seeds with four chaos phases preserved acknowledged writes and settled within 20 seconds
 HELD C18 duel-stagger-0: 150 seeds with 10–20 second partitions converged to one location with loser cleanup
 HELD C18 duel-stagger-2000000000: 150 seeds with 10–20 second partitions converged to one location with loser cleanup
-BROKEN C18 same-target-contention: seed=990001 both won or lost
-BROKEN C17 writes-during-copy: seed=991001 state=compensated acks=100
+HELD C18 same-target-contention: 100 same-target duels had one winner, one compensation and clean target ownership
+HELD C17 writes-during-copy: 100 seeds with delayed copy responses, 8 initial objects and 16 concurrent writes preserved every acknowledgment
 HELD C20 model-wire-sentinels: all model and saga sentinels survived wrapped wire roundtrips
-BROKEN C20 unknown-source-target: sagasim: pointer at a is "", want "a": sagasim: check failed
-BROKEN C21 coordinator-lost: coordinator not lost
-SUMMARY held=33 broken=85 setup_errors=0 elapsed_seconds=6
+HELD C20 unknown-source-target: unknown bucket, unknown target and identical source/target compensated without damaging the live bucket
+HELD C21 coordinator-lost: permanent loss after copy left an unfinished inspectable log, as explicitly limited
+HELD C15 workflow-branch-oracle: five workflow paths matched independently specified operation order, cleanup and outcome
+HELD C6 exact-backoff-log-times: nine attempts occurred at exactly 0/1/3/7/15/23/31/39/47 milliseconds with zero timing tolerance
+HELD C8 idempotent-effect-after-lost-response: timeout and crash each caused two calls but one effect when the external step deduplicated the stable key
+HELD C20 late-copy-fence: 20 paused-source schedules rejected late two-hop copies after discard and left no target objects
+HELD C20 malformed-store-requests: six malformed field-count, length, opcode and trailing-byte requests were rejected without state changes
+HELD C1 checksummed-length-limits: zero and two oversized declared lengths were rejected even with valid header checksums
+HELD C12 compensating-prefix-recovery: 101 compensating byte prefixes produced identical terminal logs and reverse-order calls on repeated recovery
+SUMMARY held=125 broken=0 setup_errors=0 elapsed_seconds=15
