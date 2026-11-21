@@ -1,6 +1,6 @@
 # C4 Level 2 — Container, runtime and environment view
 
-**TARGET architecture — designed 2026-11-21, awaiting Nick's buy-in.**
+**Partly as built.** The DST harness (`internal/sim`, `internal/sim/simtest`, `cmd/objsim`) and the environment interfaces (`internal/env`) exist and match this diagram. Everything else is the target design.
 
 Model: diagram `container-runtime` in [model.json](model.json). Source: PLAN.md sections 2.1, 2.5, 3, 7.1.
 One protocol core, two environments: `internal/node` (real) and the DST harness

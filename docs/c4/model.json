@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "id": "objstore",
-  "title": "Decentralized Object Store & Sync Engine — TARGET architecture (designed 2026-11-21, awaiting Nick's buy-in)",
-  "revision": "target-2026-11-21",
+  "title": "Decentralized Object Store & Sync Engine — target architecture, as built where landed",
+  "revision": "as-built-simulator-2026-11-21",
   "defaultDiagramId": "context",
   "model": {
     "elements": [
@@ -94,7 +94,7 @@
         "kind": "softwareSystem",
         "name": "DST harness",
         "description": "Deterministic simulation harness (internal/sim, internal/sim/simtest, cmd/objsim). Test system: a single-threaded discrete-event loop with virtual clock, seeded PRNG streams, fault-injecting network and disk, and nemesis.",
-        "status": "planned",
+        "status": "existing",
         "technology": "Go test code",
         "tags": [
           "external",
@@ -260,7 +260,7 @@
         "name": "Environment interfaces (internal/env)",
         "description": "The four interfaces protocol code sees: Clock, Rand, Transport, Disk; shared sentinels.",
         "technology": "Go interfaces",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -2308,8 +2308,8 @@
       "id": "context",
       "kind": "context",
       "scopeId": "store",
-      "status": "planned",
-      "title": "System Context — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "status": "mixed",
+      "title": "System Context — as built for the simulator and the environment interfaces; the rest is the target design",
       "nodes": [
         {
           "elementId": "api-client"
@@ -2586,11 +2586,11 @@
       "id": "container-runtime",
       "kind": "container",
       "scopeId": "store",
-      "status": "planned",
+      "status": "mixed",
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, runtime and environment view — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "title": "Container, runtime and environment view — as built for the simulator and the environment interfaces; the rest is the target design",
       "nodes": [
         {
           "elementId": "operator"
