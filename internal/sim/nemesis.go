@@ -24,14 +24,12 @@ func (b Budget) damage(s *Sim, extra []damageRef, extraNode int) error {
 	nodes := 0
 	groups := map[string]int{}
 	for _, n := range s.nodes {
-		names := n.disk.Damaged()
+		hit := n.disk.affected()
 		faulty := n.disk.faulty() || n.idx == extraNode
 		for _, x := range extra {
 			if x.node == n.idx {
 				faulty = true
-				if !n.disk.damaged[x.blob] {
-					names = append(names, x.blob)
-				}
+				hit[x.blob] = true
 			}
 		}
 		if faulty {
@@ -40,8 +38,11 @@ func (b Budget) damage(s *Sim, extra []damageRef, extraNode int) error {
 		if b.GroupOf == nil {
 			continue
 		}
-		for _, name := range names {
+		for _, name := range sortedKeys(hit) {
 			g := b.GroupOf(n.id, name)
+			if g == "" {
+				continue
+			}
 			groups[g]++
 			if groups[g] > b.MaxDamagedPerGroup {
 				return fmt.Errorf("%w: group %q has %d damaged blobs, limit %d", ErrBudget, g, groups[g], b.MaxDamagedPerGroup)
@@ -64,6 +65,14 @@ func (b Budget) Check(s *Sim) error {
 	return b.damage(s, nil, -1)
 }
 
+func refsOf(node int, names []string) []damageRef {
+	out := make([]damageRef, 0, len(names))
+	for _, name := range names {
+		out = append(out, damageRef{node, name})
+	}
+	return out
+}
+
 func (b Budget) Allows(s *Sim, f Fault) bool {
 	if b.Lifted {
 		return true
@@ -78,20 +87,26 @@ func (b Budget) Allows(s *Sim, f Fault) bool {
 	if err != nil {
 		return b.Check(s) == nil
 	}
-	var extra []damageRef
-	extraNode := -1
 	switch f.Kind {
 	case FaultBitRot:
-		extra = append(extra, damageRef{n.idx, f.Blob})
-	case FaultWipeDisk, FaultWipeRejoin:
-		extraNode = n.idx
-		for _, name := range sortedKeys(n.disk.blobs) {
-			extra = append(extra, damageRef{n.idx, name})
+		if f.Blob != "" {
+			return b.damage(s, refsOf(n.idx, []string{f.Blob}), n.idx) == nil
 		}
+		for _, name := range n.disk.rotTargets() {
+			if b.damage(s, refsOf(n.idx, []string{name}), n.idx) != nil {
+				return false
+			}
+		}
+		return b.damage(s, nil, -1) == nil
+	case FaultWipeDisk, FaultWipeRejoin:
+		return b.damage(s, refsOf(n.idx, n.disk.stored()), n.idx) == nil
 	case FaultReadError:
-		extraNode = n.idx
+		if f.Blob != "" {
+			return b.damage(s, refsOf(n.idx, []string{f.Blob}), n.idx) == nil
+		}
+		return b.damage(s, refsOf(n.idx, n.disk.stored()), n.idx) == nil
 	}
-	return b.damage(s, extra, extraNode) == nil
+	return b.damage(s, nil, -1) == nil
 }
 
 type NemesisConfig struct {

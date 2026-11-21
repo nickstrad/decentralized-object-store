@@ -237,6 +237,24 @@ func (d *Disk) clearReadFaults() {
 	d.failAny = 0
 }
 
+func (d *Disk) affected() map[string]bool {
+	hit := map[string]bool{}
+	for _, name := range sortedKeys(d.damaged) {
+		hit[name] = true
+	}
+	for _, name := range sortedKeys(d.failReads) {
+		if d.failReads[name] > 0 {
+			hit[name] = true
+		}
+	}
+	if d.failAny > 0 {
+		for _, name := range d.stored() {
+			hit[name] = true
+		}
+	}
+	return hit
+}
+
 func (d *Disk) faulty() bool {
 	return len(d.damaged) > 0 || len(d.failReads) > 0 || d.failAny > 0
 }
