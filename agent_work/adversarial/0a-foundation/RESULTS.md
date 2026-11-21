@@ -5,8 +5,8 @@ orchestrator. Attack inventory and reading notes: `ATTACKS.md`. Raw output: `evi
 
 | Run | Tree | Held | Broken |
 |---|---|---|---|
-| 1, before the repair round | e62416a | 62 | 46 |
-| 2, after the repair round | 9ce04e9 | 99 | 9 |
+| 1, before the repair round | d6d6201 | 62 | 46 |
+| 2, after the repair round | 9d754c7 | 99 | 9 |
 
 Run 1 output is kept in `evidence/orchestrator-run-1-pre-repair.txt`; run 2 in
 `evidence/run-all.txt` and `evidence/summary.txt`. Four attacks were added between the runs.
@@ -57,6 +57,6 @@ ARBITRATION-1.md, table "Narrowing / Decision"). They bound what the gates claim
 not proof that every violating tree is rejected. The arbitration found four further defects
 outside this harness (A–D: a self-certifying comment baseline, the direct-container entry
 point, the first-push boundary in CI, an empty map loop assigning an outer variable); those
-were repaired in 54b4811 and are covered by the gate canaries `self-baseline`,
+were repaired in 6e8fc66 and are covered by the gate canaries `self-baseline`,
 `unnamed-baseline`, `landed-prose`, the detlint fixture `maprange/outervar`, and
 `agent_work/0a-foundation/arbitration-controls.sh`.
