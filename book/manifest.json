@@ -7,6 +7,13 @@
       "title": "Deterministic Simulation Testing",
       "file": "chapters/01-deterministic-simulation.md",
       "status": "published"
+    },
+    {
+      "n": 3,
+      "slug": "reed-solomon-erasure-coding",
+      "title": "Reed-Solomon Erasure Coding",
+      "file": "chapters/03-reed-solomon-erasure-coding.md",
+      "status": "published"
     }
   ],
   "front_matter": []
