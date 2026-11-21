@@ -55,3 +55,5 @@ All seven repair items (1–7) are FIXED and item 8 is CORRECTLY NARROWED, every
   - Verified regression-test non-vacuity by reading `git show 110bd69:<file>` for each touched product file (read-only review; did not check out `110bd69`, run the adversarial harness which writes tracked evidence files, or modify code).
   - Audited `Nemesis.fire`/`draw`/`index`/`Budget.Allows` line-by-line for inventory-independent draw counts and arithmetic bounds on `local`, `toGlobal`, `later`, `scaled`, `addSat`, `latency`, and `withinHorizon`.
   - Static grep for `float32`/`float64`, `//`, `/*`, `panic(`, and `for ... range` across `internal/` and `cmd/`.
+
+NITS CLOSED — finding 1 (scaled(k, -1)) fixed test-first in the two commits after this review (TestScaled... in internal/sim/bounds_test.go; guard changed to d < -1); golden digests unchanged (orchestrator, 2026-11-21).
