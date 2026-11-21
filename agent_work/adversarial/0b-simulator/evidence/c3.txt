@@ -1,0 +1,7 @@
+HELD C3 one-way-heal: all 16 directed paths matched the partition matrix and all 16 post-heal datagrams arrived
+HELD C3 region-heal: all 16 directed paths matched the partition matrix and all 16 post-heal datagrams arrived
+HELD C3 isolate-heal: all 16 directed paths matched the partition matrix and all 16 post-heal datagrams arrived
+HELD C3 symmetric-heal: all 16 directed paths matched the partition matrix and all 16 post-heal datagrams arrived
+HELD C3 clog-unclog-resume: 50 seeds held traffic and released requests and replies in order through pause/clog composition
+HELD C3 clog-resume-unclog: 50 seeds held traffic and released requests and replies in order through pause/clog composition
+HELD C3 clog-heal-all: 50 seeds held traffic and released requests and replies in order through pause/clog composition

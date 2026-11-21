@@ -1,1 +1,2 @@
 # relative/file.go<TAB>Func<TAB>rule-id<TAB>justification — suppresses one detlint rule in one function; unused lines fail the gate
+internal/sim/sim.go	-	import	runtime/debug is used only in Sim.guard to capture the stack of a recovered node panic for the failure report; the stack never reaches the event log, a digest, a message or a decision (confirmed in REVIEW-2)

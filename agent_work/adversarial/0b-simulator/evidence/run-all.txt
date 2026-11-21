@@ -1,0 +1,61 @@
+HELD C1 custom-replay: 120 custom callback/timer/invariant/restart/wipe schedules replayed twice with equal logs and digests
+HELD C1 separate-process-runtime: 120 custom fingerprints equal across three fresh processes with varied GOMAXPROCS and GOGC
+HELD C1 equal-time-timer-storm: six runs of 10000 timers at one instant gave identical digests
+HELD C2 stream-loss-rate-request: 40 seeds x 1000 requests success=27905 timeout=12095 server deliveries=27905 within 400 of expected 28000 successes
+HELD C2 stream-loss-rate-response: 40 seeds x 1000 requests success=27905 timeout=12095 server deliveries=40000 within 400 of expected 28000 successes
+HELD C2 rate-drop: 40 seeds x 1000 sends delivered=27905 expected=28000 tolerance=400 deliveries
+HELD C2 rate-duplicate: 40 seeds x 1000 sends delivered=52095 expected=52000 tolerance=400 deliveries
+HELD C2 rate-link-loss: 40 seeds x 1000 sends delivered=27905 expected=28000 tolerance=400 deliveries
+HELD C2 rate-off: 40 seeds x 1000 sends delivered=40000 expected=40000 tolerance=0 deliveries
+HELD C2 delay-reorder: 200 deliveries stayed within 10..100ns and included reordered datagrams
+HELD C2 stream-fifo-no-duplicates: 50 seeds x 200 requests and replies stayed FIFO despite 100% datagram drop and duplication
+HELD C2 lost-request: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 lost-response: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 refused: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 no-reply: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 oversize-request: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 oversize-reply: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 invalid-timeout: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 datagram-size-boundary: 64-byte datagram delivered and 65-byte datagram rejected
+HELD C3 one-way-heal: all 16 directed paths matched the partition matrix and all 16 post-heal datagrams arrived
+HELD C3 region-heal: all 16 directed paths matched the partition matrix and all 16 post-heal datagrams arrived
+HELD C3 isolate-heal: all 16 directed paths matched the partition matrix and all 16 post-heal datagrams arrived
+HELD C3 symmetric-heal: all 16 directed paths matched the partition matrix and all 16 post-heal datagrams arrived
+HELD C3 clog-unclog-resume: 50 seeds held traffic and released requests and replies in order through pause/clog composition
+HELD C3 clog-resume-unclog: 50 seeds held traffic and released requests and replies in order through pause/clog composition
+HELD C3 clog-heal-all: 50 seeds held traffic and released requests and replies in order through pause/clog composition
+BROKEN C4 whole-read-overflow-budget: seed=1 FailReads(0,empty,MaxInt) then +1: Read=<nil> and zero-damage Budget.Check=<nil>
+HELD C4 group-budget-read-faults: whole/named read errors, unnamed rot and wipe were rejected beside an existing damaged shard; ungrouped metadata allowed
+HELD C4 silent-single-bit-rot: 200 seeds silently flipped exactly one durable bit and marked the blob
+HELD C4 crash-durability-repair: crash discarded unsynced write/append/delete/new blob while preserving synced rot and its mark until repair sync
+HELD C4 torn-prefix: 200 seeds retained only append prefixes, covering all nine tail lengths and first-append creation
+HELD C4 wipe-and-read-errors: exactly two injected read errors then success; wipe removed both layers and marked two lost blobs
+HELD C4 budget-fault-sequences: 15000 mixed fault/repair/crash/heal steps stayed within checked group and disk budgets
+BROKEN C4 read-count-overflow: seed=1 FailReads(0,x,MaxInt), FailReads(0,x,1), Read(x) returned <nil> instead of IO or overflow rejection
+HELD C5 named-stream-draws: 600000 comparisons unchanged by draws on an unrelated stream
+HELD C5 node-stream-isolation: 1000 extra node-0 draws did not shift node-1
+HELD C5 network-nemesis-static: 50 bit-rot schedules unchanged by network drop changes with identical blob inventories
+BROKEN C5 network-nemesis-dynamic-blobs: seed=1 DropPPM 0 vs 1000000 with OnDatagram writing received changed nemesis step 4: {12ns bit-rot 1 "received" applied} versus {12ns bit-rot 1 "base" applied}
+BROKEN C6 nemesis-callback-panic: seed=43 nemesis bit-rot Budget.GroupOf panic escaped RunUntilQuiet=group-probe; Sim.Err=<nil>
+HELD C6 empty-stall: seed=37 returned the expected sticky stall with seed before the 200-step cap
+HELD C6 deadline-stall: seed=37 returned the expected sticky stall with seed before the 200-step cap
+HELD C6 zero-timer-stall: seed=37 returned the expected sticky stall with seed before the 200-step cap
+HELD C6 self-send-stall: seed=37 returned the expected sticky stall with seed before the 200-step cap
+HELD C6 actions-stall: seed=37 returned the expected sticky stall with seed before the 200-step cap
+HELD C6 panic-factory: seed=41 panic became a sticky PanicError naming the seed
+HELD C6 panic-start: seed=41 panic became a sticky PanicError naming the seed
+HELD C6 panic-handler: seed=41 panic became a sticky PanicError naming the seed
+HELD C6 panic-timer: seed=41 panic became a sticky PanicError naming the seed
+HELD C6 panic-action: seed=41 panic became a sticky PanicError naming the seed
+HELD C6 panic-invariant: seed=41 panic became a sticky PanicError naming the seed
+HELD C6 panic-predicate: seed=41 panic became a sticky PanicError naming the seed
+HELD C6 panic-encode: seed=41 panic became a sticky PanicError naming the seed
+BROKEN C2 huge-latency-range: seed=1 valid latency [0,MaxInt64] send failed: sim: seed 1: panic in action send at node "" t=0: invalid argument to Int64N
+BROKEN C6 clock-overflow: seed=1 skew=MaxInt64 RunUntil(0)->RunUntil(1) local clock went from 9223372036854775807 to -9223372036854775808 with no error
+BROKEN C6 timer-duration-clamp: seed=1 AfterFunc((1<<62)+1) fired at 4611686018427387904 one ns early
+HELD C6 global-time-past-events: past events and negative RunFor did not move global time backwards
+HELD C7 simtest-report-fields: seed=23 deliberate panic report checked for seed, both digests, truncated tail, stack and replay command
+HELD C7 simtest-exact-replay: seed=23 executed the printed command verbatim from the module root and compared failure and both digests
+HELD C7 cli-failure-digests: seed=23 copied production CLI with a registered panic scenario exited 1 twice with matching digests
+BROKEN C7 cli-failure-report: seed=23 production run(-scenario adversarial-fail -seed 23) emitted log-tail=False REPLAY=False; see cli-original.txt and reporting.py fixture
+SUMMARY held=52 broken=8 setup_errors=0 elapsed_seconds=16

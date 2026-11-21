@@ -1,0 +1,4 @@
+scenario=adversarial-fail seed=23 steps=1 time=0
+events=3d06bded5195a8305f443b05be7678552d8d9ae14de7e5c76fb63e8fbfe71db1
+state=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+objsim: sim: seed 23: panic in action deliberate at node "" t=0: cli-replay-fixture

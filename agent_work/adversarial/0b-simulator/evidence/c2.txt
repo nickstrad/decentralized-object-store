@@ -1,0 +1,16 @@
+HELD C2 stream-loss-rate-request: 40 seeds x 1000 requests success=27905 timeout=12095 server deliveries=27905 within 400 of expected 28000 successes
+HELD C2 stream-loss-rate-response: 40 seeds x 1000 requests success=27905 timeout=12095 server deliveries=40000 within 400 of expected 28000 successes
+HELD C2 rate-drop: 40 seeds x 1000 sends delivered=27905 expected=28000 tolerance=400 deliveries
+HELD C2 rate-duplicate: 40 seeds x 1000 sends delivered=52095 expected=52000 tolerance=400 deliveries
+HELD C2 rate-link-loss: 40 seeds x 1000 sends delivered=27905 expected=28000 tolerance=400 deliveries
+HELD C2 rate-off: 40 seeds x 1000 sends delivered=40000 expected=40000 tolerance=0 deliveries
+HELD C2 delay-reorder: 200 deliveries stayed within 10..100ns and included reordered datagrams
+HELD C2 stream-fifo-no-duplicates: 50 seeds x 200 requests and replies stayed FIFO despite 100% datagram drop and duplication
+HELD C2 lost-request: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 lost-response: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 refused: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 no-reply: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 oversize-request: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 oversize-reply: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 invalid-timeout: seed=23 produced one deferred callback with the expected error and server-delivery status
+HELD C2 datagram-size-boundary: 64-byte datagram delivered and 65-byte datagram rejected
