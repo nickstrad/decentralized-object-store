@@ -702,7 +702,8 @@ func TestOperationsAfterLeave(t *testing.T) {
 			t.Fatalf("remote error %v", remote)
 		}
 	})
-	t.Run("timers stop after leave", func(t *testing.T) {
+	t.Run("timers stop after leave and Start does not restart them", func(t *testing.T) {
+		h.node.Start()
 		h.clock.advance(time.Minute)
 		if len(h.net.sent) != 0 || len(h.net.requests) != 0 {
 			t.Fatalf("closed node sent %d packets and %d requests", len(h.net.sent), len(h.net.requests))

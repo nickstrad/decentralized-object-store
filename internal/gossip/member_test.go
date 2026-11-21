@@ -242,6 +242,10 @@ func TestIncarnationRules(t *testing.T) {
 		if h.node.Stats().RefuteOverflows != 1 {
 			t.Fatalf("RefuteOverflows = %d, want 1", h.node.Stats().RefuteOverflows)
 		}
+		h.deliver("p1", gossipMsg(mem("self", math.MaxUint32, gossip.StateSuspect)))
+		if got := h.node.Self(); got.Incarnation != math.MaxUint32 || h.node.Stats().RefuteOverflows != 2 {
+			t.Fatalf("second overflow: self %+v, overflows %d", got, h.node.Stats().RefuteOverflows)
+		}
 	})
 	t.Run("claims about this node after it left are ignored", func(t *testing.T) {
 		h := newHarness(t, "self", gossip.Config{})
