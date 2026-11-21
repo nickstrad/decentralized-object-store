@@ -1,0 +1,9 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph TD
+  OBJ[Object bytes] --> RS[Split stripe: k data + m parity]
+  RS --> FRAME[64B OSSH header + SHA-256]
+  FRAME --> PLACE[Rendezvous + region cap]
+  PLACE --> RPC[Send n OpPutShard RPCs]
+  RPC --> QUORUM[k+1 durable replies?]
+  QUORUM -->|yes| MAN[Advance window / return Manifest]
+  QUORUM -->|no| FAIL[ErrUnavailable]

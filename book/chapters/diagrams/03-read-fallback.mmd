@@ -1,0 +1,8 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph TD
+  FETCH[Fetch k data shards] --> VERIFY[Verify header + manifest SHA]
+  VERIFY -->|valid| DECODE[At k valid: invert + Join]
+  VERIFY -->|rejected| MORE[Untried parity left?]
+  MORE -->|yes| PARITY[Fetch next parity shard]
+  MORE -->|no| RETRY[Retry transient errors]
+  RETRY -->|none left| FAIL[ErrUnavailable]
