@@ -1,3 +1,3 @@
 # relative/file.go<TAB>EnclosingFunc<TAB>justification — every panic( under internal/ must have a line here
 internal/env/errors.go	mustCodeTable	the base code table is a package literal; NewCodeTable can only fail on app rows, so an error here is a bug in the literal
-internal/sim/handle.go	serve	a request handler calling its reply function twice is a protocol bug; the panic is caught by the loop and reported as a PanicError with the seed
+internal/sim/handle.go	Sim.serve	a request handler calling its reply function twice is a protocol bug; the panic is caught by the loop and reported as a PanicError with the seed
