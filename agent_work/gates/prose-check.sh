@@ -5,7 +5,8 @@
 # Usage: agent_work/gates/prose-check.sh <base> [<head>]      (default head: HEAD)
 #
 # Over the commits base..head it proves:
-#   (a) the tree just before the first prose commit has no comment in product Go;
+#   (a) the tree just before the first prose commit has no comment in product Go beyond
+#       those already in <base> (earlier chunks' landed prose);
 #   (b) every prose commit (trailer "Prose-By: Gemini 4 Neon") changes only comments in Go
 #       files (identical AST, directives, build files otherwise) and reader-facing files;
 #   (c) no other commit, anywhere in the range, touches reader-facing prose, and none after
@@ -80,12 +81,14 @@ for c in $commits; do
   if git log -1 --format=%B "$c" | grep -qxF "$trailer"; then first_prose=$c; break; fi
 done
 
+# Comments already in <base> landed with earlier chunks and are not this range's to answer for.
+export_tree "$base" base
 if [ -z "$first_prose" ]; then
   export_tree "$head" head
-  tool nocomments -root /work/t/head || fail "(a) product Go at $head has comments and there is no prose commit"
+  tool nocomments -root /work/t/head -baseline /work/t/base || fail "(a) product Go at $head has comments that <base> does not, and there is no prose commit"
 else
   export_tree "$first_prose^" pre
-  tool nocomments -root /work/t/pre || fail "(a) the tree before the first prose commit $(git rev-parse --short "$first_prose") has comments"
+  tool nocomments -root /work/t/pre -baseline /work/t/base || fail "(a) the tree before the first prose commit $(git rev-parse --short "$first_prose") has comments that <base> does not"
 fi
 
 seen_prose=false

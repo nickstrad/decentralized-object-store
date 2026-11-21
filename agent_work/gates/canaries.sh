@@ -27,9 +27,13 @@ fresh() { # fresh <name>: a clean copy of the tree at $work/<name>
   mkdir -p "$work/$1"
   tar -C "$root" --exclude=./.git --exclude=./kb --exclude=./_site --exclude='./agent_work/*/gates' -cf - . | tar -C "$work/$1" -xf -
 }
+# The comment baseline of every canary run is the unmutated tree, so prose that has landed
+# with earlier chunks does not turn the clean run red, and a comment canary is caught for
+# the comment it plants and nothing else.
 run_gate() { # run_gate <name> <GATE_ONLY> [extra env assignments...]
   local name=$1 only_gates=$2; shift 2
   ( cd "$work/$name" && env GATE_SHA=$fake_sha GATE_DIRTY=false GATE_IMAGE_ID=$fake_image \
+      GATE_BASELINE="$root" GATE_BASE_SHA=canary-source-tree \
       GATE_ONLY="$only_gates" GATE_OUT="$work/$name.out" "$@" agent_work/gates/gate.sh canary ) > "$work/$name.log" 2>&1
 }
 status_of() { jq -r --arg g "$2" --arg c "$3" '.checks[] | select(.gate==$g and .check==$c) | .status' "$work/$1.out/result.json" 2>/dev/null; }
@@ -162,7 +166,14 @@ func TestZZIndirectScenario(t *testing.T) {
 }
 EOT
 }
-plant_coverage() { base_pkg; printf '\nfunc Untested(x int) int {\n\tif x > 3 {\n\t\treturn x - 1\n\t}\n\tif x > 2 {\n\t\treturn x - 2\n\t}\n\tif x > 1 {\n\t\treturn x - 3\n\t}\n\treturn x\n}\n' >> internal/sim/zz_canary.go; }
+# One uncovered statement per existing line of the package (never fewer than 8), so the
+# planted function drags coverage under the floor however large the real package has grown.
+plant_coverage() {
+  local n; n=$(cat internal/sim/*.go 2>/dev/null | wc -l)
+  base_pkg
+  [ "$n" -ge 8 ] || n=8
+  { printf '\nfunc Untested(x int) int {\n'; for _ in $(seq "$n"); do printf '\tx++\n'; done; printf '\treturn x\n}\n'; } >> internal/sim/zz_canary.go
+}
 plant_unitfail() { base_pkg; printf '\nfunc TestZZFails(t *testing.T) {\n\tt.Fatal("planted")\n}\n' >> internal/sim/zz_canary_test.go; }
 plant_prop() {
   base_pkg
@@ -250,6 +261,18 @@ EOF
 # 0. The clean tree must be green on EVERY gate and count for landing, or nothing below
 #    means anything. This is also the positive control for counts_for_landing.
 counts clean "nothing (well-formed commit, clean tree, in the container)" true
+
+# Prose that landed with an earlier chunk (a comment present in the baseline too) must not
+# turn a build-stage run red: the comment rule is about what this chunk adds.
+if [[ landed-prose =~ $only ]]; then
+  fresh landed-prose; ( cd "$work/landed-prose" && plant_comment )
+  cp -a "$work/landed-prose" "$work/landed-prose.base"
+  run_gate landed-prose "" GATE_BASELINE="$work/landed-prose.base"
+  j="$work/landed-prose.out/result.json"
+  if [ "$(jq -r '.overall' "$j" 2>/dev/null)" = pass ] && [ "$(jq -r '.counts_for_landing' "$j")" = true ]; then record landed-prose "a comment that is also in the baseline commit" "all gates green, counts_for_landing=true" true
+  else record landed-prose "a comment that is also in the baseline commit" "all gates green, counts_for_landing=true" false; fi
+  rm -rf "$work/landed-prose" "$work/landed-prose.out" "$work/landed-prose.base"
+fi
 
 #      name             gate check          log pattern                    planted                                                    gates plant
 canary gofmt            G0 gofmt           'zz_canary.go'                 "an unformatted Go file"                                   G0 plant_gofmt

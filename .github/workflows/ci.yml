@@ -26,13 +26,10 @@ jobs:
         env:
           GATE_STAGE: final
         run: agent_work/gates/gate.sh ci
-      - name: Prose provenance of the landed chunk
-        run: |
-          if git rev-parse -q --verify HEAD^2 >/dev/null; then
-            agent_work/gates/prose-check.sh "$(git merge-base HEAD^1 HEAD^2)" HEAD^2
-          else
-            echo "not a merge commit: no chunk range to check"
-          fi
+      - name: Prose provenance of everything this push landed
+        env:
+          BEFORE: ${{ github.event.before || github.event.pull_request.base.sha }}
+        run: agent_work/gates/ci-prose.sh "$BEFORE" HEAD
       - name: Gate canaries
         run: agent_work/gates/canaries.sh
       - name: Upload gate result

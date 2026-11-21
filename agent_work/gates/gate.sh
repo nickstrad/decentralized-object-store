@@ -8,7 +8,10 @@
 #
 # Environment:
 #   GATE_ONLY=G0,G3     run a subset (the result is then marked partial and does not count)
-#   GATE_STAGE=build    (default) product Go must be comment-free (pre-prose rule)
+#   GATE_STAGE=build    (default) product Go must be comment-free (pre-prose rule), apart
+#                       from the comments already in the baseline commit (earlier chunks'
+#                       landed prose)
+#   GATE_BASE=<commit>  the baseline for that rule (default: the merge base with main)
 #   GATE_STAGE=final    after the prose stage: the comment check is replaced by prose-check.sh
 #   FUZZ_SECONDS=30     per fuzz target in G3
 #   GATE_NO_DOCKER=1    run where you are, without Docker; the result is marked
@@ -42,11 +45,25 @@ if [ "$in_container" = false ] && [ "${GATE_NO_DOCKER:-}" != 1 ]; then
   echo "gate: building the dev image (G6)"
   docker compose build -q dev || { echo "gate: image build failed" >&2; exit 2; }
   image_id=$(docker image inspect objstore-dev:local --format '{{.Id}}' 2>/dev/null || echo unknown)
-  exec docker compose run --rm -T \
+  # The comment baseline: the product Go of the commit this branch started from. Comments
+  # that landed with earlier chunks are not this chunk's to answer for.
+  basedir=$(mktemp -d /tmp/gate-baseline.XXXXXX)
+  trap 'rm -rf "$basedir"' EXIT
+  base=${GATE_BASE:-}
+  if [ -z "$base" ] && git rev-parse -q --verify main >/dev/null 2>&1; then base=$(git merge-base HEAD main 2>/dev/null || true); fi
+  base_sha=none
+  if [ -n "$base" ]; then
+    base_sha=$(git rev-parse --verify -q "$base^{commit}") || { echo "gate: GATE_BASE '$base' is not a commit" >&2; exit 2; }
+    git archive "$base_sha" -- . ':(exclude)kb' ':(exclude)agent_work' | tar -x -C "$basedir" || { echo "gate: cannot export the baseline $base_sha" >&2; exit 2; }
+  fi
+  chmod -R a+rX "$basedir"
+  docker compose run --rm -T -v "$basedir:/gate-baseline:ro" \
     -e GATE_SHA="$sha" -e GATE_DIRTY="$dirty" -e GATE_IMAGE_ID="$image_id" \
     -e GATE_ONLY="${GATE_ONLY:-}" -e GATE_STAGE="${GATE_STAGE:-build}" \
+    -e GATE_BASELINE=/gate-baseline -e GATE_BASE_SHA="$base_sha" \
     -e FUZZ_SECONDS="${FUZZ_SECONDS:-30}" -e GATE_OUT="${GATE_OUT:-}" \
     dev agent_work/gates/gate.sh "$chunk"
+  exit $?
 fi
 
 # ---------------------------------------------------------------- gate side
@@ -94,6 +111,8 @@ product_go_files() {
 }
 # Packages that must be deterministic and single-threaded (PLAN 2.1, 2.5). simtest is test
 # plumbing (flags, environment, re-executing the test binary) and is deliberately outside.
+# So are _test.go files: a test may read the wall clock for a timeout; test-side
+# nondeterminism that reaches a simulation is caught by the replay meta-tests in G5.
 # The list is every directory under the roots that holds a Go file (found on disk, so a
 # directory the go tool sees no package in, such as one whose only file is behind a build
 # tag, is still linted) plus everything in this module those packages import, directly or
@@ -147,7 +166,13 @@ g0_deps() {
 }
 g0_comments() {
   if [ "$stage" != build ]; then echo "NOTE: stage=$stage, comment rule is checked by prose-check.sh"; return 0; fi
-  "$bin/nocomments" -root "$root"
+  if [ -n "${GATE_BASELINE:-}" ]; then
+    [ -d "$GATE_BASELINE" ] || { echo "GATE_BASELINE is not a directory: $GATE_BASELINE"; return 1; }
+    echo "NOTE: comments compared with baseline ${GATE_BASE_SHA:-unnamed}"
+    "$bin/nocomments" -root "$root" -baseline "$GATE_BASELINE"
+  else
+    "$bin/nocomments" -root "$root"
+  fi
 }
 g0_selfcontained() {
   local rc=0 hits
@@ -249,8 +274,8 @@ jq -n --arg chunk "$chunk" --arg sha "$sha" --arg stage "$stage" --arg started "
   --arg finished "$(date -u +%FT%TZ)" --arg go "$(go version)" --arg image "${GATE_IMAGE_ID:-unknown}" \
   --arg overall "$overall" --argjson in_container "$in_container" --argjson partial "$partial" \
   --argjson dirty "$dirty" --argjson counts "$counts" --argjson seed "$seed" \
-  --argjson fuzz "$fuzz_seconds" --argjson checks "$checks_json" \
-  '{chunk:$chunk, sha:$sha, stage:$stage, started:$started, finished:$finished, go_version:$go,
+  --argjson fuzz "$fuzz_seconds" --argjson checks "$checks_json" --arg cbase "${GATE_BASE_SHA:-none}" \
+  '{chunk:$chunk, sha:$sha, stage:$stage, comment_baseline:$cbase, started:$started, finished:$finished, go_version:$go,
     image_id:$image, in_container:$in_container, partial:$partial, dirty_tree:$dirty,
     seed_from_sha:$seed, fuzz_seconds:$fuzz, overall:$overall, counts_for_landing:$counts,
     checks:$checks}' > "$out/result.json"

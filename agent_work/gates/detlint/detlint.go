@@ -565,6 +565,11 @@ func orderInsensitive(rs *ast.RangeStmt, parent ast.Node, stack []ast.Node, info
 	if len(rs.Body.List) == 0 {
 		return true
 	}
+	// `for k = range m` assigns to a variable that outlives the loop: its
+	// final value is the last key visited, which is map order.
+	if rs.Tok != token.DEFINE {
+		return false
+	}
 	objOf := func(e ast.Expr) types.Object {
 		id, ok := ast.Unparen(e).(*ast.Ident)
 		if !ok || id.Name == "_" {
