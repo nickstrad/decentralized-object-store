@@ -7,16 +7,18 @@ import (
 	"go/token"
 	"go/types"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"detlint/internal/report"
 )
 
 type config struct {
-	root  string
-	tests bool
-	allow string
-	pkgs  []string
+	root         string
+	tests        bool
+	allow        string
+	allowImports []string
+	pkgs         []string
 }
 
 type result struct {
@@ -44,13 +46,17 @@ func run(cfg config) (result, error) {
 	fset := token.NewFileSet()
 	l := &loader{fset: fset, root: root, modPath: modPath,
 		cache: map[string]*types.Package{}, errs: map[string]error{}, loading: map[string]bool{}}
+	lc := &lintCtx{modPath: modPath, imports: importAllow(cfg.allowImports)}
 	var raw []rawFinding
 	for _, rel := range dirs {
 		dir := filepath.Join(root, rel)
-		files, xtest, err := parseDir(fset, dir, cfg.tests)
+		files, xtest, bt, err := scanChecked(fset, root, dir, cfg.tests)
 		if err != nil {
 			raw = append(raw, rawFinding{report.Finding{Path: filepath.ToSlash(rel), Line: 1, Col: 1, Rule: "parse", Msg: err.Error()}, "-"})
 			continue
+		}
+		for _, f := range bt {
+			raw = append(raw, rawFinding{f, "-"})
 		}
 		if len(files) == 0 && len(xtest) == 0 {
 			continue
@@ -61,7 +67,7 @@ func run(cfg config) (result, error) {
 			res.pkgs++
 			res.files += len(files)
 			var pf []rawFinding
-			under, pf = checkAndLint(l, root, path, files)
+			under, pf = checkAndLint(l, lc, root, path, files)
 			raw = append(raw, pf...)
 		}
 		if len(xtest) > 0 {
@@ -70,7 +76,7 @@ func run(cfg config) (result, error) {
 			if under != nil {
 				l.override = map[string]*types.Package{path: under}
 			}
-			_, pf := checkAndLint(l, root, path+"_test", xtest)
+			_, pf := checkAndLint(l, lc, root, path+"_test", xtest)
 			l.override = nil
 			raw = append(raw, pf...)
 		}
@@ -145,7 +151,7 @@ func applyAllow(path string, fs []report.Finding, raw []rawFinding) ([]report.Fi
 
 // checkAndLint type-checks one package and lints its files. Type errors are
 // findings; the package is returned for use by an external test package.
-func checkAndLint(l *loader, root, path string, files []*ast.File) (*types.Package, []rawFinding) {
+func checkAndLint(l *loader, lc *lintCtx, root, path string, files []*ast.File) (*types.Package, []rawFinding) {
 	var out []rawFinding
 	relPath := func(pos token.Pos) (string, int, int) {
 		p := l.fset.Position(pos)
@@ -191,7 +197,8 @@ func checkAndLint(l *loader, root, path string, files []*ast.File) (*types.Packa
 		out = append(out, rawFinding{report.Finding{Path: path, Line: 1, Col: 1, Rule: "typecheck", Msg: err.Error()}, "-"})
 	}
 	for _, f := range files {
-		lintFile(f, info, pkg, add)
+		isTest := strings.HasSuffix(l.fset.Position(f.FileStart).Filename, "_test.go")
+		lintFile(f, isTest, lc, info, pkg, add)
 	}
 	return pkg, out
 }
@@ -202,7 +209,6 @@ var randCtors = set("New", "NewPCG", "NewChaCha8", "NewSource", "NewZipf")
 var osProc = set("Getpid", "Getppid", "Hostname", "Getenv", "LookupEnv", "Environ", "Args", "Getwd")
 var runtimeProc = set("NumGoroutine", "NumCPU", "GOMAXPROCS", "Stack", "Caller", "Callers")
 var reflectPtr = set("Pointer", "UnsafePointer", "UnsafeAddr")
-var sortFuncs = set("Strings", "Ints", "Float64s", "Slice", "SliceStable", "Sort", "Stable")
 var mapsIter = set("Keys", "Values", "All")
 
 func set(xs ...string) map[string]bool {
@@ -213,8 +219,38 @@ func set(xs ...string) map[string]bool {
 	return m
 }
 
-// bannedImports maps an import path to its rule.
-func bannedImport(path string) (string, bool) {
+// stdAllowed is the import allowlist for non-test files of checked packages
+// (besides the root module's own packages).
+var stdAllowed = []string{
+	"bufio", "bytes", "cmp", "container/heap", "container/list", "container/ring",
+	"crypto/sha256", "crypto/sha512", "crypto/subtle", "embed",
+	"encoding/binary", "encoding/hex", "encoding/base64", "errors", "fmt",
+	"hash", "hash/crc32", "hash/crc64", "hash/fnv", "io", "iter", "maps",
+	"math", "math/bits", "math/rand/v2", "slices", "sort", "strconv", "strings",
+	"time", "unicode", "unicode/utf8", "unicode/utf16",
+}
+
+func importAllow(extra []string) map[string]bool {
+	m := set(stdAllowed...)
+	for _, e := range extra {
+		m[e] = true
+	}
+	return m
+}
+
+// lintCtx is the per-run configuration the file rules need.
+type lintCtx struct {
+	modPath string
+	imports map[string]bool
+}
+
+func (lc *lintCtx) importOK(path string) bool {
+	return lc.imports[path] || path == lc.modPath || strings.HasPrefix(path, lc.modPath+"/")
+}
+
+// testImport maps an import path to its rule for _test.go files, which are
+// not subject to the import allowlist.
+func testImport(path string) (string, bool) {
 	switch path {
 	case "crypto/rand":
 		return "cryptorand", true
@@ -229,12 +265,13 @@ func bannedImport(path string) (string, bool) {
 	return "", false
 }
 
-func isFloat(t types.Type) bool {
-	if t == nil {
-		return false
-	}
+func isFloatType(t types.Type) bool {
 	b, ok := t.Underlying().(*types.Basic)
 	return ok && b.Info()&(types.IsFloat|types.IsComplex) != 0
+}
+
+func isFloat(t types.Type) bool {
+	return t != nil && isFloatType(t)
 }
 
 func isChan(t types.Type) bool {
@@ -246,29 +283,40 @@ func isMap(t types.Type) bool {
 }
 
 // underIs applies pred to t's underlying type; for a type parameter it
-// reports true if any term of the constraint satisfies pred.
+// reports true if any type term of the constraint's type set satisfies pred.
 func underIs(t types.Type, pred func(types.Type) bool) bool {
 	if t == nil {
 		return false
 	}
-	tp, ok := t.(*types.TypeParam)
+	if tp, ok := t.(*types.TypeParam); ok {
+		return termsHave(tp.Constraint(), pred, map[*types.Interface]bool{})
+	}
+	return pred(t.Underlying())
+}
+
+// termsHave reports whether a type term of constraint t (following embedded
+// interfaces and unions at any depth) has an underlying type satisfying
+// pred. A constraint without type terms (any, comparable, method sets) has
+// none, so it reports false.
+func termsHave(t types.Type, pred func(types.Type) bool, seen map[*types.Interface]bool) bool {
+	iface, ok := t.Underlying().(*types.Interface)
 	if !ok {
 		return pred(t.Underlying())
 	}
-	iface, ok := tp.Constraint().Underlying().(*types.Interface)
-	if !ok {
+	if seen[iface] {
 		return false
 	}
+	seen[iface] = true
 	for i := 0; i < iface.NumEmbeddeds(); i++ {
 		switch e := iface.EmbeddedType(i).(type) {
 		case *types.Union:
 			for j := 0; j < e.Len(); j++ {
-				if pred(e.Term(j).Type().Underlying()) {
+				if termsHave(e.Term(j).Type(), pred, seen) {
 					return true
 				}
 			}
 		default:
-			if pred(e.Underlying()) {
+			if termsHave(e, pred, seen) {
 				return true
 			}
 		}
@@ -319,11 +367,20 @@ func calleeObj(info *types.Info, fun ast.Expr) types.Object {
 	return nil
 }
 
-func lintFile(f *ast.File, info *types.Info, pkg *types.Package, add func(token.Pos, string, string)) {
+func lintFile(f *ast.File, isTest bool, lc *lintCtx, info *types.Info, pkg *types.Package, add func(token.Pos, string, string)) {
 	for _, im := range f.Imports {
-		p := strings.Trim(im.Path.Value, "\"`")
-		if rule, ok := bannedImport(p); ok {
-			add(im.Pos(), rule, "import of "+p)
+		p, err := strconv.Unquote(im.Path.Value)
+		if err != nil {
+			p = im.Path.Value
+		}
+		if isTest {
+			if rule, ok := testImport(p); ok {
+				add(im.Pos(), rule, "import of "+p)
+			}
+			continue
+		}
+		if !lc.importOK(p) {
+			add(im.Pos(), "import", "import of "+p+" is not on the import allowlist")
 		}
 	}
 	var stack []ast.Node
@@ -351,12 +408,17 @@ func lintNode(n, parent ast.Node, stack []ast.Node, info *types.Info, pkg *types
 	switch x := n.(type) {
 	case *ast.Ident:
 		if obj := info.Defs[x]; obj != nil {
-			if v, ok := obj.(*types.Var); ok {
-				if isFloat(v.Type()) {
+			switch o := obj.(type) {
+			case *types.Var:
+				if isFloat(o.Type()) {
 					add(x.Pos(), "float", "floating-point variable "+x.Name)
 				}
-				if isChan(v.Type()) {
+				if isChan(o.Type()) {
 					add(x.Pos(), "concurrency", "channel variable "+x.Name)
+				}
+			case *types.TypeName:
+				if tp, ok := o.Type().(*types.TypeParam); ok && underIs(tp, isFloatType) {
+					add(x.Pos(), "float", "type parameter "+x.Name+" admits floating-point or complex types ("+tp.Constraint().String()+")")
 				}
 			}
 		}
@@ -381,7 +443,7 @@ func lintNode(n, parent ast.Node, stack []ast.Node, info *types.Info, pkg *types
 		case isChan(t):
 			add(x.Pos(), "concurrency", "range over channel")
 		case isMap(t):
-			if !orderInsensitive(x, stack, info) {
+			if !orderInsensitive(x, parent, stack, info) {
 				add(x.Pos(), "maprange", "range over map "+types.ExprString(x.X)+" has nondeterministic order")
 			}
 		}
@@ -406,6 +468,10 @@ func lintUse(id *ast.Ident, obj types.Object, parent ast.Node, stack []ast.Node,
 	path, name := obj.Pkg().Path(), obj.Name()
 	fpath, fname, isPkgFunc := pkgFunc(obj)
 	switch path {
+	case "fmt":
+		if _, ok := obj.(*types.Func); ok && !directCallee(id, parent, stack) {
+			add(id.Pos(), "ptrfmt", qualName(obj)+" used as a value; its arguments cannot be checked")
+		}
 	case "time":
 		if isPkgFunc && wallclock[fname] {
 			add(id.Pos(), "wallclock", "use of time."+fname)
@@ -443,11 +509,10 @@ func lintUse(id *ast.Ident, obj types.Object, parent ast.Node, stack []ast.Node,
 	}
 }
 
-// wrappedInSorted reports whether the use id of maps.Keys/Values/All is the
-// callee of a call that is itself the first argument of slices.Sorted or
-// slices.SortedFunc / SortedStableFunc.
-func wrappedInSorted(id *ast.Ident, parent ast.Node, stack []ast.Node, info *types.Info) bool {
-	// stack ends with parent; walk outwards skipping parens.
+// calleeChain finds the call whose Fun is the use id (possibly as the Sel of
+// a selector, possibly parenthesized). It returns the index in stack of that
+// call, or -1.
+func calleeChain(id *ast.Ident, parent ast.Node, stack []ast.Node) int {
 	i := len(stack) - 1
 	var fun ast.Node = id
 	if sel, ok := parent.(*ast.SelectorExpr); ok && sel.Sel == id {
@@ -463,29 +528,40 @@ func wrappedInSorted(id *ast.Ident, parent ast.Node, stack []ast.Node, info *typ
 		break
 	}
 	if i < 0 {
+		return -1
+	}
+	if call, ok := stack[i].(*ast.CallExpr); ok && call.Fun == fun {
+		return i
+	}
+	return -1
+}
+
+func directCallee(id *ast.Ident, parent ast.Node, stack []ast.Node) bool {
+	return calleeChain(id, parent, stack) >= 0
+}
+
+// wrappedInSorted reports whether the use id of maps.Keys/Values/All is the
+// callee of a call that is itself the first argument of slices.Sorted.
+func wrappedInSorted(id *ast.Ident, parent ast.Node, stack []ast.Node, info *types.Info) bool {
+	i := calleeChain(id, parent, stack)
+	if i < 1 {
 		return false
 	}
-	call, ok := stack[i].(*ast.CallExpr)
-	if !ok || call.Fun != fun {
-		return false
-	}
-	i--
-	if i < 0 {
-		return false
-	}
-	outer, ok := stack[i].(*ast.CallExpr)
-	if !ok || len(outer.Args) == 0 || outer.Args[0] != call {
+	call := stack[i].(*ast.CallExpr)
+	outer, ok := stack[i-1].(*ast.CallExpr)
+	if !ok || len(outer.Args) != 1 || outer.Args[0] != call {
 		return false
 	}
 	p, n, ok := pkgFunc(calleeObj(info, outer.Fun))
-	return ok && p == "slices" && (n == "Sorted" || n == "SortedFunc" || n == "SortedStableFunc")
+	return ok && p == "slices" && n == "Sorted"
 }
 
-// orderInsensitive accepts the collect-and-sort idiom: the loop body only
-// appends the range key and/or value to slice variables, and each such slice
-// is passed to a sort.* or slices.Sort* call later in the same function body.
-// An empty body is also accepted.
-func orderInsensitive(rs *ast.RangeStmt, stack []ast.Node, info *types.Info) bool {
+// orderInsensitive accepts exactly two shapes of range-over-map loop: an
+// empty body, or a body whose every statement is `s = append(s, k)` /
+// `s = append(s, k, v)` (k, v the range key and value identifiers, s one
+// slice variable) immediately followed, as the next statement of the same
+// block, by slices.Sort(s), sort.Strings(s) or sort.Ints(s).
+func orderInsensitive(rs *ast.RangeStmt, parent ast.Node, stack []ast.Node, info *types.Info) bool {
 	if len(rs.Body.List) == 0 {
 		return true
 	}
@@ -500,86 +576,94 @@ func orderInsensitive(rs *ast.RangeStmt, stack []ast.Node, info *types.Info) boo
 		return info.Uses[id]
 	}
 	iterVars := map[types.Object]bool{}
-	if rs.Key != nil {
-		if o := objOf(rs.Key); o != nil {
-			iterVars[o] = true
+	for _, e := range []ast.Expr{rs.Key, rs.Value} {
+		if e != nil {
+			if o := objOf(e); o != nil {
+				iterVars[o] = true
+			}
 		}
 	}
-	if rs.Value != nil {
-		if o := objOf(rs.Value); o != nil {
-			iterVars[o] = true
-		}
-	}
-	slices := map[types.Object]bool{}
+	var dst types.Object
 	for _, st := range rs.Body.List {
 		as, ok := st.(*ast.AssignStmt)
 		if !ok || as.Tok != token.ASSIGN || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
 			return false
 		}
-		call, ok := as.Rhs[0].(*ast.CallExpr)
+		call, ok := ast.Unparen(as.Rhs[0]).(*ast.CallExpr)
 		if !ok || call.Ellipsis.IsValid() || len(call.Args) < 2 {
 			return false
 		}
 		if b, ok := calleeObj(info, call.Fun).(*types.Builtin); !ok || b.Name() != "append" {
 			return false
 		}
-		dst := objOf(as.Lhs[0])
-		if dst == nil || objOf(call.Args[0]) != dst {
+		d := objOf(as.Lhs[0])
+		if d == nil || objOf(call.Args[0]) != d || (dst != nil && d != dst) {
 			return false
 		}
+		dst = d
 		for _, a := range call.Args[1:] {
 			if o := objOf(a); o == nil || !iterVars[o] {
 				return false
 			}
 		}
-		slices[dst] = true
 	}
-	var body *ast.BlockStmt
-	for i := len(stack) - 1; i >= 0 && body == nil; i-- {
-		switch fn := stack[i].(type) {
-		case *ast.FuncDecl:
-			body = fn.Body
-		case *ast.FuncLit:
-			body = fn.Body
-		}
-	}
-	if body == nil {
-		return false
-	}
-	sorted := map[types.Object]bool{}
-	ast.Inspect(body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok || call.Pos() < rs.End() || len(call.Args) == 0 {
-			return true
-		}
-		p, name, ok := pkgFunc(calleeObj(info, call.Fun))
-		if !ok || !((p == "sort" && sortFuncs[name]) || (p == "slices" && strings.HasPrefix(name, "Sort"))) {
-			return true
-		}
-		arg := ast.Unparen(call.Args[0])
-		if conv, ok := arg.(*ast.CallExpr); ok && len(conv.Args) == 1 {
-			if tv, ok := info.Types[conv.Fun]; ok && tv.IsType() {
-				arg = conv.Args[0]
-			}
-		}
-		if o := objOf(arg); o != nil {
-			sorted[o] = true
-		}
-		return true
-	})
-	for s := range slices {
-		if !sorted[s] {
+	var self ast.Stmt = rs
+	if ls, ok := parent.(*ast.LabeledStmt); ok && ls.Stmt == rs {
+		self = ls
+		if len(stack) < 2 {
 			return false
 		}
+		parent = stack[len(stack)-2]
 	}
-	return true
+	var list []ast.Stmt
+	switch b := parent.(type) {
+	case *ast.BlockStmt:
+		list = b.List
+	case *ast.CaseClause:
+		list = b.Body
+	case *ast.CommClause:
+		list = b.Body
+	default:
+		return false
+	}
+	next := -1
+	for i, st := range list {
+		if st == self && i+1 < len(list) {
+			next = i + 1
+		}
+	}
+	if next < 0 {
+		return false
+	}
+	es, ok := list[next].(*ast.ExprStmt)
+	if !ok {
+		return false
+	}
+	call, ok := ast.Unparen(es.X).(*ast.CallExpr)
+	if !ok || len(call.Args) != 1 || call.Ellipsis.IsValid() {
+		return false
+	}
+	p, name, ok := pkgFunc(calleeObj(info, call.Fun))
+	if !ok || !((p == "slices" && name == "Sort") || (p == "sort" && (name == "Strings" || name == "Ints"))) {
+		return false
+	}
+	return objOf(call.Args[0]) == dst
 }
 
-// lintPtrFmt flags a %p verb in a constant string argument of a call to a
-// function or method whose name ends in "f" (Printf, Sprintf, Errorf, ...).
+// lintPtrFmt flags, in a call of a fmt function or method, every argument
+// bound to an `any` parameter whose static type can print an address, and a
+// %p verb in any constant string argument of a call to a function or method
+// whose name ends in "f". The fmt scanning functions are exempt (their
+// operands are pointers by necessity and are written to, not printed).
 func lintPtrFmt(call *ast.CallExpr, info *types.Info, add func(token.Pos, string, string)) {
 	fn, ok := calleeObj(info, call.Fun).(*types.Func)
-	if !ok || !strings.HasSuffix(fn.Name(), "f") {
+	if !ok {
+		return
+	}
+	if fn.Pkg() != nil && fn.Pkg().Path() == "fmt" && !strings.Contains(strings.ToLower(fn.Name()), "scan") {
+		lintFmtArgs(call, fn, info, add)
+	}
+	if !strings.HasSuffix(fn.Name(), "f") {
 		return
 	}
 	for _, a := range call.Args {
@@ -591,6 +675,104 @@ func lintPtrFmt(call *ast.CallExpr, info *types.Info, add func(token.Pos, string
 			add(a.Pos(), "ptrfmt", "%p verb in format string of "+fn.Name())
 		}
 	}
+}
+
+func lintFmtArgs(call *ast.CallExpr, fn *types.Func, info *types.Info, add func(token.Pos, string, string)) {
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok {
+		return
+	}
+	params := sig.Params()
+	paramType := func(i int) types.Type {
+		n := params.Len()
+		if n == 0 {
+			return nil
+		}
+		if sig.Variadic() && i >= n-1 {
+			if call.Ellipsis.IsValid() {
+				return params.At(n - 1).Type()
+			}
+			return params.At(n - 1).Type().(*types.Slice).Elem()
+		}
+		if i < n {
+			return params.At(i).Type()
+		}
+		return nil
+	}
+	type arg struct {
+		pos token.Pos
+		t   types.Type
+	}
+	var args []arg
+	if len(call.Args) == 1 {
+		if tup, ok := info.TypeOf(call.Args[0]).(*types.Tuple); ok {
+			for i := 0; i < tup.Len(); i++ {
+				args = append(args, arg{call.Args[0].Pos(), tup.At(i).Type()})
+			}
+		}
+	}
+	if args == nil {
+		for _, a := range call.Args {
+			args = append(args, arg{a.Pos(), info.TypeOf(a)})
+		}
+	}
+	for i, a := range args {
+		pt := paramType(i)
+		if pt == nil || a.t == nil {
+			continue
+		}
+		if iface, ok := pt.Underlying().(*types.Interface); !ok || !iface.Empty() {
+			continue
+		}
+		if canPrintAddr(a.t, map[types.Type]bool{}) {
+			add(a.pos, "ptrfmt", "argument of type "+a.t.String()+" to "+qualName(fn)+" can print an address")
+		}
+	}
+}
+
+// canPrintAddr reports whether fmt may render a value of static type t as a
+// memory address: a pointer, channel, func, unsafe.Pointer or uintptr, or a
+// composite (map, slice, array, struct) containing one at any depth. An
+// interface type reports false: its dynamic type is unknown statically. A
+// type parameter reports true if any type term of its constraint does.
+func canPrintAddr(t types.Type, seen map[types.Type]bool) bool {
+	t = types.Unalias(t)
+	switch x := t.(type) {
+	case *types.TypeParam:
+		return termsHave(x.Constraint(), func(u types.Type) bool { return canPrintAddr(u, seen) }, map[*types.Interface]bool{})
+	case *types.Named:
+		if seen[x] {
+			return false
+		}
+		seen[x] = true
+		return canPrintAddr(x.Underlying(), seen)
+	case *types.Tuple:
+		for i := 0; i < x.Len(); i++ {
+			if canPrintAddr(x.At(i).Type(), seen) {
+				return true
+			}
+		}
+		return false
+	}
+	switch u := t.Underlying().(type) {
+	case *types.Basic:
+		return u.Kind() == types.Uintptr || u.Kind() == types.UnsafePointer
+	case *types.Pointer, *types.Chan, *types.Signature:
+		return true
+	case *types.Map:
+		return canPrintAddr(u.Key(), seen) || canPrintAddr(u.Elem(), seen)
+	case *types.Slice:
+		return canPrintAddr(u.Elem(), seen)
+	case *types.Array:
+		return canPrintAddr(u.Elem(), seen)
+	case *types.Struct:
+		for i := 0; i < u.NumFields(); i++ {
+			if canPrintAddr(u.Field(i).Type(), seen) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func hasPtrVerb(s string) bool {

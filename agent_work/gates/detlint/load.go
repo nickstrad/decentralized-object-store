@@ -6,15 +6,20 @@ import (
 	"fmt"
 	"go/ast"
 	"go/build"
+	"go/build/constraint"
 	"go/importer"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"go/types"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+
+	"detlint/internal/report"
 )
 
 func init() {
@@ -143,8 +148,11 @@ func (l *loader) loadLocal(path, rel string) (*types.Package, error) {
 	return pkg, nil
 }
 
-// parseDir parses the buildable .go files of dir. With tests it also returns
-// _test.go files; files of an external test package come back separately.
+// parseDir parses the .go files of dir that the default build selects. It is
+// used for module packages imported by a checked package (which are
+// type-checked as the compiler would see them); checked directories go
+// through scanChecked instead. With tests it also returns _test.go files;
+// files of an external test package come back separately.
 func parseDir(fset *token.FileSet, dir string, tests bool) (pkg, xtest []*ast.File, err error) {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
@@ -180,6 +188,133 @@ func parseDir(fset *token.FileSet, dir string, tests bool) (pkg, xtest []*ast.Fi
 		}
 	}
 	return pkg, xtest, nil
+}
+
+// nameOnly is a build context that knows no GOOS or GOARCH and reads every
+// file as a bare package clause, so MatchFile rejects exactly the file names
+// with a GOOS/GOARCH suffix.
+var nameOnly = build.Context{
+	GOOS:     "detlintnoos",
+	GOARCH:   "detlintnoarch",
+	Compiler: "gc",
+	OpenFile: func(string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("package p\n")), nil
+	},
+}
+
+// conditionalName reports whether the go tool selects the file by its
+// GOOS/GOARCH name suffix.
+func conditionalName(dir, name string) (bool, error) {
+	ok, err := nameOnly.MatchFile(dir, name)
+	return !ok, err
+}
+
+// scanChecked reads a checked package directory. Unlike parseDir it drops no
+// file: every non-test .go file (and with tests every _test.go file) is
+// returned for linting whatever its build constraints, and everything that
+// could make the default build differ from what is linted is a [buildtag]
+// finding. Files that do not parse are [parse] findings and are skipped. The
+// error is for an unreadable directory only.
+func scanChecked(fset *token.FileSet, root, dir string, tests bool) (pkg, xtest []*ast.File, fs []report.Finding, err error) {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	relOf := func(n string) string {
+		rel, err := filepath.Rel(root, filepath.Join(dir, n))
+		if err != nil {
+			return filepath.Join(dir, n)
+		}
+		return filepath.ToSlash(rel)
+	}
+	at := func(pos token.Pos, rule, msg string) {
+		p := fset.Position(pos)
+		rel, err := filepath.Rel(root, p.Filename)
+		if err != nil {
+			rel = p.Filename
+		}
+		fs = append(fs, report.Finding{Path: filepath.ToSlash(rel), Line: p.Line, Col: p.Column, Rule: rule, Msg: msg})
+	}
+	var names []string
+	for _, e := range ents {
+		n := e.Name()
+		if e.IsDir() {
+			continue
+		}
+		isGo := strings.HasSuffix(n, ".go")
+		if !isGo && !report.NonGoSource(n) {
+			continue
+		}
+		if strings.HasPrefix(n, "_") || strings.HasPrefix(n, ".") {
+			fs = append(fs, report.Finding{Path: relOf(n), Line: 1, Col: 1, Rule: "buildtag", Msg: "file is invisible to the go tool"})
+			continue
+		}
+		if !isGo {
+			fs = append(fs, report.Finding{Path: relOf(n), Line: 1, Col: 1, Rule: "buildtag", Msg: "non-Go source file (assembly, cgo, SWIG or object) in a checked package"})
+			continue
+		}
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		path := filepath.Join(dir, n)
+		isTest := strings.HasSuffix(n, "_test.go")
+		mode := parser.ParseComments | parser.SkipObjectResolution
+		if isTest && !tests {
+			mode |= parser.ImportsOnly
+		}
+		f, perr := parser.ParseFile(fset, path, nil, mode)
+		if perr != nil {
+			line, col := 1, 1
+			var el scanner.ErrorList
+			if errors.As(perr, &el) && len(el) > 0 {
+				line, col = el[0].Pos.Line, el[0].Pos.Column
+			}
+			fs = append(fs, report.Finding{Path: relOf(n), Line: line, Col: col, Rule: "parse", Msg: perr.Error()})
+			continue
+		}
+		flagged := false
+		for _, cg := range f.Comments {
+			for _, c := range cg.List {
+				if constraint.IsGoBuild(c.Text) || constraint.IsPlusBuild(c.Text) {
+					at(c.Pos(), "buildtag", "build constraint: "+strings.TrimSpace(c.Text))
+					flagged = true
+				}
+			}
+		}
+		cond, err := conditionalName(dir, n)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if cond {
+			fs = append(fs, report.Finding{Path: relOf(n), Line: 1, Col: 1, Rule: "buildtag", Msg: "file name has a GOOS/GOARCH suffix"})
+			flagged = true
+		}
+		for _, im := range f.Imports {
+			if im.Path.Value == `"C"` || im.Path.Value == "`C`" {
+				at(im.Pos(), "buildtag", `import "C" (cgo)`)
+				flagged = true
+			}
+		}
+		if !flagged {
+			if ok, err := build.Default.MatchFile(dir, n); err != nil || !ok {
+				msg := "file is excluded from the default build"
+				if err != nil {
+					msg += ": " + err.Error()
+				}
+				fs = append(fs, report.Finding{Path: relOf(n), Line: 1, Col: 1, Rule: "buildtag", Msg: msg})
+			}
+		}
+		if isTest && !tests {
+			continue
+		}
+		if isTest && strings.HasSuffix(f.Name.Name, "_test") {
+			xtest = append(xtest, f)
+		} else {
+			pkg = append(pkg, f)
+		}
+	}
+	return pkg, xtest, fs, nil
 }
 
 // expand turns pkg-dir arguments into a sorted list of existing directories

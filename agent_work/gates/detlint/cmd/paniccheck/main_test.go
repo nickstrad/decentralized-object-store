@@ -11,6 +11,7 @@ import (
 func TestPaniccheck(t *testing.T) {
 	cases := []struct {
 		name  string
+		root  string
 		allow string
 		dirs  []string
 		want  []string
@@ -26,6 +27,20 @@ func TestPaniccheck(t *testing.T) {
 		{name: "explicit dirs reach cmd", allow: "testdata/allow-ok.txt", dirs: []string{"internal", "cmd"}, want: []string{
 			"cmd/tool/main.go:3: panic",
 		}},
+		{name: "no panic-name escape; tagged, hidden and test files", root: "testdata/strict", allow: "testdata/allow-none.txt", dirs: []string{"internal/s"}, want: []string{
+			"internal/s/_hidden.go:3: panic",
+			"internal/s/decl.go:3: panic-shadow",
+			"internal/s/imp.go:3: panic-shadow",
+			"internal/s/local.go:4: panic-shadow",
+			"internal/s/local.go:5: panic",
+			"internal/s/param.go:3: panic-shadow",
+			"internal/s/param.go:3: panic",
+			"internal/s/s_test.go:4: panic-shadow",
+			"internal/s/tagged.go:5: panic",
+			"internal/s/ts.go:4: panic-shadow",
+			"internal/s/use.go:4: panic",
+		}},
+		{name: "Panic method and Panicf are not panic", root: "testdata/strict", allow: "testdata/allow-none.txt", dirs: []string{"internal/clean"}},
 		{name: "missing dir has no panics, so entries are stale", allow: "testdata/allow-ok.txt", dirs: []string{"nope"}, want: []string{
 			"testdata/allow-ok.txt:3: stale-allow",
 			"testdata/allow-ok.txt:4: stale-allow",
@@ -35,7 +50,11 @@ func TestPaniccheck(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			fs, err := run("testdata/mod", c.allow, c.dirs)
+			root := c.root
+			if root == "" {
+				root = "testdata/mod"
+			}
+			fs, err := run(root, c.allow, c.dirs)
 			if err != nil {
 				t.Fatal(err)
 			}

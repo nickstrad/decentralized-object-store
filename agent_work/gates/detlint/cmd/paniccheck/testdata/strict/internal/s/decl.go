@@ -1,3 +1,3 @@
-package shadow
+package s
 
 func panic(string) {}

@@ -17,9 +17,14 @@ func TestNocomments(t *testing.T) {
 		paths []string
 		want  []string
 	}{
-		{name: "directives, example output and generated header pass", root: "testdata/clean"},
+		{name: "the four directives and example output pass", root: "testdata/clean"},
 		{name: "every non-directive comment fails", root: "testdata/dirty", want: []string{
+			"directives.go:3: comment",
+			"directives.go:6: comment",
+			"directives.go:8: comment",
+			"directives.go:9: comment",
 			"doc.go:1: comment",
+			"gen.go:1: comment",
 			"go_space.go:3: comment",
 			"inline.go:4: comment",
 			"inline.go:5: comment",
@@ -91,5 +96,45 @@ func TestBaselineAcceptsOnlyExistingComments(t *testing.T) {
 	write(newTree, "package a\n\n// Kept explains x.\nvar x = 3\n")
 	if fs, err = run(newTree, nil); err != nil || len(fs) != 0 {
 		t.Fatalf("a code change that keeps existing comments must pass, got %v %v", fs, err)
+	}
+	write(newTree, "package a\n\n// Kept explains x.\nvar x = 1\n\n// Kept explains x.\nvar y = 2\n")
+	if fs, err = run(newTree, nil); err != nil || len(fs) != 1 || fs[0].Line != 6 {
+		t.Fatalf("a second copy of an existing comment must be a finding on line 6, got %v %v", fs, err)
+	}
+	write(oldTree, "package a\n\n// Kept explains x.\nvar x = 1\n\n// Kept explains x.\nvar y = 2\n")
+	if fs, err = run(newTree, nil); err != nil || len(fs) != 0 {
+		t.Fatalf("two copies in the baseline accept two copies, got %v %v", fs, err)
+	}
+}
+
+// gofmt moves a //go:build line that follows the package clause to the top
+// of the file, so this fixture is written at test time.
+func TestGoBuildAfterPackageClause(t *testing.T) {
+	cases := []struct {
+		name, src string
+		want      []int
+	}{
+		{"before package clause", "//go:build linux\n\npackage a\n", nil},
+		{"after package clause", "package a\n\n//go:build linux\nvar x = 1\n", []int{3}},
+		{"in a func body", "package a\n\nfunc F() {\n\t//go:build linux\n}\n", []int{4}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte(c.src), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			fs, err := run(dir, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []int
+			for _, f := range fs {
+				got = append(got, f.Line)
+			}
+			if !slices.Equal(got, c.want) {
+				t.Errorf("got lines %v want %v (%v)", got, c.want, fs)
+			}
+		})
 	}
 }

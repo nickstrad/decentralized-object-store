@@ -1,6 +1,6 @@
-package a
+package s
 
 func Local() {
 	panic := func(string) {}
-	panic("not the builtin")
+	panic("local")
 }

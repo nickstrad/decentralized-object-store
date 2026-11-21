@@ -174,6 +174,22 @@ func Enclosing(f *ast.File, pos token.Pos) string {
 	return "-"
 }
 
+var nonGoSource = map[string]bool{
+	".c": true, ".cc": true, ".cxx": true, ".cpp": true, ".m": true,
+	".h": true, ".hh": true, ".hpp": true, ".hxx": true,
+	".f": true, ".F": true, ".for": true, ".f90": true,
+	".s": true, ".S": true, ".sx": true,
+	".swig": true, ".swigcxx": true, ".syso": true,
+}
+
+// NonGoSource reports whether the go tool compiles or links a file with
+// this name's extension into a package (assembly, cgo, Fortran, SWIG and
+// .syso objects).
+func NonGoSource(name string) bool {
+	i := strings.LastIndexByte(name, '.')
+	return i >= 0 && nonGoSource[name[i:]]
+}
+
 // SkipDir reports whether a directory name is excluded from tree walks.
 func SkipDir(name string) bool {
 	switch name {

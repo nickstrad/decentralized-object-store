@@ -1,4 +1,5 @@
-// Command paniccheck requires every builtin panic call to be allowlisted.
+// Command paniccheck requires every panic call to be allowlisted and forbids
+// declaring the name panic.
 //
 //	paniccheck -root <dir> -allow <file> [dirs...]
 //
@@ -49,9 +50,10 @@ type site struct {
 	pos      token.Position
 }
 
-// run finds builtin panic calls in non-test files under root/dirs (default
-// "internal"; a missing directory has no panics) and matches them against
-// the allowlist.
+// run finds panic calls in non-test .go files under root/dirs (default
+// "internal"; a missing directory has no panics), whatever their build
+// constraints, and matches them against the allowlist. Every .go file there,
+// test files included, is also searched for declarations of the name panic.
 func run(root, allowPath string, dirs []string) ([]report.Finding, error) {
 	if len(dirs) == 0 {
 		dirs = []string{"internal"}
@@ -60,8 +62,7 @@ func run(root, allowPath string, dirs []string) ([]report.Finding, error) {
 	if err != nil {
 		return nil, err
 	}
-	fset := token.NewFileSet()
-	byDir := map[string][]string{}
+	var paths []string
 	for _, d := range dirs {
 		start := filepath.Join(root, d)
 		if _, err := os.Stat(start); os.IsNotExist(err) {
@@ -77,8 +78,8 @@ func run(root, allowPath string, dirs []string) ([]report.Finding, error) {
 				}
 				return nil
 			}
-			if strings.HasSuffix(p, ".go") && !strings.HasSuffix(p, "_test.go") {
-				byDir[filepath.Dir(p)] = append(byDir[filepath.Dir(p)], p)
+			if strings.HasSuffix(p, ".go") {
+				paths = append(paths, p)
 			}
 			return nil
 		})
@@ -86,19 +87,28 @@ func run(root, allowPath string, dirs []string) ([]report.Finding, error) {
 			return nil, err
 		}
 	}
-	keys := make([]string, 0, len(byDir))
-	for k := range byDir {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	sort.Strings(paths)
+	fset := token.NewFileSet()
 	var sites []site
-	for _, dir := range keys {
-		s, bad, err := scanDir(fset, root, byDir[dir])
+	for _, p := range paths {
+		rel, err := filepath.Rel(root, p)
 		if err != nil {
 			return nil, err
 		}
-		sites = append(sites, s...)
-		out = append(out, bad...)
+		rel = filepath.ToSlash(rel)
+		f, err := parser.ParseFile(fset, p, nil, parser.SkipObjectResolution)
+		if err != nil {
+			out = append(out, report.Finding{Path: rel, Line: 1, Col: 1, Rule: "parse", Msg: err.Error()})
+			continue
+		}
+		for _, id := range panicDecls(f) {
+			pos := fset.Position(id.Pos())
+			out = append(out, report.Finding{Path: rel, Line: pos.Line, Col: pos.Column, Rule: "panic-shadow",
+				Msg: "declaration of the name panic (it would hide the builtin from this check)"})
+		}
+		if !strings.HasSuffix(p, "_test.go") {
+			sites = append(sites, panicCalls(fset, f, rel)...)
+		}
 	}
 	for _, s := range sites {
 		ok := false
@@ -117,84 +127,72 @@ func run(root, allowPath string, dirs []string) ([]report.Finding, error) {
 	return out, nil
 }
 
-// scanDir parses one directory's files (grouped by package name) and returns
-// the builtin panic call sites. A call to "panic" counts unless the name
-// resolves to a local declaration or a package-level declaration named panic.
-func scanDir(fset *token.FileSet, root string, paths []string) ([]site, []report.Finding, error) {
-	sort.Strings(paths)
-	type parsed struct {
-		f   *ast.File
-		rel string
-	}
-	var files []parsed
-	var bad []report.Finding
-	shadowPkg := map[string]bool{}
-	for _, p := range paths {
-		rel, err := filepath.Rel(root, p)
-		if err != nil {
-			return nil, nil, err
-		}
-		rel = filepath.ToSlash(rel)
-		f, err := parser.ParseFile(fset, p, nil, 0)
-		if err != nil {
-			bad = append(bad, report.Finding{Path: rel, Line: 1, Col: 1, Rule: "parse", Msg: err.Error()})
-			continue
-		}
-		files = append(files, parsed{f, rel})
-		if declaresPanic(f) {
-			shadowPkg[f.Name.Name] = true
-		}
-	}
+// panicCalls returns every call whose callee is the bare identifier panic.
+func panicCalls(fset *token.FileSet, f *ast.File, rel string) []site {
 	var sites []site
-	for _, pf := range files {
-		if shadowPkg[pf.f.Name.Name] {
-			continue
+	for _, d := range f.Decls {
+		name := "-"
+		if fd, ok := d.(*ast.FuncDecl); ok {
+			name = report.FuncName(fd)
 		}
-		for _, d := range pf.f.Decls {
-			name := "-"
-			if fd, ok := d.(*ast.FuncDecl); ok {
-				name = report.FuncName(fd)
-			}
-			ast.Inspect(d, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				id, ok := ast.Unparen(call.Fun).(*ast.Ident)
-				if ok && id.Name == "panic" && id.Obj == nil {
-					sites = append(sites, site{pf.rel, name, fset.Position(call.Pos())})
-				}
+		ast.Inspect(d, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
 				return true
-			})
-		}
+			}
+			if id, ok := ast.Unparen(call.Fun).(*ast.Ident); ok && id.Name == "panic" {
+				sites = append(sites, site{rel, name, fset.Position(call.Pos())})
+			}
+			return true
+		})
 	}
-	return sites, bad, nil
+	return sites
 }
 
-// declaresPanic reports a package-level func, var, const or type named panic.
-func declaresPanic(f *ast.File) bool {
-	for _, d := range f.Decls {
-		switch d := d.(type) {
-		case *ast.FuncDecl:
-			if d.Recv == nil && d.Name.Name == "panic" {
-				return true
-			}
-		case *ast.GenDecl:
-			for _, s := range d.Specs {
-				switch s := s.(type) {
-				case *ast.ValueSpec:
-					for _, n := range s.Names {
-						if n.Name == "panic" {
-							return true
-						}
-					}
-				case *ast.TypeSpec:
-					if s.Name.Name == "panic" {
-						return true
-					}
-				}
+// panicDecls returns every identifier named panic in a declaring position:
+// func and method names, import names, const/var/type specs, fields
+// (parameters, results, receivers, struct fields, type parameters), :=
+// assignments, range and type-switch variables, and labels.
+func panicDecls(f *ast.File) []*ast.Ident {
+	var out []*ast.Ident
+	add := func(ids ...*ast.Ident) {
+		for _, id := range ids {
+			if id != nil && id.Name == "panic" {
+				out = append(out, id)
 			}
 		}
 	}
-	return false
+	addExprs := func(es ...ast.Expr) {
+		for _, e := range es {
+			if id, ok := e.(*ast.Ident); ok {
+				add(id)
+			}
+		}
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.FuncDecl:
+			add(x.Name)
+		case *ast.ImportSpec:
+			add(x.Name)
+		case *ast.ValueSpec:
+			add(x.Names...)
+		case *ast.TypeSpec:
+			add(x.Name)
+		case *ast.Field:
+			add(x.Names...)
+		case *ast.AssignStmt:
+			if x.Tok == token.DEFINE {
+				addExprs(x.Lhs...)
+			}
+		case *ast.RangeStmt:
+			if x.Tok == token.DEFINE {
+				addExprs(x.Key, x.Value)
+			}
+		case *ast.LabeledStmt:
+			add(x.Label)
+		}
+		return true
+	})
+	return out
 }

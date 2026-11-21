@@ -1,4 +1,5 @@
-// Command nocomments fails on any Go comment that is not a machine directive.
+// Command nocomments fails on any Go comment that is not one of the allowed
+// machine directives (//go:build, //go:embed, //go:generate, //go:noinline).
 //
 //	nocomments -root <dir> [-baseline <older tree>] [paths...]
 //
@@ -26,12 +27,12 @@ func main() {
 func mainArgs(args []string) int {
 	fl := flag.NewFlagSet("nocomments", flag.ContinueOnError)
 	root := fl.String("root", "", "tree root")
-	baseline := fl.String("baseline", "", "older tree: a comment whose exact text is in the same file there is accepted")
+	baseline := fl.String("baseline", "", "older tree: a comment is accepted as often as its exact text occurs in the same file there")
 	if err := fl.Parse(args); err != nil {
 		return 2
 	}
 	if *root == "" {
-		fmt.Fprintln(os.Stderr, "usage: nocomments -root <dir> [paths...]")
+		fmt.Fprintln(os.Stderr, "usage: nocomments -root <dir> [-baseline <older tree>] [paths...]")
 		return 2
 	}
 	baselineDir = *baseline
@@ -44,12 +45,15 @@ func mainArgs(args []string) int {
 	return report.ExitCode(fs, nil)
 }
 
-// baselineDir, when set, is an older copy of the tree. A comment already present in the
-// same file there is not a finding, so the check then reports only comments that were added.
+// baselineDir, when set, is an older copy of the tree. A comment whose exact
+// text occurs in the same file there is not a finding, up to the number of
+// times it occurs there, so the check then reports only comments that were
+// added (including added copies of an existing comment).
 var baselineDir string
 
-// baselineComments returns the comment texts of rel in the baseline tree (nil if absent).
-func baselineComments(rel string) map[string]bool {
+// baselineComments returns how often each comment text occurs in rel in the
+// baseline tree (nil if absent or unparsable).
+func baselineComments(rel string) map[string]int {
 	if baselineDir == "" {
 		return nil
 	}
@@ -57,16 +61,17 @@ func baselineComments(rel string) map[string]bool {
 	if err != nil {
 		return nil
 	}
-	set := map[string]bool{}
+	n := map[string]int{}
 	for _, cg := range f.Comments {
 		for _, c := range cg.List {
-			set[c.Text] = true
+			n[c.Text]++
 		}
 	}
-	return set
+	return n
 }
 
-var generated = regexp.MustCompile(`^// Code generated .* DO NOT EDIT\.$`)
+// directive matches the only comments that are not prose.
+var directive = regexp.MustCompile(`^//go:(build|embed|generate|noinline)( |$)`)
 
 // run checks every .go file under root (or under the given paths, relative
 // to root; a path may also name a single file). Directories named
@@ -126,18 +131,21 @@ func checkFile(fset *token.FileSet, path, rel string) ([]report.Finding, error) 
 			continue
 		}
 		for _, c := range cg.List {
-			if allowed(c.Text) || old[c.Text] {
+			msg := "comment is not a machine directive: "
+			if directive.MatchString(c.Text) {
+				if !strings.HasPrefix(c.Text, "//go:build") || c.Pos() < f.Package {
+					continue
+				}
+				msg = "//go:build after the package clause: "
+			} else if old[c.Text] > 0 {
+				old[c.Text]--
 				continue
 			}
 			p := fset.Position(c.Pos())
-			out = append(out, report.Finding{Path: rel, Line: p.Line, Col: p.Column, Rule: "comment", Msg: "comment is not a machine directive: " + clip(c.Text)})
+			out = append(out, report.Finding{Path: rel, Line: p.Line, Col: p.Column, Rule: "comment", Msg: msg + clip(c.Text)})
 		}
 	}
 	return out, nil
-}
-
-func allowed(text string) bool {
-	return strings.HasPrefix(text, "//go:") || generated.MatchString(text)
 }
 
 // exampleOutput reports whether cg is an output block inside the body of an

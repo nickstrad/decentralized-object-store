@@ -1,5 +1,5 @@
 // Command astdiff proves that two trees differ only in non-directive
-// comments and formatting.
+// comments and formatting, and that every non-Go build input is unchanged.
 //
 //	astdiff <treeA> <treeB>
 //
@@ -7,8 +7,10 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
+	"go/build/constraint"
 	"go/parser"
 	"go/token"
 	"os"
@@ -38,14 +40,16 @@ func mainArgs(args []string) int {
 	return report.ExitCode(fs, nil)
 }
 
-// run compares every .go file of both trees. Finding paths are relative to
-// the trees; positions refer to treeB unless the file only exists in treeA.
+// run compares every .go file of both trees by AST, and every other file
+// the go tool reads to build (non-Go sources, go.mod, go.sum, go.work) byte
+// for byte. Finding paths are relative to the trees; positions refer to
+// treeB unless the file only exists in treeA.
 func run(a, b string) ([]report.Finding, error) {
-	fa, err := goFiles(a)
+	fa, err := buildFiles(a)
 	if err != nil {
 		return nil, err
 	}
-	fb, err := goFiles(b)
+	fb, err := buildFiles(b)
 	if err != nil {
 		return nil, err
 	}
@@ -68,6 +72,10 @@ func run(a, b string) ([]report.Finding, error) {
 			out = append(out, report.Finding{Path: rel, Line: 1, Col: 1, Rule: "astdiff", Msg: "file removed (only in " + a + ")"})
 		case !fa[rel]:
 			out = append(out, report.Finding{Path: rel, Line: 1, Col: 1, Rule: "astdiff", Msg: "file added (only in " + b + ")"})
+		case !strings.HasSuffix(rel, ".go"):
+			if f := compareBytes(filepath.Join(a, rel), filepath.Join(b, rel), rel); f != nil {
+				out = append(out, *f)
+			}
 		default:
 			if f := compareFile(filepath.Join(a, rel), filepath.Join(b, rel), rel); f != nil {
 				out = append(out, *f)
@@ -77,7 +85,32 @@ func run(a, b string) ([]report.Finding, error) {
 	return out, nil
 }
 
-func goFiles(root string) (map[string]bool, error) {
+// buildInput reports whether a file other than a .go file is compared
+// byte for byte.
+func buildInput(name string) bool {
+	switch name {
+	case "go.mod", "go.sum", "go.work", "go.work.sum":
+		return true
+	}
+	return report.NonGoSource(name)
+}
+
+func compareBytes(pa, pb, rel string) *report.Finding {
+	da, err := os.ReadFile(pa)
+	if err != nil {
+		return &report.Finding{Path: rel, Line: 1, Col: 1, Rule: "astdiff", Msg: "read error in A: " + err.Error()}
+	}
+	db, err := os.ReadFile(pb)
+	if err != nil {
+		return &report.Finding{Path: rel, Line: 1, Col: 1, Rule: "astdiff", Msg: "read error in B: " + err.Error()}
+	}
+	if !bytes.Equal(da, db) {
+		return &report.Finding{Path: rel, Line: 1, Col: 1, Rule: "astdiff", Msg: "build input file differs"}
+	}
+	return nil
+}
+
+func buildFiles(root string) (map[string]bool, error) {
 	st, err := os.Stat(root)
 	if err != nil {
 		return nil, err
@@ -96,7 +129,7 @@ func goFiles(root string) (map[string]bool, error) {
 			}
 			return nil
 		}
-		if strings.HasSuffix(p, ".go") {
+		if strings.HasSuffix(p, ".go") || buildInput(d.Name()) {
 			rel, err := filepath.Rel(root, p)
 			if err != nil {
 				return err
@@ -144,21 +177,45 @@ func compareFile(pa, pb, rel string) *report.Finding {
 	return nil
 }
 
-// sig is a comment that changes the build or test result: a directive or an
-// Example output block. anchor places it: -1 before the package clause,
-// otherwise 2*i for "before top-level declaration i" or 2*i+1 for "inside
-// declaration i".
+// sig is a comment that changes the build or test result: a directive, a
+// cgo preamble or an Example output block. anchor places it structurally
+// (see anchorOf).
 type sig struct {
 	text   string
-	anchor int
+	anchor string
 	pos    token.Pos
 }
 
 func significant(f *ast.File, path string) []sig {
 	isTest := strings.HasSuffix(path, "_test.go")
+	preambles := map[*ast.CommentGroup]bool{}
+	for _, d := range f.Decls {
+		gd, ok := d.(*ast.GenDecl)
+		if !ok || gd.Tok != token.IMPORT {
+			continue
+		}
+		for _, s := range gd.Specs {
+			is := s.(*ast.ImportSpec)
+			if is.Path.Value != `"C"` && is.Path.Value != "`C`" {
+				continue
+			}
+			if is.Doc != nil {
+				preambles[is.Doc] = true
+			} else if gd.Doc != nil && !gd.Lparen.IsValid() {
+				preambles[gd.Doc] = true
+			}
+		}
+	}
 	var out []sig
 	for _, cg := range f.Comments {
 		anchor := anchorOf(f, cg.Pos())
+		if preambles[cg] {
+			var lines []string
+			for _, c := range cg.List {
+				lines = append(lines, c.Text)
+			}
+			out = append(out, sig{"cgo preamble:\n" + strings.Join(lines, "\n"), anchor, cg.Pos()})
+		}
 		if isTest && exampleOutput(f, cg) {
 			var lines []string
 			for _, c := range cg.List {
@@ -169,7 +226,7 @@ func significant(f *ast.File, path string) []sig {
 		}
 		for _, c := range cg.List {
 			if isDirective(c.Text) {
-				out = append(out, sig{strings.TrimRight(c.Text, " \t"), anchor, c.Pos()})
+				out = append(out, sig{strings.TrimRight(c.Text, " \t"), anchorOf(f, c.Pos()), c.Pos()})
 			}
 		}
 	}
@@ -177,27 +234,62 @@ func significant(f *ast.File, path string) []sig {
 }
 
 func isDirective(t string) bool {
-	for _, p := range []string{"//go:", "// +build", "//line ", "/*line ", "//export ", "//extern ", "//sys "} {
+	for _, p := range []string{"//go:", "//line ", "/*line ", "//export ", "//extern "} {
 		if strings.HasPrefix(t, p) {
 			return true
 		}
 	}
-	return strings.HasPrefix(t, "// Code generated ") && strings.HasSuffix(t, " DO NOT EDIT.")
+	return constraint.IsPlusBuild(t)
 }
 
-func anchorOf(f *ast.File, pos token.Pos) int {
-	if pos < f.Package {
-		return -1
-	}
-	for i, d := range f.Decls {
-		if pos < d.Pos() {
-			return 2 * i
+// anchorOf locates pos structurally: starting at the file, it repeatedly
+// takes the first child node that ends after pos and records its index, with
+// "<" if pos lies before that child and stops there, or descends into it if
+// pos lies inside it. "$" records that pos follows every child. Comments are
+// not children, so the anchor is the same in two trees whose ASTs are equal
+// exactly when the comment sits in the same gap between the same nodes.
+func anchorOf(f *ast.File, pos token.Pos) string {
+	var b strings.Builder
+	var n ast.Node = f
+	for {
+		kids := children(n)
+		i := 0
+		for i < len(kids) && kids[i].End() <= pos {
+			i++
 		}
-		if pos < d.End() {
-			return 2*i + 1
+		if i == len(kids) {
+			fmt.Fprintf(&b, "%d$", i)
+			return b.String()
 		}
+		if pos < kids[i].Pos() {
+			fmt.Fprintf(&b, "%d<", i)
+			return b.String()
+		}
+		fmt.Fprintf(&b, "%d/", i)
+		n = kids[i]
 	}
-	return 2 * len(f.Decls)
+}
+
+// children returns the direct child nodes of n in source order, without
+// comment groups.
+func children(n ast.Node) []ast.Node {
+	var out []ast.Node
+	ast.Inspect(n, func(c ast.Node) bool {
+		if c == n {
+			return true
+		}
+		if c == nil {
+			return false
+		}
+		switch c.(type) {
+		case *ast.CommentGroup, *ast.Comment:
+		default:
+			out = append(out, c)
+		}
+		return false
+	})
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Pos() < out[j].Pos() })
+	return out
 }
 
 func exampleOutput(f *ast.File, cg *ast.CommentGroup) bool {

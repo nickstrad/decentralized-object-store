@@ -6,12 +6,6 @@ import (
 	"sort"
 )
 
-type byLen []string
-
-func (b byLen) Len() int           { return len(b) }
-func (b byLen) Less(i, j int) bool { return len(b[i]) < len(b[j]) }
-func (b byLen) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
-
 func Keys(m map[string]int) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -21,25 +15,42 @@ func Keys(m map[string]int) []string {
 	return keys
 }
 
-func Pairs(m map[string]int) ([]string, []int) {
-	var ks []string
+func Values(m map[string]int) []int {
 	var vs []int
-	for k, v := range m {
-		ks = append(ks, k)
+	for _, v := range m {
 		vs = append(vs, v)
 	}
-	slices.Sort(ks)
-	slices.Sort(vs)
-	return ks, vs
+	sort.Ints(vs)
+	return vs
 }
 
-func ByLen(m map[string]bool) []string {
-	var ks []string
-	for k := range m {
-		ks = append(ks, k)
+func Both(m map[int]int) []int {
+	var xs []int
+	for k, v := range m {
+		xs = append(xs, k, v)
 	}
-	sort.Sort(byLen(ks))
-	return ks
+	slices.Sort(xs)
+	return xs
+}
+
+func Lit(m map[string]bool) func() []string {
+	return func() []string {
+		var ks []string
+	outer:
+		for k := range m {
+			ks = append(ks, k)
+		}
+		slices.Sort(ks)
+		if len(ks) > 3 {
+			goto outer
+		}
+		return ks
+	}
+}
+
+func Empty(m map[string]int) {
+	for range m {
+	}
 }
 
 func Iter(m map[string]int) []string {

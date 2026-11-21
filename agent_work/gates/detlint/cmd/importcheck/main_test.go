@@ -23,6 +23,10 @@ func TestImportcheck(t *testing.T) {
 		{"aliased external import fails", "a.go", "package a\nimport z \"golang.org/x/sys/unix\"\nvar _ = z.Getpid\n", "golang.org/x/sys/unix"},
 		{"cgo fails", "a.go", "package a\nimport \"C\"\n", "\"C\""},
 		{"unparsable file fails", "a.go", "package\n", "cannot parse"},
+		{"garbage file fails", "a.go", "}}} not go at all\n", "cannot parse"},
+		{"broken import block fails", "a.go", "package a\nimport (\n\"fmt\"\n", "cannot parse"},
+		{"syntax error after imports still checks imports", "a.go", "package a\nimport _ \"github.com/x/y\"\nfunc {{{ broken\n", "github.com/x/y"},
+		{"syntax error after stdlib imports passes the import check", "a.go", "package a\nimport \"fmt\"\nfunc {{{ broken\n", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
