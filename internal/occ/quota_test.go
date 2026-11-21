@@ -18,37 +18,37 @@ func TestQuotaCheckAndSet(t *testing.T) {
 		if err != nil || u != (occ.Usage{}) || p.String() != occ.IfNoneMatch().String() {
 			t.Fatalf("read of an absent counter: %v %v", u, err)
 		}
-		got, err := s.UpdateQuota("q", 3, nil, occ.AddUsage(40, 1, limit))
+		got, err := s.UpdateQuota("q", 3, occ.AddUsage(40, 1, limit))
 		if err != nil || got != (occ.Usage{Bytes: 40, Objects: 1}) {
 			t.Fatalf("update: %v %v", got, err)
 		}
 	})
 	t.Run("an update over the limit is refused and changes nothing", func(t *testing.T) {
 		s, _ := newTestStore(t, "a", 1, 1)
-		if _, err := s.UpdateQuota("q", 3, nil, occ.AddUsage(90, 1, limit)); err != nil {
+		if _, err := s.UpdateQuota("q", 3, occ.AddUsage(90, 1, limit)); err != nil {
 			t.Fatal(err)
 		}
 		before := s.Record("q").ETag()
-		if _, err := s.UpdateQuota("q", 3, nil, occ.AddUsage(20, 1, limit)); !errors.Is(err, occ.ErrQuotaExceeded) {
+		if _, err := s.UpdateQuota("q", 3, occ.AddUsage(20, 1, limit)); !errors.Is(err, occ.ErrQuotaExceeded) {
 			t.Fatalf("err = %v", err)
 		}
-		if _, err := s.UpdateQuota("q", 3, nil, occ.AddUsage(0, 3, limit)); !errors.Is(err, occ.ErrQuotaExceeded) {
+		if _, err := s.UpdateQuota("q", 3, occ.AddUsage(0, 3, limit)); !errors.Is(err, occ.ErrQuotaExceeded) {
 			t.Fatalf("objects over limit: %v", err)
 		}
 		if s.Record("q").ETag() != before {
 			t.Fatal("a refused update wrote")
 		}
-		if got, err := s.UpdateQuota("q", 3, nil, occ.AddUsage(-90, -1, limit)); err != nil || got != (occ.Usage{}) {
+		if got, err := s.UpdateQuota("q", 3, occ.AddUsage(-90, -1, limit)); err != nil || got != (occ.Usage{}) {
 			t.Fatalf("shrinking: %v %v", got, err)
 		}
 	})
 	t.Run("a stale read is refused and retried", func(t *testing.T) {
 		s, _ := newTestStore(t, "a", 1, 1)
 		calls := 0
-		got, err := s.UpdateQuota("q", 3, nil, func(u occ.Usage) (occ.Usage, error) {
+		got, err := s.UpdateQuota("q", 3, func(u occ.Usage) (occ.Usage, error) {
 			calls++
 			if calls == 1 {
-				if _, err := s.UpdateQuota("q", 1, nil, occ.AddUsage(5, 1, occ.Usage{})); err != nil {
+				if _, err := s.UpdateQuota("q", 1, occ.AddUsage(5, 1, occ.Usage{})); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -60,8 +60,8 @@ func TestQuotaCheckAndSet(t *testing.T) {
 	})
 	t.Run("retries are bounded", func(t *testing.T) {
 		s, _ := newTestStore(t, "a", 1, 1)
-		_, err := s.UpdateQuota("q", 2, nil, func(u occ.Usage) (occ.Usage, error) {
-			if _, err := s.UpdateQuota("q", 1, nil, occ.AddUsage(1, 0, occ.Usage{})); err != nil {
+		_, err := s.UpdateQuota("q", 2, func(u occ.Usage) (occ.Usage, error) {
+			if _, err := s.UpdateQuota("q", 1, occ.AddUsage(1, 0, occ.Usage{})); err != nil {
 				t.Fatal(err)
 			}
 			return u, nil
@@ -69,48 +69,24 @@ func TestQuotaCheckAndSet(t *testing.T) {
 		if !errors.Is(err, occ.ErrPreconditionFailed) {
 			t.Fatalf("err = %v", err)
 		}
-		if _, err := s.UpdateQuota("q", 0, nil, occ.AddUsage(1, 0, occ.Usage{})); !errors.Is(err, env.ErrInvalidArgument) {
+		if _, err := s.UpdateQuota("q", 0, occ.AddUsage(1, 0, occ.Usage{})); !errors.Is(err, env.ErrInvalidArgument) {
 			t.Fatalf("zero attempts: %v", err)
 		}
 	})
-	t.Run("partition siblings are resolved by the recount hook, never guessed", func(t *testing.T) {
-		a, _ := newTestStore(t, "a", 1, 1)
-		b, _ := newTestStore(t, "b", 1, 2)
-		if _, err := a.UpdateQuota("q", 1, nil, occ.AddUsage(10, 1, limit)); err != nil {
+	t.Run("a deleted counter reads as zero and is recreated over its tombstone", func(t *testing.T) {
+		s, _ := newTestStore(t, "a", 1, 1)
+		if _, err := s.UpdateQuota("q", 1, occ.AddUsage(5, 1, limit)); err != nil {
 			t.Fatal(err)
 		}
-		b.Merge(a.Doc())
-		if _, err := a.UpdateQuota("q", 1, nil, occ.AddUsage(60, 1, limit)); err != nil {
+		if _, err := s.Delete("q", occ.IfMatch(s.Record("q").ETag())); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := b.UpdateQuota("q", 1, nil, occ.AddUsage(70, 1, limit)); err != nil {
-			t.Fatal(err)
+		u, p, err := s.ReadQuota("q")
+		if err != nil || u != (occ.Usage{}) || p.String() != occ.IfMatch(s.Record("q").ETag()).String() {
+			t.Fatalf("read of a deleted counter: %v %v %s", u, err, p.String())
 		}
-		a.Merge(b.Doc())
-		if _, _, err := a.ReadQuota("q"); !errors.Is(err, occ.ErrConflict) {
-			t.Fatalf("siblings must surface: %v", err)
-		}
-		if _, err := a.UpdateQuota("q", 3, nil, occ.AddUsage(1, 0, limit)); !errors.Is(err, occ.ErrConflict) {
-			t.Fatalf("without a hook: %v", err)
-		}
-		recount := func(string) (occ.Usage, error) { return occ.Usage{Bytes: 140, Objects: 3}, nil }
-		if _, err := a.UpdateQuota("q", 3, recount, occ.AddUsage(1, 0, limit)); !errors.Is(err, occ.ErrQuotaExceeded) {
-			t.Fatalf("the recounted usage is over the limit: %v", err)
-		}
-		got, err := a.UpdateQuota("q", 3, recount, occ.AddUsage(0, 0, limit))
-		if err != nil || got != (occ.Usage{Bytes: 140, Objects: 3}) || a.Record("q").Len() != 1 {
-			t.Fatalf("resolution: %v %v", got, err)
-		}
-		boom := errors.New("boom")
-		a.Merge(b.Doc())
-		b2, _ := newTestStore(t, "c", 1, 3)
-		b2.Merge(b.Doc())
-		if _, err := b2.UpdateQuota("q", 1, nil, occ.AddUsage(1, 0, occ.Usage{})); err != nil {
-			t.Fatal(err)
-		}
-		a.Merge(b2.Doc())
-		if _, err := a.UpdateQuota("q", 1, func(string) (occ.Usage, error) { return occ.Usage{}, boom }, occ.AddUsage(0, 0, limit)); !errors.Is(err, boom) {
-			t.Fatalf("recount error: %v", err)
+		if got, err := s.UpdateQuota("q", 1, occ.AddUsage(7, 1, limit)); err != nil || got != (occ.Usage{Bytes: 7, Objects: 1}) {
+			t.Fatalf("recreate: %v %v", got, err)
 		}
 	})
 	t.Run("an unconditional quota write is refused", func(t *testing.T) {
@@ -125,7 +101,7 @@ func TestQuotaCheckAndSet(t *testing.T) {
 		if _, _, err := s.ReadQuota("q"); !errors.Is(err, occ.ErrMalformed) {
 			t.Fatal(err)
 		}
-		if _, err := s.UpdateQuota("q", 1, nil, occ.AddUsage(1, 0, occ.Usage{})); !errors.Is(err, occ.ErrMalformed) {
+		if _, err := s.UpdateQuota("q", 1, occ.AddUsage(1, 0, occ.Usage{})); !errors.Is(err, occ.ErrMalformed) {
 			t.Fatal(err)
 		}
 	})
@@ -195,7 +171,7 @@ func TestPropQuotaNoStaleApply(t *testing.T) {
 				}
 			default:
 				delta := int64(rapid.IntRange(1, 10).Draw(t, "add"))
-				if _, err := s.UpdateQuota("q", 1, nil, occ.AddUsage(delta, 1, occ.Usage{})); err != nil {
+				if _, err := s.UpdateQuota("q", 1, occ.AddUsage(delta, 1, occ.Usage{})); err != nil {
 					t.Fatal(err)
 				}
 				model.Bytes += uint64(delta)
@@ -213,4 +189,111 @@ func TestPropQuotaNoStaleApply(t *testing.T) {
 func currentPre(s *occ.Store) occ.Precondition {
 	_, p, _ := s.ReadQuota("q")
 	return p
+}
+
+func TestQuotaRecount(t *testing.T) {
+	limit := occ.Usage{Bytes: 1000}
+	truth := occ.Usage{Bytes: 140, Objects: 3}
+	count := func(string) (occ.Usage, error) { return truth, nil }
+	t.Run("a recount writes only when the stored usage is wrong", func(t *testing.T) {
+		s, _ := newTestStore(t, "a", 1, 1)
+		if _, wrote, err := s.RecountQuota("q", 1, func(string) (occ.Usage, error) { return occ.Usage{}, nil }); err != nil || wrote {
+			t.Fatalf("an absent counter recounted to zero must not be written: %v %v", wrote, err)
+		}
+		if _, err := s.UpdateQuota("q", 1, occ.AddUsage(60, 1, limit)); err != nil {
+			t.Fatal(err)
+		}
+		u, wrote, err := s.RecountQuota("q", 3, count)
+		if err != nil || !wrote || u != truth {
+			t.Fatalf("recount of a wrong counter: %v %v %v", u, wrote, err)
+		}
+		etag := s.Record("q").ETag()
+		if _, wrote, err := s.RecountQuota("q", 3, count); err != nil || wrote || s.Record("q").ETag() != etag {
+			t.Fatalf("a recount that agrees wrote: %v %v", wrote, err)
+		}
+	})
+	t.Run("a recount retries a stale read and reports hook errors", func(t *testing.T) {
+		s, _ := newTestStore(t, "a", 1, 1)
+		calls := 0
+		_, wrote, err := s.RecountQuota("q", 3, func(string) (occ.Usage, error) {
+			calls++
+			if calls == 1 {
+				if _, err := s.UpdateQuota("q", 1, occ.AddUsage(1, 0, occ.Usage{})); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return truth, nil
+		})
+		if err != nil || !wrote || calls != 2 {
+			t.Fatalf("recount after a stale read: %v %v %d", wrote, err, calls)
+		}
+		boom := errors.New("boom")
+		if _, _, err := s.RecountQuota("q", 1, func(string) (occ.Usage, error) { return occ.Usage{}, boom }); !errors.Is(err, boom) {
+			t.Fatal(err)
+		}
+		if _, _, err := s.RecountQuota("q", 0, count); !errors.Is(err, env.ErrInvalidArgument) {
+			t.Fatal(err)
+		}
+		if _, _, err := s.RecountQuota("q", 1, nil); !errors.Is(err, env.ErrInvalidArgument) {
+			t.Fatal(err)
+		}
+		_, _, err = s.RecountQuota("q", 2, func(string) (occ.Usage, error) {
+			if _, err := s.UpdateQuota("q", 1, occ.AddUsage(1, 0, occ.Usage{})); err != nil {
+				t.Fatal(err)
+			}
+			return occ.Usage{Bytes: 999}, nil
+		})
+		if !errors.Is(err, occ.ErrPreconditionFailed) {
+			t.Fatalf("bounded recount retries: %v", err)
+		}
+	})
+	t.Run("a corrupt counter is rewritten by the recount", func(t *testing.T) {
+		s, _ := newTestStore(t, "a", 1, 1)
+		mustPut(t, s, "q", "\xff", occ.IfNoneMatch())
+		if _, wrote, err := s.RecountQuota("q", 1, count); err != nil || !wrote {
+			t.Fatalf("%v %v", wrote, err)
+		}
+	})
+	t.Run("partition-side updates settle by LWW and identical recounts settle", func(t *testing.T) {
+		a, _, la := newLoggedStore(t, "a", 1, 1)
+		b, _, lb := newLoggedStore(t, "b", 1, 2)
+		if _, err := a.UpdateQuota("q", 1, occ.AddUsage(10, 1, limit)); err != nil {
+			t.Fatal(err)
+		}
+		mustMerge(t, b, a.Doc())
+		if _, err := a.UpdateQuota("q", 1, occ.AddUsage(60, 1, limit)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := b.UpdateQuota("q", 1, occ.AddUsage(70, 1, limit)); err != nil {
+			t.Fatal(err)
+		}
+		mustMerge(t, a, b.Doc())
+		mustMerge(t, b, a.Doc())
+		if len(la.discards)+len(lb.discards) != 1 || (len(la.discards) == 1 && la.discards[0].Key != "q") {
+			t.Fatal("the partition-side quota update must be discarded on the record")
+		}
+		if u, _, _ := a.ReadQuota("q"); u == truth {
+			t.Fatal("setup: the stored usage must be wrong after the heal")
+		}
+		for round := 0; ; round++ {
+			if round == 4 {
+				t.Fatal("identical recounts did not settle")
+			}
+			_, wa, err1 := a.RecountQuota("q", 3, count)
+			_, wb, err2 := b.RecountQuota("q", 3, count)
+			if err := errors.Join(err1, err2); err != nil {
+				t.Fatal(err)
+			}
+			mustMerge(t, a, b.Doc())
+			mustMerge(t, b, a.Doc())
+			if !wa && !wb {
+				break
+			}
+		}
+		ua, _, _ := a.ReadQuota("q")
+		ub, _, _ := b.ReadQuota("q")
+		if ua != truth || ub != truth || !a.Doc().Equal(b.Doc()) {
+			t.Fatal("the recount did not settle on the true usage everywhere")
+		}
+	})
 }

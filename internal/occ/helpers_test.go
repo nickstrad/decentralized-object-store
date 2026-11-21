@@ -26,14 +26,42 @@ type fataler interface {
 	Fatalf(format string, args ...any)
 }
 
+type discardLog struct {
+	lines    []string
+	discards []occ.Discard
+}
+
+func (l *discardLog) hook(key string, winner, loser occ.Version) {
+	l.discards = append(l.discards, occ.Discard{Key: key, Winner: winner, Loser: loser})
+}
+
+func (l *discardLog) sink(line string) { l.lines = append(l.lines, line) }
+
+func storeConfig(node string, epoch, seed uint64, c env.Clock) occ.StoreConfig {
+	return occ.StoreConfig{Node: env.NodeID(node), Epoch: epoch, Clock: c, Rand: rand.New(rand.NewPCG(seed, 7))}
+}
+
 func newTestStore(t fataler, node string, epoch, seed uint64) (*occ.Store, *fakeClock) {
 	t.Helper()
 	c := &fakeClock{now: env.Time(1_000_000)}
-	s, err := occ.NewStore(occ.StoreConfig{Node: env.NodeID(node), Epoch: epoch, Clock: c, Rand: rand.New(rand.NewPCG(seed, 7))})
+	s, err := occ.NewStore(storeConfig(node, epoch, seed, c))
 	if err != nil {
 		t.Fatalf("new store: %v", err)
 	}
 	return s, c
+}
+
+func newLoggedStore(t fataler, node string, epoch, seed uint64) (*occ.Store, *fakeClock, *discardLog) {
+	t.Helper()
+	c := &fakeClock{now: env.Time(1_000_000)}
+	l := &discardLog{}
+	cfg := storeConfig(node, epoch, seed, c)
+	cfg.Log, cfg.OnDiscard = l.sink, l.hook
+	s, err := occ.NewStore(cfg)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	return s, c, l
 }
 
 func mustPut(t fataler, s *occ.Store, key, value string, p occ.Precondition) occ.Version {
@@ -45,25 +73,40 @@ func mustPut(t fataler, s *occ.Store, key, value string, p occ.Precondition) occ
 	return v
 }
 
-func ids(r occ.Record) []string {
-	var out []string
-	for _, id := range r.IDs() {
-		out = append(out, id.String())
+func mustMerge(t fataler, s *occ.Store, d *occ.Doc) bool {
+	t.Helper()
+	changed, err := s.Merge(d)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
 	}
-	return out
+	return changed
 }
 
-func values(r occ.Record) []string {
-	var out []string
-	for _, v := range r.Siblings() {
-		if v.Tombstone() {
-			out = append(out, "<tombstone>")
-		} else {
-			out = append(out, string(v.Value()))
-		}
+func short(id occ.VersionID) string { return id.String()[:12] }
+
+func value(r occ.Record) string {
+	v, ok := r.Version()
+	switch {
+	case !ok:
+		return "<absent>"
+	case v.Tombstone():
+		return "<tombstone>"
 	}
-	slices.Sort(out)
-	return out
+	return string(v.Value())
+}
+
+func lwwLess(a, b occ.Version) bool {
+	sa, sb := a.Stamp(), b.Stamp()
+	switch {
+	case sa.Wall != sb.Wall:
+		return sa.Wall < sb.Wall
+	case sa.Logical != sb.Logical:
+		return sa.Logical < sb.Logical
+	case sa.Node != sb.Node:
+		return sa.Node < sb.Node
+	}
+	ia, ib := a.ID(), b.ID()
+	return slices.Compare(ia[:], ib[:]) < 0
 }
 
 type ack struct {
@@ -72,37 +115,72 @@ type ack struct {
 }
 
 type oracle struct {
-	acks []ack
-	seen map[occ.VersionID]map[occ.VersionID]bool
+	acks    []ack
+	seen    map[occ.VersionID]map[occ.VersionID]bool
+	seenAny map[occ.VersionID]bool
+	lost    map[occ.VersionID]bool
+	logged  int
 }
 
-func newOracle() *oracle { return &oracle{seen: map[occ.VersionID]map[occ.VersionID]bool{}} }
+func newOracle() *oracle {
+	return &oracle{seen: map[occ.VersionID]map[occ.VersionID]bool{}, seenAny: map[occ.VersionID]bool{}, lost: map[occ.VersionID]bool{}}
+}
 
-func (o *oracle) record(key string, v occ.Version, covered []occ.Version) {
+func (o *oracle) record(key string, v occ.Version, held occ.Record) {
 	s := map[occ.VersionID]bool{}
-	for _, w := range covered {
-		s[w.ID()] = true
-		for id := range o.seen[w.ID()] {
+	if h, ok := held.Version(); ok {
+		s[h.ID()] = true
+		for id := range o.seen[h.ID()] {
 			s[id] = true
 		}
+	}
+	for id := range s {
+		o.seenAny[id] = true
 	}
 	o.seen[v.ID()] = s
 	o.acks = append(o.acks, ack{key: key, v: v})
 }
 
-func (o *oracle) check(doc *occ.Doc) error {
-	for _, a := range o.acks {
-		ok := false
-		for _, w := range doc.Record(a.key).Siblings() {
-			if w.ID() == a.v.ID() || o.seen[w.ID()][a.v.ID()] {
-				ok = true
-				break
-			}
+func (o *oracle) discard(_ string, _, loser occ.Version) {
+	o.lost[loser.ID()] = true
+	o.logged++
+}
+
+func (o *oracle) explain(a ack, docs []*occ.Doc, everywhere bool) (string, bool) {
+	held := 0
+	for _, d := range docs {
+		if v, ok := d.Record(a.key).Version(); ok && v.ID() == a.v.ID() {
+			held++
 		}
-		if !ok {
-			return fmt.Errorf("acknowledged version %s of key %q (dot %s:%d) is neither a sibling nor seen by a sibling's writer; record holds %v",
-				a.v.ID().String()[:12], a.key, a.v.Dot().Actor.String(), a.v.Dot().Counter, ids(doc.Record(a.key)))
+	}
+	switch {
+	case len(docs) > 0 && held == len(docs):
+		return "current", true
+	case held > 0 && !everywhere:
+		return "held", true
+	case o.seenAny[a.v.ID()]:
+		return "superseded", true
+	case o.lost[a.v.ID()]:
+		return "discarded", true
+	}
+	return "", false
+}
+
+func (o *oracle) check(docs []*occ.Doc, everywhere bool) error {
+	for _, a := range o.acks {
+		if _, ok := o.explain(a, docs, everywhere); !ok {
+			return fmt.Errorf("acknowledged version %s of key %q (dot %s:%d, stamp %s) is lost with no record: not current, not seen by a later acknowledged write, not named in any discard log",
+				short(a.v.ID()), a.key, a.v.Dot().Actor.String(), a.v.Dot().Counter, a.v.Stamp().String())
 		}
 	}
 	return nil
+}
+
+func (o *oracle) tally(docs []*occ.Doc) map[string]int {
+	out := map[string]int{}
+	for _, a := range o.acks {
+		why, _ := o.explain(a, docs, true)
+		out[why]++
+	}
+	return out
 }

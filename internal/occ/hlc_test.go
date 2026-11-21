@@ -104,56 +104,34 @@ func TestHLCRules(t *testing.T) {
 	}
 }
 
-func TestLWWScalarTieBreak(t *testing.T) {
-	sc := func(v string, s occ.Stamp) occ.Scalar { return occ.Scalar{Value: []byte(v), Stamp: s} }
-	rows := []struct {
-		name string
-		a, b occ.Scalar
-		want string
-	}{
-		{"the higher wall time wins", sc("old", st(1, 9, "z")), sc("new", st(2, 0, "a")), "new"},
-		{"on equal wall time the higher logical counter wins", sc("x", st(5, 1, "z")), sc("y", st(5, 2, "a")), "y"},
-		{"on equal wall and counter the higher node id wins", sc("from-a", st(5, 1, "a")), sc("from-b", st(5, 1, "b")), "from-b"},
-		{"identical stamps fall back to the larger value bytes", sc("p", st(5, 1, "a")), sc("q", st(5, 1, "a")), "q"},
+func TestLWWSkewPicksTheHigherClock(t *testing.T) {
+	fast, fc := newTestStore(t, "fast", 1, 1)
+	slow, scl := newTestStore(t, "slow", 1, 2)
+	fc.now = env.Time(10 * time.Second)
+	scl.now = env.Time(9 * time.Second)
+	if _, err := fast.SetRoute("b1", "region-a"); err != nil {
+		t.Fatal(err)
 	}
-	for _, r := range rows {
-		t.Run(r.name, func(t *testing.T) {
-			ab, ba := r.a.Merge(r.b), r.b.Merge(r.a)
-			if string(ab.Value) != r.want || string(ba.Value) != r.want || ab.Stamp != ba.Stamp {
-				t.Fatalf("merge = %q / %q, want %q both ways", ab.Value, ba.Value, r.want)
-			}
-			if string(ab.Merge(ab).Value) != r.want {
-				t.Fatal("not idempotent")
-			}
-		})
+	scl.now += env.Time(500 * time.Millisecond)
+	if _, err := slow.SetRoute("b1", "region-b"); err != nil {
+		t.Fatal(err)
 	}
-	t.Run("a node whose clock runs ahead wins over a later write in real time", func(t *testing.T) {
-		fast, fc := newTestStore(t, "fast", 1, 1)
-		slow, scl := newTestStore(t, "slow", 1, 2)
-		fc.now = env.Time(10 * time.Second)
-		scl.now = env.Time(9 * time.Second)
-		if _, err := fast.SetRoute("b1", "region-a"); err != nil {
-			t.Fatal(err)
-		}
-		scl.now += env.Time(500 * time.Millisecond)
-		if _, err := slow.SetRoute("b1", "region-b"); err != nil {
-			t.Fatal(err)
-		}
-		fast.Merge(slow.Doc())
-		slow.Merge(fast.Doc())
-		r1, _ := fast.Route("b1")
-		r2, _ := slow.Route("b1")
-		if r1 != "region-a" || r2 != "region-a" {
-			t.Fatalf("routes %s %s: the skewed-ahead write should win", r1, r2)
-		}
-		if _, err := slow.SetRoute("b1", "region-c"); err != nil {
-			t.Fatal(err)
-		}
-		r3, _ := slow.Route("b1")
-		if r3 != "region-c" {
-			t.Fatal("after observing the fast stamp, the slow node's next write must win")
-		}
-	})
+	mustMerge(t, fast, slow.Doc())
+	mustMerge(t, slow, fast.Doc())
+	r1, _ := fast.Route("b1")
+	r2, _ := slow.Route("b1")
+	if r1 != "region-a" || r2 != "region-a" || slow.LWWDiscards() != 1 {
+		t.Fatalf("routes %s %s: the skewed-ahead write should win and the later one be recorded as discarded", r1, r2)
+	}
+	if _, err := slow.SetRoute("b1", "region-c"); err != nil {
+		t.Fatal(err)
+	}
+	if r3, _ := slow.Route("b1"); r3 != "region-c" {
+		t.Fatal("after observing the fast stamp, the slow node's next write must win")
+	}
+	if _, _, err := slow.Scalar("missing"); !errors.Is(err, occ.ErrNotFound) {
+		t.Fatal("a missing scalar")
+	}
 }
 
 func TestPropHLCMonotonic(t *testing.T) {

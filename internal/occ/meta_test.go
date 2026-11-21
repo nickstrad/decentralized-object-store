@@ -4,6 +4,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
@@ -81,7 +82,7 @@ func TestTypedMetadataDocument(t *testing.T) {
 	}
 	u, err := s.RecountObjects("b")
 	if err != nil || u != (occ.Usage{Bytes: 42 + 20, Objects: 2}) {
-		t.Fatalf("recount = %v %v (siblings count at their largest size, tombstones not at all, other buckets not at all)", u, err)
+		t.Fatalf("recount = %v %v (the replaced size counts once, tombstones not at all, other buckets not at all)", u, err)
 	}
 	mustPut(t, s, occ.ObjectKey("b", "junk"), "x", occ.IfNoneMatch())
 	if _, err := s.RecountObjects("b"); !errors.Is(err, occ.ErrMalformed) {
@@ -160,19 +161,68 @@ func TestErrorCodesRoundTrip(t *testing.T) {
 			t.Fatalf("%v did not survive the wire: %v", e.Err, back)
 		}
 	}
-	ce := &occ.ConflictError{Key: "k", Siblings: make([]occ.Version, 2)}
-	code, _ := table.Encode(ce)
-	if code != occ.CodeConflict {
-		t.Fatalf("conflict error encoded as %d", code)
+	seen := map[env.Code]bool{}
+	for _, e := range occ.CodeEntries() {
+		if e.Code < occ.CodeBlockMin || e.Code > occ.CodeBlockMax {
+			t.Fatalf("code %d for %v lies outside the occ block %d-%d", e.Code, e.Err, occ.CodeBlockMin, occ.CodeBlockMax)
+		}
+		if seen[e.Code] {
+			t.Fatalf("code %d registered twice", e.Code)
+		}
+		seen[e.Code] = true
 	}
-	if !errors.Is(ce, occ.ErrConflict) {
-		t.Fatal("ConflictError must match ErrConflict")
+	if seen[131] {
+		t.Fatal("the retired conflict code 131 must stay unassigned")
 	}
-	var target *occ.ConflictError
-	if !errors.As(errors.Join(errors.New("x"), ce), &target) || target.Key != "k" || len(target.Siblings) != 2 {
-		t.Fatal("errors.As on ConflictError")
+	if occ.CodeBlockMin != 128 || occ.CodeBlockMax != 143 {
+		t.Fatal("the occ block is 128-143")
 	}
-	if _, ok := occ.IsConflict(errors.New("plain")); ok {
-		t.Fatal("IsConflict on a plain error")
+}
+
+func TestNodeTypedWritesGoThroughCommit(t *testing.T) {
+	s, ids := twoNodes(t, 11)
+	n := occNode(s, ids[0])
+	if _, err := n.PutTag("b", "o", "color", "red", occ.IfNoneMatch()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := n.PutACL("b", "alice", occ.PermRead, occ.IfNoneMatch()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := n.PutACL("b", "alice", 0x80, occ.Unconditional()); !errors.Is(err, env.ErrInvalidArgument) {
+		t.Fatal(err)
+	}
+	if _, err := n.PutObjectMeta("b", "o", occ.ObjectMeta{Size: 3}, occ.IfNoneMatch()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := n.PutManifest("b", "o", []byte{1}, occ.IfNoneMatch()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := n.SetRoute("b", "region-x"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := n.SetContentType("b", "o", "text/plain"); err != nil {
+		t.Fatal(err)
+	}
+	if u, err := n.UpdateQuota(occ.QuotaKey("b"), 2, occ.AddUsage(3, 1, occ.Usage{})); err != nil || u.Bytes != 3 {
+		t.Fatal(err)
+	}
+	durable, ok := s.Disk(ids[0]).PeekDurable(occ.StateBlob)
+	if !ok {
+		t.Fatal("nothing durable")
+	}
+	st, err := occ.DecodeStateBlob(durable)
+	if err != nil || !st.Doc.Equal(n.Doc()) || st.Doc.Len() != 7 {
+		t.Fatalf("the typed writes are not durable: %v", err)
+	}
+	run(t, s, 50*time.Millisecond)
+	r, err := occNode(s, ids[1]).Reader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, _, err := r.Tag("b", "o", "color"); err != nil || v != "red" {
+		t.Fatalf("the typed write was not replicated: %v", err)
+	}
+	if rg, err := r.Route("b"); err != nil || rg != "region-x" {
+		t.Fatalf("route: %v", err)
 	}
 }

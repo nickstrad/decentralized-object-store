@@ -6,12 +6,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"flag"
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
+	"github.com/nickstrad/decentralized-object-store/internal/sim"
 )
 
 var updateGolden = flag.Bool("update-golden", false, "rewrite testdata golden files")
@@ -22,22 +25,32 @@ func (r *raw) u(x uint64) *raw             { r.b = binary.AppendUvarint(r.b, x);
 func (r *raw) i(x int64) *raw              { r.b = binary.AppendVarint(r.b, x); return r }
 func (r *raw) s(x string) *raw             { r.u(uint64(len(x))); r.b = append(r.b, x...); return r }
 func (r *raw) by(x ...byte) *raw           { r.b = append(r.b, x...); return r }
-func (r *raw) magic() *raw                 { return r.by('O', 'C', 'C', 1) }
+func (r *raw) magic() *raw                 { return r.by('O', 'C', 'C', 2) }
 func (r *raw) stamp() *raw                 { return r.i(0).u(0).s("") }
 func (r *raw) dot(n string, c uint64) *raw { return r.s(n).u(1).u(c) }
+
+func (r *raw) version(node string, counter uint64, ctx [][2]uint64, flag byte, value string) *raw {
+	r.dot(node, counter)
+	r.u(uint64(len(ctx)))
+	for _, e := range ctx {
+		r.s(string(rune('a' + e[0]))).u(1).u(e[1])
+	}
+	r.by(flag).stamp()
+	return r.s(value)
+}
 
 func goldenDoc() *occ.Doc {
 	a := occ.Actor{Node: "node-a", Epoch: 0x1111}
 	b := occ.Actor{Node: "node-b", Epoch: 0x2222}
-	base := occ.NewVersion(occ.Dot{Actor: a, Counter: 1}, occ.VersionVector{}, false, []byte("base"), occ.Stamp{Wall: 1000, Logical: 0, Node: "node-a"})
-	left := occ.NewVersion(occ.Dot{Actor: a, Counter: 2}, base.Clock(), false, []byte("left"), occ.Stamp{Wall: 2000, Logical: 1, Node: "node-a"})
-	right := occ.NewVersion(occ.Dot{Actor: b, Counter: 1}, base.Clock(), true, nil, occ.Stamp{Wall: -5, Logical: 3, Node: "node-b"})
+	base := occ.NewVersion(occ.Dot{Actor: a, Counter: 1}, occ.VersionVector{}, false, []byte("base"), st(1000, 0, "node-a"))
+	left := occ.NewVersion(occ.Dot{Actor: a, Counter: 2}, base.Clock(), false, []byte("left"), st(2000, 1, "node-a"))
+	right := occ.NewVersion(occ.Dot{Actor: b, Counter: 1}, base.Clock(), true, nil, st(-5, 3, "node-b"))
 	d := occ.NewDoc()
-	d.MergeRecord("tags/x", occ.NewRecord(base))
-	d.MergeRecord("obj/y", occ.NewRecord(left))
-	d.MergeRecord("obj/y", occ.NewRecord(right))
-	d.MergeScalar("route/b", occ.Scalar{Value: []byte("region-a"), Stamp: occ.Stamp{Wall: 7, Logical: 0, Node: "node-b"}})
-	d.MergeScalar("ctype/b/o", occ.Scalar{Value: nil, Stamp: occ.Stamp{Wall: 8, Logical: 2, Node: "node-a"}})
+	d.MergeVersion("tags/x", base)
+	d.MergeVersion("obj/y", left)
+	d.MergeVersion("obj/y", right)
+	d.MergeVersion("route/b", occ.NewVersion(occ.Dot{Actor: b, Counter: 2}, occ.VersionVector{}, false, []byte("region-a"), st(7, 0, "node-b")))
+	d.MergeVersion("ctype/b/o", occ.NewVersion(occ.Dot{Actor: a, Counter: 3}, occ.VersionVector{}, false, nil, st(8, 2, "node-a")))
 	return d
 }
 
@@ -61,121 +74,83 @@ func golden(t *testing.T, name string, got []byte) {
 func TestCanonicalEncoding(t *testing.T) {
 	d := goldenDoc()
 	enc := d.Encode()
-	golden(t, "doc-v1.golden", enc)
-	golden(t, "state-v1.golden", occ.EncodeStateBlob(0x1111, enc))
+	golden(t, "doc-v2.golden", enc)
+	golden(t, "state-v2.golden", occ.EncodeStateBlob(0x1111, 5, 2, enc))
 	golden(t, "op-v1.golden", occ.EncodeOpRequest(occ.OpPut, "obj/y", occ.IfMatch(d.Record("obj/y").ETag()), []byte("v")))
+	if value(d.Record("obj/y")) != "left" || d.Len() != 4 {
+		t.Fatal("the golden document holds the wrong winner")
+	}
 	back, err := occ.Decode(enc)
 	if err != nil || !bytes.Equal(back.Encode(), enc) || back.Digest() != d.Digest() {
 		t.Fatalf("round trip: %v", err)
 	}
 	other := occ.NewDoc()
-	other.MergeScalar("ctype/b/o", occ.Scalar{Stamp: occ.Stamp{Wall: 8, Logical: 2, Node: "node-a"}})
 	other.Merge(back)
+	other.Merge(goldenDoc())
 	other.Merge(d)
 	if !bytes.Equal(other.Encode(), enc) || !other.Equal(d) {
 		t.Fatal("equal states built in a different order encode differently")
 	}
-	if occ.NewDoc().Len() != 0 || d.Len() != 4 {
+	if occ.NewDoc().Len() != 0 {
 		t.Fatal("len")
 	}
 	enc[len(enc)-1] ^= 0xff
 	if bytes.Equal(enc, d.Encode()) {
 		t.Fatal("Encode exposed its cached buffer")
 	}
-	epoch, sdoc, err := occ.DecodeStateBlob(occ.EncodeStateBlob(0x1111, d.Encode()))
-	if err != nil || epoch != 0x1111 || !sdoc.Equal(d) {
+	st, err := occ.DecodeStateBlob(occ.EncodeStateBlob(0x1111, 5, 2, d.Encode()))
+	if err != nil || st.Epoch != 0x1111 || st.Counter != 5 || st.Discards != 2 || !st.Doc.Equal(d) {
 		t.Fatalf("state blob round trip: %v", err)
 	}
 }
 
-func versionBytes(r *raw, node string, counter uint64, ctx [][2]uint64, flag byte, value string) *raw {
-	r.dot(node, counter)
-	r.u(uint64(len(ctx)))
-	for _, e := range ctx {
-		r.s(string(rune('a' + e[0]))).u(1).u(e[1])
-	}
-	r.by(flag).stamp()
-	return r.s(value)
+func oneRecord(build func(r *raw)) []byte {
+	r := (&raw{}).magic().u(1).s("k")
+	build(r)
+	return r.b
 }
 
 func TestDecodeMalformedTable(t *testing.T) {
-	one := func(build func(r *raw)) []byte {
-		r := (&raw{}).magic().u(1).s("k").u(1)
-		build(r)
-		return r.u(0).b
-	}
-	valid := one(func(r *raw) { versionBytes(r, "a", 1, nil, 0, "v") })
+	valid := oneRecord(func(r *raw) { r.version("a", 1, nil, 0, "v") })
 	if _, err := occ.Decode(valid); err != nil {
 		t.Fatalf("the base case must decode: %v", err)
 	}
-	v1 := occ.NewVersion(occ.Dot{Actor: occ.Actor{Node: "a", Epoch: 1}, Counter: 1}, occ.VersionVector{}, false, []byte("x"), occ.Stamp{})
-	v2 := occ.NewVersion(occ.Dot{Actor: occ.Actor{Node: "b", Epoch: 1}, Counter: 1}, occ.VersionVector{}, false, []byte("y"), occ.Stamp{})
-	first, second := "a", "b"
-	if v2.ID().Compare(v1.ID()) < 0 {
-		first, second = "b", "a"
+	twoOf := func(key1, key2 string, v1, v2 string) []byte {
+		r := (&raw{}).magic().u(2).s(key1)
+		r.version("a", 1, nil, 0, v1)
+		r.s(key2)
+		r.version("b", 1, nil, 0, v2)
+		return r.b
 	}
-	vals := map[string]string{"a": "x", "b": "y"}
 	rows := []struct {
 		name string
 		in   []byte
 	}{
 		{"empty input", nil},
-		{"wrong magic", []byte("OCC\x02\x00\x00")},
+		{"the sibling-era magic", append([]byte("OCC\x01"), valid[4:]...)},
 		{"magic only", (&raw{}).magic().b},
 		{"trailing byte", append(append([]byte(nil), valid...), 0)},
-		{"empty record", (&raw{}).magic().u(1).s("k").u(0).u(0).b},
-		{"zero dot counter", one(func(r *raw) { versionBytes(r, "a", 0, nil, 0, "v") })},
-		{"tombstone carrying a value", one(func(r *raw) { versionBytes(r, "a", 1, nil, 1, "v") })},
-		{"flag byte out of range", one(func(r *raw) { versionBytes(r, "a", 1, nil, 2, "") })},
-		{"context entry with a zero counter", one(func(r *raw) { versionBytes(r, "a", 1, [][2]uint64{{1, 0}}, 0, "") })},
-		{"context entries out of order", one(func(r *raw) { versionBytes(r, "a", 1, [][2]uint64{{2, 1}, {1, 1}}, 0, "") })},
-		{"context entry repeated", one(func(r *raw) { versionBytes(r, "a", 1, [][2]uint64{{1, 1}, {1, 2}}, 0, "") })},
-		{"non-minimal uvarint", (&raw{}).magic().by(0x81, 0x00).s("k").u(1).b},
+		{"zero dot counter", oneRecord(func(r *raw) { r.version("a", 0, nil, 0, "v") })},
+		{"tombstone carrying a value", oneRecord(func(r *raw) { r.version("a", 1, nil, 1, "v") })},
+		{"flag byte out of range", oneRecord(func(r *raw) { r.version("a", 1, nil, 2, "") })},
+		{"context entry with a zero counter", oneRecord(func(r *raw) { r.version("a", 1, [][2]uint64{{1, 0}}, 0, "") })},
+		{"context entries out of order", oneRecord(func(r *raw) { r.version("a", 1, [][2]uint64{{2, 1}, {1, 1}}, 0, "") })},
+		{"context entry repeated", oneRecord(func(r *raw) { r.version("a", 1, [][2]uint64{{1, 1}, {1, 2}}, 0, "") })},
+		{"context count larger than the input", oneRecord(func(r *raw) { r.dot("a", 1).u(1 << 30) })},
+		{"non-minimal uvarint", (&raw{}).magic().by(0x81, 0x00).s("k").b},
 		{"record count larger than the input", (&raw{}).magic().u(1 << 40).b},
-		{"logical counter beyond 32 bits", one(func(r *raw) { r.dot("a", 1).u(0).by(0).i(0).u(1 << 33).s("").s("") })},
-		{"keys out of order", func() []byte {
-			r := (&raw{}).magic().u(2).s("b").u(1)
-			versionBytes(r, "a", 1, nil, 0, "")
-			r.s("a").u(1)
-			versionBytes(r, "a", 1, nil, 0, "")
-			return r.u(0).b
+		{"logical counter beyond 32 bits", oneRecord(func(r *raw) { r.dot("a", 1).u(0).by(0).i(0).u(1 << 33).s("").s("") })},
+		{"version truncated", oneRecord(func(r *raw) { r.dot("a", 1).u(0).by(0).i(0) })},
+		{"keys out of order", twoOf("b", "a", "x", "y")},
+		{"a record with two versions (the key repeated)", twoOf("k", "k", "x", "y")},
+		{"a record with the same version twice", func() []byte {
+			r := (&raw{}).magic().u(2).s("k")
+			r.version("a", 1, nil, 0, "x")
+			r.s("k")
+			r.version("a", 1, nil, 0, "x")
+			return r.b
 		}()},
-		{"key repeated", func() []byte {
-			r := (&raw{}).magic().u(2).s("a").u(1)
-			versionBytes(r, "a", 1, nil, 0, "")
-			r.s("a").u(1)
-			versionBytes(r, "a", 1, nil, 0, "")
-			return r.u(0).b
-		}()},
-		{"siblings out of id order", func() []byte {
-			r := (&raw{}).magic().u(1).s("k").u(2)
-			versionBytes(r, second, 1, nil, 0, vals[second])
-			versionBytes(r, first, 1, nil, 0, vals[first])
-			return r.u(0).b
-		}()},
-		{"sibling repeated", func() []byte {
-			r := (&raw{}).magic().u(1).s("k").u(2)
-			versionBytes(r, "a", 1, nil, 0, "x")
-			versionBytes(r, "a", 1, nil, 0, "x")
-			return r.u(0).b
-		}()},
-		{"a sibling superseded by another", func() []byte {
-			old := occ.NewVersion(occ.Dot{Actor: occ.Actor{Node: "a", Epoch: 1}, Counter: 1}, occ.VersionVector{}, false, nil, occ.Stamp{})
-			nw := occ.NewVersion(occ.Dot{Actor: occ.Actor{Node: "b", Epoch: 1}, Counter: 1}, old.Clock(), false, nil, occ.Stamp{})
-			r := (&raw{}).magic().u(1).s("k").u(2)
-			o := func() { versionBytes(r, "a", 1, nil, 0, "") }
-			n := func() { versionBytes(r, "b", 1, [][2]uint64{{0, 1}}, 0, "") }
-			if old.ID().Compare(nw.ID()) < 0 {
-				o()
-				n()
-			} else {
-				n()
-				o()
-			}
-			return r.u(0).b
-		}()},
-		{"scalars out of order", (&raw{}).magic().u(0).u(2).s("b").s("v").stamp().s("a").s("v").stamp().b},
-		{"scalar truncated", (&raw{}).magic().u(0).u(1).s("b").s("v").i(0).b},
+		{"the reviewer's 28 KiB shape: 400 versions of one key", reviewerShape()},
 	}
 	for _, r := range rows {
 		t.Run(r.name, func(t *testing.T) {
@@ -193,7 +168,7 @@ func TestDecodeMalformedTable(t *testing.T) {
 		}
 	})
 	t.Run("state blobs", func(t *testing.T) {
-		good := occ.EncodeStateBlob(5, goldenDoc().Encode())
+		good := occ.EncodeStateBlob(5, 1, 0, goldenDoc().Encode())
 		flipped := append([]byte(nil), good...)
 		flipped[len(flipped)-1] ^= 1
 		for name, in := range map[string][]byte{
@@ -201,11 +176,11 @@ func TestDecodeMalformedTable(t *testing.T) {
 			"wrong magic":       append([]byte("XXXX"), good[4:]...),
 			"short header":      good[:10],
 			"checksum mismatch": flipped,
-			"zero epoch":        occ.EncodeStateBlob(0, goldenDoc().Encode()),
-			"truncated epoch":   occ.EncodeStateBlob(0, nil)[:36],
-			"malformed doc":     occ.EncodeStateBlob(5, []byte("OCC\x01\x05")),
+			"zero epoch":        occ.EncodeStateBlob(0, 1, 0, goldenDoc().Encode()),
+			"truncated header":  occ.EncodeStateBlob(5, 1, 0, nil)[:37],
+			"malformed doc":     occ.EncodeStateBlob(5, 1, 0, []byte("OCC\x02\x05")),
 		} {
-			if _, _, err := occ.DecodeStateBlob(in); !errors.Is(err, occ.ErrMalformed) {
+			if _, err := occ.DecodeStateBlob(in); !errors.Is(err, occ.ErrMalformed) {
 				t.Fatalf("%s: %v", name, err)
 			}
 		}
@@ -217,38 +192,167 @@ func TestDecodeMalformedTable(t *testing.T) {
 	})
 }
 
-func hostileCycle() *occ.Doc {
+func reviewerShape() []byte {
+	r := (&raw{}).magic().u(400)
+	for i := range 400 {
+		r.s("k").s("").u(0).u(1).u(20)
+		for a := range 20 {
+			r.s("").u(uint64(a)).u(64)
+		}
+		r.by(0).stamp().s(string([]byte{byte(i >> 8), byte(i)}))
+	}
+	return r.b
+}
+
+func fuzzSeed(data []byte) []byte {
+	return fmt.Appendf(nil, "go test fuzz v1\n[]byte(%q)\n", data)
+}
+
+func TestReviewerHostileInputIsRejectedEarly(t *testing.T) {
+	in := reviewerShape()
+	if len(in) < 28<<10 || len(in) > 32<<10 {
+		t.Fatalf("the shape is %d bytes, want about 28 KiB", len(in))
+	}
+	d, work, err := occ.DecodeWork(in)
+	if !errors.Is(err, occ.ErrMalformed) || d != nil || !strings.Contains(err.Error(), "key order") {
+		t.Fatalf("the reviewer's input must be rejected as a multi-version record: %v", err)
+	}
+	if work > 4*len(in)/400*2 {
+		t.Fatalf("rejection took %d operations; it must stop at the second version", work)
+	}
+	path := filepath.Join("testdata", "fuzz", "FuzzOCCDecode", "reviewer-28k-multi-version")
+	if *updateGolden {
+		if err := os.WriteFile(path, fuzzSeed(in), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(got, fuzzSeed(in)) {
+		t.Fatalf("the committed fuzz seed %s differs from the reviewer's shape (run with -update-golden): %v", path, err)
+	}
+}
+
+func manyKeys(n int, wall int64) []byte {
+	r := (&raw{}).magic().u(uint64(n))
+	var key [8]byte
+	for i := range n {
+		binary.BigEndian.PutUint64(key[:], uint64(i))
+		r.s(string(key[:])).s("").u(1).u(1<<21 + uint64(i)).u(0).by(0).i(wall).u(0).s("").s("")
+	}
+	return r.b
+}
+
+func bigContexts(entries int, keys int, counter uint64, wall int64) []byte {
+	r := (&raw{}).magic().u(uint64(keys))
+	for k := range keys {
+		r.s(string(rune('a' + k))).s("").u(1).u(1).u(uint64(entries))
+		for a := range entries {
+			r.s("").u(1<<21 + uint64(a)).u(counter)
+		}
+		r.by(0).i(wall).u(0).s("").s("")
+	}
+	return r.b
+}
+
+func fitCount(limit, per int) int { return (limit - 64) / per }
+
+func TestHostileMessagesBoundedWork(t *testing.T) {
+	limit := sim.DefaultMaxMessage - 1
+	if raceBuild {
+		limit = 1 << 20
+	}
+	perKey := len(manyKeys(2, 0)) - len(manyKeys(1, 0))
+	perEntry := len(bigContexts(2, 1, 1, 0)) - len(bigContexts(1, 1, 1, 0))
+	shapes := []struct {
+		name       string
+		held, push func(scale int) []byte
+	}{
+		{"many keys", func(scale int) []byte { return manyKeys(fitCount(limit/scale, perKey), 1) },
+			func(scale int) []byte { return manyKeys(fitCount(limit/scale, perKey), 2) }},
+		{"big contexts", func(scale int) []byte { return bigContexts(fitCount(limit/scale/4, perEntry), 4, 1, 1) },
+			func(scale int) []byte { return bigContexts(fitCount(limit/scale/4, perEntry), 4, 1, 2) }},
+	}
+	for _, sh := range shapes {
+		t.Run(sh.name, func(t *testing.T) {
+			var perByte [2]float64
+			for i, scale := range []int{8, 1} {
+				held, push := sh.held(scale), sh.push(scale)
+				if scale == 1 && (len(push) > sim.DefaultMaxMessage || len(push) < limit*9/10) {
+					t.Fatalf("the hostile message is %d bytes, want close to %d", len(push), limit)
+				}
+				hd, hwork, err := occ.DecodeWork(held)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pd, pwork, err := occ.DecodeWork(push)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if hwork > 4*len(held) || pwork > 4*len(push) {
+					t.Fatalf("decode work %d / %d for %d / %d bytes is not linear", hwork, pwork, len(held), len(push))
+				}
+				c := &fakeClock{now: 1_000_000}
+				cfg := storeConfig("a", 1, 1, c)
+				discards := 0
+				cfg.OnDiscard = func(string, occ.Version, occ.Version) { discards++ }
+				s, err := occ.NewStore(cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				mustMerge(t, s, hd)
+				w0 := s.Work()
+				mustMerge(t, s, pd)
+				merge := s.Work() - w0
+				if merge > len(held)+len(push) {
+					t.Fatalf("merge work %d for %d + %d bytes is not linear", merge, len(held), len(push))
+				}
+				if discards != pd.Len() || s.LWWDiscards() != uint64(pd.Len()) || !s.Doc().Equal(pd) {
+					t.Fatalf("every forged replacement must be decided and recorded: %d of %d", discards, pd.Len())
+				}
+				perByte[i] = float64(pwork+merge) / float64(len(push))
+				t.Logf("MEASURE %s scale 1/%d: %d bytes, decode work %d, merge work %d", sh.name, scale, len(push), pwork, merge)
+			}
+			if perByte[1] > 1.5*perByte[0] {
+				t.Fatalf("work per byte grew from %.2f to %.2f with message size", perByte[0], perByte[1])
+			}
+		})
+	}
+}
+
+func hostileDocs() []*occ.Doc {
 	a := occ.Actor{Node: "a", Epoch: 1}
 	b := occ.Actor{Node: "b", Epoch: 1}
-	v1 := occ.NewVersion(occ.Dot{Actor: a, Counter: 1}, occ.NewVersionVector(occ.Entry{Actor: b, Counter: 1}), false, []byte("one"), occ.Stamp{})
-	v2 := occ.NewVersion(occ.Dot{Actor: b, Counter: 1}, occ.NewVersionVector(occ.Entry{Actor: a, Counter: 1}), false, []byte("two"), occ.Stamp{})
-	v3 := occ.NewVersion(occ.Dot{Actor: a, Counter: 2}, occ.NewVersionVector(occ.Entry{Actor: a, Counter: 9}), true, nil, occ.Stamp{Wall: -1 << 62})
-	d := occ.NewDoc()
-	d.MergeRecord("k", occ.NewRecord(v1, v2))
-	d.MergeRecord("j", occ.NewRecord(v3))
-	return d
+	mutual1 := occ.NewVersion(occ.Dot{Actor: a, Counter: 1}, occ.NewVersionVector(occ.Entry{Actor: b, Counter: 1}), false, []byte("one"), st(5, 0, "a"))
+	mutual2 := occ.NewVersion(occ.Dot{Actor: b, Counter: 1}, occ.NewVersionVector(occ.Entry{Actor: a, Counter: 1}), false, []byte("two"), st(5, 0, "a"))
+	past := occ.NewVersion(occ.Dot{Actor: a, Counter: 2}, occ.NewVersionVector(occ.Entry{Actor: a, Counter: 9}), true, nil, st(math.MinInt64, 0, ""))
+	end := occ.NewVersion(occ.Dot{Actor: b, Counter: 7}, occ.VersionVector{}, false, nil, st(math.MaxInt64, math.MaxUint32, "zz"))
+	d1, d2, d3 := occ.NewDoc(), occ.NewDoc(), occ.NewDoc()
+	d1.MergeVersion("k", mutual1)
+	d1.MergeVersion("j", past)
+	d2.MergeVersion("k", mutual2)
+	d2.MergeVersion("e", end)
+	d3.MergeVersion("j", end)
+	d3.MergeVersion("k", past)
+	return []*occ.Doc{d1, d2, d3}
 }
 
 func TestMergeIsTotalOnDecodedStates(t *testing.T) {
-	cycle, err := occ.Decode(hostileCycle().Encode())
-	if err != nil {
-		t.Fatalf("a hostile but canonical state must decode: %v", err)
+	var states []*occ.Doc
+	for _, h := range hostileDocs() {
+		d, err := occ.Decode(h.Encode())
+		if err != nil {
+			t.Fatalf("a hostile but canonical state must decode: %v", err)
+		}
+		states = append(states, d)
 	}
-	if cycle.Record("k").Len() != 2 {
-		t.Fatal("mutually covering versions with equal event sets must both be kept")
-	}
-	g := goldenDoc()
 	s, _ := newTestStore(t, "a", 1, 1)
 	mustPut(t, s, "k", "honest", occ.IfNoneMatch())
-	past := occ.NewDoc()
-	past.MergeScalar("route/b", occ.Scalar{Stamp: occ.Stamp{Wall: -25}})
-	if back, err := occ.Decode(past.Encode()); err != nil || !back.Equal(past) {
-		t.Fatalf("a scalar stamped before the epoch must decode: %v", err)
+	negative := occ.NewDoc()
+	negative.MergeVersion("route/b", version("x", 1, occ.VersionVector{}, false, "", st(-25, 0, "x")))
+	if m := mergeDocs(occ.NewDoc(), negative); !m.Equal(negative) {
+		t.Fatal("a version stamped before the epoch must not lose to an absent one")
 	}
-	if m := mergeDocs(occ.NewDoc(), past); !m.Equal(past) {
-		t.Fatal("a scalar stamped before the epoch must not lose to an absent scalar")
-	}
-	states := []*occ.Doc{cycle, g, s.Doc().Clone(), occ.NewDoc(), past}
+	states = append(states, goldenDoc(), s.Doc(), occ.NewDoc(), negative)
 	for _, a := range states {
 		for _, b := range states {
 			for _, c := range states {
@@ -256,29 +360,44 @@ func TestMergeIsTotalOnDecodedStates(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			st, _ := newTestStore(t, "m", 1, 9)
+			for _, d := range []*occ.Doc{a, b} {
+				if _, err := st.Merge(d); err != nil {
+					t.Fatalf("a store merge failed on a decoded state: %v", err)
+				}
+			}
+			if !st.Doc().Equal(mergeDocs(a, b)) {
+				t.Fatal("the store merge differs from the document merge")
+			}
 		}
 	}
 }
 
 func FuzzOCCDecode(f *testing.F) {
 	f.Add([]byte{})
-	f.Add([]byte("OCC\x01"))
-	f.Add([]byte("OCC\x01\x00\x00"))
+	f.Add([]byte("OCC\x02"))
+	f.Add([]byte("OCC\x02\x00"))
 	f.Add(goldenDoc().Encode())
-	f.Add(hostileCycle().Encode())
-	f.Add(occ.EncodeStateBlob(3, goldenDoc().Encode()))
+	for _, h := range hostileDocs() {
+		f.Add(h.Encode())
+	}
+	f.Add(occ.EncodeStateBlob(3, 1, 0, goldenDoc().Encode()))
 	f.Add(occ.EncodeOpRequest(occ.OpPut, "k", occ.IfMatch(occ.ETag{1}), []byte("v")))
 	honest := goldenDoc()
+	hostile := hostileDocs()[0]
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) > 64<<10 {
 			return
 		}
-		_, _, _ = occ.DecodeStateBlob(data)
+		_, _ = occ.DecodeStateBlob(data)
 		_, _, _ = occ.ParseKey(string(data))
 		_, _ = occ.DecodeUsage(data)
 		_, _ = occ.DecodeObjectMeta(data)
 		_, _ = occ.DecodeResult(data)
-		d, err := occ.Decode(data)
+		d, work, err := occ.DecodeWork(data)
+		if work > 4*len(data)+8 {
+			t.Fatalf("decode work %d for %d bytes", work, len(data))
+		}
 		if err != nil {
 			if !errors.Is(err, occ.ErrMalformed) || d != nil {
 				t.Fatalf("decode error %v is not ErrMalformed", err)
@@ -295,7 +414,12 @@ func FuzzOCCDecode(f *testing.F) {
 		if err := checkLaws(d, honest, d); err != nil {
 			t.Fatal(err)
 		}
-		if err := checkLaws(honest, d, hostileCycle()); err != nil {
+		if err := checkLaws(honest, d, hostile); err != nil {
+			t.Fatal(err)
+		}
+		s, _ := newTestStore(t, "a", 1, 1)
+		mustPut(t, s, "k", "mine", occ.IfNoneMatch())
+		if _, err := s.Merge(d); err != nil {
 			t.Fatal(err)
 		}
 	})
