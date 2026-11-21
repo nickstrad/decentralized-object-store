@@ -1,3 +1,9 @@
+// Command objsim runs a named deterministic simulation scenario from a single
+// int64 seed outside go test and prints its event-log and state digests.
+//
+// Exit codes: 0 on success (or -list/-h), 1 when the scenario fails
+// verification (printing the event-log tail, any panic stack, and a REPLAY
+// command to stderr), and 2 on invalid flags or an unknown scenario name.
 package main
 
 import (
@@ -29,6 +35,8 @@ func find(all []sim.Scenario, name string) (sim.Scenario, bool) {
 	return sim.Scenario{}, false
 }
 
+// run executes the CLI against injectable scenario list and streams so main_test
+// can verify exit codes, digests, and failure reports without spawning processes.
 func run(prog string, args []string, all []sim.Scenario, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("objsim", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -79,6 +87,8 @@ func report(w io.Writer, s *sim.Sim) {
 	}
 }
 
+// command formats prog for the REPLAY line, substituting "go run ./cmd/objsim"
+// when invoked from a temporary go-build executable.
 func command(prog string) string {
 	if strings.Contains(filepath.ToSlash(prog), "/go-build") {
 		return "go run ./cmd/objsim"

@@ -4,6 +4,7 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// evKind identifies the category of a scheduled simulation event.
 type evKind uint8
 
 const (
@@ -28,6 +29,8 @@ func (k evKind) String() string {
 	return "?"
 }
 
+// disposition records how Sim.exec handled an event (executed, dropped,
+// held, requeued, or rejected) for the canonical event log.
 type disposition uint8
 
 const (
@@ -51,6 +54,8 @@ func (d disposition) String() string {
 	return "?"
 }
 
+// event is one entry in the discrete-event priority queue. hi holds its current
+// heap index (-1 when not queued) so cancellation runs in O(log n).
 type event struct {
 	at       env.Time
 	seq      uint64
@@ -76,6 +81,8 @@ type event struct {
 	until    env.Time
 }
 
+// eventQueue is an indexed min-heap ordered by (at, seq), giving total FIFO
+// order on equal timestamps.
 type eventQueue []*event
 
 func (q eventQueue) less(i, j int) bool {

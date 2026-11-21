@@ -10,6 +10,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// TestCodeTableRoundTripsEveryRow proves that every registered sentinel
+// (built-in and application) survives Encode and Decode with its message and
+// matches both the sentinel and ErrRemote.
 func TestCodeTableRoundTripsEveryRow(t *testing.T) {
 	errApp := errors.New("app condition")
 	table, err := env.NewCodeTable(env.CodeEntry{Code: env.CodeAppMin, Err: errApp})
@@ -42,6 +45,8 @@ func TestCodeTableRoundTripsEveryRow(t *testing.T) {
 	}
 }
 
+// TestDefaultCodesCoverEverySentinel proves that DefaultCodes maps all eight
+// built-in env sentinels cleanly across Encode and Decode.
 func TestDefaultCodesCoverEverySentinel(t *testing.T) {
 	sentinels := []error{env.ErrTimeout, env.ErrUnreachable, env.ErrClosed, env.ErrTooLarge,
 		env.ErrRemote, env.ErrNotFound, env.ErrIO, env.ErrInvalidArgument}
@@ -54,6 +59,8 @@ func TestDefaultCodesCoverEverySentinel(t *testing.T) {
 	}
 }
 
+// TestCodeTableEdges proves boundary behaviour for nil errors, unknown codes
+// and errors, message truncation, relayed RemoteErrors, and Entries copying.
 func TestCodeTableEdges(t *testing.T) {
 	table := env.DefaultCodes()
 	tests := []struct {
@@ -110,6 +117,8 @@ func TestCodeTableEdges(t *testing.T) {
 	}
 }
 
+// TestNewCodeTableRejectsBadRows proves that reserved codes, nil errors, and
+// duplicate application codes all fail with ErrInvalidArgument.
 func TestNewCodeTableRejectsBadRows(t *testing.T) {
 	e := errors.New("e")
 	tests := []struct {
@@ -129,6 +138,7 @@ func TestNewCodeTableRejectsBadRows(t *testing.T) {
 	}
 }
 
+// TestTimeArithmetic proves Time.Add, Time.Sub, and Time.String formatting.
 func TestTimeArithmetic(t *testing.T) {
 	var t0 env.Time = 1000
 	if got := t0.Add(5 * time.Microsecond); got != 6000 {
@@ -146,6 +156,8 @@ type fakeNet struct{ env.Transport }
 type fakeDisk struct{ env.Disk }
 type fakeClock struct{ env.Clock }
 
+// TestEnvDerivationReplacesOneField proves that WithNet, WithDisk, and
+// WithClock return modified copies without mutating the base Env.
 func TestEnvDerivationReplacesOneField(t *testing.T) {
 	base := env.Env{ID: "a", Region: "r"}
 	n, d, c := fakeNet{}, fakeDisk{}, fakeClock{}

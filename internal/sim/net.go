@@ -7,17 +7,26 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// Network size defaults and rate denominator:
+//   - DefaultMaxDatagram: maximum datagram payload bytes (UDP-sized, 65,507).
+//   - DefaultMaxMessage: maximum request or reply payload bytes (16 MiB).
+//   - PPM: parts-per-million denominator (1,000,000) for drop, duplicate, and
+//     per-link loss rates.
 const (
 	DefaultMaxDatagram = 65507
 	DefaultMaxMessage  = 16 << 20
 	PPM                = 1_000_000
 )
 
+// Range is an inclusive [Min, Max] duration interval with 0 <= Min <= Max.
 type Range struct {
 	Min time.Duration
 	Max time.Duration
 }
 
+// NetConfig sets network latencies, datagram drop/duplicate rates, and payload
+// size limits. DropPPM and DuplicatePPM apply to datagrams only; per-link loss
+// and partitions apply to both datagrams and requests/responses.
 type NetConfig struct {
 	Latency            Range
 	InterRegionLatency Range
@@ -27,6 +36,8 @@ type NetConfig struct {
 	MaxMessage         int
 }
 
+// DefaultNetConfig returns the default latency ranges (1–5 ms intra-region,
+// 20–80 ms inter-region), zero drop/duplicate rates, and default size limits.
 func DefaultNetConfig() NetConfig {
 	return NetConfig{
 		Latency:            Range{Min: time.Millisecond, Max: 5 * time.Millisecond},
@@ -72,6 +83,8 @@ func (s *Sim) roll(ppm uint32) bool {
 	return s.netRand.Uint32N(PPM) < ppm
 }
 
+// latency draws a one-way delay from the net stream without signed overflow,
+// even when r.Max - r.Min == math.MaxInt64.
 func (s *Sim) latency(from, to int) time.Duration {
 	r := s.cfg.Net.Latency
 	if s.nodes[from].region != s.nodes[to].region {
@@ -83,6 +96,8 @@ func (s *Sim) latency(from, to int) time.Duration {
 	return r.Min + time.Duration(s.netRand.Uint64N(uint64(r.Max-r.Min)+1))
 }
 
+// sendDatagram decides partition, loss, and duplication at send time and draws
+// an independent latency per copy so reordering occurs naturally.
 func (s *Sim) sendDatagram(from, to int, msg []byte) {
 	l := &s.links[from][to]
 	if l.blocked || s.roll(l.lossPPM) || s.roll(s.cfg.Net.DropPPM) {
@@ -97,6 +112,9 @@ func (s *Sim) sendDatagram(from, to int, msg []byte) {
 	}
 }
 
+// sendStream delivers requests, responses, and refusals FIFO per directed link
+// without duplication. If a draw pushes lastStream past Horizon, subsequent
+// stream events on that link also land past Horizon and are never delivered.
 func (s *Sim) sendStream(e *event) {
 	l := &s.links[e.peer][e.node]
 	if l.blocked || s.roll(l.lossPPM) {
@@ -167,10 +185,17 @@ func (s *Sim) partition(side, other []env.NodeID, both bool) error {
 	return nil
 }
 
+// Partition blocks traffic in both directions between side and other. When
+// other is empty, side is partitioned from all remaining nodes. Returns
+// ErrUnknownNode if any listed ID is unregistered.
 func (s *Sim) Partition(side, other []env.NodeID) error { return s.partition(side, other, true) }
 
+// PartitionOneWay blocks traffic only from from to to (leaving the reverse
+// direction open). When to is empty, traffic from from to all other nodes is
+// blocked. Returns ErrUnknownNode if any listed ID is unregistered.
 func (s *Sim) PartitionOneWay(from, to []env.NodeID) error { return s.partition(from, to, false) }
 
+// Isolate blocks all links to and from node id in both directions.
 func (s *Sim) Isolate(id env.NodeID) error {
 	n, err := s.node(id)
 	if err != nil {
@@ -180,6 +205,8 @@ func (s *Sim) Isolate(id env.NodeID) error {
 	return nil
 }
 
+// PartitionRegion blocks traffic in both directions between all nodes in region
+// r and all nodes outside r. Returns ErrUnknownRegion if no node has region r.
 func (s *Sim) PartitionRegion(r env.Region) error {
 	var side []int
 	for _, n := range s.nodes {
@@ -206,6 +233,9 @@ func (s *Sim) linkOf(from, to env.NodeID) (*link, int, int, error) {
 	return &s.links[a.idx][b.idx], a.idx, b.idx, nil
 }
 
+// SetLinkLoss sets the packet loss rate in parts per million on directed link
+// from->to for both datagrams and streams. Returns env.ErrInvalidArgument if
+// ppm > PPM or ErrUnknownNode if either endpoint is unknown.
 func (s *Sim) SetLinkLoss(from, to env.NodeID, ppm uint32) error {
 	if ppm > PPM {
 		return fmt.Errorf("sim: link loss %s->%s: %d ppm over %d: %w", from, to, ppm, PPM, env.ErrInvalidArgument)
@@ -218,6 +248,8 @@ func (s *Sim) SetLinkLoss(from, to env.NodeID, ppm uint32) error {
 	return nil
 }
 
+// Clog holds arriving network events on directed link from->to until Unclog or
+// HealNet releases them in order.
 func (s *Sim) Clog(from, to env.NodeID) error {
 	l, _, _, err := s.linkOf(from, to)
 	if err != nil {
@@ -227,6 +259,8 @@ func (s *Sim) Clog(from, to env.NodeID) error {
 	return nil
 }
 
+// Unclog clears a clog on directed link from->to and schedules its held events
+// at the current virtual time in FIFO order.
 func (s *Sim) Unclog(from, to env.NodeID) error {
 	_, a, b, err := s.linkOf(from, to)
 	if err != nil {
@@ -250,11 +284,14 @@ func (s *Sim) unclog(a, b int) {
 		l.relHeld++
 		s.schedule(e)
 	}
+	// Advance lastStream so new stream sends cannot overtake held events
+	// released at s.now.
 	if l.lastStream < s.now {
 		l.lastStream = s.now
 	}
 }
 
+// HealNet removes all partitions and per-link loss rates and unclogs every link.
 func (s *Sim) HealNet() {
 	for a := range s.links {
 		for b := range s.links[a] {

@@ -10,6 +10,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 )
 
+// TestProcessFaults proves Crash, Restart, Pause, Resume, WipeRejoin, HealAll,
+// stale-reply dropping, and rejection of invalid lifecycle transitions.
 func TestProcessFaults(t *testing.T) {
 	tests := []struct {
 		name string
@@ -169,6 +171,8 @@ func TestProcessFaults(t *testing.T) {
 	}
 }
 
+// TestNodeQueries proves Nodes, Region, Regions, Status, Disk, and Process
+// lookup behaviour for registered and unknown node IDs.
 func TestNodeQueries(t *testing.T) {
 	h := threeNodes(t, nil)
 	ids := h.s.Nodes()
@@ -189,6 +193,9 @@ func TestNodeQueries(t *testing.T) {
 	}
 }
 
+// TestReleaseKeepsFIFOAtTheReleaseInstant proves that releasing clogged links
+// and paused nodes—including same-instant arrivals, Pause+Clog combinations,
+// HealAll, and timer cancellation—preserves strict per-connection FIFO order.
 func TestReleaseKeepsFIFOAtTheReleaseInstant(t *testing.T) {
 	const T = env.Time(50 * time.Millisecond)
 	t.Run("a request arriving exactly when its clogged link is released waits for the held one", func(t *testing.T) {
@@ -317,6 +324,8 @@ func TestReleaseKeepsFIFOAtTheReleaseInstant(t *testing.T) {
 	})
 }
 
+// TestErrorMessagesNameTheSeed proves that InvariantError and StallError
+// strings include the seed and failure context.
 func TestErrorMessagesNameTheSeed(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 31, MaxSteps: 1})
 	s.AddInvariant("never", 1, func() error { return errors.New("nope") })
@@ -334,6 +343,8 @@ func TestErrorMessagesNameTheSeed(t *testing.T) {
 	}
 }
 
+// TestInvalidNetConfigFailsTheRun proves that an invalid NetConfig records a
+// sticky ErrInvalidArgument that stops Step immediately.
 func TestInvalidNetConfigFailsTheRun(t *testing.T) {
 	nc := sim.DefaultNetConfig()
 	nc.Latency = sim.Range{Min: 5, Max: 1}
@@ -348,6 +359,8 @@ func TestInvalidNetConfigFailsTheRun(t *testing.T) {
 	}
 }
 
+// TestReplyFromACrashedServerIsDropped proves that calling a saved Reply
+// closure after the server incarnation crashed has no effect on the caller.
 func TestReplyFromACrashedServerIsDropped(t *testing.T) {
 	h := twoNodes(t, nil)
 	var pending env.Reply
@@ -364,6 +377,8 @@ func TestReplyFromACrashedServerIsDropped(t *testing.T) {
 	}
 }
 
+// TestEventLogKeepsTheLastLogCapRecords proves ring-buffer eviction, truncation
+// header formatting in WriteLog, and that LogCap never alters Digests.Events.
 func TestEventLogKeepsTheLastLogCapRecords(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1, LogCap: 3})
 	for i := 1; i <= 10; i++ {

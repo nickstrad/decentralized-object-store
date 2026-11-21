@@ -9,6 +9,16 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// Budget bounds the faults a Nemesis may apply so the cluster remains able to
+// make progress.
+//   - MinLive: minimum count of nodes that must remain up and unpaused.
+//   - MaxDamagedDisks: maximum number of nodes with damaged blobs or pending
+//     read errors (0 forbids all disk faults).
+//   - GroupOf and MaxDamagedPerGroup: optional grouping function (for example
+//     mapping a shard blob to its stripe ID) and per-group cap on damaged or
+//     read-errored blobs; blobs for which GroupOf returns "" are ungrouped and
+//     never count against a group limit.
+//   - Lifted: disables all budget checks when true.
 type Budget struct {
 	MinLive            int
 	MaxDamagedDisks    int
@@ -22,6 +32,8 @@ type damageRef struct {
 	blob string
 }
 
+// damage checks current disk and per-group damage counts with optional
+// hypothetical additions (extra blobs and extraNode) for pre-flight Checks.
 func (b Budget) damage(s *Sim, extra []damageRef, extraNode int) error {
 	nodes := 0
 	groups := map[string]int{}
@@ -57,6 +69,9 @@ func (b Budget) damage(s *Sim, extra []damageRef, extraNode int) error {
 	return nil
 }
 
+// Check verifies that s currently satisfies b, returning ErrBudget if live
+// nodes fall below MinLive or damaged disks/groups exceed their limits. It is
+// intended to be registered with Sim.AddInvariant.
 func (b Budget) Check(s *Sim) error {
 	if b.Lifted {
 		return nil
@@ -75,6 +90,9 @@ func refsOf(node int, names []string) []damageRef {
 	return out
 }
 
+// Allows reports whether applying f to s would remain within b. Named bit-rot
+// and read errors are judged on that blob, wipes and whole-node read errors on
+// every stored blob, and unnamed bit-rot on every durable blob it could hit.
 func (b Budget) Allows(s *Sim, f Fault) bool {
 	if b.Lifted {
 		return true
@@ -111,6 +129,10 @@ func (b Budget) Allows(s *Sim, f Fault) bool {
 	return b.damage(s, nil, -1) == nil
 }
 
+// NemesisConfig configures alternating chaos and heal phases. Phase i injects
+// faults during [Start + i*(Chaos+Heal), Start + i*(Chaos+Heal) + Chaos) with
+// gaps drawn uniformly from [1, MaxGap], then runs HealAll at the phase end.
+// Empty Kinds defaults to ChaosKinds().
 type NemesisConfig struct {
 	Start  env.Time
 	Phases int
@@ -121,14 +143,18 @@ type NemesisConfig struct {
 	Budget Budget
 }
 
+// NemesisOutcome records whether a drawn nemesis fault ran, was blocked by the
+// budget, or had no applicable target.
 type NemesisOutcome uint8
 
+// Outcomes recorded in NemesisStep.Outcome.
 const (
 	OutcomeApplied NemesisOutcome = iota + 1
 	OutcomeRejected
 	OutcomeSkipped
 )
 
+// String returns "applied", "rejected", "skipped", or "?".
 func (o NemesisOutcome) String() string {
 	switch o {
 	case OutcomeApplied:
@@ -141,12 +167,19 @@ func (o NemesisOutcome) String() string {
 	return "?"
 }
 
+// NemesisStep records one fault or heal action attempted by a Nemesis.
 type NemesisStep struct {
 	At      env.Time
 	Fault   Fault
 	Outcome NemesisOutcome
 }
 
+// Nemesis drives seeded alternating chaos and heal phases against a Sim.
+//
+// Its schedule—when it acts, on which node, and with which kind of fault—depends
+// only on the seed and NemesisConfig. Which blob a disk fault targets is chosen
+// from the blobs on that node at that instant, so it depends on what the
+// protocol has written.
 type Nemesis struct {
 	s     *Sim
 	cfg   NemesisConfig
@@ -154,6 +187,10 @@ type Nemesis struct {
 	quiet env.Time
 }
 
+// StartNemesis validates cfg, schedules all chaos and heal phases on s, and
+// returns the Nemesis handle. It returns env.ErrInvalidArgument if phase counts
+// or durations are invalid, any fault kind is unknown, or the schedule would
+// extend past Horizon.
 func (s *Sim) StartNemesis(cfg NemesisConfig) (*Nemesis, error) {
 	if cfg.Phases < 1 || cfg.Chaos <= 0 || cfg.Heal < 0 || cfg.MaxGap <= 0 {
 		return nil, fmt.Errorf("sim: nemesis: phases %d chaos %v heal %v gap %v: %w", cfg.Phases, cfg.Chaos, cfg.Heal, cfg.MaxGap, env.ErrInvalidArgument)
@@ -190,8 +227,10 @@ func withinHorizon(cfg NemesisConfig) bool {
 	return int64(cfg.Chaos+cfg.Heal) <= room/int64(cfg.Phases)
 }
 
+// QuietAt returns the virtual timestamp of the final scheduled HealAll event.
 func (n *Nemesis) QuietAt() env.Time { return n.quiet }
 
+// History returns a copy of every step executed by n in chronological order.
 func (n *Nemesis) History() []NemesisStep {
 	return append([]NemesisStep(nil), n.hist...)
 }
@@ -238,6 +277,9 @@ func (n *Nemesis) pick(idx []int) (int, bool) {
 	return idx[n.s.nemRand.IntN(len(idx))], true
 }
 
+// index draws one fixed Uint64 from nemRand and maps it into [0, k) without
+// rejection sampling, even when k == 0. Keeping the draw count constant ensures
+// a node's disk inventory cannot shift subsequent nemesis timing or fault kinds.
 func (n *Nemesis) index(k int) (int, bool) {
 	x := n.s.nemRand.Uint64()
 	if k <= 0 {
@@ -352,6 +394,8 @@ func (n *Nemesis) draw() (Fault, bool) {
 		f.Blob = targets[j]
 	case FaultReadError:
 		f.Count = 1 + s.nemRand.IntN(3)
+		// Under a group budget, target one existing blob so a read error
+		// cannot ambush a blob written later and violate MaxDamagedPerGroup.
 		if n.cfg.Budget.GroupOf != nil {
 			stored := s.nodes[i].disk.stored()
 			j, ok := n.index(len(stored))

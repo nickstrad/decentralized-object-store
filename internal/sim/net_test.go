@@ -28,6 +28,9 @@ func threeNodes(t *testing.T, mut func(*sim.Config)) *harness {
 	return newHarness(t, cfg, spec("a", "r1"), spec("b", "r1"), spec("c", "r2"))
 }
 
+// TestDatagramFaults proves each datagram network fault in isolation: latency,
+// inter-region delay, drop, duplication, reordering, partitions, isolation,
+// link loss, and HealNet recovery.
 func TestDatagramFaults(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -165,6 +168,8 @@ func TestDatagramFaults(t *testing.T) {
 	}
 }
 
+// TestClogHoldsTrafficUntilRelease proves that Clog buffers datagrams and
+// requests until Unclog releases them in order at the release timestamp.
 func TestClogHoldsTrafficUntilRelease(t *testing.T) {
 	h := twoNodes(t, nil)
 	mustNil(t, h.s.Clog("a", "b"))
@@ -185,6 +190,7 @@ func TestClogHoldsTrafficUntilRelease(t *testing.T) {
 	}
 }
 
+// TestHealNetReleasesClogs proves that HealNet releases traffic held on clogged links.
 func TestHealNetReleasesClogs(t *testing.T) {
 	h := twoNodes(t, nil)
 	mustNil(t, h.s.Clog("a", "b"))
@@ -197,6 +203,8 @@ func TestHealNetReleasesClogs(t *testing.T) {
 	}
 }
 
+// TestMessagesAreCopied proves that mutating a sent slice after Send does not
+// affect the bytes delivered to the peer.
 func TestMessagesAreCopied(t *testing.T) {
 	h := twoNodes(t, nil)
 	buf := []byte("hello")
@@ -208,6 +216,8 @@ func TestMessagesAreCopied(t *testing.T) {
 	}
 }
 
+// TestSizeLimits proves MaxDatagram and MaxMessage enforcement for datagrams,
+// requests, and replies.
 func TestSizeLimits(t *testing.T) {
 	h := twoNodes(t, func(c *sim.Config) { c.Net.MaxDatagram = 8; c.Net.MaxMessage = 16 })
 	net := h.rec("a").e.Net
@@ -233,6 +243,8 @@ func TestSizeLimits(t *testing.T) {
 	}
 }
 
+// TestSendErrors proves ErrUnreachable for unknown targets, ErrClosed on a
+// crashed handle, and silence for Request callbacks on a closed incarnation.
 func TestSendErrors(t *testing.T) {
 	h := twoNodes(t, nil)
 	if err := h.rec("a").e.Net.Send("nobody", []byte("x")); !errors.Is(err, env.ErrUnreachable) {
@@ -251,6 +263,9 @@ func TestSendErrors(t *testing.T) {
 	}
 }
 
+// TestRequestResponse proves every request/response outcome: normal reply,
+// lost request, lost response, refused connection, silent server timeout,
+// wire error code mapping, discarded late reply, and invalid timeout.
 func TestRequestResponse(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -312,6 +327,8 @@ func TestRequestResponse(t *testing.T) {
 	}
 }
 
+// TestRequestToUnknownNodeIsUnreachable proves that requesting a nonexistent
+// node fails asynchronously with ErrUnreachable.
 func TestRequestToUnknownNodeIsUnreachable(t *testing.T) {
 	h := twoNodes(t, nil)
 	h.rec("a").request("ghost", "q", time.Second)
@@ -322,6 +339,8 @@ func TestRequestToUnknownNodeIsUnreachable(t *testing.T) {
 	}
 }
 
+// TestAsyncReplyAfterFanOut proves that a server may defer Reply until a
+// downstream Request finishes and return the combined result.
 func TestAsyncReplyAfterFanOut(t *testing.T) {
 	h := threeNodes(t, nil)
 	h.rec("b").onRequest = func(r *recorder, from env.NodeID, req []byte, reply env.Reply) {
@@ -344,6 +363,8 @@ func TestAsyncReplyAfterFanOut(t *testing.T) {
 	}
 }
 
+// TestReplyTwiceIsAProtocolBug proves that invoking Reply a second time fails
+// the run with a *PanicError naming the offending node.
 func TestReplyTwiceIsAProtocolBug(t *testing.T) {
 	h := twoNodes(t, nil)
 	h.rec("b").onRequest = func(r *recorder, from env.NodeID, req []byte, reply env.Reply) {
@@ -358,6 +379,8 @@ func TestReplyTwiceIsAProtocolBug(t *testing.T) {
 	}
 }
 
+// TestRequestsOnOneConnectionStayInOrder proves that requests and replies on
+// one directed link stay strictly FIFO despite wide random latency.
 func TestRequestsOnOneConnectionStayInOrder(t *testing.T) {
 	h := twoNodes(t, func(c *sim.Config) {
 		c.Net.Latency = sim.Range{Min: time.Millisecond, Max: 100 * time.Millisecond}
@@ -378,6 +401,8 @@ func TestRequestsOnOneConnectionStayInOrder(t *testing.T) {
 	}
 }
 
+// TestNetworkArgumentErrors proves that topology fault methods return
+// ErrUnknownNode, ErrUnknownRegion, or ErrInvalidArgument on bad inputs.
 func TestNetworkArgumentErrors(t *testing.T) {
 	h := twoNodes(t, nil)
 	tests := []struct {
@@ -401,6 +426,8 @@ func TestNetworkArgumentErrors(t *testing.T) {
 	}
 }
 
+// TestUnknownServerErrorArrivesAsErrRemote proves that an unregistered server
+// error crosses the wire as CodeRemote and decodes to *env.RemoteError.
 func TestUnknownServerErrorArrivesAsErrRemote(t *testing.T) {
 	h := twoNodes(t, nil)
 	h.rec("b").onRequest = func(r *recorder, from env.NodeID, req []byte, reply env.Reply) {
@@ -434,6 +461,8 @@ func (m *mutator) OnRequest(_ env.NodeID, req []byte, reply env.Reply) {
 	reply([]byte("pong"), nil)
 }
 
+// TestEventLogHashesThePayloadAsItCrossedTheWire proves that network payloads
+// are hashed before handlers execute, even if handlers zero their input slices.
 func TestEventLogHashesThePayloadAsItCrossedTheWire(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1, Net: fixedNet()})
 	procs := map[env.NodeID]*mutator{}

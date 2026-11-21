@@ -18,6 +18,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim/simtoy"
 )
 
+// TestPropStreamsIndependent proves that extra draws on one named PRNG stream
+// never perturb another stream derived from the same seed.
 func TestPropStreamsIndependent(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		seed := rapid.Int64().Draw(t, "seed")
@@ -47,6 +49,9 @@ func TestPropStreamsIndependent(t *testing.T) {
 	})
 }
 
+// TestPropNetworkDrawsDoNotShiftTheNemesis proves that changing network drop
+// rates (and thus net-stream draws and protocol traffic) leaves a non-disk
+// nemesis schedule and its outcomes unchanged.
 func TestPropNetworkDrawsDoNotShiftTheNemesis(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		seed := rapid.Int64().Draw(t, "seed")
@@ -115,6 +120,8 @@ func (k *ticker) OnDatagram(env.NodeID, []byte)           { k.observe() }
 func (k *ticker) OnRequest(env.NodeID, []byte, env.Reply) {}
 func (k *ticker) EncodeState() []byte                     { return nil }
 
+// TestPropTimeMonotonic proves that global time and every node's local clock
+// never move backwards under random skew, drift, latency, and duplication.
 func TestPropTimeMonotonic(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		n := rapid.IntRange(1, 5).Draw(t, "n")
@@ -160,6 +167,8 @@ func TestPropTimeMonotonic(t *testing.T) {
 	})
 }
 
+// TestPropHealedNetworkDelivers proves that after arbitrary topology faults
+// and HealNet, every datagram and request sent afterward is delivered.
 func TestPropHealedNetworkDelivers(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		n := rapid.IntRange(2, 6).Draw(t, "n")
@@ -288,6 +297,8 @@ func shardGroups(_ env.NodeID, blob string) string {
 
 func (w *withUngroupedBlobs) Unwrap() env.Process { return w.Process }
 
+// budgetHolds independently recomputes live nodes, damaged disks, and per-group
+// counts from public disk inspection methods to cross-check Budget.Check.
 func budgetHolds(s *sim.Sim, b sim.Budget) error {
 	if live := s.LiveCount(); live < b.MinLive {
 		return fmt.Errorf("%d live nodes, minimum %d", live, b.MinLive)
@@ -330,6 +341,9 @@ func budgetHolds(s *sim.Sim, b sim.Budget) error {
 	return nil
 }
 
+// TestPropNemesisRespectsBudget proves that a nemesis never violates MinLive,
+// MaxDamagedDisks, or MaxDamagedPerGroup after any event, even with ungrouped
+// blobs and new shards written during chaos.
 func TestPropNemesisRespectsBudget(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		n := rapid.IntRange(3, 8).Draw(t, "n")
@@ -461,6 +475,9 @@ func (m *diskMachine) check(t *rapid.T) {
 	}
 }
 
+// TestPropDiskModel proves that the simulated Disk matches a reference state
+// machine across writes, appends, syncs, deletes, crashes, torn crashes,
+// bit-rot, wipes, and read errors, including Damaged() tracking.
 func TestPropDiskModel(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		m := &diskMachine{model: map[string]*diskModelBlob{}, names: []string{"a", "b", "c/d"}}
@@ -671,6 +688,9 @@ func (m *streamMachine) checkOrder(t *rapid.T) {
 	}
 }
 
+// TestPropStreamOrderPerConnection proves that requests and responses on every
+// ordered node pair stay strictly FIFO and unduplicated across arbitrary
+// combinations of Pause, Resume, Clog, Unclog, HealNet, and HealAll.
 func TestPropStreamOrderPerConnection(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		n := rapid.IntRange(2, 4).Draw(t, "n")
@@ -808,6 +828,9 @@ func scribbleGroups(_ env.NodeID, blob string) string {
 	return ""
 }
 
+// TestPropNemesisTimingIgnoresInventory proves that the nemesis schedule
+// (timestamps, fault kinds, target nodes, and all non-blob fields) depends only
+// on the seed and configuration, regardless of what blobs nodes write to disk.
 func TestPropNemesisTimingIgnoresInventory(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		seed := rapid.Int64().Draw(t, "seed")

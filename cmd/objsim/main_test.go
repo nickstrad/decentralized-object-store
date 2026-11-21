@@ -25,6 +25,8 @@ func runAs(prog string, all []sim.Scenario, args ...string) (int, string, string
 	return code, out.String(), errb.String()
 }
 
+// TestToyScenarioReplaysBySeed proves that running a scenario twice with the
+// same seed prints identical digests and that a different seed changes output.
 func TestToyScenarioReplaysBySeed(t *testing.T) {
 	c1, a, e1 := runArgs(t, "-scenario=toy-chaos-20", "-seed=7")
 	c2, b, e2 := runArgs(t, "-scenario=toy-chaos-20", "-seed=7")
@@ -43,6 +45,8 @@ func TestToyScenarioReplaysBySeed(t *testing.T) {
 	}
 }
 
+// TestCommandLine proves -list, -h help output, unknown-scenario exit 2, and
+// invalid-flag exit 2.
 func TestCommandLine(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -66,6 +70,8 @@ func TestCommandLine(t *testing.T) {
 	}
 }
 
+// TestFailingScenarioExitsNonZero proves that a scenario failing Verify exits
+// with status 1 and prints its error to stderr.
 func TestFailingScenarioExitsNonZero(t *testing.T) {
 	bad := []sim.Scenario{{Name: "bad", Run: func(seed int64) *sim.Sim {
 		s := sim.New(sim.Config{Seed: seed})
@@ -90,6 +96,9 @@ func failing() []sim.Scenario {
 	}}}
 }
 
+// TestFailingScenarioPrintsTheLogTailAndReplay proves that a failing run prints
+// digests to stdout and the error, 20-line log tail, panic stack, and one final
+// shell-quoted REPLAY line to stderr across binary and go-run invocations.
 func TestFailingScenarioPrintsTheLogTailAndReplay(t *testing.T) {
 	tests := []struct {
 		name string
@@ -133,6 +142,8 @@ func TestFailingScenarioPrintsTheLogTailAndReplay(t *testing.T) {
 	}
 }
 
+// TestPassingScenarioPrintsNoReplay proves that a passing run exits 0 and emits
+// no REPLAY line.
 func TestPassingScenarioPrintsNoReplay(t *testing.T) {
 	code, out, errOut := runArgs(t, "-scenario=toy-chaos-20", "-seed=7")
 	if code != 0 || strings.Contains(out+errOut, "REPLAY:") {

@@ -8,6 +8,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 )
 
+// TestStreamDerivationMatchesThePlan proves that NewStream and NodeStream match
+// NewPCG(uint64(seed), fnv64a(label)) across boundary seeds and labels.
 func TestStreamDerivationMatchesThePlan(t *testing.T) {
 	labels := []string{sim.StreamNet, sim.StreamDisk, sim.StreamNemesis, sim.StreamWorkload, sim.NodeStream("n007")}
 	if sim.NodeStream("n007") != "node/n007" {
@@ -28,6 +30,8 @@ func TestStreamDerivationMatchesThePlan(t *testing.T) {
 	}
 }
 
+// TestSimStreamsAreTheNamedStreams proves that Sim initializes WorkloadRand
+// from the named workload stream and exposes its configured seed.
 func TestSimStreamsAreTheNamedStreams(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 42})
 	if s.WorkloadRand().Uint64() != sim.NewStream(42, sim.StreamWorkload).Uint64() {

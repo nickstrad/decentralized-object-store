@@ -12,10 +12,16 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 )
 
+// TailLines is the maximum number of trailing event-log records printed by Report.
 const TailLines = 20
 
+// ErrNondeterministic is returned by CheckDeterministic when two runs from the
+// same seed produce different event or state digests.
 var ErrNondeterministic = errors.New("simtest: same seed gave different digests")
 
+// CheckDeterministic runs run(seed) twice and compares both event and state
+// digests before calling Verify on the first run. It returns the first *sim.Sim
+// along with ErrNondeterministic or any verification error.
 func CheckDeterministic(seed int64, run func(seed int64) *sim.Sim) (*sim.Sim, error) {
 	a := run(seed)
 	b := run(seed)
@@ -29,6 +35,9 @@ func CheckDeterministic(seed int64, run func(seed int64) *sim.Sim) (*sim.Sim, er
 	return a, nil
 }
 
+// RequireDeterministic verifies determinism and invariants for seed via
+// CheckDeterministic, fails t on error, and registers a Cleanup hook that calls
+// Report if t fails either now or during later assertions.
 func RequireDeterministic(t testing.TB, seed int64, run func(seed int64) *sim.Sim) *sim.Sim {
 	t.Helper()
 	s, err := CheckDeterministic(seed, run)
@@ -72,6 +81,8 @@ func packagePath() string {
 	return "./" + filepath.ToSlash(rel)
 }
 
+// RunPattern converts a Go subtest name ("A/B/C") into an anchored -run regex
+// ("^A$/^B$/^C$") with regex metacharacters escaped.
 func RunPattern(name string) string {
 	parts := strings.Split(name, "/")
 	for i, p := range parts {
@@ -80,6 +91,8 @@ func RunPattern(name string) string {
 	return strings.Join(parts, "/")
 }
 
+// ReplayCommand returns a single-line "REPLAY: go test ..." command that
+// re-runs t with the given seed from the module root.
 func ReplayCommand(t testing.TB, seed int64) string {
 	return fmt.Sprintf("REPLAY: go test %s -run '%s' -seed=%d -count=1", packagePath(), RunPattern(t.Name()), seed)
 }
@@ -108,6 +121,10 @@ func writeArtifact(t testing.TB, s *sim.Sim) (string, error) {
 	return path, nil
 }
 
+// Report logs a diagnostic summary for a failed simulation: seed, error,
+// digests, step count, virtual time, up to TailLines trailing event-log lines,
+// any PanicError stack, an optional full log artifact path (when DST_ARTIFACTS
+// is set), a PIN line, and ReplayCommand as the final line.
 func Report(t testing.TB, s *sim.Sim) {
 	t.Helper()
 	if s == nil {

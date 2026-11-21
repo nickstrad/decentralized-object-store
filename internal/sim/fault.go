@@ -9,8 +9,12 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// FaultKind identifies one fault or heal action that can be applied to a Sim
+// directly, scheduled as data, or drawn by a Nemesis.
 type FaultKind uint8
 
+// Supported FaultKind values covering process lifecycle, network topology,
+// healing, and disk faults.
 const (
 	FaultCrash FaultKind = iota + 1
 	FaultCrashTorn
@@ -37,6 +41,7 @@ var faultNames = [...]string{"?", "crash", "crash-torn", "restart", "pause", "re
 	"partition", "partition-one-way", "isolate", "partition-region", "link-loss", "clog", "unclog",
 	"heal-net", "heal-all", "bit-rot", "wipe-disk", "read-error"}
 
+// String returns the canonical hyphenated name of k, or "fault(N)" if unknown.
 func (k FaultKind) String() string {
 	if k > 0 && k < faultKindEnd {
 		return faultNames[k]
@@ -46,12 +51,18 @@ func (k FaultKind) String() string {
 
 func (k FaultKind) valid() bool { return k > 0 && k < faultKindEnd }
 
+// ChaosKinds returns the default set of fault kinds drawn during nemesis chaos
+// phases (every fault except FaultHealNet and FaultHealAll).
 func ChaosKinds() []FaultKind {
 	return []FaultKind{FaultCrash, FaultCrashTorn, FaultRestart, FaultPause, FaultResume, FaultWipeRejoin,
 		FaultPartition, FaultPartitionOneWay, FaultIsolate, FaultPartitionRegion, FaultLinkLoss, FaultClog,
 		FaultUnclog, FaultBitRot, FaultWipeDisk, FaultReadError}
 }
 
+// Fault is a serializable description of one fault or heal action. Which fields
+// are used depends on Kind (for example Node and Peer for link faults, Side and
+// Other for partitions, Region for region partitions, Blob and Count for disk
+// faults).
 type Fault struct {
 	Kind   FaultKind
 	Node   env.NodeID
@@ -64,6 +75,7 @@ type Fault struct {
 	Count  int
 }
 
+// TimedFault pairs a Fault with the virtual timestamp at which to inject it.
 type TimedFault struct {
 	At    env.Time
 	Fault Fault
@@ -84,6 +96,7 @@ func appendIDs(out []byte, ids []env.NodeID) []byte {
 	return out
 }
 
+// Encode returns a canonical binary encoding of f for hashing into the event log.
 func (f Fault) Encode() []byte {
 	out := []byte{byte(f.Kind)}
 	out = appendBytes(out, []byte(f.Node))
@@ -105,6 +118,7 @@ func joinIDs(ids []env.NodeID) string {
 	return "[" + strings.Join(parts, " ") + "]"
 }
 
+// String returns a concise human-readable description of f.
 func (f Fault) String() string {
 	switch f.Kind {
 	case FaultCrash, FaultCrashTorn, FaultRestart, FaultPause, FaultResume, FaultWipeRejoin, FaultIsolate, FaultWipeDisk:
@@ -130,6 +144,8 @@ func (f Fault) String() string {
 	}
 }
 
+// Apply executes f immediately, bypassing any Nemesis Budget. It returns
+// env.ErrInvalidArgument for an unknown Kind or the underlying fault method's error.
 func (s *Sim) Apply(f Fault) error {
 	switch f.Kind {
 	case FaultCrash:
@@ -174,11 +190,16 @@ func (s *Sim) Apply(f Fault) error {
 	return fmt.Errorf("sim: apply %v: %w", f.Kind, env.ErrInvalidArgument)
 }
 
+// InjectAt schedules f to run at virtual time t as a logged fault event,
+// bypassing any Nemesis Budget. An inapplicable fault (such as restarting an up
+// node) is logged as failed and does not stop the loop.
 func (s *Sim) InjectAt(t env.Time, f Fault) {
 	fc := f
 	s.schedule(&event{at: t, kind: kindFault, node: -1, peer: -1, fault: &fc})
 }
 
+// InjectSchedule schedules every TimedFault in sched and returns the latest
+// timestamp scheduled (or s.Now() if all lie in the past or sched is empty).
 func (s *Sim) InjectSchedule(sched []TimedFault) env.Time {
 	last := s.now
 	for _, tf := range sched {
@@ -190,6 +211,9 @@ func (s *Sim) InjectSchedule(sched []TimedFault) env.Time {
 	return last
 }
 
+// ScheduleFromBytes deterministically turns arbitrary bytes (4 bytes per fault)
+// into a slice of TimedFaults targeting the nodes and regions registered in s,
+// starting at start and advancing by multiples of step with saturation.
 func (s *Sim) ScheduleFromBytes(data []byte, start env.Time, step time.Duration) []TimedFault {
 	ids := s.Nodes()
 	regions := s.Regions()

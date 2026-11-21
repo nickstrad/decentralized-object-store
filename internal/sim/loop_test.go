@@ -10,6 +10,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 )
 
+// TestEventOrdering proves that the queue runs events in ascending timestamp
+// order and breaks equal-timestamp ties in FIFO insertion order.
 func TestEventOrdering(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -40,6 +42,8 @@ func TestEventOrdering(t *testing.T) {
 	}
 }
 
+// TestEventScheduledInThePastRunsNow proves that scheduling an event with a
+// timestamp before Sim.Now executes it at Sim.Now.
 func TestEventScheduledInThePastRunsNow(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1})
 	var at env.Time
@@ -52,6 +56,8 @@ func TestEventScheduledInThePastRunsNow(t *testing.T) {
 	}
 }
 
+// TestStepAndRunUntil proves Step, RunUntil, RunFor, empty-queue completion,
+// and Steps counting.
 func TestStepAndRunUntil(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1})
 	ran := 0
@@ -79,6 +85,8 @@ func TestStepAndRunUntil(t *testing.T) {
 	}
 }
 
+// TestStallDetection proves that empty queue, step-budget exhaustion, and
+// missed deadlines produce sticky *StallErrors carrying the seed and reason.
 func TestStallDetection(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -123,6 +131,8 @@ func TestStallDetection(t *testing.T) {
 	}
 }
 
+// TestConvergedReturnsNil proves that RunUntilConverged stops immediately once
+// its predicate becomes true without draining later events.
 func TestConvergedReturnsNil(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1})
 	done := false
@@ -158,6 +168,8 @@ func expectPanic(t *testing.T, err error, node env.NodeID) {
 	}
 }
 
+// TestNodePanicFailsTheRunWithTheSeed proves that a panic inside a node handler
+// is caught and returned as a sticky *PanicError naming the seed, node, and stack.
 func TestNodePanicFailsTheRunWithTheSeed(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 4, Net: fixedNet()})
 	addPanicky(t, s, "a")
@@ -172,6 +184,8 @@ func TestNodePanicFailsTheRunWithTheSeed(t *testing.T) {
 	}
 }
 
+// TestPanicInActionAndInvariantIsReported proves that panics in At actions and
+// invariant functions are caught as *PanicErrors.
 func TestPanicInActionAndInvariantIsReported(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 4})
 	s.At(1, "bad action", func() { panic("boom in action") })
@@ -183,6 +197,8 @@ func TestPanicInActionAndInvariantIsReported(t *testing.T) {
 	expectPanic(t, s2.RunUntilQuiet(), "")
 }
 
+// TestPanicInABudgetCallbackFailsTheRun proves that a panic inside Budget.GroupOf
+// during a nemesis step never escapes the loop and becomes a sticky *PanicError.
 func TestPanicInABudgetCallbackFailsTheRun(t *testing.T) {
 	for _, kind := range []sim.FaultKind{sim.FaultBitRot, sim.FaultReadError, sim.FaultWipeDisk, sim.FaultCrash} {
 		t.Run(kind.String(), func(t *testing.T) {
@@ -211,6 +227,8 @@ func TestPanicInABudgetCallbackFailsTheRun(t *testing.T) {
 	}
 }
 
+// TestFailIsSticky proves that calling Sim.Fail stops subsequent events and
+// causes both RunUntilQuiet and Verify to return the recorded error.
 func TestFailIsSticky(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1})
 	want := errors.New("scenario says no")
@@ -224,6 +242,8 @@ func TestFailIsSticky(t *testing.T) {
 	}
 }
 
+// TestInvariants proves periodic invariant execution, error stopping,
+// InvariantRuns counting, Verify, and immediate CheckInvariants.
 func TestInvariants(t *testing.T) {
 	t.Run("an invariant runs every N events and its error stops the run", func(t *testing.T) {
 		s := sim.New(sim.Config{Seed: 2})
@@ -265,6 +285,8 @@ func TestInvariants(t *testing.T) {
 	})
 }
 
+// TestScheduleHelpers proves that Sim.Workload schedules the requested count
+// of actions spaced within [1, maxGap] on the workload stream.
 func TestScheduleHelpers(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 3})
 	var seen []int

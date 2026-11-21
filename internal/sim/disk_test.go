@@ -14,6 +14,8 @@ func oneNode(t *testing.T, seed int64) *harness {
 	return newHarness(t, sim.Config{Seed: seed}, spec("a", "r"))
 }
 
+// TestDiskOperations proves Write, Append, Read copying, sorted prefix List,
+// Delete, and error returns for missing blobs and empty names.
 func TestDiskOperations(t *testing.T) {
 	h := oneNode(t, 1)
 	d := h.rec("a").e.Disk
@@ -65,6 +67,8 @@ func TestDiskOperations(t *testing.T) {
 	}
 }
 
+// TestDiskWriteCopiesInput proves that mutating the slice passed to Write does
+// not alter stored blob contents.
 func TestDiskWriteCopiesInput(t *testing.T) {
 	h := oneNode(t, 1)
 	d := h.rec("a").e.Disk
@@ -76,6 +80,9 @@ func TestDiskWriteCopiesInput(t *testing.T) {
 	}
 }
 
+// TestDiskFaults proves silent single-bit rot, durable damage-mark tracking
+// across unsynced edits and crashes, wipes, crash rollback, read-error
+// injection, closed-handle errors, and unknown-node errors.
 func TestDiskFaults(t *testing.T) {
 	tests := []struct {
 		name string
@@ -316,6 +323,9 @@ func TestDiskFaults(t *testing.T) {
 	}
 }
 
+// TestTornTailKeepsAPrefixOfTheUnsyncedAppend proves that CrashTorn preserves
+// durable bytes plus a seeded prefix of an unsynced Append, including strict
+// partial tails.
 func TestTornTailKeepsAPrefixOfTheUnsyncedAppend(t *testing.T) {
 	partial := 0
 	for seed := int64(1); seed <= 40; seed++ {
@@ -339,6 +349,8 @@ func TestTornTailKeepsAPrefixOfTheUnsyncedAppend(t *testing.T) {
 	}
 }
 
+// TestTornCrashOnlyTearsAppendOnlyBlobs proves that CrashTorn reverts an
+// unsynced full Write completely rather than leaving a partial overwrite.
 func TestTornCrashOnlyTearsAppendOnlyBlobs(t *testing.T) {
 	h := oneNode(t, 3)
 	d := h.rec("a").e.Disk
@@ -351,6 +363,9 @@ func TestTornCrashOnlyTearsAppendOnlyBlobs(t *testing.T) {
 	}
 }
 
+// TestTornCrashCanTearTheFirstAppendOfANewBlob proves that CrashTorn on a new
+// blob created via Append can leave either an absent blob or a durable non-empty
+// prefix.
 func TestTornCrashCanTearTheFirstAppendOfANewBlob(t *testing.T) {
 	const rec = "FIRST_RECORD"
 	absent, partial := 0, 0

@@ -29,6 +29,8 @@ func scheduleRun(data []byte) func(seed int64) *sim.Sim {
 	}
 }
 
+// FuzzSimSchedule proves that arbitrary fuzz bytes decoded into a fault
+// schedule preserve replay determinism, toy invariants, and post-heal convergence.
 func FuzzSimSchedule(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0})
@@ -46,6 +48,8 @@ func FuzzSimSchedule(f *testing.F) {
 	})
 }
 
+// TestScheduleFromBytes proves that decoding bytes into TimedFaults is
+// deterministic, produces non-decreasing timestamps from start, and handles empty input.
 func TestScheduleFromBytes(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1})
 	ids := sim.NodeIDs(4)

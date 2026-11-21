@@ -1,3 +1,10 @@
+// Package simtoy implements a small max-register gossip/pull protocol and a
+// full chaos scenario used to test the simulator itself and to drive objsim.
+//
+// Each node holds a monotonic uint64 register backed by a checksummed disk blob,
+// pushes its value via periodic datagrams, pulls via periodic requests, and
+// merges any higher value it observes. After faults stop, all live nodes
+// converge to the global maximum.
 package simtoy
 
 import (
@@ -9,6 +16,13 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 )
 
+// Toy protocol constants and defaults:
+//   - Blob: disk blob name storing the checksummed register value.
+//   - InitialLimit: exclusive upper bound on generated and written register values.
+//   - DefaultPeriod: default mean gossip/pull interval per node.
+//   - DefaultFanout: default number of random peers pushed to on each tick or update.
+//   - DefaultTimeout: default timeout for periodic pull requests.
+//   - ConvergeBound: virtual-time deadline after QuietAt for cluster convergence.
 const (
 	Blob             = "max"
 	InitialLimit     = 1 << 40
@@ -28,6 +42,8 @@ const (
 	invariantPerNode = 1
 )
 
+// Config configures a toy max-register cluster. Zero Period, Fanout, or
+// PullTimeout fall back to DefaultPeriod, DefaultFanout, and DefaultTimeout.
 type Config struct {
 	Peers       []env.NodeID
 	Period      time.Duration
@@ -35,6 +51,7 @@ type Config struct {
 	PullTimeout time.Duration
 }
 
+// Node is one replica of the toy max-register protocol implementing env.Process.
 type Node struct {
 	e        env.Env
 	cfg      Config
@@ -47,6 +64,7 @@ type Node struct {
 	writes   int
 }
 
+// Factory returns a sim.Factory that constructs Node instances from cfg.
 func Factory(cfg Config) sim.Factory {
 	if cfg.Period <= 0 {
 		cfg.Period = DefaultPeriod
@@ -61,8 +79,10 @@ func Factory(cfg Config) sim.Factory {
 	return func(e env.Env) env.Process { return &Node{e: e, cfg: cfg} }
 }
 
+// Value returns the node's current maximum register value.
 func (n *Node) Value() uint64 { return n.value }
 
+// Initial returns the register value loaded or drawn when this incarnation started.
 func (n *Node) Initial() uint64 { return n.initial }
 
 func checksum(v uint64) uint64 {
@@ -101,6 +121,8 @@ func (n *Node) persist() {
 	}
 }
 
+// Start loads a valid checksummed register from disk (or draws a fresh initial
+// value), persists it durably, and arms the periodic gossip timer.
 func (n *Node) Start() {
 	v, ok := n.load()
 	if !ok {
@@ -165,11 +187,13 @@ func (n *Node) merge(v uint64) {
 	n.push()
 }
 
+// Write applies an external client write, raising the register if v is larger.
 func (n *Node) Write(v uint64) {
 	n.writes++
 	n.merge(v)
 }
 
+// OnDatagram merges an 8-byte big-endian register value received from a peer.
 func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 	if len(msg) != datagramSize {
 		return
@@ -177,12 +201,14 @@ func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 	n.merge(binary.BigEndian.Uint64(msg))
 }
 
+// OnRequest replies immediately with this node's current 8-byte register value.
 func (n *Node) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	var b [datagramSize]byte
 	binary.BigEndian.PutUint64(b[:], n.value)
 	reply(b[:], nil)
 }
 
+// EncodeState returns a canonical byte encoding of the node's register and counters.
 func (n *Node) EncodeState() []byte {
 	out := binary.BigEndian.AppendUint64(nil, n.value)
 	out = binary.BigEndian.AppendUint64(out, n.initial)
@@ -221,6 +247,8 @@ func live(s *sim.Sim) []*Node {
 	return out
 }
 
+// Converged reports whether every registered node is live, unpaused, and holds
+// the same register value.
 func Converged(s *sim.Sim) bool {
 	nodes := live(s)
 	if len(nodes) == 0 || len(nodes) != len(s.Nodes()) {
@@ -239,6 +267,9 @@ type seen struct {
 	last uint64
 }
 
+// AddInvariants registers the toy protocol's safety invariant (values stay
+// within [Initial, InitialLimit) and never decrease within an incarnation) to
+// run every N events.
 func AddInvariants(s *sim.Sim, every int) {
 	last := map[env.NodeID]seen{}
 	s.AddInvariant("toy/bounded-monotonic", every, func() error {
@@ -260,16 +291,23 @@ func AddInvariants(s *sim.Sim, every int) {
 	})
 }
 
+// ChaosOptions parameterizes a ChaosRun scenario, with optional hooks to wrap
+// each node process (used by nondeterminism canaries) or configure the Sim.
 type ChaosOptions struct {
 	Nodes     int
 	Wrap      func(e env.Env, p env.Process) env.Process
 	Configure func(s *sim.Sim)
 }
 
+// ChaosBudget returns the default nemesis fault budget for an n-node toy cluster
+// (strict majority live, at most n/4+1 damaged disks).
 func ChaosBudget(n int) sim.Budget {
 	return sim.Budget{MinLive: n/2 + 1, MaxDamagedDisks: n/4 + 1}
 }
 
+// ChaosRun builds a seeded scenario runner that runs an o.Nodes cluster across
+// three regions under concurrent workload writes and three chaos/heal nemesis
+// phases, then requires convergence within ConvergeBound of QuietAt.
 func ChaosRun(o ChaosOptions) func(seed int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
 		s := sim.New(sim.Config{Seed: seed})
@@ -312,11 +350,14 @@ func ChaosRun(o ChaosOptions) func(seed int64) *sim.Sim {
 		if err := s.RunUntil(nem.QuietAt()); err != nil {
 			return s
 		}
+		// Any stall or invariant error is sticky in s.Err(), which callers inspect
+		// via Sim.Verify or simtest.CheckDeterministic.
 		_ = s.RunUntilConverged(nem.QuietAt().Add(ConvergeBound), func() bool { return Converged(s) })
 		return s
 	}
 }
 
+// Scenarios returns the built-in CLI chaos scenarios (5, 20, 50, and 100 nodes).
 func Scenarios() []sim.Scenario {
 	var out []sim.Scenario
 	for _, n := range []int{5, 20, 50, 100} {

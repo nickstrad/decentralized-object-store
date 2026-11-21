@@ -27,6 +27,9 @@ func chaos(n int) func(seed int64) *sim.Sim {
 	return simtoy.ChaosRun(simtoy.ChaosOptions{Nodes: n})
 }
 
+// TestReplaySameProcess proves that running the toy chaos scenario twice from
+// the same seed in one process yields identical event and state digests and
+// converges at 20, 50, and 100 nodes.
 func TestReplaySameProcess(t *testing.T) {
 	for _, n := range metaSizes {
 		t.Run(fmt.Sprintf("nodes=%d", n), func(t *testing.T) {
@@ -42,6 +45,8 @@ func TestReplaySameProcess(t *testing.T) {
 
 const childEnv = "SIM_REPLAY_CHILD"
 
+// TestReplayAcrossProcesses proves byte-identical event and state digests across
+// separate OS processes with differing GOMAXPROCS and GOGC settings.
 func TestReplayAcrossProcesses(t *testing.T) {
 	if spec := os.Getenv(childEnv); spec != "" {
 		var n int
@@ -89,6 +94,8 @@ func TestReplayAcrossProcesses(t *testing.T) {
 	}
 }
 
+// TestGoldenDigests proves that pinned seeds 1..3 at 20, 50, and 100 nodes
+// match testdata/golden.txt so accidental schedule shifts are caught.
 func TestGoldenDigests(t *testing.T) {
 	path := filepath.Join("testdata", "golden.txt")
 	type row struct {
@@ -143,6 +150,8 @@ func TestGoldenDigests(t *testing.T) {
 	}
 }
 
+// TestDifferentSeedsDiffer proves that distinct seeds drive distinct event logs
+// and final cluster states.
 func TestDifferentSeedsDiffer(t *testing.T) {
 	for _, n := range metaSizes {
 		t.Run(fmt.Sprintf("nodes=%d", n), func(t *testing.T) {
@@ -203,6 +212,8 @@ func requireCanaryCaught(t *testing.T, run func(seed int64) *sim.Sim, want error
 	}
 }
 
+// TestCanaryUnseededDraw proves that CheckDeterministic catches nondeterminism
+// by planting a wrapper that echoes datagrams using the global math/rand/v2 PRNG.
 func TestCanaryUnseededDraw(t *testing.T) {
 	run := simtoy.ChaosRun(simtoy.ChaosOptions{Nodes: 20, Wrap: func(e env.Env, p env.Process) env.Process {
 		return &unseeded{Process: p, e: e}
@@ -210,6 +221,9 @@ func TestCanaryUnseededDraw(t *testing.T) {
 	requireCanaryCaught(t, run, simtest.ErrNondeterministic)
 }
 
+// TestCanaryMapOrder proves that CheckDeterministic catches map-order
+// dependence by planting a wrapper that forwards datagrams to the first key
+// yielded by a Go map iteration.
 func TestCanaryMapOrder(t *testing.T) {
 	run := simtoy.ChaosRun(simtoy.ChaosOptions{Nodes: 20, Wrap: func(e env.Env, p env.Process) env.Process {
 		peers := map[env.NodeID]bool{}
@@ -221,6 +235,8 @@ func TestCanaryMapOrder(t *testing.T) {
 	requireCanaryCaught(t, run, simtest.ErrNondeterministic)
 }
 
+// TestCanaryDroppedInvariant proves that Verify catches silent invariant
+// skipping by planting PlantDroppedInvariants so scheduled invariants never run.
 func TestCanaryDroppedInvariant(t *testing.T) {
 	clean := simtoy.ChaosRun(simtoy.ChaosOptions{Nodes: 20})
 	if _, err := simtest.CheckDeterministic(1, clean); err != nil {
@@ -230,6 +246,8 @@ func TestCanaryDroppedInvariant(t *testing.T) {
 	requireCanaryCaught(t, run, sim.ErrInvariantNotRun)
 }
 
+// BenchmarkChaos100 measures simulator throughput in events/s on a 100-node
+// full chaos run including invariants and digest computation.
 func BenchmarkChaos100(b *testing.B) {
 	run := chaos(100)
 	var steps uint64

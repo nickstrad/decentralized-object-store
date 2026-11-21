@@ -25,6 +25,8 @@ func clearEnv(t *testing.T) {
 	}
 }
 
+// TestSeeds proves seed selection precedence: -seed flag over DST_SEED over
+// DST_SEEDS/DST_SEED_BASE sweep and default fixed sweep.
 func TestSeeds(t *testing.T) {
 	tests := []struct {
 		name string
@@ -53,6 +55,8 @@ func TestSeeds(t *testing.T) {
 	}
 }
 
+// TestSeedErrors proves error reporting for malformed DST_SEED, -seed, and
+// DST_SEEDS values and string formatting of seedValue.
 func TestSeedErrors(t *testing.T) {
 	clearEnv(t)
 	withSeedFlag(t, seedValue{})
@@ -87,6 +91,8 @@ func mustOK(t *testing.T, err error) {
 	}
 }
 
+// TestPinnedSeeds proves parsing of seeds.txt with comments, blank lines,
+// spaces, and tabs, and errors on invalid entries or unreadable paths.
 func TestPinnedSeeds(t *testing.T) {
 	dir := t.TempDir()
 	if got, err := PinnedSeeds(dir); err != nil || got != nil {
@@ -113,6 +119,8 @@ func TestPinnedSeeds(t *testing.T) {
 	}
 }
 
+// TestSeedsIncludesPinnedFirst proves that pinned testdata/seeds.txt seeds
+// appear before swept seeds and duplicates are omitted.
 func TestSeedsIncludesPinnedFirst(t *testing.T) {
 	clearEnv(t)
 	withSeedFlag(t, seedValue{})
@@ -125,6 +133,8 @@ func TestSeedsIncludesPinnedFirst(t *testing.T) {
 	}
 }
 
+// TestSweepRunsOneSubtestPerSeed proves that Sweep creates one "seed=<n>"
+// subtest per selected seed in order.
 func TestSweepRunsOneSubtestPerSeed(t *testing.T) {
 	clearEnv(t)
 	withSeedFlag(t, seedValue{})
@@ -136,6 +146,8 @@ func TestSweepRunsOneSubtestPerSeed(t *testing.T) {
 	}
 }
 
+// TestReplayCommand proves RunPattern escaping and ReplayCommand formatting
+// both inside and outside a Go module tree.
 func TestReplayCommand(t *testing.T) {
 	if got := RunPattern("TestX/nodes=20/seed=5"); got != "^TestX$/^nodes=20$/^seed=5$" {
 		t.Fatalf("RunPattern = %q", got)
@@ -164,6 +176,9 @@ func toyRun(seed int64) *sim.Sim {
 	return s
 }
 
+// TestCheckDeterministic proves that CheckDeterministic passes on a
+// deterministic run, returns ErrNondeterministic on diverging digests, and
+// propagates sticky simulation errors.
 func TestCheckDeterministic(t *testing.T) {
 	if _, err := CheckDeterministic(3, toyRun); err != nil {
 		t.Fatalf("deterministic run: %v", err)
@@ -203,6 +218,8 @@ func (c *captureTB) Failed() bool                 { return c.failed }
 func (c *captureTB) Cleanup(fn func())            { c.cleanups = append(c.cleanups, fn) }
 func (c *captureTB) Fatalf(f string, args ...any) { c.Fatal(fmt.Sprintf(f, args...)) }
 
+// TestRequireDeterministicReportsAFailure proves that failure reports include
+// seed, digests, log tail, full log artifact, PIN line, and REPLAY last.
 func TestRequireDeterministicReportsAFailure(t *testing.T) {
 	clearEnv(t)
 	dir := t.TempDir()
@@ -240,6 +257,8 @@ func TestRequireDeterministicReportsAFailure(t *testing.T) {
 	}
 }
 
+// TestRequireDeterministicPassesQuietly proves that a passing run produces no
+// report output and that Report(t, nil) is a safe no-op.
 func TestRequireDeterministicPassesQuietly(t *testing.T) {
 	c := &captureTB{name: "TestFake"}
 	RequireDeterministic(c, 2, toyRun)
@@ -252,6 +271,8 @@ func TestRequireDeterministicPassesQuietly(t *testing.T) {
 	Report(c, nil)
 }
 
+// TestArtifactErrorIsReported proves that an unwritable DST_ARTIFACTS path is
+// noted in the failure report rather than silently dropped.
 func TestArtifactErrorIsReported(t *testing.T) {
 	dir := t.TempDir()
 	blocker := filepath.Join(dir, "file")
@@ -264,6 +285,8 @@ func TestArtifactErrorIsReported(t *testing.T) {
 	}
 }
 
+// TestCluster proves that Cluster generates n NodeIDs and registers them across
+// the requested region count.
 func TestCluster(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1})
 	var got []env.NodeID
@@ -282,6 +305,8 @@ func (p *panicky) Start() { explodeInStart() }
 
 func explodeInStart() { panic("planted node panic") }
 
+// TestReportShowsThePanicStack proves that Report prints PanicError.Stack
+// after the event-log tail while keeping REPLAY as the final line.
 func TestReportShowsThePanicStack(t *testing.T) {
 	clearEnv(t)
 	c := &captureTB{name: "TestFake/seed=5"}
@@ -307,6 +332,8 @@ func TestReportShowsThePanicStack(t *testing.T) {
 	}
 }
 
+// TestReportTailHeaderCountsThePrintedLines proves that when LogCap is smaller
+// than TailLines, the report header reports the actual number of printed lines.
 func TestReportTailHeaderCountsThePrintedLines(t *testing.T) {
 	clearEnv(t)
 	s := sim.New(sim.Config{Seed: 1, LogCap: 5})

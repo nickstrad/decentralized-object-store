@@ -10,6 +10,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 )
 
+// TestReadFaultCountsSaturate proves that FailReads counts saturate at
+// math.MaxInt instead of wrapping and remain visible to Budget.Check, while
+// non-positive counts are rejected.
 func TestReadFaultCountsSaturate(t *testing.T) {
 	t.Run("a named count added past MaxInt keeps failing reads", func(t *testing.T) {
 		h := oneNode(t, 1)
@@ -57,6 +60,8 @@ func TestReadFaultCountsSaturate(t *testing.T) {
 	})
 }
 
+// TestIncarnationCounterNeverWraps proves that Restart, WipeRejoin, and HealAll
+// refuse to advance a node past incarnation math.MaxUint32.
 func TestIncarnationCounterNeverWraps(t *testing.T) {
 	for _, op := range []string{"restart", "wipe-rejoin", "heal-all"} {
 		t.Run(op, func(t *testing.T) {
@@ -84,6 +89,8 @@ func TestIncarnationCounterNeverWraps(t *testing.T) {
 	}
 }
 
+// TestHugeLatencyIsDrawnWithoutOverflow proves that latency ranges up to
+// math.MaxInt64 draw cleanly without signed overflow or backward timestamps.
 func TestHugeLatencyIsDrawnWithoutOverflow(t *testing.T) {
 	for _, r := range []sim.Range{
 		{Min: 0, Max: math.MaxInt64},
@@ -114,6 +121,8 @@ func TestHugeLatencyIsDrawnWithoutOverflow(t *testing.T) {
 	}
 }
 
+// TestLatencyBeyondTheHorizonIsNeverDelivered proves that a message whose
+// delivery time lands past Horizon is dropped rather than delivered early.
 func TestLatencyBeyondTheHorizonIsNeverDelivered(t *testing.T) {
 	nc := fixedNet()
 	nc.Latency = sim.Range{Min: math.MaxInt64, Max: math.MaxInt64}
@@ -129,6 +138,9 @@ func TestLatencyBeyondTheHorizonIsNeverDelivered(t *testing.T) {
 	}
 }
 
+// TestVirtualTimeSaturatesAtTheHorizon proves Horizon clamping and overflow-free
+// saturation across RunFor, RunUntil, At, Workload, ScheduleFromBytes, and
+// StartNemesis.
 func TestVirtualTimeSaturatesAtTheHorizon(t *testing.T) {
 	t.Run("RunFor past the horizon stops at the horizon", func(t *testing.T) {
 		s := sim.New(sim.Config{Seed: 1})
@@ -197,6 +209,9 @@ func TestVirtualTimeSaturatesAtTheHorizon(t *testing.T) {
 	})
 }
 
+// TestSkewIsBoundedSoLocalTimeNeverOverflows proves that AddNode rejects skew
+// outside ±MaxSkew and that local time stays monotonic across [0, Horizon] at
+// all four (±MaxSkew, ±MaxDriftPPM) corners.
 func TestSkewIsBoundedSoLocalTimeNeverOverflows(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1})
 	for _, sk := range []time.Duration{sim.MaxSkew + 1, -sim.MaxSkew - 1, math.MaxInt64, math.MinInt64} {
@@ -237,6 +252,9 @@ func TestSkewIsBoundedSoLocalTimeNeverOverflows(t *testing.T) {
 	}
 }
 
+// TestTimersBeyondTheHorizonNeverFire proves that timers and request timeouts
+// due past Horizon never fire early, report pending on Stop, and fire normally
+// when due exactly at Horizon.
 func TestTimersBeyondTheHorizonNeverFire(t *testing.T) {
 	for _, drift := range []int64{0, -sim.MaxDriftPPM, sim.MaxDriftPPM} {
 		h := newHarness(t, sim.Config{Seed: 1, Net: fixedNet()}, sim.NodeSpec{ID: "a", DriftPPM: drift}, spec("b", "r"))
@@ -278,6 +296,8 @@ func TestTimersBeyondTheHorizonNeverFire(t *testing.T) {
 	}
 }
 
+// TestScaledHandlesEveryBoundary proves saturating multiplication in scaled
+// across zero, ±1, ±2, MaxInt64, and MinInt64 boundaries.
 func TestScaledHandlesEveryBoundary(t *testing.T) {
 	tests := []struct {
 		name string
@@ -309,6 +329,8 @@ func TestScaledHandlesEveryBoundary(t *testing.T) {
 	}
 }
 
+// TestScheduleFromBytesWithStepMinusOne proves that a negative step of -1
+// subtracts cleanly instead of saturating to math.MinInt64.
 func TestScheduleFromBytesWithStepMinusOne(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1})
 	mustNil(t, s.AddNode(sim.NodeSpec{ID: "a"}, newPanicky))

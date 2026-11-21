@@ -7,6 +7,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// handle is the per-incarnation facade implementing env.Clock, env.Transport,
+// and env.Disk. A crash advances n.inc and closes the old handle.
 type handle struct {
 	s   *Sim
 	n   *node
@@ -15,6 +17,7 @@ type handle struct {
 
 func (h *handle) closed() bool { return h.inc != h.n.inc || !h.n.up }
 
+// call tracks one in-flight outbound Request until its reply, refusal, or timeout.
 type call struct {
 	id      uint64
 	to      int
@@ -22,6 +25,8 @@ type call struct {
 	timeout *event
 }
 
+// Send transmits a datagram over the simulated network, returning an error only
+// for immediate local failures (ErrClosed, ErrTooLarge, ErrUnreachable).
 func (h *handle) Send(to env.NodeID, msg []byte) error {
 	s := h.s
 	if h.closed() {
@@ -38,6 +43,8 @@ func (h *handle) Send(to env.NodeID, msg []byte) error {
 	return nil
 }
 
+// Request starts an ordered request/response call. Even local validation errors
+// are deferred onto a kindLocal event so cb never runs re-entrantly.
 func (h *handle) Request(to env.NodeID, req []byte, timeout time.Duration, cb func([]byte, error)) {
 	s := h.s
 	if h.closed() || cb == nil {
@@ -67,6 +74,8 @@ func (h *handle) Request(to env.NodeID, req []byte, timeout time.Duration, cb fu
 	s.sendStream(&event{kind: kindRequest, node: ti, peer: from.idx, peerInc: h.inc, call: c.id, payload: clone(req)})
 }
 
+// clone copies b across a node or disk boundary so callers cannot share memory
+// with the simulator or with another node.
 func clone(b []byte) []byte {
 	if b == nil {
 		return nil
@@ -76,6 +85,9 @@ func clone(b []byte) []byte {
 	return out
 }
 
+// serve delivers an inbound request to n and wraps its reply closure. Calling
+// reply twice panics so the protocol bug surfaces as a PanicError with the seed;
+// a reply from a crashed incarnation is silently dropped.
 func (s *Sim) serve(n *node, e *event) {
 	caller := s.nodes[e.peer]
 	inc := n.inc
@@ -101,10 +113,14 @@ func (s *Sim) serve(n *node, e *event) {
 	s.guard(n.idx, "request", func() { n.proc.OnRequest(caller.id, e.payload, reply) })
 }
 
+// refuse sends a connection-refused stream event back to the caller after a
+// request reaches a crashed node.
 func (s *Sim) refuse(e *event) {
 	s.sendStream(&event{kind: kindRefused, node: e.peer, peer: e.node, inc: e.peerInc, call: e.call})
 }
 
+// complete finishes a pending Request on response, refusal, or timeout,
+// discarding any late arrival after the call has already settled.
 func (s *Sim) complete(n *node, e *event) disposition {
 	c := n.calls[e.call]
 	if c == nil {
@@ -131,6 +147,8 @@ func (s *Sim) complete(n *node, e *event) disposition {
 	return dispRan
 }
 
+// cancel removes e from the heap if queued, updates release counters if it was
+// a released held event, and marks it dead in case it sits in a held list.
 func (s *Sim) cancel(e *event) {
 	if e.hi >= 0 {
 		s.q.remove(e)

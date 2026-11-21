@@ -1,3 +1,12 @@
+// Package simtest provides test-harness helpers for deterministic simulation
+// tests: seed selection (-seed, DST_SEED, DST_SEEDS, DST_SEED_BASE, and pinned
+// testdata/seeds.txt), double-run determinism checks, failure reports with
+// replay commands, and cluster setup.
+//
+// Importing this package registers a -seed flag on the test binary. Scenarios
+// passed to CheckDeterministic or RequireDeterministic must build a fresh
+// *sim.Sim from the given seed and return it with any failure recorded in
+// Sim.Err.
 package simtest
 
 import (
@@ -11,6 +20,10 @@ import (
 	"testing"
 )
 
+// Default sweep parameters and regression-seed filename:
+//   - DefaultSeeds: number of consecutive seeds swept when DST_SEEDS is unset.
+//   - DefaultSeedBase: first swept seed when DST_SEED_BASE is unset.
+//   - SeedsFile: filename under testdata/ holding pinned regression seeds.
 const (
 	DefaultSeeds    = 3
 	DefaultSeedBase = 1
@@ -44,6 +57,9 @@ func init() {
 	flag.Var(&seedFlag, "seed", "")
 }
 
+// Seed returns an explicitly requested single seed and true when either -seed
+// or DST_SEED is set (-seed takes precedence). If neither is set it returns
+// (0, false, nil); an unparseable DST_SEED returns an error.
 func Seed() (int64, bool, error) {
 	if seedFlag.set {
 		return seedFlag.v, true, nil
@@ -71,6 +87,9 @@ func envInt(name string, def int64) (int64, error) {
 	return n, nil
 }
 
+// PinnedSeeds reads regression seeds from dir/seeds.txt, returning nil if the
+// file does not exist. Blank lines and # comments are skipped; each remaining
+// line begins with a decimal int64 followed by optional whitespace and a note.
 func PinnedSeeds(dir string) ([]int64, error) {
 	data, err := os.ReadFile(filepath.Join(dir, SeedsFile))
 	if errors.Is(err, os.ErrNotExist) {
@@ -94,6 +113,9 @@ func PinnedSeeds(dir string) ([]int64, error) {
 	return out, nil
 }
 
+// Seeds returns the ordered, deduplicated seeds for a test run: the single
+// explicit seed from -seed or DST_SEED if set, otherwise pinned seeds from
+// testdata/seeds.txt followed by DST_SEEDS consecutive seeds from DST_SEED_BASE.
 func Seeds(t testing.TB) []int64 {
 	t.Helper()
 	if seed, ok, err := Seed(); err != nil {
@@ -125,6 +147,7 @@ func Seeds(t testing.TB) []int64 {
 	return out
 }
 
+// Sweep runs fn in a "seed=<n>" subtest for every seed returned by Seeds(t).
 func Sweep(t *testing.T, fn func(t *testing.T, seed int64)) {
 	t.Helper()
 	for _, seed := range Seeds(t) {

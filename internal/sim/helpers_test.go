@@ -20,6 +20,8 @@ type gotReply struct {
 	err   error
 }
 
+// recorder is a minimal env.Process that captures delivered datagrams,
+// requests, and replies for unit tests.
 type recorder struct {
 	e         env.Env
 	started   int
@@ -64,6 +66,7 @@ func (r *recorder) request(to env.NodeID, req string, timeout time.Duration) {
 	})
 }
 
+// harness wraps a Sim and tracks every incarnation's recorder per node ID.
 type harness struct {
 	t    *testing.T
 	s    *sim.Sim

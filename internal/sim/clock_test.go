@@ -9,6 +9,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 )
 
+// TestTimers proves timer firing, stopping, resetting (pending or stopped),
+// and immediate firing for non-positive durations.
 func TestTimers(t *testing.T) {
 	tests := []struct {
 		name string
@@ -69,6 +71,8 @@ func TestTimers(t *testing.T) {
 	}
 }
 
+// TestTimerResetAfterFiringRearms proves that calling Reset from a timer's own
+// callback arms the timer again.
 func TestTimerResetAfterFiringRearms(t *testing.T) {
 	h := newHarness(t, sim.Config{Seed: 1}, spec("a", "r"))
 	c := h.rec("a").e.Clock
@@ -86,6 +90,8 @@ func TestTimerResetAfterFiringRearms(t *testing.T) {
 	}
 }
 
+// TestClockSkewAndDrift proves local clock skew, positive/negative drift ppm,
+// and ceiling rounding of local timer delays into global time.
 func TestClockSkewAndDrift(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -124,6 +130,8 @@ func TestClockSkewAndDrift(t *testing.T) {
 	}
 }
 
+// TestAddNodeValidation proves that AddNode rejects duplicate IDs, empty IDs,
+// nil factories, and out-of-range clock drift.
 func TestAddNodeValidation(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1})
 	mustNil(t, s.AddNode(sim.NodeSpec{ID: "a"}, newPanicky))

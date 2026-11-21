@@ -10,6 +10,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// recordSize is the fixed canonical wire size of one big-endian log entry:
+// at(8) + seq(8) + kind(1) + disp(1) + node(2) + peer(2) + hash(8) + aux(8).
 const recordSize = 38
 
 type record struct {
@@ -78,6 +80,7 @@ func (s *Sim) kept(i int) record {
 	return s.logBuf[(s.logStart+i)%len(s.logBuf)]
 }
 
+// LogTail returns up to the last n retained event-log lines in execution order.
 func (s *Sim) LogTail(n int) []string {
 	if n > len(s.logBuf) {
 		n = len(s.logBuf)
@@ -89,10 +92,17 @@ func (s *Sim) LogTail(n int) []string {
 	return out
 }
 
+// LogLen returns the total number of events recorded so far, including any
+// evicted from the ring buffer.
 func (s *Sim) LogLen() uint64 { return s.logTotal }
 
+// LogTruncated reports whether more than Config.LogCap events were recorded,
+// causing the oldest entries to be evicted from the in-memory ring buffer.
+// Digests.Events always hashes every record regardless of truncation.
 func (s *Sim) LogTruncated() bool { return s.logTotal > uint64(len(s.logBuf)) }
 
+// WriteLog writes all retained event-log records to w, prefixed with a comment
+// line if earlier records were evicted.
 func (s *Sim) WriteLog(w io.Writer) error {
 	bw := bufio.NewWriter(w)
 	if s.LogTruncated() {
@@ -111,15 +121,21 @@ func (s *Sim) WriteLog(w io.Writer) error {
 	return nil
 }
 
+// Digests holds the two SHA-256 fingerprints of a simulation run: Events over
+// every canonical event-log record and State over every node's metadata,
+// Process.EncodeState output, and both disk layers.
 type Digests struct {
 	Events [32]byte
 	State  [32]byte
 }
 
+// String formats both digests as lowercase hex.
 func (d Digests) String() string {
 	return fmt.Sprintf("events=%x state=%x", d.Events, d.State)
 }
 
+// Digests computes the current event-log and cluster-state SHA-256 digests.
+// Any panic inside a node's EncodeState is caught and recorded in Sim.Err.
 func (s *Sim) Digests() Digests {
 	var d Digests
 	copy(d.Events[:], s.logHash.Sum(nil))

@@ -30,6 +30,9 @@ func nemesisConfig(b sim.Budget) sim.NemesisConfig {
 	}
 }
 
+// TestNemesisAlternatesChaosAndHeal proves that chaos actions occur only within
+// chaos windows, HealAll runs at each window end, QuietAt marks the final heal,
+// and the cluster converges afterward.
 func TestNemesisAlternatesChaosAndHeal(t *testing.T) {
 	s, _ := toySim(t, 7, 8)
 	cfg := nemesisConfig(sim.Budget{Lifted: true})
@@ -72,6 +75,8 @@ func TestNemesisAlternatesChaosAndHeal(t *testing.T) {
 	mustNil(t, s.RunUntilConverged(n.QuietAt().Add(2*time.Minute), func() bool { return simtoy.Converged(s) }))
 }
 
+// TestNemesisIsSeeded proves that equal seeds produce identical nemesis
+// histories and different seeds diverge.
 func TestNemesisIsSeeded(t *testing.T) {
 	hist := func(seed int64) []sim.NemesisStep {
 		s, _ := toySim(t, seed, 6)
@@ -98,6 +103,8 @@ func TestNemesisIsSeeded(t *testing.T) {
 	}
 }
 
+// TestNemesisBudget proves MinLive enforcement, Lifted override, and zero
+// MaxDamagedDisks blocking all disk faults.
 func TestNemesisBudget(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -173,6 +180,9 @@ func shardCluster(t *testing.T) *harness {
 	return h
 }
 
+// TestBudgetGroupLimit proves per-group limits across bit-rot, wipes, named and
+// whole-node read errors, ungrouped blobs (GroupOf == ""), unnamed bit-rot, and
+// nemesis read errors under dynamically written shards.
 func TestBudgetGroupLimit(t *testing.T) {
 	t.Run("a second rot or a wipe in a full group is refused", func(t *testing.T) {
 		s, ids := toySim(t, 5, 6)
@@ -286,6 +296,8 @@ func TestBudgetGroupLimit(t *testing.T) {
 	})
 }
 
+// TestNemesisConfigValidation proves that StartNemesis rejects invalid phase
+// counts, durations, gaps, and unknown fault kinds with ErrInvalidArgument.
 func TestNemesisConfigValidation(t *testing.T) {
 	s, _ := toySim(t, 1, 3)
 	bad := []sim.NemesisConfig{
@@ -302,6 +314,8 @@ func TestNemesisConfigValidation(t *testing.T) {
 	}
 }
 
+// TestApplyEveryFaultKind proves that every FaultKind can be applied, encoded,
+// formatted, and scheduled with InjectAt, and that unknown kinds fail.
 func TestApplyEveryFaultKind(t *testing.T) {
 	s, ids := toySim(t, 2, 4)
 	mustNil(t, s.RunUntil(env.Time(time.Second)))
