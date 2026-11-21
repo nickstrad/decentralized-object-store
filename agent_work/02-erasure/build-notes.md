@@ -546,3 +546,15 @@ All through Docker, `dev` container, same 4-core droplet (shared; MB/s varies wi
 | G6 | docker | pass | 0 s |
 
 The only commit after the gated one adds this file (operational notes, no Go).
+
+### Repair-round gate result
+
+`agent_work/gates/gate.sh 02-erasure` from the host on commit
+`6cb7dc9db3a5056dc2153cce6cd61fabc9bf8957` (clean tree; `result.json` left uncommitted):
+**overall=pass, counts_for_landing=true**, image `sha256:8dde8ea7…60eacc55`, go1.26.11,
+comment baseline `a184b38`, seed 119536936137637. G0 all pass (detlint, panics, comments,
+deps, selfcontained); G1 unit pass 12 s, coverage erasure 98.4 %, storage 97.8 %; G2 rapid
+2,000 checks pass 133 s; G3 fuzz 4 × 30 s pass 135 s; G4 race pass 116 s; G5 500 seeds pass
+249 s; G6 docker pass. (A first gate run was killed by my shell's 10-minute limit during G5
+and left no result; the run above is a full re-run.) The only commit after the gated one
+adds this paragraph.
