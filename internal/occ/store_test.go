@@ -3,6 +3,7 @@ package occ_test
 import (
 	"errors"
 	"math"
+	"math/rand/v2"
 	"slices"
 	"testing"
 
@@ -299,5 +300,39 @@ func TestPreconditionStrings(t *testing.T) {
 		if p != want {
 			t.Fatalf("%q != %q", p, want)
 		}
+	}
+}
+
+func TestStoreClockEdges(t *testing.T) {
+	s, c := newTestStore(t, "a", 1, 1)
+	v := mustPut(t, s, "k", "v", occ.IfNoneMatch())
+	if v.Stamp().Node != "a" || v.Stamp().Wall != int64(c.now) {
+		t.Fatalf("stamp %s", v.Stamp().String())
+	}
+	other := occ.NewVersion(occ.Dot{Actor: occ.Actor{Node: "z", Epoch: 1}, Counter: 1}, occ.VersionVector{}, false, nil, occ.Stamp{})
+	if s.Record("k").Covers(other) {
+		t.Fatal("a record covers a version it never saw")
+	}
+	far := occ.NewDoc()
+	far.MergeScalar("s", occ.Scalar{Value: []byte("future"), Stamp: occ.Stamp{Wall: int64(c.now) + int64(2*occ.MaxClockLead), Node: "z"}})
+	if !s.Merge(far) || s.AheadStamps() != 1 {
+		t.Fatal("a far-future stamp must still merge its data and be counted")
+	}
+	if got, _, err := s.Scalar("s"); err != nil || string(got) != "future" {
+		t.Fatal("the far-future scalar wins the field until the clock catches up")
+	}
+	s2, err := occ.NewStore(occ.StoreConfig{Node: "b", Epoch: 1, Clock: c, Rand: rand.New(rand.NewPCG(1, 1)), Doc: far})
+	if err != nil || s2.AheadStamps() != 1 {
+		t.Fatal("a loaded far-future stamp must be counted")
+	}
+	c.now = math.MaxInt64
+	if err := s.HLC().Observe(occ.Stamp{Wall: math.MaxInt64, Logical: math.MaxUint32}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put("k", nil, occ.Unconditional()); !errors.Is(err, occ.ErrClockExhausted) {
+		t.Fatalf("put on an exhausted clock: %v", err)
+	}
+	if _, err := s.SetScalar("s", nil); !errors.Is(err, occ.ErrClockExhausted) {
+		t.Fatalf("set on an exhausted clock: %v", err)
 	}
 }

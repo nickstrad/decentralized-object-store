@@ -271,6 +271,14 @@ func TestNodeWireProtocol(t *testing.T) {
 			t.Fatalf("%s: err = %v, want %v", r.name, got.err, r.want)
 		}
 	}
+	cl := occ.NewClient(p.e.Net, time.Second)
+	var delRes occ.Result
+	var delErr error
+	cl.Delete("n1", "k", occ.IfMatch(n.Store().Record("k").ETag()), func(r occ.Result, err error) { delRes, delErr = r, err })
+	run(t, s, 50*time.Millisecond)
+	if delErr != nil || delRes.ETag != n.Store().Record("k").ETag() || !n.Store().Record("k").Siblings()[0].Tombstone() {
+		t.Fatalf("client delete: %v", delErr)
+	}
 	before := n.Stats().Malformed
 	for _, msg := range [][]byte{nil, {99}, {occ.MsgDelta, 1}} {
 		if err := p.e.Net.Send("n1", msg); err != nil {
