@@ -1,0 +1,6 @@
+.git
+_site
+bin
+dist
+kb
+*.log

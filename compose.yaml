@@ -1,0 +1,71 @@
+name: objstore
+
+x-node: &node
+  image: objstore-dev:local
+  profiles: ["cluster"]
+  working_dir: /src
+  volumes:
+    - .:/src
+    - gomod:/go/pkg/mod
+    - gocache:/root/.cache/go-build
+  networks: [cluster]
+  restart: "no"
+
+services:
+  dev:
+    build: .
+    image: objstore-dev:local
+    working_dir: /src
+    init: true
+    volumes:
+      - .:/src
+      - gomod:/go/pkg/mod
+      - gocache:/root/.cache/go-build
+    environment:
+      - DST_SEED
+      - DST_SEEDS
+      - DST_SEED_BASE
+      - DST_ARTIFACTS
+      - GATE_SHA
+      - GATE_ONLY
+      - FUZZ_SECONDS
+
+  node-a1:
+    <<: *node
+    hostname: node-a1
+    command: ["go", "run", "./cmd/objnode", "-id", "a1", "-region", "a", "-data", "/data", "-http", ":8080", "-gossip", ":7946", "-rpc", ":7947", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
+    ports: ["18081:8080"]
+  node-a2:
+    <<: *node
+    hostname: node-a2
+    command: ["go", "run", "./cmd/objnode", "-id", "a2", "-region", "a", "-data", "/data", "-http", ":8080", "-gossip", ":7946", "-rpc", ":7947", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
+    ports: ["18082:8080"]
+  node-b1:
+    <<: *node
+    hostname: node-b1
+    command: ["go", "run", "./cmd/objnode", "-id", "b1", "-region", "b", "-data", "/data", "-http", ":8080", "-gossip", ":7946", "-rpc", ":7947", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
+    ports: ["18083:8080"]
+  node-b2:
+    <<: *node
+    hostname: node-b2
+    command: ["go", "run", "./cmd/objnode", "-id", "b2", "-region", "b", "-data", "/data", "-http", ":8080", "-gossip", ":7946", "-rpc", ":7947", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
+    ports: ["18084:8080"]
+  node-c1:
+    <<: *node
+    hostname: node-c1
+    command: ["go", "run", "./cmd/objnode", "-id", "c1", "-region", "c", "-data", "/data", "-http", ":8080", "-gossip", ":7946", "-rpc", ":7947", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
+    ports: ["18085:8080"]
+  node-c2:
+    <<: *node
+    hostname: node-c2
+    command: ["go", "run", "./cmd/objnode", "-id", "c2", "-region", "c", "-data", "/data", "-http", ":8080", "-gossip", ":7946", "-rpc", ":7947", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
+    ports: ["18086:8080"]
+
+networks:
+  cluster: {}
+
+volumes:
+  gomod:
+    name: objstore-gomod
+  gocache:
+    name: objstore-gocache

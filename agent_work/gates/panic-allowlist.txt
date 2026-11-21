@@ -1,0 +1,1 @@
+# relative/file.go<TAB>EnclosingFunc<TAB>justification — every panic( under internal/ must have a line here
