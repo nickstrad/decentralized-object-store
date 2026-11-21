@@ -3,6 +3,7 @@ package sim
 import (
 	"fmt"
 	"math"
+	"math/bits"
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
@@ -237,6 +238,18 @@ func (n *Nemesis) pick(idx []int) (int, bool) {
 	return idx[n.s.nemRand.IntN(len(idx))], true
 }
 
+func (n *Nemesis) index(k int) (int, bool) {
+	x := n.s.nemRand.Uint64()
+	if k <= 0 {
+		return 0, false
+	}
+	if k&(k-1) == 0 {
+		return int(x & uint64(k-1)), true
+	}
+	hi, _ := bits.Mul64(x, uint64(k))
+	return int(hi), true
+}
+
 func (n *Nemesis) nodesWhere(pred func(*node) bool) []int {
 	var out []int
 	for _, nd := range n.s.nodes {
@@ -332,12 +345,21 @@ func (n *Nemesis) draw() (Fault, bool) {
 	switch f.Kind {
 	case FaultBitRot:
 		targets := s.nodes[i].disk.rotTargets()
-		if len(targets) == 0 {
+		j, ok := n.index(len(targets))
+		if !ok {
 			return f, false
 		}
-		f.Blob = targets[s.nemRand.IntN(len(targets))]
+		f.Blob = targets[j]
 	case FaultReadError:
 		f.Count = 1 + s.nemRand.IntN(3)
+		if n.cfg.Budget.GroupOf != nil {
+			stored := s.nodes[i].disk.stored()
+			j, ok := n.index(len(stored))
+			if !ok {
+				return f, false
+			}
+			f.Blob = stored[j]
+		}
 	}
 	return f, true
 }

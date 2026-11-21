@@ -827,7 +827,9 @@ func TestPropNemesisTimingIgnoresInventory(t *testing.T) {
 			out := make([]scribblePlan, n)
 			for i := range out {
 				out[i].blobs = rapid.IntRange(0, 3).Draw(t, fmt.Sprintf("%s/blobs/%d", label, i))
-				out[i].every = time.Duration(rapid.IntRange(0, 300).Draw(t, fmt.Sprintf("%s/everyMs/%d", label, i))) * time.Millisecond
+				if rapid.Bool().Draw(t, fmt.Sprintf("%s/ticks/%d", label, i)) {
+					out[i].every = time.Duration(rapid.IntRange(20, 300).Draw(t, fmt.Sprintf("%s/everyMs/%d", label, i))) * time.Millisecond
+				}
 			}
 			return out
 		}
