@@ -1,0 +1,338 @@
+# Chunk 5 build notes — the saga engine and the bucket-migration workflow
+
+Builder: Opus (fresh seat). Branch `chunk/05-saga`. Everything below was run inside the
+`dev` container (`docker compose run --rm dev ...`). Product code: `internal/saga`
+(engine, log, resume state machine, policy, migration workflow, errors) and
+`internal/saga/sagasim` (the model cluster, the exported matrix runner and the nemesis
+and duel scenario drivers). No other package was touched.
+
+## What was built
+
+### `internal/saga` — the engine
+
+- **Log.** One blob per saga, `<prefix><id>` (default prefix `saga/`), append-only. Each
+  record is a frame: magic byte `0xA5`, payload length (u32 BE), CRC-32C of magic+length,
+  CRC-32C of the payload, then the payload (kind, step as zigzag varint, attempt, time,
+  state, definition name, data). Frame header is 13 bytes; payload at most `MaxRecord`
+  (1 MiB). Record kinds: `begin` (definition, begin time, input), `intent` (step,
+  attempt), `done` (step, attempt, output), `abort` (compensate-from step, cause),
+  `comp-intent`, `comp-done`, `end` (Completed or Compensated).
+- **Decoding rule (`DecodeLog`).** Reads whole records and returns the valid prefix
+  length. A tail that is a strict prefix of a frame (header incomplete, or header complete
+  and checksummed but payload incomplete) is a **torn tail**: no error, `valid < len`.
+  Anything else that is wrong is `ErrLogCorrupt`: a bad magic byte, a header checksum
+  mismatch, a length of 0 or over `MaxRecord`, a payload checksum mismatch, a payload
+  that does not decode, has trailing bytes, is non-canonical (re-encoding must give the
+  same bytes) or holds an out-of-range field. A torn append can only leave a prefix of
+  what was written, so a whole frame with a bad checksum is never mistaken for a torn
+  tail; a damaged last record is corrupt, exactly like a damaged middle record.
+- **Write path.** Every record: apply it to a copy of the in-memory snapshot (so an
+  illegal transition can never reach disk), `Append`, call the test hook, `Sync`, then
+  adopt the new snapshot. The intent record is synced before the step's `Do` is called.
+- **`Resume(records, steps, pivot, maxAttempts)`** is a pure state machine shared by
+  recovery and the engine (the engine's in-memory state *is* a `Snapshot` advanced by the
+  same `apply`). It validates every transition (any illegal sequence is
+  `ErrLogCorrupt`) and plans the next action: `ActDo`, `ActAbort`, `ActCompensate`,
+  `ActEnd`, or `ActNone` for a terminal saga.
+  - An intent without an outcome means "outcome unknown": the step runs again as the
+    next attempt with the same idempotency key.
+  - Attempt counts are durable (one intent per attempt), so the retry bound holds
+    across crashes: before the pivot, `attempt >= MaxAttempts` with no outcome plans an
+    abort.
+  - Abort compensates from the failing step itself when it is before the pivot (a step
+    that failed may have half-acted, e.g. a partial copy), and from `pivot-1` when the
+    pivot failed definitively (`ErrPermanent` from the pivot means it did not apply).
+- **Engine (`New`, `Begin`, `Recover`, `Status`, `IDs`, `Stats`, `EncodeState`,
+  `LogName`, `Frozen`).** Single-threaded; acts only through `env.Clock`, `env.Rand`
+  (jitter) and `env.Disk`; never blocks. Steps are callback-style
+  (`Do(Call, done(out, err))`, `Compensate(Call, done(err))`). A `Call` carries the
+  idempotency `Key{Saga, Step}`, the attempt number, the begin time, the input and the
+  outputs of completed steps (for a compensation: of every completed step).
+  - Each attempt arms a step timeout (`Policy.StepTimeout`); a missing answer becomes a
+    retryable `env.ErrTimeout`. Every callback carries a token, so a late or duplicate
+    answer is ignored (tested: `a step that answers twice or late is heard once`).
+  - Retry: `Policy.Backoff(attempt, rand)` = `BaseDelay·2^(attempt-1)` capped at
+    `MaxDelay`, plus jitter in `[0, d·JitterPPM/10^6]` from `env.Rand`; integer
+    arithmetic, overflow-safe (saturates).
+  - Before the pivot: retryable failures retry up to `MaxAttempts`, then abort;
+    `ErrPermanent` aborts at once. The pivot: retried without bound on retryable errors
+    (an unknown outcome must not be compensated), aborted only on `ErrPermanent`. After
+    the pivot: every error, `ErrPermanent` included, is retried without bound (forward
+    only). Compensations: retried without bound until they succeed, in reverse order.
+  - `Config.Hook(Point) bool` is called after each append and before its sync; returning
+    true **freezes** the engine (all timers stopped, all callbacks ignored). The tests
+    use it to crash the coordinator at an exact record, with or without a torn tail.
+    Production passes nil.
+  - A log write failure suspends that saga (`Status.Suspended`, `Status.Err`); it
+    resumes from its log on the next `Recover` (restart).
+  - `Recover` lists the prefix, and per saga: unreadable (`ErrIO`) → retried later on a
+    backoff timer (status reports `ErrSagaNotFound` "recovery retrying" meanwhile);
+    corrupt or unknown definition → recorded as broken, the log is left byte-for-byte as
+    found, `Status` returns the error; no whole record → the blob is deleted; a torn
+    tail → the blob is rewritten to the valid prefix and synced **before** anything is
+    appended (otherwise the garbage would become a corrupt middle record); then the saga
+    resumes. A second `Recover` in the same incarnation is a no-op.
+- **Errors.** `ErrPermanent`, `ErrSagaNotFound`, `ErrLogCorrupt`, `ErrRootMismatch`;
+  `*StepError{Saga, Step, Attempt, Compensation, Err}` (the brief's four fields plus
+  `Compensation`). Wire codes via `saga.Codes()`: `CodePermanent` = 112,
+  `CodeSagaNotFound` = 113, `CodeLogCorrupt` = 114 (`CodeAppMin+48..50`). Invalid
+  arguments wrap `env.ErrInvalidArgument`; oversized records `env.ErrTooLarge`; a frozen
+  engine's `Begin` `env.ErrClosed`.
+
+### `internal/saga` — the migration workflow (`Migration(ops) Definition`)
+
+Five steps, pivot at index 3, input `MigrationInput{Bucket, From, To}` (length-prefixed
+codec, `DecodeMigrationInput`, `Validate`: non-empty, `From != To`). Ops are five small
+interfaces declared here (`Allocator`, `Copier`, `Verifier`, `Router`, `Retirer`,
+combined as `MigrationOps`); nothing from storage/merkle/occ/gossip is imported.
+
+| # | step | Do | Compensate |
+|---|---|---|---|
+| 0 | `allocate` | `Claim`: register this saga at the source, claim the target | `Unclaim`: release the target claim, deregister at the source |
+| 1 | `copy` | `Copy` source → target; output = root of what was copied | `Discard` the copied objects |
+| 2 | `verify` | `Root(to)` must equal the copy's root, else `ErrRootMismatch` (retryable) | nothing to undo |
+| 3 | `flip` (pivot) | `Flip` the routing pointer to `To` with stamp (begin time, saga ID) | none (pivot) |
+| 4 | `delete-source` | see below; output `moved` or `superseded` | none (forward only) |
+
+`delete-source`: read the **merged** pointer (`Pointer` must return one agreed value or
+an error). If it is not `To`, this migration lost a duel: `Discard` + `Unclaim` its
+target, output `superseded`. If it is `To`: `Seal` the source (refused with a retryable
+error while any other saga is registered there; reports whether the source is already
+retired by this saga); if already retired → `Promote` the target; else catch-up `Copy`,
+second Merkle comparison `Root(from) == Root(to)` (else `ErrRootMismatch`, retried),
+`Retire` the source, `Promote` the target, output `moved`. Retire comes **before**
+Promote: with the other order a crash between them made the retried catch-up copy the
+sealed source over the already-live target and lose writes acknowledged there (found by
+the 500-seed sweep, see "Bugs found").
+
+Why the duel resolves: every migration of a bucket registers at the source before it
+copies, and the winner may seal the source only when it is the sole registrant. A loser
+deregisters when it compensates or when it sees the merged pointer name someone else.
+So the source is never retired while a competing migration could still flip, and the
+pointer (LWW over all replicas, flips retried until every replica has them) converges
+to one value that exactly one migration reads as its own.
+
+### `internal/saga/sagasim` — the model cluster and the matrix runner
+
+- **Stores** (one location per store node): per bucket a status (live, staging,
+  sealed, retired), the claiming owner, the sealer, source registrations, objects; plus
+  a pointer replica per bucket (LWW by stamp, then writer, then location). State is one
+  blob, rewritten and synced on every mutation. Ops over `env.Transport` request/
+  response with errors through the code table (`sagasim.Codes()` adds `ErrBusy` 120,
+  `ErrMoved` 121, `ErrUnsettled` 122, `ErrMalformed` 123 to the saga rows). Every
+  operation is idempotent per saga ID. A release of a claim that still holds objects
+  leaves them as visible orphans, so every compensation is necessary (the canary relies
+  on this). Copies are fenced by a per-bucket generation (a late dump reply is refused
+  once a discard, release, claim, promotion or newer copy happened).
+- **Coordinator** process hosts `saga.Engine` with the migration definition over
+  `sagasim.Ops`; **Client** writes objects through the pointer and records acks.
+- **Checks**: `CheckAt(bucket, loc)` = every pointer replica names `loc`, `loc` holds
+  the bucket live with no registrations and the original objects (exact root when there
+  is no client), every other store holds nothing of the bucket (no staging, no orphan
+  objects, no registrations); `CheckWrites` = every acknowledged write is present at the
+  final location and nothing nobody wrote is; `CheckDuel`; invariant
+  `sagasim/one-live-location` (never two live copies), every 20 events.
+- **Exported for Chunk 6**: `Harness` / `Cluster` / `BuildOptions`, `Cells()`, `Cell`
+  (`Name`, `Want`), `Run(h, cell, RunOptions) func(seed) *sim.Sim` (failures land in
+  `s.Err()`, wrapped with `ErrCheck`), `MatrixPolicy()`, `ModelHarness()`, and the
+  scenario drivers `NemesisRun(NemesisParams, *NemesisReport)` and
+  `DuelRun(DuelParams, *DuelReport)`. Chunk 6 implements `Harness.Build` with real
+  components and calls `Run` for every cell; fault injection wraps the
+  `saga.Definition` it is handed, so it works for any step implementation.
+
+## The failure-point matrix
+
+78 cells. Injection is generic (a wrapper around the definition's steps plus the engine
+hook):
+- `fail-before-action`: the step refuses with `ErrPermanent` without acting (sticky for
+  steps up to the pivot, once after it).
+- `fail-after-action`: the step acts, then its answer is replaced by a retryable "lost
+  response" (`MaxAttempts` = 3 times before the pivot, so retries run out after the
+  step acted; twice from the pivot on).
+- `fail-mid-compensation`: the pivot refuses, and the named step's compensation acts and
+  then fails 6 times before succeeding.
+- `crash-before-action`: the coordinator freezes right after appending the step's intent
+  (before its sync) and is crashed, restarted 500 ms later.
+- `crash-after-action`: same, after the step acted, at the append of its `done`.
+- `crash-mid-compensation`: the pivot refuses; freeze at the append of the step's
+  `comp-done` (compensation acted, not yet durable).
+- **torn**: crash kinds use `CrashTorn` instead of `Crash`; fail kinds add a torn crash
+  at the next log append after the failure. **double**: the first append after the
+  restart (i.e. during recovery's first action) is torn-crashed again.
+Mid-compensation cells exist for steps 0–2 only (flip and delete-source are never
+compensated). Each run also asserts no step or compensation runs once the `end` record
+is durable, compensations succeed in non-increasing step order, and the terminal state
+passes `CheckMoved` (Completed, output `moved`) or `CheckCompensated`.
+
+Measured over three 500-seed sweeps (bases 1, 7700000, 31337000000) plus the pinned
+seeds: 1,508 runs per cell, 117,624 runs in all, every cell ended in its expected state
+every time. Time is virtual time from `begin` to the terminal state.
+
+| step | failure kind | untorn | torn | untorn, double | torn, double | worst time |
+|---|---|---|---|---|---|---|
+| allocate | fail-before-action | Compensated (1508/1508) | Compensated (1508/1508) | — | — | 0.66 s |
+| allocate | fail-after-action | Compensated (1508/1508) | Compensated (1508/1508) | — | — | 1.23 s |
+| allocate | fail-mid-compensation | Compensated (1508/1508) | Compensated (1508/1508) | — | — | 5.54 s |
+| allocate | crash-before-action | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | 2.30 s |
+| allocate | crash-after-action | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | 2.43 s |
+| allocate | crash-mid-compensation | Compensated (1508/1508) | Compensated (1508/1508) | Compensated (1508/1508) | Compensated (1508/1508) | 1.92 s |
+| copy | fail-before-action | Compensated (1508/1508) | Compensated (1508/1508) | — | — | 0.94 s |
+| copy | fail-after-action | Compensated (1508/1508) | Compensated (1508/1508) | — | — | 1.82 s |
+| copy | fail-mid-compensation | Compensated (1508/1508) | Compensated (1508/1508) | — | — | 5.58 s |
+| copy | crash-before-action | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | 2.30 s |
+| copy | crash-after-action | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | 2.49 s |
+| copy | crash-mid-compensation | Compensated (1508/1508) | Compensated (1508/1508) | Compensated (1508/1508) | Compensated (1508/1508) | 1.92 s |
+| verify | fail-before-action | Compensated (1508/1508) | Compensated (1508/1508) | — | — | 1.18 s |
+| verify | fail-after-action | Compensated (1508/1508) | Compensated (1508/1508) | — | — | 1.71 s |
+| verify | fail-mid-compensation | Compensated (1508/1508) | Compensated (1508/1508) | — | — | 4.89 s |
+| verify | crash-before-action | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | 2.30 s |
+| verify | crash-after-action | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | 2.44 s |
+| verify | crash-mid-compensation | Compensated (1508/1508) | Compensated (1508/1508) | Compensated (1508/1508) | Compensated (1508/1508) | 1.79 s |
+| flip | fail-before-action | Compensated (1508/1508) | Compensated (1508/1508) | — | — | 1.29 s |
+| flip | fail-after-action | Completed (1508/1508) | Completed (1508/1508) | — | — | 2.22 s |
+| flip | fail-mid-compensation | n/a | n/a | n/a | n/a | — |
+| flip | crash-before-action | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | 2.30 s |
+| flip | crash-after-action | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | 2.40 s |
+| flip | crash-mid-compensation | n/a | n/a | n/a | n/a | — |
+| delete-source | fail-before-action | Completed (1508/1508) | Completed (1508/1508) | — | — | 1.86 s |
+| delete-source | fail-after-action | Completed (1508/1508) | Completed (1508/1508) | — | — | 2.45 s |
+| delete-source | fail-mid-compensation | n/a | n/a | n/a | n/a | — |
+| delete-source | crash-before-action | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | 2.30 s |
+| delete-source | crash-after-action | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | Completed (1508/1508) | 2.53 s |
+| delete-source | crash-mid-compensation | n/a | n/a | n/a | n/a | — |
+
+Bound: `sagasim.MatrixBound` = 20 s (measured worst 5.58 s, `allocate`
+fail-mid-compensation torn). Partial records: in the base-1 sweep 24,196 of 39,000 runs
+recovered from at least one partial log record; each `-torn` cell saw a partial record
+in 449–499 of its 500 seeds (the rest kept all or none of the record, which recovery
+also handles).
+
+## Measurements
+
+- **Nemesis** (`TestMigrationUnderNemesisDST`, 3 chaos phases of 4 s + 2 s heal, every
+  chaos kind except bit-rot, wipe-disk, wipe-rejoin; budget MinLive 3, MaxDamagedDisks 1;
+  coordinator c1, stores a/b/c in three regions, client writing 24 objects): migrations
+  are chained a→b→c→a through the whole chaos window. Over 1,508 runs: 6,787 migrations,
+  5,306 Completed, 1,481 Compensated (pre-pivot retries exhausted under partitions/
+  pauses); 2–9 migrations per run. Settle time after the last heal: max 2.85 s, mean
+  0.93 s; bound `nemesisConverge` = 20 s. No acknowledged write lost (mean 17.9 acked
+  writes per run).
+- **Retries per step under the nemesis** (`Do` calls summed over the 6,787 migrations;
+  later steps run only for migrations that reached them): allocate 8,051, copy 8,179,
+  verify 5,973, flip 9,234, delete-source 12,449. Per migration that is about 1.19
+  allocate calls, and flip and delete-source carry the most retries (they wait out
+  partitions without a bound).
+- **Duel** (`TestDuelingMigrationsDST`, c1 migrates a→b, c2 migrates a→c, partition
+  {c1,b} | {c2,c} for 2–6 s, begins staggered by up to 300 ms): 1,508 runs, every one
+  ends with exactly one location holding the bucket, the pointer agreeing at every
+  replica, the loser's target empty. Winners: b 761, c 747; outcomes always one `moved`
+  and one `superseded` (no run needed a compensation). Finish after the heal: max 3.34 s,
+  mean 1.71 s (base-1 sweep); bound `duelAfterHeal` = 10 s, `duelConverge` = 90 s.
+- **Wall time**: `go test ./internal/saga/...` at default seeds about 1 s; the
+  500-seed sweep of `internal/saga` 43–49 s per base (about 52 s wall including the
+  container); rapid at 2,000 checks per property under 1 s each.
+
+## Claims and the tests that prove them
+
+| claim | test |
+|---|---|
+| records round-trip; every strict prefix is a torn tail; a damaged middle or last record is `ErrLogCorrupt`; a non-canonical or oversized record is refused | `TestLogAppendRecover` |
+| recovery truncates a torn tail before appending; a torn first record leaves no saga; a torn crash at every record boundary recovers and finishes | `TestLogAppendRecover` (sub-tests) |
+| a damaged middle record fails recovery with `ErrLogCorrupt`, the log stays as found, nothing runs | `TestLogCorruptMiddleRecordFailsRecovery` |
+| unreadable logs are retried on a timer | `TestRecoverRetriesReadErrors`, `TestEngineEdges` |
+| the record-level state machine accepts exactly the legal sequences and plans the right next action | `TestStateMachineTable` (36 rows + 4 sub-tests) |
+| backoff doubles to the cap, saturates, jitter is seeded and bounded; the engine waits exactly the backoff; a silent step times out | `TestRetryBackoffSchedule` |
+| compensations run in reverse order, retried before the next starts, forward steps never run after compensation begins | `TestCompensationOrder` |
+| one idempotency key per (saga, step) for every attempt and across a crash; keys unambiguous | `TestIdempotencyKey` |
+| the pivot is retried past the attempt bound; only `ErrPermanent` aborts it; nothing after the pivot is compensated | `TestPivotSemantics` |
+| `*StepError` fields; `ErrPermanent` stops retry; `ErrSagaNotFound`; codes round-trip | `TestStepErrorFields`, `TestPermanentStopsRetry`, `TestSagaNotFound`, `TestCodesRoundTrip` |
+| terminal state equals a reference model for random outcomes and up to 4 crashes (hook-placed torn/untorn and timed) | `TestPropTerminalState` |
+| recovering twice equals recovering once (same disk, same status, same first action) for any byte prefix of any valid log | `TestPropRecoveryIdempotent` |
+| no step or compensation runs after the end record is durable, including late answers and crashes after the end | `TestPropNoStepAfterTerminal` |
+| arbitrary bytes: a valid prefix or `ErrLogCorrupt`, never a panic; recovery keeps the valid prefix and finishes | `FuzzSagaLogRecover` |
+| the workflow's paths (moved, superseded, already retired, root mismatch, bad input, retried ops and compensations) | `TestMigrationWorkflow`, `TestMigrationInputCodec`, `TestModelClusterReportsBadInput` |
+| every cell ends Completed with a verified root and flipped pointer, or Compensated with zero orphans and the pointer unchanged | `TestMigrationFailurePointsDST` |
+| migrations under the nemesis end terminal, the bucket in exactly one place, no acknowledged write lost | `TestMigrationUnderNemesisDST` |
+| two coordinators across a partition: one location, pointer agreed, loser cleaned up | `TestDuelingMigrationsDST` |
+| skipping the copy compensation (or the allocate one) makes a cell fail; skipping verify's no-op one does not | `TestCanarySkippedCompensation` |
+| model store operations, wire, sentinels (`ErrBusy`, `ErrMoved`, `ErrUnsettled`, `ErrMalformed`), copy fencing | `sagasim` tests |
+
+Canary: `saga.PlantSkippedCompensation(cfg, step)` (in `export_test.go`; sets an
+unexported `Config` field) makes the engine log a compensation as done without calling
+it. With step 1 skipped, the cell `flip-fail-before-action-untorn` fails `ErrCheck`
+(orphan objects at the target) on every seed tried.
+
+## Bugs the tests found (and their regressions)
+
+1. **Lost acknowledged writes** (500-seed nemesis sweep, about 2.6% of seeds): promote
+   before retire let a retried catch-up overwrite a live target. Fixed by retiring
+   first; reintroducing the old order fails 39 of 500 seeds. Seeds 26, 53 (scenario as
+   first written) and 13, 16 (scenario as moved into `sagasim.NemesisRun`) are pinned in
+   `internal/saga/testdata/seeds.txt`.
+2. **Matrix expectation**: a one-shot `ErrPermanent` whose abort record was torn away
+   was retried and succeeded — correct engine behaviour; the injection was made sticky
+   for steps up to the pivot (a definitive refusal stays refused).
+3. **Canary had no teeth**: releasing a claim deleted copied objects, so the copy's
+   compensation was redundant; release now leaves objects as orphans.
+4. Found by review, not by a seed: late two-hop copies (fenced) and equal-stamp pointer
+   ties (ordered by location).
+
+## Stated limitations (for the prose and the adversarial pass)
+
+- **OQ-13, lost coordinator.** No log replication, no takeover. An operator finds, on
+  the coordinator's disk, the blob `saga/<id>`: decodable with `saga.DecodeLog`, and
+  `saga.Resume` gives the step, attempt and state; its last record is not `end`. The
+  world is in a state the log describes: before the pivot, possibly a claimed target
+  with partial or full copies and a registration at the source; after the pivot, the
+  pointer flipped and possibly a sealed source. A lost coordinator holding a source
+  registration also blocks any other migration of that bucket from sealing the source
+  (the other migration retries `delete-source` forever with `ErrBusy`).
+- **A compensation that fails forever** keeps the saga in Compensating, retrying with
+  backoff capped at `MaxDelay`; `Status.Err` is a `*StepError` with
+  `Compensation: true` and the attempt count; the log grows by one `comp-intent` per
+  attempt (about 20 bytes). Same for the pivot and later steps. Attempts are capped at
+  2^31−1 by the record format (after that the saga is suspended).
+- **Bit-rot or wipe of the coordinator's log** is not repaired: the saga is reported
+  `ErrLogCorrupt` and left alone. The nemesis excludes bit-rot and wipes for that reason.
+- Saga IDs must be unique across coordinators (the stamp tie-break relies on them);
+  Chunk 6 should prefix them with the node ID. Terminal logs are never garbage-collected.
+- The model's source is one node, so source-side registration and sealing are
+  serialized there; in the real store they must be made consistent across the source
+  region's nodes (Chunk 6).
+- **For Chunk 6's real steps**: every operation must be idempotent per key, and any
+  operation that relays (like the copy) must be fenced so a late execution cannot land
+  after its compensation. Over the simulated network the per-link FIFO order protects
+  the direct requests; the two-hop copy needed the explicit fence.
+
+## Errors intentionally ignored (`_ =`)
+
+- `internal/saga/engine.go` `retryPending`: `_ = g.load(id)` — the error is recorded where
+  it matters (a broken saga in `broken`, an unreadable one re-queued by `later`); there
+  is no caller to return it to from a timer.
+- `internal/saga/sagasim/matrix.go` `crash`: `_ = s.CrashTorn(id)`, `_ = s.Crash(id)`,
+  `_ = s.Restart(id)` — a no-op when the node is already in that state is fine; the cell
+  check fails anyway if the crash point was never reached.
+- `Timer.Stop()`/`Reset()` results (booleans) are not used except in `later`.
+
+## Panics, lint exemptions
+
+No `panic(` added; no line in `panic-allowlist.txt`. No detlint exemption needed
+(map ranges are only collect-then-sort; `fmt` never gets a pointer-typed argument).
+
+## Uncovered branches
+
+`internal/saga` 95.2%, `internal/saga/sagasim` 87.5% (own tests). Uncovered in
+`internal/saga`: `write` when `apply` refuses a record the engine built (an engine bug;
+unreachable), `AppendRecord` failing inside `write` (the record was already sized by
+`Begin`), the `Stop()` branch of `later` with a pending retry timer, `cause` truncation
+over 200 bytes, `retryPending` after a freeze, `Status` of a saga pending re-read,
+`validRecord`'s step/attempt/state range errors on encode (the decoder's ones are
+covered), `decodePayload`'s out-of-range branch and a few `flag`/`EncodeState`
+combinations, and the compensate closures of `flip` and `delete-source` (never called: nothing at or after the pivot is compensated). In `sagasim`: error branches of the client and the checks that a correct
+run never takes.
+
+## Requests to the orchestrator
+
+- Wire code block: saga uses `CodeAppMin+48..50`, sagasim `CodeAppMin+56..59`. Chunk 6
+  must merge these with the other chunks' rows; please record the allocation.
+- No simulator change request.
