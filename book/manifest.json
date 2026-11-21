@@ -1,5 +1,13 @@
 {
   "title": "Decentralized Object Store & Local-First Sync Engine",
-  "chapters": [],
+  "chapters": [
+    {
+      "n": 1,
+      "slug": "deterministic-simulation",
+      "title": "Deterministic Simulation Testing",
+      "file": "chapters/01-deterministic-simulation.md",
+      "status": "published"
+    }
+  ],
   "front_matter": []
 }
