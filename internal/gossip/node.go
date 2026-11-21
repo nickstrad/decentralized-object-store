@@ -228,7 +228,7 @@ func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 		return
 	}
 	for _, u := range m.Updates {
-		n.receive(u, "")
+		n.receive(u)
 	}
 	switch m.Kind {
 	case KindPing:
@@ -270,12 +270,12 @@ func (n *Node) onAck(seq uint32) {
 	}
 }
 
-func (n *Node) receive(u Member, syncPeer env.NodeID) {
+func (n *Node) receive(u Member) {
 	if u.ID == n.self.ID {
 		n.refute(u)
 		return
 	}
-	n.apply(u, syncPeer != "" && u.ID != syncPeer)
+	n.apply(u)
 }
 
 func (n *Node) refute(u Member) {
@@ -309,7 +309,7 @@ func (n *Node) localOf(id env.NodeID) *memberLocal {
 	return l
 }
 
-func (n *Node) apply(u Member, quietIfNew bool) bool {
+func (n *Node) apply(u Member) bool {
 	cur, had := n.view.Get(u.ID)
 	if !n.view.Apply(u) {
 		return false
@@ -348,9 +348,7 @@ func (n *Node) apply(u Member, quietIfNew bool) bool {
 			n.emit(EventLeft, u)
 		}
 	}
-	if had || !quietIfNew {
-		n.enqueue(u)
-	}
+	n.enqueue(u)
 	return true
 }
 
@@ -368,7 +366,7 @@ func (n *Node) startSuspicion(l *memberLocal, u Member) {
 			return
 		}
 		m.State = StateDead
-		n.apply(m, false)
+		n.apply(m)
 	})
 }
 
@@ -439,7 +437,7 @@ func (n *Node) suspectLocally(id env.NodeID) {
 		return
 	}
 	m.State = StateSuspect
-	if n.apply(m, false) {
+	if n.apply(m) {
 		n.stats.Suspicions++
 	}
 }
@@ -638,7 +636,7 @@ func (n *Node) syncWith(peer env.NodeID, cb func(error)) {
 			return
 		}
 		for _, u := range m.Updates {
-			n.receive(u, peer)
+			n.receive(u)
 		}
 		n.stats.Syncs++
 		cb(nil)
@@ -692,7 +690,7 @@ func (n *Node) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 		return
 	}
 	for _, u := range m.Updates {
-		n.receive(u, from)
+		n.receive(u)
 	}
 	resp, err := Message{Kind: KindSyncResp, Updates: n.view.All()}.Encode()
 	if err != nil {

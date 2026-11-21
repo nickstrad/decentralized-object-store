@@ -1,2 +1,4 @@
 # seed note — every seed that ever failed a DST scenario in this package; append, never delete
 33	TestSWIMCrashDetectionDST: victim never joined (all 3 seed syncs lost at 5% loss), crashed before the first periodic sync; fixed by rejoining seeds every probe period while alone
+78	TestSWIMCrashDetectionDST: victim unknown at one node after 10 s when sync-learned joins were not re-gossiped (reverted)
+469	TestSWIMCrashDetectionDST: same cause as 78
