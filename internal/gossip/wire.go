@@ -162,8 +162,8 @@ func (d *decoder) u32(what string) uint32 {
 	return 0
 }
 
-func (d *decoder) str(what string) string {
-	n := int(d.u8(what + " length"))
+func (d *decoder) str(lenWhat, what string) string {
+	n := int(d.u8(lenWhat))
 	return string(d.take(n, what))
 }
 
@@ -179,7 +179,7 @@ func Decode(b []byte) (Message, error) {
 	}
 	m.Seq = d.u32("sequence number")
 	if m.Kind == KindPingReq {
-		m.Target = env.NodeID(d.str("target"))
+		m.Target = env.NodeID(d.str("target length", "target"))
 		if d.err == nil && m.Target == "" {
 			d.fail("empty target")
 		}
@@ -198,11 +198,11 @@ func Decode(b []byte) (Message, error) {
 			d.fail("unknown state " + strconv.Itoa(int(u.State)))
 		}
 		u.Incarnation = d.u32("incarnation")
-		u.ID = env.NodeID(d.str("member id"))
+		u.ID = env.NodeID(d.str("member id length", "member id"))
 		if d.err == nil && u.ID == "" {
 			d.fail("empty member id")
 		}
-		u.Region = env.Region(d.str("region"))
+		u.Region = env.Region(d.str("region length", "region"))
 		m.Updates = append(m.Updates, u)
 	}
 	if d.err == nil && d.off != len(b) {

@@ -103,6 +103,8 @@ type Node struct {
 	queue  []queued
 	qorder uint64
 
+	nextPurge env.Time
+
 	probe    probeState
 	rotation []env.NodeID
 	rotIdx   int
@@ -169,6 +171,8 @@ func (n *Node) Members() []Member { return n.view.Live() }
 
 func (n *Node) All() []Member { return n.view.All() }
 
+func (n *Node) LiveCount() int { return n.view.LiveCount() }
+
 func (n *Node) Lookup(id env.NodeID) (Member, error) {
 	m, ok := n.view.Get(id)
 	if !ok {
@@ -224,7 +228,7 @@ func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 		return
 	}
 	for _, u := range m.Updates {
-		n.receive(u)
+		n.receive(u, "")
 	}
 	switch m.Kind {
 	case KindPing:
@@ -266,12 +270,12 @@ func (n *Node) onAck(seq uint32) {
 	}
 }
 
-func (n *Node) receive(u Member) {
+func (n *Node) receive(u Member, syncPeer env.NodeID) {
 	if u.ID == n.self.ID {
 		n.refute(u)
 		return
 	}
-	n.apply(u)
+	n.apply(u, syncPeer != "" && u.ID != syncPeer)
 }
 
 func (n *Node) refute(u Member) {
@@ -305,13 +309,16 @@ func (n *Node) localOf(id env.NodeID) *memberLocal {
 	return l
 }
 
-func (n *Node) apply(u Member) bool {
+func (n *Node) apply(u Member, quietIfNew bool) bool {
 	cur, had := n.view.Get(u.ID)
 	if !n.view.Apply(u) {
 		return false
 	}
 	l := n.localOf(u.ID)
 	l.changed = n.e.Clock.Now()
+	if !u.State.Live() {
+		n.nextPurge = min(n.nextPurge, l.changed.Add(n.cfg.DeadRetention))
+	}
 	wasLive, isLive := had && cur.State.Live(), u.State.Live()
 	if u.State == StateSuspect {
 		if !(had && cur.State == StateSuspect && cur.Incarnation == u.Incarnation) {
@@ -341,7 +348,9 @@ func (n *Node) apply(u Member) bool {
 			n.emit(EventLeft, u)
 		}
 	}
-	n.enqueue(u)
+	if had || !quietIfNew {
+		n.enqueue(u)
+	}
 	return true
 }
 
@@ -359,7 +368,7 @@ func (n *Node) startSuspicion(l *memberLocal, u Member) {
 			return
 		}
 		m.State = StateDead
-		n.apply(m)
+		n.apply(m, false)
 	})
 }
 
@@ -430,7 +439,7 @@ func (n *Node) suspectLocally(id env.NodeID) {
 		return
 	}
 	m.State = StateSuspect
-	if n.apply(m) {
+	if n.apply(m, false) {
 		n.stats.Suspicions++
 	}
 }
@@ -460,14 +469,25 @@ func (n *Node) onProbeTimeout(seq uint32) {
 }
 
 func (n *Node) purge(now env.Time) {
-	for _, id := range n.view.IDs() {
-		m, _ := n.view.Get(id)
+	if n.view.Len() == n.view.LiveCount() || now < n.nextPurge {
+		return
+	}
+	var expired []env.NodeID
+	next := env.Time(math.MaxInt64)
+	for _, id := range n.view.ids {
+		m := n.view.byID[id]
 		if id == n.self.ID || m.State.Live() {
 			continue
 		}
-		if now.Sub(n.localOf(id).changed) < n.cfg.DeadRetention {
+		due := n.localOf(id).changed.Add(n.cfg.DeadRetention)
+		if now < due {
+			next = min(next, due)
 			continue
 		}
+		expired = append(expired, id)
+	}
+	n.nextPurge = next
+	for _, id := range expired {
 		n.view.Remove(id)
 		delete(n.local, id)
 		n.queue = slices.DeleteFunc(n.queue, func(q queued) bool { return q.m.ID == id })
@@ -483,7 +503,8 @@ func (n *Node) enqueue(m Member) {
 
 func (n *Node) piggyback(to env.NodeID, size int, lead []Member) []Member {
 	budget := n.cfg.MaxPacket - size
-	var out []Member
+	out := make([]Member, 0, min(len(n.queue)+len(lead)+1, budget/minUpdateSize+1))
+	var first []Member
 	take := func(m Member) bool {
 		s := UpdateSize(m)
 		if s > budget {
@@ -494,10 +515,12 @@ func (n *Node) piggyback(to env.NodeID, size int, lead []Member) []Member {
 		return true
 	}
 	for _, m := range lead {
-		take(m)
+		if take(m) {
+			first = append(first, m)
+		}
 	}
-	if m, ok := n.view.Get(to); ok && to != n.self.ID && m.State != StateAlive && !slices.Contains(lead, m) {
-		take(m)
+	if m, ok := n.view.Get(to); ok && to != n.self.ID && m.State != StateAlive && !slices.Contains(first, m) && take(m) {
+		first = append(first, m)
 	}
 	slices.SortFunc(n.queue, func(a, b queued) int {
 		if a.transmits != b.transmits {
@@ -514,7 +537,7 @@ func (n *Node) piggyback(to env.NodeID, size int, lead []Member) []Member {
 	limit := n.cfg.RetransmitLimit(n.view.LiveCount())
 	for i := range n.queue {
 		q := &n.queue[i]
-		if slices.Contains(out, q.m) {
+		if len(first) > 0 && slices.Contains(first, q.m) {
 			q.transmits++
 			continue
 		}
@@ -615,7 +638,7 @@ func (n *Node) syncWith(peer env.NodeID, cb func(error)) {
 			return
 		}
 		for _, u := range m.Updates {
-			n.receive(u)
+			n.receive(u, peer)
 		}
 		n.stats.Syncs++
 		cb(nil)
@@ -669,7 +692,7 @@ func (n *Node) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 		return
 	}
 	for _, u := range m.Updates {
-		n.receive(u)
+		n.receive(u, from)
 	}
 	resp, err := Message{Kind: KindSyncResp, Updates: n.view.All()}.Encode()
 	if err != nil {

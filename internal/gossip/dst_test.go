@@ -17,7 +17,7 @@ import (
 
 const (
 	dstLogCap        = 1 << 12
-	dstPoll          = 100 * time.Millisecond
+	dstPoll          = 500 * time.Millisecond
 	dstInvariantEach = 64
 
 	convergeLossMinPPM        = 50_000
@@ -190,12 +190,14 @@ func (c *cluster) live() []env.NodeID {
 }
 
 func agreed(s *sim.Sim, expect []env.NodeID) bool {
+	for _, id := range expect {
+		if n := gnode(s, id); n == nil || n.LiveCount() != len(expect) {
+			return false
+		}
+	}
 	var ref []gossip.Member
 	for _, id := range expect {
 		n := gnode(s, id)
-		if n == nil {
-			return false
-		}
 		ms := n.Members()
 		if len(ms) != len(expect) {
 			return false
@@ -392,8 +394,10 @@ func convergeRun(n int, out *convergeOut) func(seed int64) *sim.Sim {
 }
 
 func TestSWIMConvergenceDST(t *testing.T) {
+	t.Parallel()
 	for _, n := range []int{20, 50, 100} {
 		t.Run(fmt.Sprintf("N=%d", n), func(t *testing.T) {
+			t.Parallel()
 			var periods, msgs, falseDead tally
 			t.Cleanup(func() {
 				t.Logf("MEASURE converge N=%d log2N=%d bound=%d periods: periods-to-converge %s", n, ceilLog2(n), convergeC*ceilLog2(n), periods.summary())
@@ -401,7 +405,6 @@ func TestSWIMConvergenceDST(t *testing.T) {
 				t.Logf("MEASURE converge N=%d false Died events (healthy nodes, any observer) %s", n, falseDead.summary())
 			})
 			simtest.Sweep(t, func(t *testing.T, seed int64) {
-				t.Parallel()
 				var out convergeOut
 				simtest.RequireDeterministic(t, seed, convergeRun(n, &out))
 				periods.add(out.periods)
@@ -440,10 +443,10 @@ func asymRunFn(cfg gossip.Config, out *asymOut) func(seed int64) *sim.Sim {
 }
 
 func TestSWIMAsymmetricLinkDST(t *testing.T) {
+	t.Parallel()
 	var sus tally
 	t.Cleanup(func() { t.Logf("MEASURE asymmetric suspicions %s", sus.summary()) })
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
-		t.Parallel()
 		var out asymOut
 		simtest.RequireDeterministic(t, seed, asymRunFn(gossip.Config{}, &out))
 		sus.add(int64(out.suspected))
@@ -457,13 +460,13 @@ func TestSWIMAsymmetricLinkDST(t *testing.T) {
 }
 
 func TestCanaryNoIndirectProbe(t *testing.T) {
+	t.Parallel()
 	var sus, died tally
 	t.Cleanup(func() {
 		t.Logf("MEASURE canary suspicions %s", sus.summary())
 		t.Logf("MEASURE canary evictions %s", died.summary())
 	})
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
-		t.Parallel()
 		var out asymOut
 		simtest.RequireDeterministic(t, seed, asymRunFn(gossip.WithoutIndirectProbes(gossip.Config{}), &out))
 		sus.add(int64(out.suspected))
@@ -517,12 +520,12 @@ func crashRun(out *crashOut) func(seed int64) *sim.Sim {
 }
 
 func TestSWIMCrashDetectionDST(t *testing.T) {
+	t.Parallel()
 	var det tally
 	t.Cleanup(func() {
 		t.Logf("MEASURE crash detection ms (N=%d, loss %d ppm, bound %v) %s", crashNodes, crashLossPPM, detectBound, det.summary())
 	})
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
-		t.Parallel()
 		var out crashOut
 		simtest.RequireDeterministic(t, seed, crashRun(&out))
 		det.add(out.detect.Milliseconds())
@@ -579,12 +582,12 @@ func partitionRun(out *time.Duration) func(seed int64) *sim.Sim {
 }
 
 func TestSWIMPartitionHealDST(t *testing.T) {
+	t.Parallel()
 	var heal tally
 	t.Cleanup(func() {
 		t.Logf("MEASURE partition heal ms (N=%d, bound %v) %s", partitionNodes, healBound, heal.summary())
 	})
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
-		t.Parallel()
 		var out time.Duration
 		simtest.RequireDeterministic(t, seed, partitionRun(&out))
 		heal.add(out.Milliseconds())
@@ -632,8 +635,8 @@ func refuteRunFn(out *refuteOut) func(seed int64) *sim.Sim {
 }
 
 func TestSWIMRefutationDST(t *testing.T) {
+	t.Parallel()
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
-		t.Parallel()
 		var out refuteOut
 		simtest.RequireDeterministic(t, seed, refuteRunFn(&out))
 		if out.suspected == 0 {
@@ -697,14 +700,15 @@ func restartRun(waitForDeath bool, out *restartOut) func(seed int64) *sim.Sim {
 }
 
 func TestSWIMRestartSameIDDST(t *testing.T) {
+	t.Parallel()
 	for _, wait := range []bool{true, false} {
 		name := "restarted before anyone noticed the crash"
 		if wait {
 			name = "restarted after every node declared it dead"
 		}
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			simtest.Sweep(t, func(t *testing.T, seed int64) {
-				t.Parallel()
 				var out restartOut
 				simtest.RequireDeterministic(t, seed, restartRun(wait, &out))
 				if out.after.Incarnation < out.before.Incarnation || (out.before.State != gossip.StateAlive && out.after.Incarnation == out.before.Incarnation) {
@@ -743,8 +747,8 @@ func joinFailRun(out *error) func(seed int64) *sim.Sim {
 }
 
 func TestJoinNoReachableSeedDST(t *testing.T) {
+	t.Parallel()
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
-		t.Parallel()
 		var got error
 		simtest.RequireDeterministic(t, seed, joinFailRun(&got))
 		if !errors.Is(got, gossip.ErrJoinFailed) || !errors.Is(got, env.ErrUnreachable) {
