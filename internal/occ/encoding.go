@@ -1,0 +1,216 @@
+package occ
+
+import (
+	"encoding/binary"
+	"fmt"
+
+	"github.com/nickstrad/decentralized-object-store/internal/env"
+)
+
+type encoder struct {
+	b []byte
+}
+
+func (e *encoder) raw(p []byte)     { e.b = append(e.b, p...) }
+func (e *encoder) byte(c byte)      { e.b = append(e.b, c) }
+func (e *encoder) uvarint(x uint64) { e.b = binary.AppendUvarint(e.b, x) }
+func (e *encoder) varint(x int64)   { e.b = binary.AppendVarint(e.b, x) }
+func (e *encoder) bytes(p []byte)   { e.uvarint(uint64(len(p))); e.raw(p) }
+func (e *encoder) str(s string)     { e.uvarint(uint64(len(s))); e.b = append(e.b, s...) }
+func (e *encoder) actor(a Actor)    { e.str(string(a.Node)); e.uvarint(a.Epoch) }
+func (e *encoder) stamp(s Stamp) {
+	e.varint(s.Wall)
+	e.uvarint(uint64(s.Logical))
+	e.str(string(s.Node))
+}
+func (e *encoder) fixed(p *[32]byte) { e.raw(p[:]) }
+
+func (e *encoder) bool(v bool) {
+	if v {
+		e.byte(1)
+		return
+	}
+	e.byte(0)
+}
+
+func (e *encoder) vector(v VersionVector) {
+	e.uvarint(uint64(len(v.entries)))
+	for _, x := range v.entries {
+		e.actor(x.Actor)
+		e.uvarint(x.Counter)
+	}
+}
+
+func (e *encoder) version(v Version) {
+	e.actor(v.dot.Actor)
+	e.uvarint(v.dot.Counter)
+	e.vector(v.ctx)
+	e.bool(v.tomb)
+	e.stamp(v.stamp)
+	e.bytes(v.value)
+}
+
+func (e *encoder) record(r Record) {
+	e.uvarint(uint64(len(r.siblings)))
+	for _, v := range r.siblings {
+		e.version(v)
+	}
+}
+
+type decoder struct {
+	b   []byte
+	off int
+	err error
+}
+
+func (d *decoder) fail(what string) {
+	if d.err == nil {
+		d.err = fmt.Errorf("occ: decode %s at offset %d: %w", what, d.off, ErrMalformed)
+	}
+}
+
+func (d *decoder) rest() int { return len(d.b) - d.off }
+
+func (d *decoder) byte() byte {
+	if d.err != nil {
+		return 0
+	}
+	if d.rest() < 1 {
+		d.fail("byte")
+		return 0
+	}
+	c := d.b[d.off]
+	d.off++
+	return c
+}
+
+func (d *decoder) uvarint() uint64 {
+	if d.err != nil {
+		return 0
+	}
+	x, n := binary.Uvarint(d.b[d.off:])
+	if n <= 0 {
+		d.fail("uvarint")
+		return 0
+	}
+	d.off += n
+	return x
+}
+
+func (d *decoder) varint() int64 {
+	if d.err != nil {
+		return 0
+	}
+	x, n := binary.Varint(d.b[d.off:])
+	if n <= 0 {
+		d.fail("varint")
+		return 0
+	}
+	d.off += n
+	return x
+}
+
+func (d *decoder) count(minSize int) int {
+	n := d.uvarint()
+	if d.err != nil {
+		return 0
+	}
+	if n > uint64(d.rest()/minSize) {
+		d.fail("count")
+		return 0
+	}
+	return int(n)
+}
+
+func (d *decoder) bytes() []byte {
+	n := d.count(1)
+	if d.err != nil {
+		return nil
+	}
+	p := d.b[d.off : d.off+n]
+	d.off += n
+	return p
+}
+
+func (d *decoder) str() string { return string(d.bytes()) }
+
+func (d *decoder) fixed(p *[32]byte) {
+	if d.err != nil {
+		return
+	}
+	if d.rest() < len(p) {
+		d.fail("fixed")
+		return
+	}
+	copy(p[:], d.b[d.off:])
+	d.off += len(p)
+}
+
+func (d *decoder) bool() bool {
+	switch d.byte() {
+	case 0:
+		return false
+	case 1:
+		return true
+	}
+	d.fail("flag")
+	return false
+}
+
+func (d *decoder) actor() Actor {
+	node := d.str()
+	return Actor{Node: env.NodeID(node), Epoch: d.uvarint()}
+}
+
+func (d *decoder) stamp() Stamp {
+	wall := d.varint()
+	logical := d.uvarint()
+	if logical > 0xffffffff {
+		d.fail("logical")
+	}
+	return Stamp{Wall: wall, Logical: uint32(logical), Node: env.NodeID(d.str())}
+}
+
+func (d *decoder) vector() VersionVector {
+	n := d.count(3)
+	es := make([]Entry, 0, n)
+	for i := 0; i < n && d.err == nil; i++ {
+		a := d.actor()
+		es = append(es, Entry{Actor: a, Counter: d.uvarint()})
+	}
+	return NewVersionVector(es...)
+}
+
+func (d *decoder) version() Version {
+	a := d.actor()
+	c := d.uvarint()
+	ctx := d.vector()
+	tomb := d.bool()
+	st := d.stamp()
+	val := d.bytes()
+	if d.err == nil && c == 0 {
+		d.fail("dot counter")
+	}
+	if d.err == nil && tomb && len(val) > 0 {
+		d.fail("tombstone value")
+	}
+	return NewVersion(Dot{Actor: a, Counter: c}, ctx, tomb, val, st)
+}
+
+func (d *decoder) record() Record {
+	n := d.count(8)
+	if d.err == nil && n == 0 {
+		d.fail("empty record")
+	}
+	vs := make([]Version, 0, n)
+	for i := 0; i < n && d.err == nil; i++ {
+		vs = append(vs, d.version())
+	}
+	return NewRecord(vs...)
+}
+
+func (d *decoder) end() {
+	if d.err == nil && d.rest() != 0 {
+		d.fail("trailing bytes")
+	}
+}
