@@ -21,6 +21,7 @@ build() {
   sha=$(cat "$sha_file")
   if [ -x "$bin" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$sha" ]; then return; fi
   mkdir -p "$repo/.kb/bin"
+  (cd "$repo" && docker compose build -q dev)  # the image must match this checkout's Dockerfile before kb is compiled in it
   in_dev 'cd kb && CGO_ENABLED=1 go build -buildvcs=false -tags fts5 -o /src/.kb/bin/kb ./cmd/kb'
   echo "$sha" > "$stamp"
 }
