@@ -262,7 +262,7 @@ func TestNodeRetriesLoadAfterReadErrors(t *testing.T) {
 	run(t, s, time.Second)
 	n = occNode(s, ids[0])
 	got, _ := n.Record("k").Version()
-	if !n.Ready() || n.Stats().LoadErrors != 3 || got.ID() != v.ID() || n.Stats().Fresh != 0 {
+	if !n.Ready() || n.Stats().LoadErrors != 3 || got.ID() != v.ID() || n.Stats().Fresh != 0 || n.AheadStamps() != 0 {
 		t.Fatalf("after the read errors cleared the node must load its own state (load errors %d)", n.Stats().LoadErrors)
 	}
 }

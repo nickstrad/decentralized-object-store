@@ -35,6 +35,23 @@ func BenchmarkMergeDoc(b *testing.B) {
 				z.Merge(y)
 			}
 		})
+		b.Run(fmt.Sprintf("store merge with discards records=%d", n), func(b *testing.B) {
+			x, y := benchDocs(b, n)
+			b.ResetTimer()
+			for range b.N {
+				b.StopTimer()
+				cfg := storeConfig("z", 1, 3, &fakeClock{now: 1_000_000})
+				cfg.Doc = x.Clone()
+				s, err := occ.NewStore(cfg)
+				if err != nil {
+					b.Fatal(err)
+				}
+				b.StartTimer()
+				if _, err := s.Merge(y); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 		b.Run(fmt.Sprintf("encode+decode records=%d", n), func(b *testing.B) {
 			x, y := benchDocs(b, n)
 			x.Merge(y)

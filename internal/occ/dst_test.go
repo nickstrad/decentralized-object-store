@@ -674,6 +674,10 @@ func quotaRun(seed int64) *sim.Sim {
 			s.Fail(fmt.Errorf("a recount after settling wrote (%v, %v)", wrote, err))
 		}
 	}
+	w.discards = 0
+	for _, id := range ids {
+		w.discards += occNode(s, id).LWWDiscards()
+	}
 	w.overshoot = int64(truth.Bytes) - quotaLimit
 	if w.overshoot > MaxOvershoot {
 		s.Fail(fmt.Errorf("overshoot %d bytes is above the bound %d", w.overshoot, MaxOvershoot))

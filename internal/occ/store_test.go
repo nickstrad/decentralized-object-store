@@ -148,6 +148,12 @@ func TestETagDeterministic(t *testing.T) {
 	if (occ.Record{}).ETag() != (occ.ETag{}) || !(occ.Record{}).ETag().IsZero() || (occ.Record{}).Present() {
 		t.Fatal("an absent record must have the zero etag")
 	}
+	if got, _ := (occ.Record{}).Merge(occ.NewRecord(w)).Version(); got.ID() != w.ID() || !occ.NewRecord(w).Merge(occ.Record{}).Equal(occ.NewRecord(w)) {
+		t.Fatal("merging with an absent record must keep the present version")
+	}
+	if !w.Descends(w) || w.Supersedes(w) || w.Context().Len() != 0 || !slices.Equal(x.Keys(), []string{"k"}) {
+		t.Fatal("version accessors")
+	}
 	before := a.Record("k").ETag()
 	mustPut(t, a, "k", "same", occ.IfMatch(before))
 	if a.Record("k").ETag() == before {
@@ -443,6 +449,12 @@ func TestFarFutureStampPinsOnlyItsKey(t *testing.T) {
 	o := mustPut(t, s, "other", "x", occ.IfNoneMatch())
 	if o.Stamp().Wall >= far.Wall || s.HLC().Last().Wall >= far.Wall {
 		t.Fatal("a far-future stamp on one key moved the stamps of other keys")
+	}
+	carry := occ.NewDoc()
+	carry.MergeVersion("c", version("rogue", 3, occ.VersionVector{}, false, "carry", st(far.Wall, math.MaxUint32, "rogue")))
+	mustMerge(t, s, carry)
+	if cw := mustPut(t, s, "c", "mine", occ.Unconditional()); cw.Stamp() != st(far.Wall+1, 0, "a") {
+		t.Fatalf("the successor of a full logical counter carries into the wall: %s", cw.Stamp().String())
 	}
 	end := occ.NewDoc()
 	end.MergeVersion("e", version("rogue", 2, occ.VersionVector{}, false, "end", st(math.MaxInt64, math.MaxUint32, "rogue")))
