@@ -67,7 +67,7 @@ type world struct {
 	quietAt    env.Time
 
 	settledFetched uint64
-	nem        *sim.Nemesis
+	nem            *sim.Nemesis
 }
 
 func newWorld(s *sim.Sim, depth int) *world {

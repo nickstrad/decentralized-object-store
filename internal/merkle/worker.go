@@ -76,6 +76,8 @@ type Worker struct {
 	gen      uint64
 	busy     bool
 	deadline env.Timer
+	timer    env.Timer
+	session  *Session
 	stats    Stats
 	last     error
 	started  bool
@@ -118,6 +120,19 @@ func (w *Worker) Start() error {
 	err := w.scrub(true)
 	w.arm()
 	return err
+}
+
+func (w *Worker) Stop() {
+	if !w.started {
+		return
+	}
+	w.started = false
+	if w.timer != nil {
+		w.timer.Stop()
+		w.timer = nil
+	}
+	w.finish(w.gen, fmt.Errorf("merkle: round %d: worker stopped: %w", w.gen, env.ErrClosed))
+	w.gen++
 }
 
 func (w *Worker) Record(key string, sum Hash) error {
@@ -173,10 +188,13 @@ func (w *Worker) EncodeState() []byte {
 
 func (w *Worker) arm() {
 	d := w.cfg.Period/2 + time.Duration(w.e.Rand.Int64N(int64(w.cfg.Period)))
-	w.e.Clock.AfterFunc(d, w.tick)
+	w.timer = w.e.Clock.AfterFunc(d, w.tick)
 }
 
 func (w *Worker) tick() {
+	if !w.started {
+		return
+	}
 	if err := w.scrub(false); err != nil {
 		w.last = err
 	}
@@ -263,10 +281,12 @@ func (w *Worker) startRound() {
 	g := w.gen
 	w.busy = true
 	w.stats.Rounds++
+	s := w.tree.Diff(w.cfg.Limits)
+	w.session = s
 	w.deadline = w.e.Clock.AfterFunc(w.cfg.RoundDeadline, func() {
 		w.finish(g, fmt.Errorf("merkle: round %d with %s: deadline %v passed: %w", g, peer, w.cfg.RoundDeadline, env.ErrTimeout))
 	})
-	w.step(g, peer, w.tree.Diff(w.cfg.Limits))
+	w.step(g, peer, s)
 }
 
 func (w *Worker) live(g uint64) bool { return w.busy && w.gen == g }
@@ -274,7 +294,7 @@ func (w *Worker) live(g uint64) bool { return w.busy && w.gen == g }
 func (w *Worker) step(g uint64, peer env.NodeID, s *Session) {
 	req, ok := s.Request()
 	if !ok {
-		w.account(s)
+		w.account()
 		w.repair(g, peer, s.Result())
 		return
 	}
@@ -284,12 +304,10 @@ func (w *Worker) step(g uint64, peer env.NodeID, s *Session) {
 		}
 		if err != nil {
 			s.Fail(err)
-			w.account(s)
 			w.finish(g, fmt.Errorf("merkle: diff with %s: %w", peer, err))
 			return
 		}
 		if err := s.Feed(resp); err != nil {
-			w.account(s)
 			w.finish(g, fmt.Errorf("merkle: diff with %s: %w", peer, err))
 			return
 		}
@@ -297,8 +315,12 @@ func (w *Worker) step(g uint64, peer env.NodeID, s *Session) {
 	})
 }
 
-func (w *Worker) account(s *Session) {
-	c := s.Result().Cost
+func (w *Worker) account() {
+	if w.session == nil {
+		return
+	}
+	c := w.session.Result().Cost
+	w.session = nil
 	w.stats.RoundTrips += uint64(c.RoundTrips)
 	w.stats.Hashes += uint64(c.Hashes)
 	w.stats.DiffBytes += uint64(c.BytesSent + c.BytesReceived)
@@ -309,7 +331,7 @@ func (w *Worker) repair(g uint64, peer env.NodeID, res Result) {
 	if res.Truncated {
 		w.stats.Truncated++
 	}
-	if len(res.Diffs) == 0 {
+	if !res.Truncated && len(res.Diffs) == 0 {
 		w.stats.InSync++
 	}
 	var todo []string
@@ -337,6 +359,9 @@ func (w *Worker) repair(g uint64, peer env.NodeID, res Result) {
 	pending := len(todo)
 	var errs []error
 	for _, key := range todo {
+		if !w.live(g) {
+			return
+		}
 		w.r.Fetch(peer, key, func(data []byte, err error) {
 			if !w.live(g) {
 				return
@@ -382,6 +407,7 @@ func (w *Worker) finish(g uint64, err error) {
 	if !w.live(g) {
 		return
 	}
+	w.account()
 	w.busy = false
 	if w.deadline != nil {
 		w.deadline.Stop()

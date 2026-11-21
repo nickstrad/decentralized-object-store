@@ -27,6 +27,15 @@ func groundKeys(n, keyLen, leafNibbles int) []string {
 	return out
 }
 
+func builtOf(t fataler, depth int, m map[string]merkle.Hash) *merkle.Tree {
+	t.Helper()
+	tr, err := merkle.Build(depth, entriesOf(m))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	return tr
+}
+
 func paddedKeys(n, keyLen int) map[string]merkle.Hash {
 	m := map[string]merkle.Hash{}
 	for i := 0; i < n; i++ {
@@ -43,7 +52,7 @@ func TestDiffBoundsPinned(t *testing.T) {
 		for _, k := range groundKeys(992, merkle.MaxKeyLen, 1) {
 			remote[k] = sum(k)
 		}
-		dr := drive(t, treeOf(t, 1, nil), treeOf(t, 1, remote), merkle.Limits{})
+		dr := drive(t, treeOf(t, 1, nil), builtOf(t, 1, remote), merkle.Limits{})
 		if err := checkComplete(nil, remote, dr.res); err != nil {
 			t.Fatal(err)
 		}
@@ -57,7 +66,7 @@ func TestDiffBoundsPinned(t *testing.T) {
 		for _, k := range groundKeys(merkle.MaxLeafEntries, merkle.MaxKeyLen, 1) {
 			remote[k] = sum(k)
 		}
-		dr := drive(t, treeOf(t, 1, nil), treeOf(t, 1, remote), merkle.Limits{})
+		dr := drive(t, treeOf(t, 1, nil), builtOf(t, 1, remote), merkle.Limits{})
 		if err := checkComplete(nil, remote, dr.res); err != nil {
 			t.Fatal(err)
 		}
@@ -69,7 +78,7 @@ func TestDiffBoundsPinned(t *testing.T) {
 	t.Run("C12 984 long keys fit one leaf reply with exact sizing", func(t *testing.T) {
 		for _, n := range []int{983, 984} {
 			remote := paddedKeys(n, merkle.MaxKeyLen)
-			dr := drive(t, treeOf(t, 1, nil), treeOf(t, 1, remote), merkle.Limits{})
+			dr := drive(t, treeOf(t, 1, nil), builtOf(t, 1, remote), merkle.Limits{})
 			if err := checkComplete(nil, remote, dr.res); err != nil {
 				t.Fatal(err)
 			}
@@ -99,7 +108,7 @@ func TestDiffBoundsPinned(t *testing.T) {
 		}
 		for _, k := range []int{n, n + 1} {
 			remote := paddedKeys(k, merkle.MaxKeyLen)
-			dr := drive(t, treeOf(t, 1, nil), treeOf(t, 1, remote), merkle.Limits{})
+			dr := drive(t, treeOf(t, 1, nil), builtOf(t, 1, remote), merkle.Limits{})
 			want := 2
 			if k > n {
 				want = 3
@@ -115,7 +124,7 @@ func TestDiffBoundsPinned(t *testing.T) {
 		if prefixOf("prefix-0", 1) == prefixOf("prefix-1", 1) {
 			t.Fatal("fixture keys share a leaf")
 		}
-		rt := treeOf(t, 1, remote)
+		rt := builtOf(t, 1, remote)
 		s := treeOf(t, 1, nil).Diff(merkle.Limits{})
 		for {
 			req, ok := s.Request()
@@ -214,7 +223,7 @@ func genLongPair(t *rapid.T) mapPair {
 func TestPropLongKeyDiffShape(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		p := genLongPair(t)
-		local, remote := treeOf(t, p.depth, p.local), treeOf(t, p.depth, p.remote)
+		local, remote := builtOf(t, p.depth, p.local), builtOf(t, p.depth, p.remote)
 		dr := drive(t, local, remote, merkle.Limits{})
 		if err := checkComplete(p.local, p.remote, dr.res); err != nil {
 			t.Fatal(err)

@@ -14,22 +14,28 @@ const (
 )
 
 const (
-	MaxRequestNodes = 1 << 14
 	MaxReplyBytes   = 1 << 20
+	MaxRequestNodes = (MaxReplyBytes - 4) / (2 + Fanout*32)
+	maxEntryBytes   = 2 + MaxKeyLen + 32
+	minCutReply     = MaxReplyBytes - 2*maxEntryBytes
 )
 
 type request struct {
-	depth int
-	level int
-	root  Hash
-	paths []uint64
+	depth  int
+	level  int
+	root   Hash
+	paths  []uint64
+	resume bool
+	after  string
 }
 
 type response struct {
-	kind   byte
-	level  int
-	inner  [][Fanout]Hash
-	leaves [][]Entry
+	kind    byte
+	level   int
+	more    bool
+	bitmaps []uint16
+	hashes  []Hash
+	leaves  [][]Entry
 }
 
 func pathBytes(level int) int { return (level + 1) / 2 }
@@ -46,23 +52,26 @@ func encodeRequest(r request) []byte {
 		binary.BigEndian.PutUint64(x[:], p)
 		b = append(b, x[:w]...)
 	}
-	return b
+	if r.level != r.depth {
+		return b
+	}
+	if !r.resume {
+		return append(b, 0)
+	}
+	b = append(b, 1)
+	b = binary.AppendUvarint(b, uint64(len(r.after)))
+	return append(b, r.after...)
 }
 
-func encodeInnerNode(b []byte, kids *[Fanout]Hash) []byte {
+func appendKids(r *response, kids *[Fanout]Hash) {
 	var bitmap uint16
 	for i, h := range kids {
 		if !h.IsZero() {
 			bitmap |= 1 << (Fanout - 1 - i)
+			r.hashes = append(r.hashes, h)
 		}
 	}
-	b = binary.BigEndian.AppendUint16(b, bitmap)
-	for _, h := range kids {
-		if !h.IsZero() {
-			b = append(b, h[:]...)
-		}
-	}
-	return b
+	r.bitmaps = append(r.bitmaps, bitmap)
 }
 
 func encodeLeaf(b []byte, es []Entry) []byte {
@@ -75,25 +84,36 @@ func encodeLeaf(b []byte, es []Entry) []byte {
 	return b
 }
 
-func leafSize(es []Entry) int {
-	n := binary.MaxVarintLen64
-	for _, e := range es {
-		n += binary.MaxVarintLen64 + len(e.Key) + len(e.Hash)
+func uvarintLen(n int) int {
+	l := 1
+	for ; n >= 0x80; n >>= 7 {
+		l++
 	}
-	return n
+	return l
 }
+
+func entryBytes(e Entry) int { return uvarintLen(len(e.Key)) + len(e.Key) + len(e.Hash) }
 
 func encodeResponse(r response) []byte {
 	switch r.kind {
 	case msgInner:
 		b := []byte{msgInner, byte(r.level)}
-		b = binary.AppendUvarint(b, uint64(len(r.inner)))
-		for i := range r.inner {
-			b = encodeInnerNode(b, &r.inner[i])
+		b = binary.AppendUvarint(b, uint64(len(r.bitmaps)))
+		k := 0
+		for _, bm := range r.bitmaps {
+			b = binary.BigEndian.AppendUint16(b, bm)
+			for i := 0; i < bits.OnesCount16(bm); i++ {
+				b = append(b, r.hashes[k][:]...)
+				k++
+			}
 		}
 		return b
 	case msgLeaves:
-		b := []byte{msgLeaves, byte(r.level)}
+		more := byte(0)
+		if r.more {
+			more = 1
+		}
+		b := []byte{msgLeaves, byte(r.level), more}
 		b = binary.AppendUvarint(b, uint64(len(r.leaves)))
 		for _, es := range r.leaves {
 			b = encodeLeaf(b, es)
@@ -177,7 +197,11 @@ func decodeRequest(b []byte) (request, error) {
 		return request{}, malformed("request node count")
 	}
 	w := pathBytes(level)
-	if uint64(len(r.b)) != n*uint64(w) {
+	tail := uint64(0)
+	if level == depth {
+		tail = 1
+	}
+	if uint64(len(r.b)) < n*uint64(w)+tail || (level != depth && uint64(len(r.b)) != n*uint64(w)) {
 		return request{}, malformed("request path bytes")
 	}
 	req.paths = make([]uint64, 0, n)
@@ -192,6 +216,24 @@ func decodeRequest(b []byte) (request, error) {
 			return request{}, malformed("paths out of order")
 		}
 		req.paths = append(req.paths, p)
+	}
+	if level != depth {
+		return req, nil
+	}
+	switch r.u8() {
+	case 0:
+	case 1:
+		kl := r.uvarint()
+		if r.bad || kl > MaxKeyLen {
+			return request{}, malformed("resume key length")
+		}
+		req.resume = true
+		req.after = string(r.take(int(kl)))
+	default:
+		return request{}, malformed("resume flag")
+	}
+	if r.bad || len(r.b) != 0 {
+		return request{}, malformed("request length")
 	}
 	return req, nil
 }
@@ -212,6 +254,10 @@ func decodeResponse(b []byte) (response, error) {
 		return response{}, malformed("unknown response kind")
 	}
 	level := int(r.u8())
+	more := byte(0)
+	if kind == msgLeaves {
+		more = r.u8()
+	}
 	n := r.uvarint()
 	if r.bad {
 		return response{}, malformed("short response header")
@@ -219,16 +265,20 @@ func decodeResponse(b []byte) (response, error) {
 	if level > MaxDepth {
 		return response{}, fmt.Errorf("merkle: decode: response level %d: %w", level, ErrDepth)
 	}
+	if more > 1 {
+		return response{}, malformed("more flag")
+	}
 	if n == 0 || n > MaxRequestNodes {
 		return response{}, malformed("response node count")
 	}
-	resp := response{kind: kind, level: level}
+	resp := response{kind: kind, level: level, more: more == 1}
 	if kind == msgInner {
 		if uint64(len(r.b)) < 2*n {
 			return response{}, malformed("inner nodes truncated")
 		}
-		resp.inner = make([][Fanout]Hash, n)
-		for j := range resp.inner {
+		resp.bitmaps = make([]uint16, 0, n)
+		resp.hashes = make([]Hash, 0, (uint64(len(r.b))-2*n)/uint64(len(Hash{})))
+		for j := uint64(0); j < n; j++ {
 			raw := r.take(2)
 			if r.bad {
 				return response{}, malformed("inner bitmap truncated")
@@ -237,19 +287,19 @@ func decodeResponse(b []byte) (response, error) {
 			if len(r.b) < 32*bits.OnesCount16(bitmap) {
 				return response{}, malformed("inner hashes truncated")
 			}
-			for i := 0; i < Fanout; i++ {
-				if bitmap&(1<<(Fanout-1-i)) == 0 {
-					continue
-				}
+			for i := 0; i < bits.OnesCount16(bitmap); i++ {
 				h := r.hash()
 				if h.IsZero() {
 					return response{}, malformed("present child with the empty hash")
 				}
-				resp.inner[j][i] = h
+				resp.hashes = append(resp.hashes, h)
 			}
+			resp.bitmaps = append(resp.bitmaps, bitmap)
 		}
 	} else {
-		resp.leaves = make([][]Entry, 0, min(n, uint64(len(r.b))))
+		keys := string(r.b)
+		base := len(r.b)
+		resp.leaves = make([][]Entry, 0, n)
 		for j := uint64(0); j < n; j++ {
 			m := r.uvarint()
 			if r.bad || m > MaxLeafEntries || m > uint64(len(r.b))/33 {
@@ -261,17 +311,22 @@ func decodeResponse(b []byte) (response, error) {
 				if r.bad || kl > MaxKeyLen {
 					return response{}, malformed("leaf key length")
 				}
-				key := string(r.take(int(kl)))
+				off := base - len(r.b)
+				r.take(int(kl))
 				h := r.hash()
 				if r.bad {
 					return response{}, malformed("leaf entry truncated")
 				}
+				key := keys[off : off+int(kl)]
 				if len(es) > 0 && key <= es[len(es)-1].Key {
 					return response{}, malformed("leaf keys out of order")
 				}
 				es = append(es, Entry{Key: key, Hash: h})
 			}
 			resp.leaves = append(resp.leaves, es)
+		}
+		if resp.more && len(resp.leaves[len(resp.leaves)-1]) == 0 {
+			return response{}, malformed("cut at an empty leaf")
 		}
 	}
 	if r.bad || len(r.b) != 0 {

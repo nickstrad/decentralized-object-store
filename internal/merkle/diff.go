@@ -50,6 +50,9 @@ type Session struct {
 	todo      []uint64
 	sent      []uint64
 	next      []uint64
+	resume    bool
+	after     string
+	taken     int
 	req       []byte
 	diffs     []Difference
 	truncated bool
@@ -77,30 +80,60 @@ func (t *Tree) Answer(b []byte) ([]byte, error) {
 		req.paths = []uint64{0}
 	}
 	if req.level < t.depth {
-		resp := response{kind: msgInner, level: req.level, inner: make([][Fanout]Hash, len(req.paths))}
-		for j, p := range req.paths {
+		resp := response{kind: msgInner, level: req.level}
+		for _, p := range req.paths {
 			n := t.nodeAt(req.level, p)
+			var kids [Fanout]Hash
 			for i := 0; i < Fanout; i++ {
-				resp.inner[j][i] = n.kid(i).sum()
+				kids[i] = n.kid(i).sum()
 			}
+			appendKids(&resp, &kids)
 		}
 		return encodeResponse(resp), nil
 	}
+	return encodeResponse(t.packLeaves(req)), nil
+}
+
+func (t *Tree) packLeaves(req request) response {
 	resp := response{kind: msgLeaves, level: req.level}
-	size := 2 + 3
-	for _, p := range req.paths {
+	size := 3 + uvarintLen(len(req.paths))
+	for j, p := range req.paths {
 		var es []Entry
 		if n := t.nodeAt(req.level, p); n != nil {
 			es = n.entries
 		}
-		sz := leafSize(es)
-		if len(resp.leaves) > 0 && size+sz > MaxReplyBytes {
-			break
+		if j == 0 && req.resume {
+			i, found := slices.BinarySearchFunc(es, req.after, byKey)
+			if found {
+				i++
+			}
+			es = es[i:]
 		}
-		size += sz
-		resp.leaves = append(resp.leaves, es)
+		full := uvarintLen(len(es))
+		for _, e := range es {
+			full += entryBytes(e)
+		}
+		if size+full <= MaxReplyBytes {
+			size += full
+			resp.leaves = append(resp.leaves, es)
+			continue
+		}
+		k, used := 0, uvarintLen(0)
+		for k < len(es) {
+			grow := entryBytes(es[k]) + uvarintLen(k+1) - uvarintLen(k)
+			if size+used+grow > MaxReplyBytes {
+				break
+			}
+			used += grow
+			k++
+		}
+		if k > 0 {
+			resp.leaves = append(resp.leaves, es[:k])
+			resp.more = true
+		}
+		break
 	}
-	return encodeResponse(resp), nil
+	return resp
 }
 
 func (s *Session) Request() ([]byte, bool) {
@@ -110,7 +143,7 @@ func (s *Session) Request() ([]byte, bool) {
 	if s.req == nil {
 		s.sent = s.todo
 		s.todo = nil
-		r := request{depth: s.local.depth, level: s.level, paths: s.sent}
+		r := request{depth: s.local.depth, level: s.level, paths: s.sent, resume: s.resume, after: s.after}
 		if s.level == 0 {
 			r.root = s.local.Root()
 			s.cost.Hashes++
@@ -128,6 +161,9 @@ func (s *Session) Feed(b []byte) error {
 	s.cost.RoundTrips++
 	s.cost.BytesReceived += len(b)
 	resp, err := decodeResponse(b)
+	if err == nil && resp.more && len(b) <= minCutReply {
+		err = malformed("a cut leaf reply that is not full")
+	}
 	if err != nil {
 		return s.fail(fmt.Errorf("merkle: diff level %d: %w", s.level, err))
 	}
@@ -148,14 +184,17 @@ func (s *Session) apply(r response) error {
 		s.sent = nil
 		return nil
 	case msgInner:
-		if r.level != s.level || s.level >= s.local.depth || len(r.inner) != len(s.sent) {
+		if r.level != s.level || s.level >= s.local.depth || len(r.bitmaps) != len(s.sent) {
 			return malformed("inner reply does not match the request")
 		}
+		k := 0
 		for j, p := range s.sent {
 			ln := s.local.nodeAt(s.level, p)
 			for i := 0; i < Fanout; i++ {
-				rh := r.inner[j][i]
-				if !rh.IsZero() {
+				var rh Hash
+				if r.bitmaps[j]&(1<<(Fanout-1-i)) != 0 {
+					rh = r.hashes[k]
+					k++
 					s.cost.Hashes++
 				}
 				if rh == ln.kid(i).sum() {
@@ -175,29 +214,64 @@ func (s *Session) apply(r response) error {
 		s.sent = nil
 		return nil
 	default:
-		if r.level != s.level || s.level != s.local.depth || len(r.leaves) > len(s.sent) {
-			return malformed("leaf reply does not match the request")
-		}
-		for j, es := range r.leaves {
-			for _, e := range es {
-				if prefix(pathOf(e.Key), s.level) != s.sent[j] {
-					return malformed("leaf entry outside its leaf")
-				}
-			}
-		}
-		for j, es := range r.leaves {
-			var mine []Entry
-			if n := s.local.nodeAt(s.level, s.sent[j]); n != nil {
-				mine = n.entries
-			}
-			s.diffs = diffLeaf(mine, es, s.diffs)
-			s.cost.Hashes += len(es)
-		}
-		s.cost.Nodes += len(r.leaves)
-		s.todo = slices.Clone(s.sent[len(r.leaves):])
-		s.sent = nil
-		return nil
+		return s.applyLeaves(r)
 	}
+}
+
+func (s *Session) applyLeaves(r response) error {
+	if r.level != s.level || s.level != s.local.depth || len(r.leaves) > len(s.sent) {
+		return malformed("leaf reply does not match the request")
+	}
+	last := len(r.leaves) - 1
+	for j, es := range r.leaves {
+		for _, e := range es {
+			if prefix(pathOf(e.Key), s.level) != s.sent[j] {
+				return malformed("leaf entry outside its leaf")
+			}
+		}
+		if j == 0 && s.resume && len(es) > 0 && es[0].Key <= s.after {
+			return malformed("resumed leaf repeats a key")
+		}
+	}
+	if s.resume && s.taken+len(r.leaves[0]) > MaxLeafEntries {
+		return malformed("leaf pieces over the entry limit")
+	}
+	for j, es := range r.leaves {
+		var mine []Entry
+		if n := s.local.nodeAt(s.level, s.sent[j]); n != nil {
+			mine = n.entries
+		}
+		if j == 0 && s.resume {
+			i, found := slices.BinarySearchFunc(mine, s.after, byKey)
+			if found {
+				i++
+			}
+			mine = mine[i:]
+		}
+		if j == last && r.more {
+			i, found := slices.BinarySearchFunc(mine, es[len(es)-1].Key, byKey)
+			if found {
+				i++
+			}
+			mine = mine[:i]
+		}
+		s.diffs = diffLeaf(mine, es, s.diffs)
+		s.cost.Hashes += len(es)
+	}
+	s.cost.Nodes += len(r.leaves)
+	if r.more {
+		taken := len(r.leaves[last])
+		if last == 0 && s.resume {
+			taken += s.taken
+		}
+		s.todo = slices.Clone(s.sent[last:])
+		s.resume, s.after, s.taken = true, strings.Clone(r.leaves[last][len(r.leaves[last])-1].Key), taken
+	} else {
+		s.todo = slices.Clone(s.sent[len(r.leaves):])
+		s.resume, s.after, s.taken = false, "", 0
+	}
+	s.sent = nil
+	return nil
 }
 
 func (s *Session) advance() {
@@ -238,7 +312,7 @@ func diffLeaf(local, remote []Entry, out []Difference) []Difference {
 			out = append(out, Difference{Key: local[i].Key, Local: local[i].Hash, HasLocal: true})
 			i++
 		case i == len(local) || remote[j].Key < local[i].Key:
-			out = append(out, Difference{Key: remote[j].Key, Remote: remote[j].Hash, HasRemote: true})
+			out = append(out, Difference{Key: strings.Clone(remote[j].Key), Remote: remote[j].Hash, HasRemote: true})
 			j++
 		default:
 			if local[i].Hash != remote[j].Hash {
