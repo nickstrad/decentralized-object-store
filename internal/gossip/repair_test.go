@@ -582,6 +582,28 @@ func TestCallbacksNeverRunInsideTheRegisteringCall(t *testing.T) {
 			t.Fatalf("done called %d times", called)
 		}
 	})
+	t.Run("a seed reply arriving after Leave reports ErrClosed and merges nothing", func(t *testing.T) {
+		h := newHarness(t, "self", gossip.Config{})
+		var got []error
+		if err := h.node.Join([]env.NodeID{"s1"}, func(err error) { got = append(got, err) }); err != nil {
+			t.Fatal(err)
+		}
+		reqs := h.net.takeRequests()
+		if err := h.node.Leave(); err != nil {
+			t.Fatal(err)
+		}
+		b, err := gossip.Message{Kind: gossip.KindSyncResp, Updates: []gossip.Member{mem("s1", 0, gossip.StateAlive)}}.Encode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		reqs[0].cb(b, nil)
+		if len(got) != 1 || !errors.Is(got[0], gossip.ErrJoinFailed) || !errors.Is(got[0], gossip.ErrClosed) {
+			t.Fatalf("done got %v", got)
+		}
+		if _, err := h.node.Lookup("s1"); !errors.Is(err, gossip.ErrNotMember) {
+			t.Fatalf("a reply after Leave was merged: %v", err)
+		}
+	})
 	t.Run("Join after Leave returns ErrClosed and never calls done", func(t *testing.T) {
 		h := newHarness(t, "self", gossip.Config{})
 		if err := h.node.Leave(); err != nil {
