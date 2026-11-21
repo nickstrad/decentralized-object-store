@@ -71,6 +71,7 @@ type event struct {
 	timer    *timer
 	released bool
 	relLink  bool
+	arrived  bool
 	dead     bool
 	until    env.Time
 }

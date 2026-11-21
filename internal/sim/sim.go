@@ -556,6 +556,10 @@ func (s *Sim) exec(e *event) disposition {
 	}
 	n := s.nodes[e.node]
 	if e.released {
+		if e.relLink && n.relHeld > 0 {
+			s.schedule(e)
+			return dispRequeued
+		}
 		e.released = false
 		if e.relLink {
 			s.links[e.peer][e.node].relHeld--
@@ -575,13 +579,14 @@ func (s *Sim) exec(e *event) disposition {
 	if e.inc != 0 && (e.inc != n.inc || !n.up) {
 		return dispStale
 	}
-	if e.peer >= 0 && e.kind.network() {
+	if !e.arrived && e.peer >= 0 && e.kind.network() {
 		l := &s.links[e.peer][e.node]
 		if l.clogged {
 			l.held = append(l.held, e)
 			return dispClogged
 		}
 	}
+	e.arrived = true
 	if !n.up {
 		if e.kind == kindRequest {
 			s.refuse(e)
