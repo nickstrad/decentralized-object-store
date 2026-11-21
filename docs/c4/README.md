@@ -6,6 +6,9 @@
 | --- | --- | --- |
 | DST harness (`internal/sim`, `internal/sim/simtest`, `cmd/objsim`) | built | 1, 3 |
 | Environment interfaces (`internal/env`) | built | 3 |
+| Erasure coding (`internal/erasure`) | built | 2, 5 |
+| Storage engine (`internal/storage`): shard format, chunk store, striping, manifest, placement, shard request protocol, put and get paths | built | 2, 3, 9 |
+| HTTP object API (`internal/storage`) | target design | 2, 9 |
 | Everything else | target design | 1–9 |
 
 These diagrams describe the architecture that [PLAN.md](../../PLAN.md) defines. As each
@@ -23,7 +26,7 @@ part lands, its diagrams are checked against the code and updated in the same la
 | 6 | Component | [06-component-merkle.md](06-component-merkle.md) | `internal/merkle`: tree builder, diff protocol, anti-entropy worker, Repairer interface |
 | 7 | Component | [07-component-crdt.md](07-component-crdt.md) | `internal/crdt`: four CRDT types, hybrid logical clock, canonical encoding, metadata document, replicator |
 | 8 | Component | [08-component-saga.md](08-component-saga.md) | `internal/saga`: orchestrator, log, recovery, bucket-migration workflow, step interfaces |
-| 9 | Component | [09-component-storage.md](09-component-storage.md) | `internal/storage`: shard format, chunk store, striping, manifest, placement, put and get paths |
+| 9 | Component | [09-component-storage.md](09-component-storage.md) | `internal/storage`: shard format, chunk store, striping, manifest, placement, shard request protocol, put and get paths |
 
 The Container level has two views of the same containers, because one picture of all
 relationships does not stay readable.
@@ -31,7 +34,7 @@ relationships does not stay readable.
 ## Format
 
 - [model.json](model.json) is the C4 model: every element, relationship and diagram.
-  It is a `c4-sdk` bundle, `schemaVersion: 1`. Built elements have status `existing`, the rest `planned`; a diagram showing both is `mixed`.
+  It is a `c4-sdk` bundle, `schemaVersion: 1`. Built elements and relationships have status `existing`, the rest `planned`; a diagram showing both is `mixed`.
 - Each diagram file has a Mermaid rendering, a terminal (Unicode) rendering, an
   element table and a numbered relationship table. Edge numbers in the pictures
   match the table rows.
@@ -41,7 +44,8 @@ relationships does not stay readable.
   crossing arrows that cannot be read. Each part is a simple fan-in, fan-out or
   chain, at most 80 columns wide, and each numbered relationship appears in exactly
   one part.
-- Component diagrams contain only parts that PLAN.md names.
+- Component diagrams contain the parts that PLAN.md names. A part that the build added
+  is marked as such in the element table.
 
 ## Validation
 
@@ -51,8 +55,8 @@ Checked on 2026-11-21:
 | --- | --- | --- |
 | `model.json` decodes | `decodeArchitecture` from `c4-sdk@0.1.0` (`c4-sdk/core`) | `ok: true`, 0 errors, 0 warnings |
 | Every diagram builds a scene | `buildScene` from `c4-sdk/core`, all 9 diagrams | 9 of 9 succeed |
-| Mermaid blocks parse | `mermaid.parse`, Mermaid 11, all 9 blocks and all 25 sources | all parse |
-| Terminal embeds are current and fit | `render.py --check` with `DRAW_VISUAL_MAX_WIDTH=80` | 25 embeds pass |
+| Mermaid blocks parse | `mermaid.parse`, Mermaid 11, all 9 blocks and all 27 sources | all parse |
+| Terminal embeds are current and fit | `render.py --check` with `DRAW_VISUAL_MAX_WIDTH=80` | 27 embeds pass |
 
 To repeat the checks after a change:
 
