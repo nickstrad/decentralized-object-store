@@ -40,7 +40,11 @@ func TestDiffProtocolSteps(t *testing.T) {
 		if level == 0 && len(req) != 3+32 {
 			t.Fatalf("root request is %d bytes, want 35", len(req))
 		}
-		if level > 0 && (req[3] != 1 || len(req) != 4+(level+1)/2) {
+		wantLen := 4 + (level+1)/2
+		if level == 2 {
+			wantLen++
+		}
+		if level > 0 && (req[3] != 1 || len(req) != wantLen) {
 			t.Fatalf("level %d: request % x names more than the one mismatched node", level, req)
 		}
 		resp, err := remote.Answer(req)
@@ -125,6 +129,7 @@ func TestDiffFrontierTruncates(t *testing.T) {
 	rt := treeOf(t, 2, remote)
 	lt := treeOf(t, 2, nil)
 	lim := merkle.Limits{Frontier: 4}
+	sawTruncated := false
 	for round := 1; ; round++ {
 		res, err := merkle.Compare(lt, rt, lim)
 		if err != nil {
@@ -135,6 +140,12 @@ func TestDiffFrontierTruncates(t *testing.T) {
 		}
 		if res.Cost.Nodes > 1+lim.Frontier*lt.Depth() {
 			t.Fatalf("round %d: visited %d nodes with frontier %d", round, res.Cost.Nodes, lim.Frontier)
+		}
+		if res.Truncated {
+			sawTruncated = true
+			if len(res.Diffs) == 0 {
+				t.Fatalf("round %d: truncated without a difference", round)
+			}
 		}
 		if len(res.Diffs) == 0 {
 			if res.Truncated {
@@ -156,6 +167,9 @@ func TestDiffFrontierTruncates(t *testing.T) {
 	}
 	if lt.Root() != rt.Root() {
 		t.Fatal("trees differ after repairing every truncated diff")
+	}
+	if !sawTruncated {
+		t.Fatal("no round reported Truncated with 300 differences and a frontier of 4")
 	}
 }
 
@@ -279,7 +293,7 @@ func forgeLeafReply(t *testing.T, req, honest []byte) []byte {
 		t.Fatalf("expected a leaf reply, got % x", honest[:2])
 	}
 	n := int(req[3])
-	out := []byte{0x03, 1, byte(n)}
+	out := []byte{0x03, 1, 0, byte(n)}
 	for i := 0; i < n; i++ {
 		out = append(out, 1, 1, 'Z')
 		h := sum("forged")

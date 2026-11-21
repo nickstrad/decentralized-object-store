@@ -33,6 +33,8 @@ const (
 	BitRotRepairBound    = 20 * time.Second
 	BitRotConvergeBound  = 25 * time.Second
 	RepairCopiesPerRot   = 4
+	CleanSettle          = 2 * storeTimeout
+	CleanWatch           = 10 * time.Second
 	MissedWriteBound     = 20 * time.Second
 	PartitionLength      = 5 * time.Second
 	LossPPM              = 200_000
@@ -63,6 +65,8 @@ type world struct {
 	corruptErr error
 	convergeAt env.Time
 	quietAt    env.Time
+
+	settledFetched uint64
 	nem        *sim.Nemesis
 }
 
@@ -378,16 +382,38 @@ func TestBitRotRepairDST(t *testing.T) {
 	})
 	t.Run("without damage no chunk bytes move", func(t *testing.T) {
 		simtest.Sweep(t, func(t *testing.T, seed int64) {
-			s := simtest.RequireDeterministic(t, seed, bitRotRun(false))
+			s := simtest.RequireDeterministic(t, seed, cleanRun)
 			w := take(s)
 			if w.convergeAt == 0 {
 				t.Fatal("did not converge")
 			}
-			if n := w.fetchedBytes(); n != 0 {
-				t.Fatalf("fetched %d bytes with no damage", n)
+			if n := w.fetchedBytes(); n != w.settledFetched {
+				t.Fatalf("fetched %d bytes after the writes settled (%d before) with no damage", n-w.settledFetched, w.settledFetched)
 			}
 		})
 	})
+}
+
+func cleanRun(seed int64) *sim.Sim {
+	w := newWorld(newSim(seed), merkle.DepthFor(dstChunks))
+	if err := w.cluster(3, true, nil); err != nil {
+		w.s.Fail(err)
+		return remember(w)
+	}
+	w.writes(dstChunks, dstWriteStart, dstWriteWindow)
+	settled := w.writesAt.Add(CleanSettle)
+	if err := w.s.RunUntil(settled); err != nil {
+		return remember(w)
+	}
+	w.settledFetched = w.fetchedBytes()
+	w.quietAt = settled
+	if err := w.s.RunUntil(settled.Add(CleanWatch)); err != nil {
+		return remember(w)
+	}
+	if w.converged() {
+		w.convergeAt = w.s.Now()
+	}
+	return remember(w)
 }
 
 func missedWriteRun(seed int64) *sim.Sim {

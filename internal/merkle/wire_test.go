@@ -2,6 +2,7 @@ package merkle
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"testing"
@@ -16,9 +17,6 @@ func h32(b byte) Hash {
 }
 
 func TestWireTable(t *testing.T) {
-	inner := [Fanout]Hash{}
-	inner[0] = h32(0xaa)
-	inner[15] = h32(0xbb)
 	cases := []struct {
 		name string
 		msg  any
@@ -30,13 +28,19 @@ func TestWireTable(t *testing.T) {
 			"0102010210f0"},
 		{"a level-two request packs two nibbles per byte", request{depth: 3, level: 2, paths: []uint64{0xab << 56}},
 			"01030201ab"},
-		{"a level-three request rounds up to two bytes", request{depth: 3, level: 3, paths: []uint64{0xabc << 52}},
-			"01030301abc0"},
+		{"a leaf request rounds up to two bytes and ends with an empty resume flag", request{depth: 3, level: 3, paths: []uint64{0xabc << 52}},
+			"01030301abc0 00"},
+		{"a leaf request resumes after a key", request{depth: 1, level: 1, paths: []uint64{0x2 << 60}, resume: true, after: "ab"},
+			"0101010120 01 02 6162"},
+		{"a leaf request may resume after the empty key", request{depth: 1, level: 1, paths: []uint64{0}, resume: true},
+			"0101010100 01 00"},
 		{"an equal reply is one byte", response{kind: msgEqual}, "04"},
-		{"an inner reply lists only non-empty children", response{kind: msgInner, level: 0, inner: [][Fanout]Hash{inner}},
+		{"an inner reply lists only non-empty children", response{kind: msgInner, level: 0, bitmaps: []uint16{0x8001}, hashes: []Hash{h32(0xaa), h32(0xbb)}},
 			"02000180 01" + hex.EncodeToString(bytes.Repeat([]byte{0xaa}, 32)) + hex.EncodeToString(bytes.Repeat([]byte{0xbb}, 32))},
 		{"a leaf reply carries length-prefixed keys", response{kind: msgLeaves, level: 1, leaves: [][]Entry{{{Key: "ab", Hash: h32(0x01)}}, nil}},
-			"03010201026162" + hex.EncodeToString(bytes.Repeat([]byte{0x01}, 32)) + "00"},
+			"0301 00 0201026162" + hex.EncodeToString(bytes.Repeat([]byte{0x01}, 32)) + "00"},
+		{"a leaf reply that cuts its last leaf sets the more flag", response{kind: msgLeaves, level: 1, more: true, leaves: [][]Entry{{{Key: "ab", Hash: h32(0x01)}}}},
+			"0301 01 0101026162" + hex.EncodeToString(bytes.Repeat([]byte{0x01}, 32))},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -102,6 +106,13 @@ func TestWireMalformed(t *testing.T) {
 		{"paths out of order", []byte{0x01, 2, 1, 2, 0x20, 0x10}, ErrMalformed},
 		{"duplicate paths", []byte{0x01, 2, 1, 2, 0x20, 0x20}, ErrMalformed},
 		{"varint overflow", []byte{0x01, 2, 1, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01}, ErrMalformed},
+		{"one path over the node limit", append([]byte{0x01, 2, 1}, binary.AppendUvarint(nil, MaxRequestNodes+1)...), ErrMalformed},
+		{"leaf request without the resume flag", []byte{0x01, 1, 1, 1, 0x10}, ErrMalformed},
+		{"leaf request with an unknown resume flag", []byte{0x01, 1, 1, 1, 0x10, 2}, ErrMalformed},
+		{"leaf request with a resume key over the length limit", append([]byte{0x01, 1, 1, 1, 0x10, 1}, binary.AppendUvarint(nil, MaxKeyLen+1)...), ErrMalformed},
+		{"leaf request with a truncated resume key", []byte{0x01, 1, 1, 1, 0x10, 1, 3, 'a'}, ErrMalformed},
+		{"leaf request with bytes after the resume key", []byte{0x01, 1, 1, 1, 0x10, 1, 1, 'a', 0}, ErrMalformed},
+		{"leaf request with bytes after an empty resume flag", []byte{0x01, 1, 1, 1, 0x10, 0, 0}, ErrMalformed},
 	}
 	for _, c := range reqs {
 		t.Run("request/"+c.name, func(t *testing.T) {
@@ -127,15 +138,20 @@ func TestWireMalformed(t *testing.T) {
 		{"inner with trailing bytes", append(append([]byte{0x02, 0, 1, 0x80, 0x00}, nonzero...), 1), ErrMalformed},
 		{"inner count larger than the bytes", []byte{0x02, 0, 3, 0, 0}, ErrMalformed},
 		{"inner bitmap truncated after a full node", append(append([]byte{0x02, 0, 2, 0x80, 0x00}, nonzero...), 0x00), ErrMalformed},
-		{"leaves with no nodes", []byte{0x03, 1, 0}, ErrMalformed},
-		{"leaves over the entry limit", []byte{0x03, 1, 1, 0x81, 0x40}, ErrMalformed},
-		{"leaf entry count larger than the bytes", []byte{0x03, 1, 1, 2, 0}, ErrMalformed},
-		{"leaf key over the length limit", append([]byte{0x03, 1, 1, 1, 0x81, 0x08}, nonzero...), ErrMalformed},
-		{"leaf key truncated", []byte{0x03, 1, 1, 1, 5, 'a'}, ErrMalformed},
-		{"leaf hash truncated", []byte{0x03, 1, 1, 1, 1, 'a', 1}, ErrMalformed},
-		{"leaf keys out of order", append(append(append([]byte{0x03, 1, 1, 2, 1, 'b'}, nonzero...), 1, 'a'), nonzero...), ErrMalformed},
-		{"leaf keys duplicated", append(append(append([]byte{0x03, 1, 1, 2, 1, 'a'}, nonzero...), 1, 'a'), nonzero...), ErrMalformed},
-		{"leaves with trailing bytes", []byte{0x03, 1, 1, 0, 0}, ErrMalformed},
+		{"leaves with no nodes", []byte{0x03, 1, 0, 0}, ErrMalformed},
+		{"leaves without the more flag", []byte{0x03, 1}, ErrMalformed},
+		{"leaves with an unknown more flag", []byte{0x03, 1, 2, 1, 0}, ErrMalformed},
+		{"leaves cut at an empty leaf", []byte{0x03, 1, 1, 1, 0}, ErrMalformed},
+		{"leaves over the node limit", append([]byte{0x03, 1, 0}, binary.AppendUvarint(nil, MaxRequestNodes+1)...), ErrMalformed},
+		{"leaves over the entry limit", []byte{0x03, 1, 0, 1, 0x81, 0x40}, ErrMalformed},
+		{"leaf entry count larger than the bytes", []byte{0x03, 1, 0, 1, 2, 0}, ErrMalformed},
+		{"leaf key over the length limit", append([]byte{0x03, 1, 0, 1, 1, 0x81, 0x08}, nonzero...), ErrMalformed},
+		{"leaf key truncated", []byte{0x03, 1, 0, 1, 1, 5, 'a'}, ErrMalformed},
+		{"leaf hash truncated", []byte{0x03, 1, 0, 1, 1, 1, 'a', 1}, ErrMalformed},
+		{"leaf keys out of order", append(append(append([]byte{0x03, 1, 0, 1, 2, 1, 'b'}, nonzero...), 1, 'a'), nonzero...), ErrMalformed},
+		{"leaf keys duplicated", append(append(append([]byte{0x03, 1, 0, 1, 2, 1, 'a'}, nonzero...), 1, 'a'), nonzero...), ErrMalformed},
+		{"leaves with trailing bytes", []byte{0x03, 1, 0, 1, 0, 0}, ErrMalformed},
+		{"inner over the node limit", append(append([]byte{0x02, 0}, binary.AppendUvarint(nil, MaxRequestNodes+1)...), make([]byte, 2*(MaxRequestNodes+1))...), ErrMalformed},
 	}
 	for _, c := range resps {
 		t.Run("response/"+c.name, func(t *testing.T) {
@@ -152,8 +168,10 @@ func FuzzMerkleWire(f *testing.F) {
 	f.Add(encodeRequest(request{depth: 2, level: 0, root: h32(1)}))
 	f.Add(encodeRequest(request{depth: 2, level: 1, paths: []uint64{0, 1 << 60}}))
 	f.Add(encodeRequest(request{depth: 2, level: 2, paths: []uint64{0x12 << 56}}))
-	f.Add(encodeResponse(response{kind: msgInner, level: 0, inner: [][Fanout]Hash{{h32(1), h32(2)}}}))
+	f.Add(encodeRequest(request{depth: 2, level: 2, paths: []uint64{0x12 << 56}, resume: true, after: "a"}))
+	f.Add(encodeResponse(response{kind: msgInner, level: 0, bitmaps: []uint16{0xc000}, hashes: []Hash{h32(1), h32(2)}}))
 	f.Add(encodeResponse(response{kind: msgLeaves, level: 2, leaves: [][]Entry{{{Key: "a", Hash: h32(3)}}}}))
+	f.Add(encodeResponse(response{kind: msgLeaves, level: 2, more: true, leaves: [][]Entry{nil, {{Key: "a", Hash: h32(3)}}}}))
 	f.Add([]byte{0x02, 0, 0xff, 0xff, 0x03})
 	tr, err := New(2)
 	if err != nil {
@@ -185,6 +203,9 @@ func FuzzMerkleWire(f *testing.F) {
 		if out, err := tr.Answer(data); err == nil {
 			if _, err := decodeResponse(out); err != nil {
 				t.Fatalf("Answer produced an undecodable reply: %v", err)
+			}
+			if len(out) > MaxReplyBytes {
+				t.Fatalf("Answer produced %d bytes, over MaxReplyBytes", len(out))
 			}
 		} else if !errors.Is(err, ErrMalformed) && !errors.Is(err, ErrDepth) {
 			t.Fatalf("Answer error %v", err)

@@ -133,20 +133,161 @@ func checkComplete(local, remote map[string]merkle.Hash, res merkle.Result) erro
 	return nil
 }
 
+const (
+	leafItemMax      = 2 + merkle.MaxKeyLen + 32 + 2
+	leafFrameMax     = 5
+	leafPackingBytes = merkle.MaxReplyBytes - leafItemMax - leafFrameMax - 2
+)
+
 func costBound(d, depth, leafLoad int) int {
 	return 1 + 16*d*depth + d*leafLoad
 }
 
-func checkCost(t *rapid.T, local, remote *merkle.Tree, d int, res merkle.Result) {
+func continuationsPerLeaf() int {
+	payload := merkle.MaxReplyBytes - 2*(2+merkle.MaxKeyLen+32) - leafFrameMax - 2
+	perReply := (payload + 2 + merkle.MaxKeyLen + 32 - 1) / (2 + merkle.MaxKeyLen + 32)
+	return merkle.MaxLeafEntries / perReply
+}
+
+func hostileTripBound(depth, frontier int) int {
+	return depth + frontier*(1+continuationsPerLeaf())
+}
+
+func prefixOf(key string, level int) string {
+	p := keyPath(key)
+	b := make([]byte, level)
+	for i := range b {
+		b[i] = "0123456789abcdef"[nibbleOf(p, i)]
+	}
+	return string(b)
+}
+
+func uvarintLen(n int) int { return len(binary.AppendUvarint(nil, uint64(n))) }
+
+type diffShape struct {
+	hashes    int
+	leafBytes int
+	leaves    int
+}
+
+func expectedShape(depth int, local, remote map[string]merkle.Hash) diffShape {
+	diffs := refDiff(local, remote)
+	if len(diffs) == 0 {
+		return diffShape{hashes: 1}
+	}
+	sh := diffShape{hashes: 1}
+	remoteKeys := entriesOf(remote)
+	for level := 0; level <= depth; level++ {
+		mismatched := map[string]bool{}
+		for _, d := range diffs {
+			mismatched[prefixOf(d.Key, level)] = true
+		}
+		if level < depth {
+			kids := map[string]bool{}
+			for _, e := range remoteKeys {
+				if mismatched[prefixOf(e.Key, level)] {
+					kids[prefixOf(e.Key, level+1)] = true
+				}
+			}
+			sh.hashes += len(kids)
+			continue
+		}
+		sh.leaves = len(mismatched)
+		count := map[string]int{}
+		for _, e := range remoteKeys {
+			pre := prefixOf(e.Key, level)
+			if mismatched[pre] {
+				sh.hashes++
+				count[pre]++
+				sh.leafBytes += uvarintLen(len(e.Key)) + len(e.Key) + 32
+			}
+		}
+		for pre := range mismatched {
+			sh.leafBytes += uvarintLen(count[pre])
+		}
+	}
+	return sh
+}
+
+type driven struct {
+	res        merkle.Result
+	leafSizes  []int
+	maxReply   int
+	leafReqs   int
+	firstPaths int
+}
+
+func drive(t fataler, local, remote *merkle.Tree, l merkle.Limits) driven {
+	t.Helper()
+	s := local.Diff(l)
+	var out driven
+	for {
+		req, ok := s.Request()
+		if !ok {
+			break
+		}
+		resp, err := remote.Answer(req)
+		if err != nil {
+			t.Fatalf("Answer: %v", err)
+		}
+		out.maxReply = max(out.maxReply, len(resp))
+		if resp[0] == 0x03 {
+			out.leafSizes = append(out.leafSizes, len(resp))
+		}
+		if err := s.Feed(resp); err != nil {
+			t.Fatalf("Feed: %v", err)
+		}
+	}
+	if s.Err() != nil {
+		t.Fatalf("session: %v", s.Err())
+	}
+	out.res = s.Result()
+	return out
+}
+
+func leafReplyBound(leafBytes int) int {
+	return max(1, (leafBytes+leafPackingBytes-1)/leafPackingBytes)
+}
+
+func checkShape(t fataler, depth int, local, remote map[string]merkle.Hash, dr driven) {
+	t.Helper()
+	res := dr.res
+	sh := expectedShape(depth, local, remote)
+	d := len(refDiff(local, remote))
+	if res.Cost.Hashes != sh.hashes {
+		t.Fatalf("hashes %d, exact count %d (d=%d depth=%d)", res.Cost.Hashes, sh.hashes, d, depth)
+	}
+	if dr.maxReply > merkle.MaxReplyBytes {
+		t.Fatalf("a reply of %d bytes passed MaxReplyBytes", dr.maxReply)
+	}
+	if d == 0 {
+		if res.Cost.RoundTrips != 1 || len(dr.leafSizes) != 0 {
+			t.Fatalf("equal trees took %d round trips", res.Cost.RoundTrips)
+		}
+		return
+	}
+	l := len(dr.leafSizes)
+	if res.Cost.RoundTrips != depth+l {
+		t.Fatalf("round trips %d, want Depth+leaf replies = %d+%d", res.Cost.RoundTrips, depth, l)
+	}
+	if l > leafReplyBound(sh.leafBytes) {
+		t.Fatalf("%d leaf replies for %d leaf bytes, bound %d", l, sh.leafBytes, leafReplyBound(sh.leafBytes))
+	}
+	if sh.leafBytes+3+uvarintLen(sh.leaves) <= merkle.MaxReplyBytes && l != 1 {
+		t.Fatalf("%d leaf bytes fit one reply but took %d", sh.leafBytes, l)
+	}
+	for i, n := range dr.leafSizes[:l-1] {
+		if n <= merkle.MaxReplyBytes-leafItemMax {
+			t.Fatalf("leaf reply %d of %d is %d bytes; a non-final reply must be full", i+1, l, n)
+		}
+	}
+}
+
+func checkCost(t fataler, local, remote *merkle.Tree, d int, res merkle.Result) {
+	t.Helper()
 	bound := costBound(d, local.Depth(), remote.LeafLoad())
 	if res.Cost.Hashes > bound {
 		t.Fatalf("hashes %d > bound %d (d=%d depth=%d leafload=%d)", res.Cost.Hashes, bound, d, local.Depth(), remote.LeafLoad())
-	}
-	if res.Cost.RoundTrips > local.Depth()+1 {
-		t.Fatalf("round trips %d > depth+1 = %d", res.Cost.RoundTrips, local.Depth()+1)
-	}
-	if d == 0 && res.Cost.RoundTrips != 1 {
-		t.Fatalf("equal trees took %d round trips", res.Cost.RoundTrips)
 	}
 }
 
@@ -229,6 +370,11 @@ func runPair(t *rapid.T, p mapPair) (*merkle.Tree, *merkle.Tree, merkle.Result) 
 	if err != nil {
 		t.Fatalf("Compare: %v", err)
 	}
+	dr := drive(t, local, remote, merkle.Limits{})
+	if !slices.Equal(dr.res.Diffs, res.Diffs) || dr.res.Cost != res.Cost {
+		t.Fatalf("Compare and a driven session disagree")
+	}
+	checkShape(t, p.depth, p.local, p.remote, dr)
 	return local, remote, res
 }
 

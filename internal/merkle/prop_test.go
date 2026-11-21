@@ -107,7 +107,7 @@ func TestPropHostileRepliesEndTheSession(t *testing.T) {
 		local := treeOf(t, p.depth, p.local)
 		frontier := rapid.IntRange(1, 64).Draw(t, "frontier")
 		s := local.Diff(merkle.Limits{Frontier: frontier})
-		bound := local.Depth() + frontier
+		bound := hostileTripBound(local.Depth(), frontier)
 		trips := 0
 		for {
 			req, ok := s.Request()
@@ -119,9 +119,22 @@ func TestPropHostileRepliesEndTheSession(t *testing.T) {
 				t.Fatalf("session made %d round trips, bound %d", trips, bound)
 			}
 			var resp []byte
-			switch rapid.IntRange(0, 2).Draw(t, "liar") {
+			switch rapid.IntRange(0, 3).Draw(t, "liar") {
 			case 0:
 				resp = rapid.SliceOfN(rapid.Byte(), 0, 64).Draw(t, "bytes")
+			case 1:
+				other := genPair(t)
+				lie, err := merkle.Build(p.depth, entriesOf(other.remote))
+				if err != nil {
+					t.Fatal(err)
+				}
+				resp, err = lie.Answer(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if resp[0] == 0x03 {
+					resp[2] = 1
+				}
 			default:
 				other := genPair(t)
 				lie, err := merkle.Build(p.depth, entriesOf(other.remote))

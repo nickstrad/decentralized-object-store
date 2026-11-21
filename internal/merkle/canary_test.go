@@ -1,6 +1,7 @@
 package merkle_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -39,13 +40,19 @@ func TestCanarySkippedBranch(t *testing.T) {
 			t.Fatal("a diff that skips branch f passed the completeness check")
 		}
 	})
+	for _, seed := range canarySeeds {
+		s, err := simtest.CheckDeterministic(seed, canaryRun)
+		if w := take(s); err != nil || w.convergeAt == 0 {
+			t.Fatalf("seed %d: the scenario does not converge without the planted bug: %v", seed, err)
+		}
+	}
 	t.Run("the missed-write scenario fails to converge", func(t *testing.T) {
 		defer merkle.SetSkipBranch(true)()
 		for _, seed := range canarySeeds {
 			s, err := simtest.CheckDeterministic(seed, canaryRun)
 			w := take(s)
-			if err == nil && w.convergeAt != 0 {
-				t.Fatalf("seed %d: the scenario converged with a branch skipped", seed)
+			if !errors.Is(err, sim.ErrDeadline) || w.convergeAt != 0 {
+				t.Fatalf("seed %d: want a convergence deadline stall, got err=%v convergeAt=%v", seed, err, w.convergeAt)
 			}
 		}
 	})
