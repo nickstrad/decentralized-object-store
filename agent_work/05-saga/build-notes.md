@@ -336,3 +336,23 @@ run never takes.
 - Wire code block: saga uses `CodeAppMin+48..50`, sagasim `CodeAppMin+56..59`. Chunk 6
   must merge these with the other chunks' rows; please record the allocation.
 - No simulator change request.
+
+## Gate run
+
+`agent_work/gates/gate.sh 05-saga` from the worktree root on the host, at commit
+`cac1008aa54dba532eac6e28dc7fb5b3215584cf` (all code and these notes up to this section),
+stage build, comment baseline `9508d35`, rapid/DST seed 222930286585165 from the SHA:
+
+```
+G0  tools/gofmt/vet/build/detlint/panics/deps/comments/selfcontained  pass
+G1  unit           pass    9s   (internal/saga 95.2%, internal/saga/sagasim 87.6%)
+G2  property       pass   79s   rapid 2000 checks (internal/saga 2.1 s)
+G3  fuzz           pass   72s   FuzzSagaLogRecover 30 s (plus the simulator's target)
+G4  race           pass   50s   (internal/saga 6.6 s under -race)
+G5  dst            pass  184s   500 seeds from base 222930286585165 (internal/saga 67.9 s)
+G6  docker         pass
+gate: overall=pass counts_for_landing=true
+```
+
+Gate wall time 413 s. Result files are under `agent_work/05-saga/gates/` (not committed).
+The only commit after the gated one adds this section to the notes.
