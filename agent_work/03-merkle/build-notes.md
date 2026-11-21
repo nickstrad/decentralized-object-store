@@ -2,7 +2,8 @@
 
 Builder: Opus 5.5 (fresh seat), branch `chunk/03-merkle`, 2026-11-21.
 Commits: `982e486` (tests first; they did not compile without the package), `03ed2f5`
-(implementation), `d8ecd92` (ErrRejected checked through `errors.Is`), then these notes.
+(implementation), `d8ecd92` (ErrRejected checked through `errors.Is`), `19f3a93` (these
+notes), then the fixes from the first gate runs (below).
 
 ## What was built
 
@@ -233,6 +234,26 @@ round success at 20% per-message loss.
   worker (a diff with more than 1,024 mismatched nodes per level); the `MaxRepairs` cap (256
   per round, scenarios have 48 chunks); the "already fixed while the fetch was in flight"
   shortcut; `Repairer.Put` failing.
+
+## Findings from the first gate runs (fixed)
+
+1. **Decoder panic (product bug), found by `FuzzMerkleWire` in G3.** `decodeResponse` checked
+   `len(rest) >= 2·n` once, before the loop, so an inner reply whose second bitmap was cut
+   short (after a full first node) reached `binary.BigEndian.Uint16(nil)`. Fix: check the
+   reader after taking each bitmap. Regression: corpus file
+   `testdata/fuzz/FuzzMerkleWire/2104aef022c948e1` and the malformed-table row "inner bitmap
+   truncated after a full node".
+2. **Fuzz oracle too narrow (test bug).** `Feed` returns `ErrDepth` for a reply level above
+   16 (documented); the fuzz oracle accepted only `ErrMalformed`. Corpus file
+   `110121ffaa6941a6` kept.
+3. **Seed 66014753249261 (test oracle, not protocol).** Two bit-rot events 310 ms apart hit
+   the same blob on n001 before the scrub reached it, and the second flip undid the first.
+   The bytes were correct in both disk layers and the tree was right, but the simulator's
+   damage mark is only cleared by a `Sync`, so `Disk.Damaged()` reported the blob forever
+   and the repair-time invariant failed at 20.5 s. The tests now count a blob as damaged
+   only when it is marked AND its written or durable bytes fail to hash to the key
+   (`world.damaged`). Seed pinned in `testdata/seeds.txt`. Note for later chunks (and the
+   simulator docs): `Damaged()` is an over-approximation; use it as a hint, not an oracle.
 
 ## Errors intentionally ignored
 
