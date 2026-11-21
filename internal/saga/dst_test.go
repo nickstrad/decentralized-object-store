@@ -22,6 +22,8 @@ const (
 	nemesisMaxGap   = 400 * time.Millisecond
 	nemesisConverge = 20 * time.Second
 	nemesisWrites   = 24
+	nemesisObjects  = 40
+	oldObjectCliff  = 32
 	nemesisWriteGap = 600 * time.Millisecond
 	nemesisTick     = 100 * time.Millisecond
 	nemesisMinSagas = 1
@@ -124,6 +126,7 @@ func TestMigrationUnderNemesisDST(t *testing.T) {
 	p := sagasim.NemesisParams{
 		Start: nemesisStart, Phases: nemesisPhases, Chaos: nemesisChaos, Heal: nemesisHeal, MaxGap: nemesisMaxGap,
 		Converge: nemesisConverge, Writes: nemesisWrites, WriteGap: nemesisWriteGap, Tick: nemesisTick,
+		Objects: nemesisObjects,
 	}
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
 		res := &sagasim.NemesisReport{}
@@ -131,10 +134,13 @@ func TestMigrationUnderNemesisDST(t *testing.T) {
 		if res.Sagas < nemesisMinSagas {
 			t.Fatalf("only %d migrations ran under the nemesis", res.Sagas)
 		}
+		if res.Stored <= oldObjectCliff {
+			t.Fatalf("the bucket ended with %d objects, not above the old %d-object limit", res.Stored, oldObjectCliff)
+		}
 		if res.Settled > nemesisConverge {
 			t.Fatalf("settled %v after the last heal, bound %v", res.Settled, nemesisConverge)
 		}
-		t.Logf("NEMESIS seed=%d sagas=%d completed=%d compensated=%d settled=%v acked=%d final=%s attempts=%v", seed, res.Sagas, res.Completed, res.Compensated, res.Settled, res.Acked, res.Final, res.Attempts)
+		t.Logf("NEMESIS seed=%d sagas=%d completed=%d compensated=%d settled=%v acked=%d stored=%d final=%s attempts=%v", seed, res.Sagas, res.Completed, res.Compensated, res.Settled, res.Acked, res.Stored, res.Final, res.Attempts)
 	})
 }
 

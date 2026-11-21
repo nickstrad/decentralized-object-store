@@ -16,9 +16,11 @@ import (
 )
 
 const (
-	propMaxAttempts = 10
-	propHorizon     = 5 * time.Minute
-	propSlow        = 1500 * time.Millisecond
+	propMaxAttempts  = 10
+	propHorizon      = 5 * time.Minute
+	propSlow         = 1500 * time.Millisecond
+	propExhaustSlack = 2
+	propMaxPostPerm  = 3
 )
 
 func propPolicy() saga.Policy {
@@ -39,7 +41,7 @@ type scenario struct {
 	compFails []int
 	hooks     []crashPlan
 	timed     []crashPlan
-	slow      []bool
+	postPerm  []int
 }
 
 func drawScenario(t *rapid.T) scenario {
@@ -51,11 +53,17 @@ func drawScenario(t *rapid.T) scenario {
 		fails:     make([]int, n),
 		acted:     make([]bool, n),
 		compFails: make([]int, n),
-		slow:      make([]bool, n),
+		postPerm:  make([]int, n),
 	}
 	for i := 0; i < n; i++ {
 		sc.perm[i] = i <= sc.pivot && rapid.IntRange(0, 4).Draw(t, fmt.Sprintf("perm%d", i)) == 0
 		sc.fails[i] = rapid.IntRange(0, 2).Draw(t, fmt.Sprintf("fails%d", i))
+		if rapid.IntRange(0, 5).Draw(t, fmt.Sprintf("exhaust%d", i)) == 0 {
+			sc.fails[i] = propMaxAttempts + propExhaustSlack
+		}
+		if i > sc.pivot {
+			sc.postPerm[i] = rapid.IntRange(0, propMaxPostPerm).Draw(t, fmt.Sprintf("postPerm%d", i))
+		}
 		sc.acted[i] = rapid.Bool().Draw(t, fmt.Sprintf("acted%d", i))
 		sc.compFails[i] = rapid.IntRange(0, 2).Draw(t, fmt.Sprintf("compFails%d", i))
 	}
@@ -79,6 +87,9 @@ func drawScenario(t *rapid.T) scenario {
 func (sc scenario) apply(f *fx) {
 	for i := 0; i < sc.n; i++ {
 		var rs []result
+		for j := 0; j < sc.postPerm[i]; j++ {
+			rs = append(rs, permanent())
+		}
 		for j := 0; j < sc.fails[i]; j++ {
 			rs = append(rs, retry(sc.acted[i]))
 		}
@@ -91,13 +102,17 @@ func (sc scenario) apply(f *fx) {
 	}
 }
 
+func (sc scenario) exhausts(i int) bool {
+	return i < sc.pivot && !sc.perm[i] && sc.fails[i] >= propMaxAttempts
+}
+
 func (sc scenario) expect() (saga.State, []int, int) {
 	for i := 0; i < sc.n; i++ {
-		if !sc.perm[i] || i > sc.pivot {
+		if !(sc.perm[i] && i <= sc.pivot) && !sc.exhausts(i) {
 			continue
 		}
 		from := i
-		if i == sc.pivot {
+		if sc.perm[i] && i == sc.pivot {
 			from = i - 1
 		}
 		var comps []int
@@ -278,6 +293,7 @@ func checkTerminal(t *rapid.T, s *sim.Sim, f *fx, sc scenario) {
 }
 
 func TestPropTerminalState(t *testing.T) {
+	var exhausted, postPerm int
 	rapid.Check(t, func(t *rapid.T) {
 		sc := drawScenario(t)
 		seed := rapid.Int64().Draw(t, "seed")
@@ -286,7 +302,18 @@ func TestPropTerminalState(t *testing.T) {
 			t.Fatalf("run: %v", err)
 		}
 		checkTerminal(t, s, f, sc)
+		for i := 0; i < sc.n; i++ {
+			if sc.exhausts(i) && f.doCalls[i] > 0 {
+				exhausted++
+			}
+			if sc.postPerm[i] > 0 && f.doCalls[i] > sc.postPerm[i] {
+				postPerm++
+			}
+		}
 	})
+	if exhausted == 0 || postPerm == 0 {
+		t.Fatalf("the draws never reached retry exhaustion (%d) or a post-pivot ErrPermanent (%d)", exhausted, postPerm)
+	}
 }
 
 func TestPropNoStepAfterTerminal(t *testing.T) {
