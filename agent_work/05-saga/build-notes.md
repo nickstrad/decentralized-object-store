@@ -440,3 +440,24 @@ base-1 500-seed DST sweep of `internal/saga` 55.9 s (59 s wall with the containe
 rewritten `evidence/run-all.txt` was restored so the harness tree is unchanged):
 `SUMMARY held=125 broken=0 setup_errors=0 elapsed_seconds=22`. No check pinned an old code
 number or old runner behaviour.
+
+**Repair-round gate run.** `agent_work/gates/gate.sh 05-saga` from the worktree root on
+the host, at commit `b91a797d4e84fc1f7a3101b2ad1b95f465c6b063` (all repair code and the
+notes above), stage build, comment baseline `8eb934d`, rapid/DST seed 203523358543492:
+
+```
+G0  tools/gofmt/vet/build/detlint/panics/deps/comments/selfcontained  pass
+G1  unit           pass    7s   (internal/saga 95.5%, internal/saga/sagasim 91.3%)
+G2  property       pass   91s   rapid 2000 checks (internal/saga 2.4 s)
+G3  fuzz           pass   73s   2 fuzz targets, 30 s each
+G4  race           pass   66s   (internal/saga 9.0 s, sagasim 8.9 s under -race)
+G5  dst            pass  228s   500 seeds from base 203523358543492 (internal/saga 73.5 s, sagasim 2.4 s)
+G6  docker         pass
+gate: overall=pass counts_for_landing=true
+```
+
+Gate wall time 8 min 4 s. Also run before the gate, all in the dev container:
+`gofmt -l .` (empty), `go vet ./...`, `go build ./...`, `go test -count=1 ./...` (all
+packages ok). No `panic(` added, no panic-allowlist line, no detlint exemption. Errors
+intentionally ignored: unchanged from the list above. The only commit after the gated one
+adds this paragraph.
