@@ -484,3 +484,150 @@ func TestPropDiskModel(t *testing.T) {
 		})
 	})
 }
+
+type streamMachine struct {
+	s    *sim.Sim
+	ids  []env.NodeID
+	recs map[env.NodeID]*recorder
+	sent map[[2]env.NodeID]int
+}
+
+func streamLabel(from, to env.NodeID, k int) string { return fmt.Sprintf("%s>%s#%d", from, to, k) }
+
+func parseStreamLabel(t *rapid.T, s string) (env.NodeID, env.NodeID, int) {
+	var k int
+	head, num, ok := strings.Cut(s, "#")
+	from, to, ok2 := strings.Cut(head, ">")
+	if _, err := fmt.Sscanf(num, "%d", &k); err != nil || !ok || !ok2 {
+		t.Fatalf("bad label %q", s)
+	}
+	return env.NodeID(from), env.NodeID(to), k
+}
+
+func (m *streamMachine) checkOrder(t *rapid.T) {
+	for _, id := range m.ids {
+		last := map[env.NodeID]int{}
+		for _, req := range m.recs[id].requests {
+			from, to, k := parseStreamLabel(t, req)
+			if to != id {
+				t.Fatalf("%s received %q", id, req)
+			}
+			if prev, ok := last[from]; ok && k <= prev {
+				t.Fatalf("%s received requests from %s out of order or twice: %v", id, from, m.recs[id].requests)
+			}
+			last[from] = k
+		}
+		lastReply := map[env.NodeID]int{}
+		for _, rep := range m.recs[id].replies {
+			if rep.err != nil {
+				t.Fatalf("%s request failed: %v", id, rep.err)
+			}
+			from, to, k := parseStreamLabel(t, strings.TrimPrefix(rep.reply, "echo:"))
+			if from != id {
+				t.Fatalf("%s got reply %q", id, rep.reply)
+			}
+			if prev, ok := lastReply[to]; ok && k <= prev {
+				t.Fatalf("%s received responses from %s out of order or twice: %+v", id, to, m.recs[id].replies)
+			}
+			lastReply[to] = k
+		}
+	}
+}
+
+func TestPropStreamOrderPerConnection(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		n := rapid.IntRange(2, 4).Draw(t, "n")
+		m := &streamMachine{s: sim.New(sim.Config{Seed: rapid.Int64().Draw(t, "seed")}), ids: sim.NodeIDs(n),
+			recs: map[env.NodeID]*recorder{}, sent: map[[2]env.NodeID]int{}}
+		for _, id := range m.ids {
+			if err := m.s.AddNode(sim.NodeSpec{ID: id, Region: "r"}, func(e env.Env) env.Process {
+				r := &recorder{e: e}
+				m.recs[e.ID] = r
+				return r
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := m.s.RunUntil(0); err != nil {
+			t.Fatal(err)
+		}
+		pick := rapid.SampledFrom(m.ids)
+		pair := func(t *rapid.T) (env.NodeID, env.NodeID) {
+			a := pick.Draw(t, "a")
+			b := rapid.SampledFrom(m.ids).Filter(func(x env.NodeID) bool { return x != a }).Draw(t, "b")
+			return a, b
+		}
+		t.Repeat(map[string]func(*rapid.T){
+			"request": func(t *rapid.T) {
+				a, b := pair(t)
+				k := m.sent[[2]env.NodeID{a, b}]
+				m.sent[[2]env.NodeID{a, b}] = k + 1
+				m.recs[a].request(b, streamLabel(a, b, k), time.Hour)
+			},
+			"pause": func(t *rapid.T) {
+				id := pick.Draw(t, "id")
+				if m.s.Status(id).Paused {
+					return
+				}
+				if err := m.s.Pause(id); err != nil {
+					t.Fatal(err)
+				}
+			},
+			"resume": func(t *rapid.T) {
+				id := pick.Draw(t, "id")
+				if !m.s.Status(id).Paused {
+					return
+				}
+				if err := m.s.Resume(id); err != nil {
+					t.Fatal(err)
+				}
+			},
+			"clog": func(t *rapid.T) {
+				a, b := pair(t)
+				if err := m.s.Clog(a, b); err != nil {
+					t.Fatal(err)
+				}
+			},
+			"unclog": func(t *rapid.T) {
+				a, b := pair(t)
+				if err := m.s.Unclog(a, b); err != nil {
+					t.Fatal(err)
+				}
+			},
+			"healAll": func(t *rapid.T) { m.s.HealAll() },
+			"healNet": func(t *rapid.T) { m.s.HealNet() },
+			"run": func(t *rapid.T) {
+				d := time.Duration(rapid.IntRange(0, 6).Draw(t, "ms")) * time.Millisecond
+				if err := m.s.RunFor(d); err != nil {
+					t.Fatal(err)
+				}
+				m.checkOrder(t)
+			},
+		})
+		m.s.HealAll()
+		if err := m.s.RunFor(time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		m.checkOrder(t)
+		for _, a := range m.ids {
+			for _, b := range m.ids {
+				got := 0
+				for _, req := range m.recs[b].requests {
+					if from, _, _ := parseStreamLabel(t, req); from == a {
+						got++
+					}
+				}
+				if want := m.sent[[2]env.NodeID{a, b}]; got != want {
+					t.Fatalf("%s received %d requests from %s, sent %d", b, got, a, want)
+				}
+			}
+			total := 0
+			for _, b := range m.ids {
+				total += m.sent[[2]env.NodeID{a, b}]
+			}
+			if len(m.recs[a].replies) != total {
+				t.Fatalf("%s got %d replies for %d requests", a, len(m.recs[a].replies), total)
+			}
+		}
+	})
+}

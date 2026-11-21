@@ -232,6 +232,78 @@ func TestReleaseKeepsFIFOAtTheReleaseInstant(t *testing.T) {
 			t.Fatalf("fired=%v datagrams=%d", fired, len(b.datagrams))
 		}
 	})
+	heldBehindClog := func(t *testing.T) *harness {
+		h := twoNodes(t, nil)
+		mustNil(t, h.s.Pause("b"))
+		h.rec("a").request("b", "first", time.Hour)
+		h.run(2 * time.Millisecond)
+		mustNil(t, h.s.Clog("a", "b"))
+		h.rec("a").request("b", "second", time.Hour)
+		h.run(2 * time.Millisecond)
+		return h
+	}
+	wantFirstSecond := func(t *testing.T, h *harness) {
+		t.Helper()
+		h.run(time.Second)
+		if got := h.rec("b").requests; len(got) != 2 || got[0] != "first" || got[1] != "second" {
+			t.Fatalf("server order %v", got)
+		}
+		reps := h.rec("a").replies
+		if len(reps) != 2 || reps[0].reply != "echo:first" || reps[1].reply != "echo:second" {
+			t.Fatalf("replies %+v", reps)
+		}
+	}
+	t.Run("a request held by a paused node is not re-clogged behind a newer one", func(t *testing.T) {
+		h := heldBehindClog(t)
+		mustNil(t, h.s.Resume("b"))
+		h.run(2 * time.Millisecond)
+		mustNil(t, h.s.Unclog("a", "b"))
+		wantFirstSecond(t, h)
+	})
+	t.Run("HealAll releases a paused node's held request before the clogged newer one", func(t *testing.T) {
+		h := heldBehindClog(t)
+		h.s.HealAll()
+		wantFirstSecond(t, h)
+	})
+	t.Run("Unclog then Resume at one instant keeps the connection in order", func(t *testing.T) {
+		h := heldBehindClog(t)
+		mustNil(t, h.s.Unclog("a", "b"))
+		mustNil(t, h.s.Resume("b"))
+		wantFirstSecond(t, h)
+	})
+	t.Run("Resume then Unclog at one instant keeps the connection in order", func(t *testing.T) {
+		h := heldBehindClog(t)
+		mustNil(t, h.s.Resume("b"))
+		mustNil(t, h.s.Unclog("a", "b"))
+		wantFirstSecond(t, h)
+	})
+	t.Run("responses held by a paused client stay in order behind a clog", func(t *testing.T) {
+		for _, heal := range []string{"resume-unclog", "healall"} {
+			h := twoNodes(t, nil)
+			h.rec("a").request("b", "first", time.Hour)
+			h.run(time.Millisecond)
+			mustNil(t, h.s.Pause("a"))
+			h.run(2 * time.Millisecond)
+			mustNil(t, h.s.Clog("b", "a"))
+			h.rec("a").request("b", "second", time.Hour)
+			h.run(3 * time.Millisecond)
+			if len(h.rec("a").replies) != 0 {
+				t.Fatalf("%s: paused client got replies", heal)
+			}
+			if heal == "healall" {
+				h.s.HealAll()
+			} else {
+				mustNil(t, h.s.Resume("a"))
+				h.run(2 * time.Millisecond)
+				mustNil(t, h.s.Unclog("b", "a"))
+			}
+			h.run(time.Second)
+			reps := h.rec("a").replies
+			if len(reps) != 2 || reps[0].reply != "echo:first" || reps[1].reply != "echo:second" {
+				t.Fatalf("%s: replies %+v", heal, reps)
+			}
+		}
+	})
 	t.Run("a reply released at the same instant cancels its pending timeout", func(t *testing.T) {
 		h := twoNodes(t, nil)
 		mustNil(t, h.s.Clog("b", "a"))
