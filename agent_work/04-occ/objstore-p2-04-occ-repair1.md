@@ -149,6 +149,11 @@ Part A deletes the code in question, a test of the new behaviour that covers the
    really contested (a discard on it was recorded) before the recount.
 
 ## Also
+- Wire codes: the project now gives each package its own block so the integrated node can
+  join the tables (a duplicate code is rejected): gossip 80–95, storage 96–111, merkle
+  112–127, **occ 128–143**, saga 144–159. Move this package's codes into 128–143 (the
+  retired conflict code's slot stays unassigned), update goldens that carry codes, and
+  test that every code lies in the block.
 - The orchestrator's first gate run of `FuzzOCCDecode` died with `context deadline
   exceeded`; finding 1 explains it. After your changes run that target for 120 s once and
   record execs and that it ends cleanly.
