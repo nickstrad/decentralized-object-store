@@ -61,6 +61,13 @@ Next steps (only after Nick's ruling arrives as a follow-up brief file):
 4. Chunks 6, 7, 8 in order.
 
 Open decisions / blockers:
+- SIGN-OFF ANSWERS RECEIVED (Nick, 2026-11-21, via Twin): all 16 open
+  questions in PLAN.md section 9 are answered, including the OCC
+  amendment (CRDT primitive replaced by optimistic concurrency control
+  with sibling-conflict detection; OQ-12 moot). Full rulings:
+  /root/briefs/objstore-signoff-ruling-2026-11-21.md. Awaiting only
+  Nick's final Phase 2 go; on the go, Twin issues the Phase 2 mission
+  folding in these answers plus the book and C4 rulings.
 - C4 RULING (Nick, 2026-11-21, via Twin): this project keeps a C4
   diagrams section on its GitHub Pages site, up to date per landing,
   designed with Nick's c4-sdk tool (/root/Software/c4-sdk, npm
