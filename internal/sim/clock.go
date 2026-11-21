@@ -49,7 +49,7 @@ func scaled(k int64, d time.Duration) time.Duration {
 	if d > 0 && k > math.MaxInt64/int64(d) {
 		return math.MaxInt64
 	}
-	if d < 0 && k > math.MinInt64/int64(d) {
+	if d < -1 && k > math.MinInt64/int64(d) {
 		return math.MinInt64
 	}
 	return time.Duration(k) * d
