@@ -9,7 +9,7 @@ HELD C3 merge-permutations-901: 500 updates, 20 permutations, duplicates and par
 HELD C3 merge-permutations-902: 500 updates, 20 permutations, duplicates and partial merges matched independent maxima
 HELD C3 merge-permutations-903: 500 updates, 20 permutations, duplicates and partial merges matched independent maxima
 HELD C4 monotonic-and-copy-isolation: 3000 hostile updates preserved per-ID incarnation order, sorting and snapshot isolation
-BROKEN C4 retention-monotonicity: seed=901 dead(x,9), wait 2s with retention=1s, replay alive(x,0): incarnation became 0
+HELD C4 retention-monotonicity: incarnation stayed monotonic across purge
 HELD C5 queue-budget-781: 51 queued entries each transmitted 24 times within budget, freshest first
 HELD C5 queue-budget-1400: 51 queued entries each transmitted 24 times within budget, freshest first
 HELD C5 replacement-and-destination-lead: stale replay not enqueued; spent death update still led reply to its subject
@@ -33,8 +33,8 @@ HELD C13 mutational-wire-invariants: 20000 seeded random/mutated inputs: no pani
 HELD C14 snapshot-repeat-and-replay: two duplicate/loss runs matched both digests and repeated node encodings
 HELD C23 stale-replay-retained-dead: lower/equal alive and suspect replays rejected; higher alive accepted
 HELD C23 stale-replay-retained-left: lower/equal alive and suspect replays rejected; higher alive accepted
-BROKEN C23 stale-replay-after-purge: seed=901 alive(x,7), dead(x,7), wait 2s at retention=1s, replay alive(x,0): dead verdict overturned at incarnation 0
-HELD C7 relay-once-original-sequence: duplicate ACK forwarded once with requester sequence 777
+HELD C23 stale-replay-after-purge: dead verdict survives stale replay after purge
+BROKEN C7 relay-once-original-sequence: seed=901 duplicate or wrong relay [{target {1 1  [{n000 r0 0 1}]} 21}]
 HELD C7 expired-relay-dropped: ACK at 1.1s did not forward expired 1s relay
 HELD C7 indirect-fanout-distinct: each timeout selected exactly three distinct helpers excluding target
 HELD C8 malformed-seed-with-success-false: malformed reply rejected; aggregate failure or other-seed success delivered once
