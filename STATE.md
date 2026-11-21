@@ -38,6 +38,12 @@ Next steps (only after Nick's ruling arrives as a follow-up brief file):
 4. Chunks 6, 7, 8 in order.
 
 Open decisions / blockers:
+- BOOK RULING (Nick, 2026-11-20, via Twin): in addition to the per-chunk
+  Neon write-ups, Neon assembles a concise Leanpub-style BOOK as the
+  project's canonical learning artifact - per-chunk write-ups become book
+  chapter drafts, Chunk 8 assembles the book, Pages presents the book.
+  Full ruling: /root/briefs/objstore-book-ruling-2026-11-20.md. Applies
+  at Phase 2 mission time, together with the plan sign-off.
 - Plan sign-off — owner: Nick (relayed by Twin). Gates everything.
 - PLAN.md section 9, OQ-1 to OQ-16 — owner: Nick. No defaults applied.
 - Claude sign-in on this VM ends between 2026-11-25 and 2026-11-28 (OQ-14).
