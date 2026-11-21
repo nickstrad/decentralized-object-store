@@ -284,3 +284,43 @@ func TestCanaryChecksumSkipBreaksCorruptionProperty(t *testing.T) {
 		t.Fatal("TestPropCorruptionBecomesErasure passes with checksum verification skipped: the property cannot see corruption")
 	}
 }
+
+func TestDecodeStripeRejectsForgedShards(t *testing.T) {
+	codec, err := erasure.New(2, 1)
+	mustNil(t, err)
+	data := []byte("forged shards agree with their own checksum")
+	blobs, sums := encodeStripe(t, codec, 4, 1, data)
+	forged, err := storage.EncodeShard(storage.ShardHeader{K: 2, M: 1, Index: 0, Stripe: 1, Version: 4}, bytes.Repeat([]byte{'z'}, len(blobs[0])-storage.HeaderSize))
+	mustNil(t, err)
+	other, err := erasure.New(1, 2)
+	mustNil(t, err)
+	otherCode, _ := encodeStripe(t, other, 4, 1, data[:len(blobs[0])-storage.HeaderSize])
+	shorter, _ := encodeStripe(t, codec, 4, 1, data[:10])
+	cases := []struct {
+		name  string
+		blob  []byte
+		index int
+	}{
+		{"a re-encoded shard with the right header and different payload", forged, 0},
+		{"a shard written by a different code", otherCode[1], 1},
+		{"a shard of the right stripe with another payload length", shorter[1], 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			damaged := slices.Clone(blobs)
+			damaged[c.index] = c.blob
+			got, bad, err := storage.DecodeStripe(codec, 4, 1, len(data), damaged, sums)
+			mustNil(t, err)
+			if !bytes.Equal(got, data) || !slices.Equal(bad, []int{c.index}) {
+				t.Fatalf("decoded %q, bad %v", got, bad)
+			}
+		})
+	}
+	damaged := slices.Clone(blobs)
+	damaged[0] = forged
+	got, _, err := storage.DecodeStripe(codec, 4, 1, len(data), damaged, nil)
+	mustNil(t, err)
+	if bytes.Equal(got, data) {
+		t.Fatal("without manifest checksums a self-consistent forged shard is expected to decode to different bytes; the manifest checksum is the defence")
+	}
+}

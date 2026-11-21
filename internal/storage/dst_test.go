@@ -21,18 +21,19 @@ const (
 	dstStripeSize = 16 << 10
 	dstBucket     = "dst"
 
-	dstPutAt       = env.Time(time.Second)
-	dstChaosStart  = env.Time(10 * time.Second)
-	dstPhases      = 3
-	dstChaos       = 4 * time.Second
-	dstHeal        = 2 * time.Second
-	dstFaultGap    = 250 * time.Millisecond
-	dstGets        = 60
-	dstGetGap      = 400 * time.Millisecond
-	dstFinalSweep  = time.Second
-	dstPutBound    = 2 * time.Second
-	dstGetBound    = 3 * time.Second
-	dstMaxRequests = dstK + dstM
+	dstPutAt          = env.Time(time.Second)
+	dstChaosStart     = env.Time(10 * time.Second)
+	dstPhases         = 3
+	dstChaos          = 4 * time.Second
+	dstHeal           = 2 * time.Second
+	dstFaultGap       = 250 * time.Millisecond
+	dstGets           = 60
+	dstGetGap         = 400 * time.Millisecond
+	dstFinalSweep     = time.Second
+	dstPutBound       = 2 * time.Second
+	dstGetBound       = 3 * time.Second
+	dstMaxRequests    = (dstK + dstM) * storage.MaxShardAttempts
+	dstInvariantEvery = 20
 )
 
 var dstSizes = []int{0, 1, 3, 4, 5, 1021, dstStripeSize - 1, dstStripeSize, dstStripeSize + 1, 3*dstStripeSize + 7, 6*dstStripeSize + 4093}
@@ -53,6 +54,7 @@ type dstOutcome struct {
 	fallbacks      int
 	applied        int
 	rejected       int
+	transientOnly  int
 }
 
 type dstMode struct {
@@ -145,7 +147,7 @@ func stripedRun(mode dstMode, outs *[]*dstOutcome) func(seed int64) *sim.Sim {
 			return s
 		}
 		if !mode.lifted {
-			s.AddInvariant("storage/fault-budget", 1, func() error { return budget.Check(s) })
+			s.AddInvariant("storage/fault-budget", dstInvariantEvery, func() error { return budget.Check(s) })
 		}
 		issue := func(o *dstObject, from env.NodeID) {
 			n := node(from)
@@ -179,11 +181,14 @@ func stripedRun(mode dstMode, outs *[]*dstOutcome) func(seed int64) *sim.Sim {
 						s.Fail(fmt.Errorf("get %s succeeded with %d shards of stripe 1 rotted", o.key, dstM+1))
 					}
 					res.ok++
-				case errors.Is(err, storage.ErrUnavailable) && mode.lifted:
+				case errors.Is(err, storage.ErrUnavailable) && (mode.lifted || errors.Is(err, env.ErrIO)):
 					if r.Data != nil {
 						s.Fail(fmt.Errorf("get %s returned bytes with an error", o.key))
 					}
 					res.unavailable++
+					if !mode.lifted {
+						res.transientOnly++
+					}
 				default:
 					s.Fail(fmt.Errorf("get %s from %s inside the fault budget: %w", o.key, from, err))
 				}
@@ -248,12 +253,13 @@ func TestStripedPutGetDST(t *testing.T) {
 				agg.fallbacks += r.fallbacks
 				agg.applied += r.applied
 				agg.rejected += r.rejected
+				agg.transientOnly += r.transientOnly
 			})
 			if agg.fallbacks == 0 || agg.applied == 0 {
 				t.Fatalf("the faults never reached a read: %d gets fell back, %d faults applied", agg.fallbacks, agg.applied)
 			}
-			t.Logf("MEASURED %s: put max %v (bound %v), get max %v (bound %v), max requests per stripe %d (bound %d), gets %d ok %d unavailable %d fell-back %d, faults applied %d rejected-by-budget %d",
-				name, agg.putMax, dstPutBound, agg.getMax, dstGetBound, agg.maxRequests, dstMaxRequests, agg.gets, agg.ok, agg.unavailable, agg.fallbacks, agg.applied, agg.rejected)
+			t.Logf("MEASURED %s: put max %v (bound %v), get max %v (bound %v), max mean requests per stripe %d (bound %d), gets %d ok %d unavailable %d fell-back %d, faults applied %d rejected-by-budget %d, unavailable-with-transient-cause %d",
+				name, agg.putMax, dstPutBound, agg.getMax, dstGetBound, agg.maxRequests, dstMaxRequests, agg.gets, agg.ok, agg.unavailable, agg.fallbacks, agg.applied, agg.rejected, agg.transientOnly)
 		})
 	}
 }

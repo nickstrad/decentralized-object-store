@@ -147,7 +147,7 @@ func TestBlobNames(t *testing.T) {
 		"shards/Bad!/00/000000000000feed/12.3", "blobs/photos/00/000000000000feed/12.3",
 		"shards/photos/" + name[14:16] + "/000000000000feed/012.3", "shards/photos/" + name[14:16] + "/000000000000feed/12.3.4",
 		"shards/photos/" + name[14:16] + "/000000000000feed/4294967296.3", "shards/photos/" + name[14:16] + "/000000000000feed/12.65536",
-		"shards/photos/" + name[14:16] + "/000000000000FEED/12.3"}
+		"shards/photos/" + name[14:16] + "/000000000000FEED/12.3", "shards/photos/" + name[14:16] + "/zzzzzzzzzzzzzzzz/12.3"}
 	for _, b := range bad {
 		if _, err := storage.ParseBlobName(b); !errors.Is(err, storage.ErrInvalid) {
 			t.Fatalf("ParseBlobName(%q) error %v", b, err)

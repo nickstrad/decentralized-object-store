@@ -14,6 +14,8 @@ import (
 const (
 	DefaultRequestTimeout = time.Second
 	DefaultWindow         = 4
+	MaxShardAttempts      = 4
+	RetryBackoff          = 50 * time.Millisecond
 )
 
 type Config struct {
@@ -287,9 +289,12 @@ type getOp struct {
 type getStripe struct {
 	exp      shardExpect
 	payloads [][]byte
+	attempts []int
+	retry    []int
 	tried    int
 	pending  int
 	good     int
+	waiting  bool
 	done     bool
 	causes   []error
 }
@@ -348,6 +353,7 @@ func (op *getOp) fill() {
 		st := &op.stripes[i]
 		st.exp = expectFor(op.n.codec, op.man.Version, uint32(i), op.man.Layout.StripeLen(op.man.Size, i))
 		st.payloads = make([][]byte, op.n.codec.N())
+		st.attempts = make([]int, op.n.codec.N())
 		for j := 0; j < op.n.codec.K(); j++ {
 			op.fetch(i)
 		}
@@ -358,13 +364,23 @@ func (op *getOp) fetch(i int) {
 	st := &op.stripes[i]
 	idx := st.tried
 	st.tried++
+	op.send(i, idx)
+}
+
+func (op *getOp) send(i, idx int) {
+	st := &op.stripes[i]
 	st.pending++
+	st.attempts[idx]++
 	op.res.Requests++
 	ref := op.man.Stripes[i].Shards[idx]
 	want := ref.Checksum
 	op.n.request(ref.Node, EncodeShardRequest(OpGetShard, op.man.ShardID(i, idx), nil), func(blob []byte, err error) {
 		op.reply(i, idx, ref.Node, blob, err, want)
 	})
+}
+
+func transient(err error) bool {
+	return errors.Is(err, env.ErrIO) || errors.Is(err, env.ErrTimeout) || errors.Is(err, env.ErrUnreachable)
 }
 
 func (op *getOp) reply(i, idx int, from env.NodeID, blob []byte, err error, want [32]byte) {
@@ -379,7 +395,10 @@ func (op *getOp) reply(i, idx int, from env.NodeID, blob []byte, err error, want
 	}
 	if err != nil {
 		op.res.Rejected++
-		st.causes = append(st.causes, fmt.Errorf("shard %d on %s: %w", idx, from, err))
+		st.causes = append(st.causes, fmt.Errorf("shard %d on %s attempt %d: %w", idx, from, st.attempts[idx], err))
+		if transient(err) && st.attempts[idx] < MaxShardAttempts {
+			st.retry = append(st.retry, idx)
+		}
 		if st.tried < op.n.codec.N() {
 			op.fetch(i)
 			return
@@ -412,9 +431,27 @@ func (op *getOp) reply(i, idx int, from env.NodeID, blob []byte, err error, want
 
 func (op *getOp) checkExhausted(i int) {
 	st := &op.stripes[i]
-	if st.pending > 0 || st.tried < op.n.codec.N() {
+	if st.pending > 0 || st.waiting || st.tried < op.n.codec.N() {
+		return
+	}
+	if len(st.retry) > 0 {
+		st.waiting = true
+		op.n.e.Clock.AfterFunc(RetryBackoff, func() { op.retry(i) })
 		return
 	}
 	cause := errors.Join(append([]error{ErrUnavailable}, st.causes...)...)
 	op.finish(fmt.Errorf("stripe %d: %d of %d shards verified, need %d: %w", i, st.good, op.n.codec.N(), op.n.codec.K(), cause))
+}
+
+func (op *getOp) retry(i int) {
+	st := &op.stripes[i]
+	st.waiting = false
+	if op.finished || st.done {
+		return
+	}
+	again := st.retry
+	st.retry = nil
+	for _, idx := range again {
+		op.send(i, idx)
+	}
 }

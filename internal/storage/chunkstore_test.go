@@ -364,3 +364,35 @@ func TestPropChunkStoreModel(t *testing.T) {
 		})
 	})
 }
+
+func TestChunkStoreClosedDiskAndBadBuckets(t *testing.T) {
+	s, node, d := simDisk(t)
+	st := storage.NewChunkStore(d)
+	id := storage.ShardID{Bucket: "b", Version: 1}
+	mustNil(t, st.Put(id, shardFor(t, id, []byte("x"))))
+	bad := storage.ShardID{Bucket: "B"}
+	if err := st.Put(bad, nil); !errors.Is(err, storage.ErrInvalid) {
+		t.Fatalf("Put to a bad bucket: %v", err)
+	}
+	if err := st.Delete(bad); !errors.Is(err, storage.ErrInvalid) {
+		t.Fatalf("Delete in a bad bucket: %v", err)
+	}
+	if _, err := st.GetBlob(bad); !errors.Is(err, storage.ErrInvalid) {
+		t.Fatalf("GetBlob in a bad bucket: %v", err)
+	}
+	mustNil(t, s.Crash(node))
+	for name, err := range map[string]error{
+		"put":    st.Put(id, shardFor(t, id, []byte("x"))),
+		"delete": st.Delete(id),
+	} {
+		if !errors.Is(err, env.ErrClosed) || errors.Is(err, storage.ErrNotFound) {
+			t.Fatalf("%s on a closed disk: %v", name, err)
+		}
+	}
+	if _, err := st.List("b"); !errors.Is(err, env.ErrClosed) {
+		t.Fatalf("List on a closed disk: %v", err)
+	}
+	if _, err := st.GetBlob(id); !errors.Is(err, env.ErrClosed) {
+		t.Fatalf("GetBlob on a closed disk: %v", err)
+	}
+}

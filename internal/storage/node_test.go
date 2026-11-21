@@ -235,6 +235,24 @@ func TestNodeRejectsBadInput(t *testing.T) {
 	if !errors.Is(g.err, storage.ErrInvalid) {
 		t.Fatalf("get of an invalid manifest: %v", g.err)
 	}
+	g = get(t, s, n, sampleManifest(17))
+	if !errors.Is(g.err, storage.ErrInvalid) {
+		t.Fatalf("get of a manifest written with another code: %v", g.err)
+	}
+}
+
+func TestNodePutWithTooFewMembers(t *testing.T) {
+	codes, err := storage.Codes()
+	mustNil(t, err)
+	s := sim.New(sim.Config{Seed: 1, Codes: codes})
+	ids := sim.NodeIDs(3)
+	cfg := storage.Config{Layout: smallLayout(), Members: clusterMembers(ids, 3)}
+	mustNil(t, s.AddCluster(ids, 3, nodeFactory(cfg)))
+	mustNil(t, s.RunUntilQuiet())
+	p := put(t, s, nodeOf(t, s, ids[0]), "b", "k", []byte("six shards, three members"))
+	if !errors.Is(p.err, storage.ErrUnavailable) {
+		t.Fatalf("put with three members for six shards: %v", p.err)
+	}
 }
 
 func TestNodeDetectsContentMismatch(t *testing.T) {
@@ -346,5 +364,63 @@ func TestConfigValidate(t *testing.T) {
 				t.Fatalf("NewNode error %v", nerr)
 			}
 		})
+	}
+}
+
+func TestNodeGetRetriesTransientErrors(t *testing.T) {
+	s, ids, cfg := newCluster(t, 8, 9, 3, smallLayout())
+	data := []byte("read errors pass; a retry after a backoff finds the shard")
+	p := put(t, s, nodeOf(t, s, ids[0]), "b", "k", data)
+	mustNil(t, p.err)
+	man := p.man
+	for _, idx := range []int{0, 1, 2} {
+		sh := man.Stripes[0].Shards[idx]
+		mustNil(t, s.FailReads(sh.Node, man.ShardID(0, idx).BlobName(), 1))
+	}
+	g := get(t, s, nodeOf(t, s, ids[1]), man)
+	mustNil(t, g.err)
+	if !bytes.Equal(g.res.Data, data) {
+		t.Fatal("wrong bytes after transient read errors on three shards")
+	}
+	if g.res.Rejected != 3 {
+		t.Fatalf("rejected %d, want 3", g.res.Rejected)
+	}
+	for _, idx := range []int{0, 1, 2} {
+		sh := man.Stripes[0].Shards[idx]
+		mustNil(t, s.FailReads(sh.Node, man.ShardID(0, idx).BlobName(), storage.MaxShardAttempts))
+	}
+	g = get(t, s, nodeOf(t, s, ids[1]), man)
+	if !errors.Is(g.err, storage.ErrUnavailable) || !errors.Is(g.err, env.ErrIO) {
+		t.Fatalf("persistent read errors on three shards: %v", g.err)
+	}
+	if max := len(man.Stripes) * (cfg.Layout.K + cfg.Layout.M) * storage.MaxShardAttempts; g.res.Requests > max {
+		t.Fatalf("%d requests, bound %d", g.res.Requests, max)
+	}
+	if want := 3*storage.MaxShardAttempts + 3; g.res.Requests != want {
+		t.Fatalf("%d requests, want %d (three shards at every attempt, three clean)", g.res.Requests, want)
+	}
+}
+
+func TestNodeStatsAndStore(t *testing.T) {
+	s, ids, _ := newCluster(t, 9, 6, 3, smallLayout())
+	n := nodeOf(t, s, ids[0])
+	n.Start()
+	p := put(t, s, n, "b", "k", []byte("stats"))
+	mustNil(t, p.err)
+	_ = get(t, s, n, p.man)
+	st := n.Stats()
+	if st.PutsDone != 1 || st.GetsDone != 1 || st.Requests != 6+4 {
+		t.Fatalf("stats %+v", st)
+	}
+	holder := p.man.Stripes[0].Shards[0].Node
+	if _, _, err := nodeOf(t, s, holder).Store().Get(p.man.ShardID(0, 0)); err != nil {
+		t.Fatalf("Store().Get on the holder: %v", err)
+	}
+	served := uint64(0)
+	for _, id := range ids {
+		served += nodeOf(t, s, id).Stats().Served
+	}
+	if served != 6+4 {
+		t.Fatalf("served %d requests, want 10", served)
 	}
 }

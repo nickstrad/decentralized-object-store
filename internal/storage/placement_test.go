@@ -276,3 +276,29 @@ func diff(a, b []env.NodeID) []env.NodeID {
 	}
 	return out
 }
+
+func TestReplaceWhenTheRegionCapShrinks(t *testing.T) {
+	two := members(5, 5)
+	key := storage.StripeKey("b", 9, 0)
+	cur, err := storage.Place(two, key, 6, 2)
+	mustNil(t, err)
+	three := append(slices.Clone(two), members(5, 5, 5)[10:]...)
+	next, err := storage.Replace(three, key, cur, 2)
+	mustNil(t, err)
+	worst := 0
+	for _, v := range regionCounts(three, next) {
+		worst = max(worst, v)
+	}
+	if worst != 2 {
+		t.Fatalf("after a third region joined a region holds %d shards: %v", worst, next)
+	}
+	moved := 0
+	for i := range cur {
+		if cur[i] != next[i] {
+			moved++
+		}
+	}
+	if moved != 2 {
+		t.Fatalf("moved %d shards, want 2 (one out of each over-full region)", moved)
+	}
+}

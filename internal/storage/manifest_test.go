@@ -80,6 +80,9 @@ func TestManifestValidate(t *testing.T) {
 func TestDecodeManifestMalformedTable(t *testing.T) {
 	good, err := sampleManifest(17).Encode()
 	mustNil(t, err)
+	if good[60] != 2 {
+		t.Fatalf("layout k is not at offset 60: %x", good[55:65])
+	}
 	edit := func(f func(b []byte) []byte) []byte { return f(append([]byte{}, good...)) }
 	cases := []struct {
 		name string
@@ -92,6 +95,8 @@ func TestDecodeManifestMalformedTable(t *testing.T) {
 		{"trailing bytes", append(append([]byte{}, good...), 0)},
 		{"truncated in the header", good[:6]},
 		{"huge length prefix", append(append([]byte{}, good[:5]...), 0xff, 0xff, 0xff, 0xff, 0x0f)},
+		{"a field that fails validation", edit(func(b []byte) []byte { b[6] = 'B'; return b })},
+		{"a non-minimal number", append(append(append([]byte{}, good[:60]...), 0x82, 0x00), good[61:]...)},
 	}
 	for i := 5; i < len(good); i += 3 {
 		cut := good[:i]
