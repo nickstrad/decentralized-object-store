@@ -87,7 +87,8 @@ call; no inverse cache) and multiplies. Rebuilt parity is re-encoded from the da
 The checksum covers the header fields, not only the payload, so a flipped header bit (say
 the index) is caught even though the payload is intact. Decoding rejects (as `ErrCorrupt`):
 short, wrong magic/version, non-zero reserved bytes, invalid k/m/index, payload length that
-disagrees with the blob length (truncated or oversized), checksum mismatch. A blob is
+disagrees with the blob length (truncated or oversized), a payload over `MaxStripeSize`
+(repair round), checksum mismatch. A blob is
 accepted only if it re-encodes byte for byte (`FuzzShardDecode` checks that).
 Blob name: `shards/<bucket>/<hh>/<version-hex16>/<stripe>.<index>`, `hh` = first byte of
 SHA-256(`bucket/version-hex`) in hex. `ParseBlobName` accepts only the canonical form
@@ -96,18 +97,19 @@ alphanumeric.
 
 **Chunk store.** `Put` verifies the blob decodes and names the shard it is stored under
 (else `ErrCorrupt`, nothing written); if a valid shard with other bytes is stored, `ErrExists`
-(the first write wins); identical bytes are a no-op (idempotent, so a duplicated request is
-safe); a stored blob that fails verification is overwritten (repair). Write then `Sync`
+(the first write wins); identical bytes are re-synced and then acknowledged (idempotent, so a
+duplicated request is safe; repair round, finding 1); a stored blob that fails verification is overwritten (repair). Write then `Sync`
 before returning, so a returned `Put` is durable (`TestChunkStoreWritesAreDurable` checks the
 durable layer). `Get`/`GetBlob` verify every read; a missing blob is `ErrNotFound` joined with
 `env.ErrNotFound`; an injected I/O error is passed through (`env.ErrIO`, not `ErrCorrupt`).
-`Delete` syncs the removal. `List(bucket)`/`ListVersion` return parsed IDs in disk order
+`Delete` syncs the removal, also when it reports `ErrNotFound` (repair round). `List(bucket)`/`ListVersion` return parsed IDs in disk order
 (sorted by name) and skip names that are not canonical shard names.
 
 **Striping and streaming.** Fixed stripes of `StripeSize` bytes; the last one is short. A
 stripe of L bytes becomes k data shards of `ceil(L/k)` bytes (zero-padded) plus m parity
-shards. The coordinator works stripe by stripe with at most `Window` (default 4) stripes in
-flight, both for PUT and GET. The GET API returns the whole object as one `[]byte`
+shards. The coordinator works stripe by stripe with at most `Window` (default 4) stripes
+awaiting their quorum (PUT) or their decode (GET) at once. Requests to slow holders can stay
+outstanding after that; see "Repair round", C30, for what `Window` does not bound. The GET API returns the whole object as one `[]byte`
 (see Requests).
 
 **Manifest encoding.** `OMAN`, version 1, uvarint-length strings, BE uint64 version, uvarint
@@ -145,8 +147,9 @@ failed with a transient error (`env.ErrIO`, `ErrTimeout`, `ErrUnreachable`) are 
 after `RetryBackoff` (50 ms, from `env.Clock`) up to `MaxShardAttempts` (4) per shard;
 corrupt and missing shards are never retried. With k verified shards the stripe decodes.
 The whole object's SHA-256 is compared with `ContentSHA` at the end (`ErrCorrupt` on
-mismatch). Every callback fires exactly once; an empty object or an invalid argument calls
-back through `AfterFunc(0)`, never inside the `Put`/`Get` call.
+mismatch). Every callback fires exactly once; an empty object, an invalid argument or a
+placement/encode error calls back through `AfterFunc(0)`, never inside the `Put`/`Get` call
+(the placement case was fixed in the repair round, finding 2).
 
 **Why the retry exists (found by the DST).** The fault budget bounds damage *at an instant*.
 A GET spans time, and read errors are consumed by reads: seed 987691 injected read errors on
@@ -218,7 +221,8 @@ fallback; nemesis applied 22,122 faults and the budget rejected 23,006. Lifted: 
 
 - Encode, k=4 m=2, 1 MiB stripe: **483 MB/s** (2.17 ms/stripe, 0 allocs).
 - Reconstruct two missing data shards (`ReconstructData`), 1 MiB: **297 MB/s**.
-- Reconstruct one data + one parity (`Reconstruct`), 1 MiB: **280 MB/s**.
+- Reconstruct one data + one parity (`Reconstruct`), 1 MiB: superseded, see "Repair round"
+  (the benchmark erased two data shards before the repair round, finding 8).
   (`go test -run '^$' -bench . -benchmem ./internal/erasure`; MB/s is of stripe data.)
 - Memory, PUT then GET through the simulator on 9 nodes, default layout (1 MiB stripes,
   window 4), live heap sampled after a forced GC every 10 events
@@ -267,8 +271,8 @@ Not reachable with the simulator's disk:
 - `storage/chunkstore.go` `Put`: `Write` and `Sync` errors, `Delete`: `Sync` error — the sim
   disk fails writes/syncs only when closed, and a closed disk already fails the read that
   precedes them.
-- `storage/shard.go` `EncodeShard`: payload over `MaxStripeSize` (would need a 64 MiB
-  allocation in a test; `EncodeStripe`'s identical check is tested).
+- `storage/shard.go` `EncodeShard`: payload over `MaxStripeSize` — covered since the repair
+  round by `TestDecodeShardRejectsPayloadOverMaxStripeSize`.
 
 ## Errors intentionally ignored (`_ =`)
 
@@ -308,6 +312,221 @@ and the simulator reports it as a `PanicError`.)
    current `Get` buffers the object.
 4. A knowledge entry candidate: the fault budget is instantaneous, and any protocol whose
    operations span time needs retries for transient faults or a narrower claim (seed 987691).
+
+## Repair round (review 1: FAIL, four MAJOR; adversarial C30 BROKEN)
+
+Fresh Opus builder. Tests first: commit `4b7ac61` adds the regression tests and fails on the
+reviewed code (each failure listed below was run and seen); `30c9689` fixes; `aad5cc0` adds
+the object-buffer release; `096560a` fixes a bug in the new model test (not the store).
+
+### Finding 1 (MAJOR) — `Put` acknowledged bytes that were only in the unsynced layer
+- Tests (fail on the old code): `TestChunkStorePutOfUnsyncedIdenticalBytesIsDurable` (the
+  reviewer's reproduction: unsynced write, `Put` of the same bytes, crash, restart, `Get`
+  → was `ErrNotFound`), `TestChunkStoreSecondPutAfterAFailedSyncIsDurable` (two Puts after
+  the write, crash, `PeekDurable`), `TestChunkStoreDeleteOfAnUnsyncedRemovalIsDurable`.
+- `TestPropChunkStoreModel` now models the two disk layers: actions `put`, `delete`, `rot`,
+  `unsynced write` and `unsynced delete` (raw `env.Disk` calls standing in for an earlier
+  call whose `Sync` failed), and `crash` (crash + restart, the store rebuilt on the new
+  disk handle; the written layer reverts to the durable one). After every acknowledged
+  `Put` it checks `PeekDurable` holds exactly those bytes; after every `Delete` (either
+  result) that nothing durable remains; after every step every key and `List` against the
+  written layer. On the old code it fails in 2–11 checks. At 20,000 checks it passes.
+- Same audit on `Delete`: a `Delete` that found the name already removed in the written
+  layer returned `ErrNotFound` without syncing, so after a crash the shard came back.
+  Fixed the same way: `Delete` syncs before reporting `ErrNotFound`. A `Sync` that itself
+  reports `env.ErrNotFound` (nothing ever reached the durable layer) is not an error.
+- Change: `ChunkStore.Put` calls `Sync` in the identical-bytes branch; `ChunkStore.Delete`
+  syncs on both paths. "`Put`/`Delete` returned" now means durable on every path.
+- End to end: `TestStripedPutGetDST` now checks, inside every PUT callback, that every
+  stripe has at least k+1 shards whose durable bytes carry the manifest checksum
+  (`PeekDurable` + `BlobChecksum`). Measured minimum over 500 seeds (base 987654, both modes): 5, i.e. some stripe was acknowledged with exactly k+1 durable shards, so the check is exercised at its edge.
+  Limit: the DST has no crash during the PUT phase (its "all shards durable before the
+  faults" precondition and the instantaneous budget would both need rework); the crash
+  side of the claim is proven by the chunk-store model, the DST proves the count at ack.
+
+### Finding 2 (MAJOR) — a callback ran inside `Put`
+- Tests: the shared `put`/`get` helpers now fail if the callback runs before the call
+  returns, so every node test checks it; `TestNodePutWithTooFewMembers` failed on the old
+  code through that check. `TestNodePutPlacementFailureNeverCallsBackInsideTheCall`
+  (a membership that shrinks after 0, 1 or 2 placements, windows 1 and 4: `ErrUnavailable`,
+  callback outside the call, and no stripe placed after the failing one).
+  `TestNodeCallbacksNeverRunInsideTheCall` audits every early path of both methods: bad
+  bucket, empty key, 0-byte object, 1-byte object, nil manifest, invalid manifest, hostile
+  layout, valid empty manifest (passes on the old code too; it pins the audit).
+- Audit of every callback-taking method in `internal/storage`: `Node.Put` (invalid object,
+  empty object, placement or encode error on any stripe, quorum failure — the last runs in
+  a reply event), `Node.Get` (nil, invalid, layout, empty, any reply-path error — reply
+  events only). `OnRequest`'s `env.Reply` is the server side and is answered inside the
+  call by design (the simulator delivers the response as a later event). The chunk store
+  takes no callbacks.
+- Change: `putOp.fill` on a launch error sets `stopped`, schedules `finish(err)` through
+  `AfterFunc(0)` and launches nothing more; replies arriving meanwhile are counted and
+  ignored.
+
+### Finding 3 (MAJOR) — `k+m` overflow
+- Tests: `TestNewConfigTable` (MaxInt+1, 1+MaxInt, 2^62+2^62, MaxInt+MaxInt, 257/−1),
+  `TestLayoutTable` (three hostile rows), `TestHostileCodeShapesAreErrorsNotPanics`
+  (`Layout.Validate`, `Layout.Codec`, `Config.Validate`, `Manifest.Validate`,
+  `EncodeShard` with MinInt/MaxInt combinations; for `EncodeShard` it also checks the error
+  comes from the code check, not from a wrapped `k+m` in the index check),
+  `TestGetOfAManifestWithAHostileLayoutCallsBackWithErrInvalid`. All panicked on the old
+  code (`makeslice: len out of range`).
+- Change: `erasure.validConfig` and `storage.validShape` test `k > MaxShards || m >
+  MaxShards-k` before any addition.
+- Audit of size arithmetic fed by caller or decoded numbers:
+  - `Codec.ShardSize` is `(n-1)/k + 1` (finding 6); `TestShardSizeAtTheIntLimit`.
+  - `Identity(n)` returns the empty matrix for `n <= 0` or when `n*n` overflows (finding 6);
+    `TestIdentityOfNonPositiveOrHugeSizeIsEmpty` (0, −1, −2, MinInt, MaxInt, 2^32).
+  - `Matrix.Mul` refuses a product whose `rows*cols` overflows (`ErrInvalidConfig`). Not
+    testable: the two inputs would need over 8 GiB. Listed as uncovered.
+  - `DecodeShard` caps the decoded payload length at `MaxStripeSize` (finding 7).
+  - Checked and left: `NewMatrix`/`SelectRows` multiply lengths of slices that exist;
+    `Join`'s `shardSize*k` (a real slice length times k ≤ 256); `Layout.Stripes` and
+    `StripeLen` already divide first; `DecodeManifest` bounds every uvarint and checks the
+    stripe table against the remaining input before allocating, then `Validate` (now
+    overflow-safe) rejects the code; `Manifest.Validate`'s `K+M` runs after the layout is
+    valid; `regionCap` sums member counts.
+  - Not changed: `Node.Get` allocates `man.Size` bytes for a valid manifest. A caller can
+    build a valid in-memory manifest with a huge size (it must also supply the matching
+    number of stripe entries, so 1 TiB needs 16,384 stripes at 64 MiB). This is a resource
+    limit, not an overflow; the object-size limit belongs to the API chunk (Chunk 6).
+
+### Finding 4 (MAJOR) — fuzz seeds all skipped
+- Test: `TestFuzzSeedsRunToCompletion` runs every `f.Add` seed of `FuzzGF256` and
+  `FuzzErasureCoding` through `rapid.MakeFuzz` in a subtest and fails if any subtest
+  skipped. I substituted five of the old seeds (two of `FuzzGF256`'s: 0 and 24 bytes; three of
+  `FuzzErasureCoding`'s: 0, 128 and 128 bytes); the test failed on all five with "rapid ran
+  out of input before the property finished".
+- Change: both targets take 11 seeds of 4,096 bytes from `fuzzseeds_test.go`: all zero
+  (every draw minimal: k=1, the smallest payload), `01 00…` words, `ff…7f` words, and eight
+  SHA-256 counter streams. `go test -v -run '^Fuzz' ./internal/erasure`: 11/11 PASS per
+  target, none SKIP.
+
+### Findings 5–8 (NIT)
+- 5: `Place`/`Replace` return `ErrInvalid` for a nil `Membership` and sort a clone of
+  `Members()`. Tests: `TestPlacementWithNilMembershipIsErrInvalid` (panicked),
+  `TestPlacementDoesNotReorderTheMembershipSlice` (a membership returning its cached slice;
+  was reordered). A typed-nil pointer inside the interface still panics in its own
+  `Members` method; that is the implementation's bug, not detectable without reflection.
+- 6: see finding 3 (`Identity`, `ShardSize`).
+- 7: `DecodeShard` rejects `PayloadLen > MaxStripeSize` as `ErrCorrupt`.
+  `TestDecodeShardRejectsPayloadOverMaxStripeSize` builds a checksum-valid 64 MiB + 1 blob
+  (accepted before) and checks a blob of exactly `MaxStripeSize` still decodes; it also
+  covers `EncodeShard`'s over-size branch, which was listed as uncovered.
+- 8: `BenchmarkReconstructAllMissing1MiBStripe` now erases shards 1 (data) and 4 (parity);
+  re-measured below.
+
+### Finding 9 (NOTE) — per-bucket `(k, m)`
+The obstacle the reviewer shows is real for GET: the manifest records the layout but
+`Node.Get` refused any manifest whose k/m differed from the node's. Smallest change:
+`Node.Get` builds a codec from `man.Layout` (already validated by `Manifest.Validate`) when
+it differs and uses it for the whole operation (`getOp.codec`). Test:
+`TestNodeGetUsesTheManifestLayout` — a 4+2 node and a 2+1 node in one cluster each read the
+other's object exactly (failed before). `TestNodeRejectsBadInput`'s "manifest written with
+another code" case changed accordingly: it now expects `ErrUnavailable` with `ErrNotFound`
+causes, because the shards were never written. PUT still uses the node's `Config.Layout`
+(and `AckQuorum` is validated against it): choosing a layout per bucket needs bucket
+configuration, which does not exist yet, so I left `Put`'s signature alone. Chunk 6 can add
+a layout argument (with a per-layout quorum) without touching the GET path.
+
+### C30 (adversarial, BROKEN) — what `Window` bounds
+Decision: keep the behaviour (a PUT acknowledges when every stripe has its quorum and does
+not wait for slow holders) and narrow the claim. Bounding stripes with any outstanding
+request by `Window` would make one paused or dead holder cap a PUT at `Window` stripes per
+`RequestTimeout` (4 MiB/s at the defaults) and would defeat C23's early ack.
+
+What `Window` bounds: stripes launched and not yet at quorum (PUT) / not yet decoded (GET).
+What it does not bound, stated plainly:
+- After a stripe reaches quorum, its other requests (at most `N − AckQuorum` per stripe,
+  1 at the defaults) stay outstanding until they get a reply or hit `RequestTimeout`
+  (default 1 s) after they were sent. They are still outstanding when the PUT is
+  acknowledged. With a holder that never answers, every stripe of the object can have one
+  outstanding request at the ack; the number outstanding at any instant is bounded by the
+  stripes launched in the last `RequestTimeout`, and over a whole PUT by
+  `stripes × (N − AckQuorum)`.
+- Memory per outstanding request: the request message, `1 + 1 + len(blob name) + 64 +
+  ceil(L/k)` bytes (≈ 256 KiB + 70 B at the default 1 MiB stripe), held by the transport,
+  plus a closure of a few words in the coordinator. As a fraction of the object: at most
+  `(N − AckQuorum)/k` of its size (25 % at 4+2, quorum 5), held for at most
+  `RequestTimeout` per request.
+- The coordinator no longer pins the caller's object while late requests wait: `finish`
+  drops `op.data` (before the repair, the late reply closures kept the whole object
+  reachable for up to `RequestTimeout` after the ack).
+- GET, by reading (not measured): the k initial requests and each fallback keep
+  `verified + pending ≤ k` until a retry batch is sent, so a decoded stripe can leave at
+  most `N − k` retried requests outstanding; their replies are dropped.
+- Counters added to `NodeStats` (and to `EncodeState`): `PutAwaitingPeak` (largest number
+  of one PUT's stripes awaiting quorum at once), `PutOutstanding` and `PutOutstandingBytes`
+  (put requests sent and not yet answered or timed out, and their encoded size).
+- Tests: `TestNodePutWindowBoundsStripesAwaitingQuorum` — Astra's setup (seed 220211, 6
+  nodes, 4+2, stripe 4, `Window=1`, 1 µs latency, n005 paused) for 2, 8 and 64 stripes:
+  the PUT acks before half a timeout; `PutAwaitingPeak == 1`; `PutOutstanding` equals the
+  stripe count (one request per stripe to n005, the behaviour Astra measured, now pinned);
+  `PutOutstandingBytes` equals the exact encoded size of those requests; one
+  `RequestTimeout` after the ack both counters are 0.
+  `TestNodePutReleasesTheObjectAtTheAck` — 16 stripes, one paused holder: after the ack,
+  with 16 requests outstanding, a weak pointer to the object buffer is cleared by
+  `runtime.GC()` (fails without the `op.data = nil` change).
+- The harness under `agent_work/adversarial/02-erasure/` is unchanged; its
+  `window-pending-stripes` attack measures outstanding requests and will still report
+  2/8/64. That attack stays scored BROKEN against the old wording; the claim is narrowed
+  here instead.
+
+### Determinism lint on `internal/storage` (by hand; the gate does not cover it)
+`docker compose run --rm -T dev bash -c 'cd agent_work/gates/detlint && go build -o /tmp/dl . && cd /src && /tmp/dl -root /src internal/storage internal/erasure'`
+→ `detlint: checked 12 files in 2 packages`, no findings (run on `30c9689`; the later
+commits add no product code except `op.data = nil`).
+
+### API changes
+- `storage.NodeStats`: new fields `PutAwaitingPeak`, `PutOutstanding`,
+  `PutOutstandingBytes`; `Node.EncodeState` appends them.
+- `Node.Get` accepts manifests coded with any valid layout.
+- `ChunkStore.Delete` of an absent shard still returns `ErrNotFound`, now after a sync.
+- `erasure.Identity(n)` for `n <= 0` (or an overflowing `n*n`) returns the empty 0×0
+  matrix; `Matrix.Mul` can return `ErrInvalidConfig` for an overflowing product.
+- No signature changed.
+
+### Uncovered branches added
+- `erasure/matrix.go` `Mul`: the overflow guard (needs > 8 GiB of input).
+- `storage/chunkstore.go` `Put`: `Sync` error in the identical-bytes branch; `Delete`: the
+  `Sync` error after a not-found delete and after a delete — the sim disk fails `Sync` only
+  when closed, and a closed disk already fails the read/delete before it.
+- `putOp.launch`'s placement-error path is now covered (it was listed before).
+
+### Numbers that moved
+All through Docker, `dev` container, same 4-core droplet (shared; MB/s varies with load).
+- `go test -run '^$' -bench . -benchmem ./internal/erasure`:
+  Encode 1 MiB **481 MB/s** (was 483; 0 allocs); `ReconstructData`, two data shards missing,
+  **394 MB/s** (was 297 — no code change on this path, so this is load, not a speed-up);
+  `Reconstruct`, one data + one parity missing (the benchmark now does what its name says),
+  **390 MB/s**. The old 280 MB/s figure measured two data shards and is withdrawn.
+- `BenchmarkStripedPutGet8MiB/32MiB -benchtime 1x`: peak live heap 36.9 MiB / 135.2 MiB
+  above baseline, 12.0 / 48.0 MiB durable — unchanged. (No paused holder in this benchmark,
+  so `op.data = nil` does not show here; `TestNodePutReleasesTheObjectAtTheAck` covers it.)
+- DST, `DST_SEEDS=500 go test -count=1 -v -run TestStripedPutGetDST ./internal/storage`:
+  177 s test time (was 167 s). Within budget: put max 294 ms, get max 643 ms, max mean
+  requests per stripe 8, 46,593 GETs all exact, 33,426 fell back, 22,201 faults applied,
+  22,912 rejected by the budget, 0 unavailable. Lifted: get max 872 ms, 15 requests per
+  stripe, 46,593 GETs, 12,959 exact, 33,634 `ErrUnavailable`, 0 wrong bytes. Fewest durable
+  shards at a PUT ack: 5. (46,593 = 501 runs × 93 GETs: the 500 swept seeds plus the pinned seed 987691 from
+  `testdata/seeds.txt`; the first round reported 500 × 93 = 46,500.)
+- Fuzz, 30 s each, `-fuzzminimizetime 5s`: `FuzzGF256` 245,137 execs; `FuzzErasureCoding`
+  18,227 execs (was 113,615: the old count was mostly inputs that skipped before encoding;
+  with draws that complete, many inputs now encode k up to 256 and payloads up to 3 MiB);
+  `FuzzShardDecode` 230,868 execs. No crashers. `go test -v -run '^Fuzz'` over both
+  packages: 0 SKIP.
+- `-rapid.checks=2000`: erasure 11.1 s, storage 8.3 s (passing run after the model fix; the
+  first 2,000-check run found the model bug recorded above).
+- `-race`: whole module passed (erasure 47.8 s, storage 12.8 s); again on erasure+storage
+  after the model fix: erasure 47.9 s, storage 16.3 s.
+- Coverage (`go test -count=1 -cover`): erasure 98.4 %, storage 97.8 % (before the last
+  two test commits; final figures in the gate result).
+
+### Not done, and why
+- No crash during the DST's PUT phase (see finding 1).
+- `Node.Put` has no per-call layout (finding 9).
+- No object-size cap in `Node.Get` (finding 3, last bullet).
+- I did not edit the adversarial harness or the gate.
 
 ## Gate result
 
