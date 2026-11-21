@@ -1,0 +1,5 @@
+HELD C15 controlled-scaling-N20: 8 seeds 1901..1908, crash exactly at heal: min=22.75s median=23.50s max=25.25s max/log2ceil=5.050 max_cost=2.176
+HELD C15 controlled-scaling-N50: 8 seeds 1901..1908, crash exactly at heal: min=27.25s median=28.00s max=30.50s max/log2ceil=5.083 max_cost=2.067
+HELD C15 controlled-scaling-N100: 8 seeds 1901..1908, crash exactly at heal: min=31.75s median=32.75s max=33.75s max/log2ceil=4.821 max_cost=2.042
+HELD C15 controlled-scaling-N200: 8 seeds 1901..1908, crash exactly at heal: min=35.75s median=37.00s max=38.75s max/log2ceil=4.844 max_cost=2.033
+HELD C15 log-versus-linear-fit: four observed maxima fit 7.915 + 3.982*log2(N), SSE log=0.571 linear=7.054; descriptive finite-range check only

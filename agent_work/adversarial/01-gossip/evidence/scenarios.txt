@@ -1,0 +1,20 @@
+HELD C18 healthy-and-crash-loss-50000: 12 seeds 1101..1112, N=20: zero healthy deaths; all crash verdicts within 25.75s
+HELD C18 healthy-and-crash-loss-100000: 12 seeds 1101..1112, N=20: zero healthy deaths; all crash verdicts within 29s
+HELD C16 one-way-long-1201: 12 nodes, one-way n003->n007 blocked for 300s: no suspicions/deaths and identical views
+HELD C16 one-way-long-1202: 12 nodes, one-way n003->n007 blocked for 300s: no suspicions/deaths and identical views
+HELD C16 one-way-long-1203: 12 nodes, one-way n003->n007 blocked for 300s: no suspicions/deaths and identical views
+HELD C15 loss-duplicates-heal-0: 8 seeds 1301..1308, N=50, 10% link loss and late crash: worst post-heal 28s <= 48s
+HELD C15 loss-duplicates-heal-500000: 8 seeds 1301..1308, N=50, 10% link loss and late crash: worst post-heal 28.75s <= 48s
+HELD C19 partition-heal-retained-true: 4 seeds 1401..1404: both halves detected death and re-merged within 120s
+BROKEN C19 partition-heal-retained-false: seed=1401 N=4 explicit Join(n000), split {n000,n001}|{n002,n003} for 40s, retention=5s, heal: still two disjoint views after 120s
+BROKEN C19 default-retention-long-partition: seed=1405 N=2 default config, explicit Join(n000), partition n000|n001 for 310s then heal: permanently disconnected address sets, still split after 120s
+HELD C19 long-partition-with-seed-control: same 310s partition with persistent seed n000 healed in 1.75s
+HELD C20 pause-refute-2s: 8 seeds 1501..1508: resumed healthy node avoided death and views converged
+HELD C20 pause-refute-8s: 8 seeds 1501..1508: resumed healthy node avoided death and views converged
+HELD C21 wipe-same-id-after-1s: 6 seeds 1601..1606: wipe/rejoin converged within 30s with retained or purged history
+HELD C21 wipe-same-id-after-25s: 6 seeds 1601..1606: wipe/rejoin converged within 30s with retained or purged history
+HELD C21 wipe-same-id-after-5m30s: 6 seeds 1601..1606: wipe/rejoin converged within 30s with retained or purged history
+HELD C21 flapping-4-cycles: seed=1701, 3s down/2s up, 10% loss: 4 flaps healed in 0s without other deaths
+HELD C21 flapping-12-cycles: seed=1701, 3s down/2s up, 10% loss: 12 flaps healed in 1.5s without other deaths
+HELD C22 no-seed-unknown: unreachable seed produced exactly one aggregate failure with transport cause
+HELD C22 no-seed-crashed: unreachable seed produced exactly one aggregate failure with transport cause

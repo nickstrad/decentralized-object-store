@@ -1,0 +1,47 @@
+HELD C1 transition-matrix-node-false: 48 lower/equal/higher transitions matched an independent rank oracle
+HELD C1 transition-matrix-node-true: 48 lower/equal/higher transitions matched an independent rank oracle
+HELD C1 event-sequence: join/suspect/recover/death/rejoin/leave emitted exactly once
+HELD C2 self-refute-alive: higher claims refuted, stale claims ignored, maximum saturated without self death
+HELD C2 self-refute-suspect: higher claims refuted, stale claims ignored, maximum saturated without self death
+HELD C2 self-refute-dead: higher claims refuted, stale claims ignored, maximum saturated without self death
+HELD C2 self-refute-left: higher claims refuted, stale claims ignored, maximum saturated without self death
+HELD C3 merge-permutations-901: 500 updates, 20 permutations, duplicates and partial merges matched independent maxima
+HELD C3 merge-permutations-902: 500 updates, 20 permutations, duplicates and partial merges matched independent maxima
+HELD C3 merge-permutations-903: 500 updates, 20 permutations, duplicates and partial merges matched independent maxima
+HELD C4 monotonic-and-copy-isolation: 3000 hostile updates preserved per-ID incarnation order, sorting and snapshot isolation
+BROKEN C4 retention-monotonicity: seed=901 dead(x,9), wait 2s with retention=1s, replay alive(x,0): incarnation became 0
+HELD C5 queue-budget-781: 51 queued entries each transmitted 24 times within budget, freshest first
+HELD C5 queue-budget-1400: 51 queued entries each transmitted 24 times within budget, freshest first
+HELD C5 replacement-and-destination-lead: stale replay not enqueued; spent death update still led reply to its subject
+HELD C6 rotation-and-lonely: lonely node silent; five new live members probed once each, tombstone skipped
+HELD C7 suspicion-deadline-and-refutation: 4s two-member suspicion deadline respected; refutation cancelled original timer
+HELD C7 log-parameter-boundaries: timeout and retransmit formulas matched independent ceil-log2 at 11 boundaries
+HELD C8 join-unreachable-empty-false: callback fired once with documented bootstrap success or aggregate failure causes
+HELD C8 join-unreachable-empty-true: callback fired once with documented bootstrap success or aggregate failure causes
+HELD C9 sync-merge-and-kind-rejection: sync reply included merged input; datagram and response kinds rejected as requests
+HELD C9 purge-boundary: dead and left retained before deadline and removed by next protocol tick
+HELD C10 closed-operations-and-silence: leave closed APIs, rejected request, counted drop and stopped outgoing traffic for 50s
+HELD C10 closed-wire-error: remote closure preserved closed, remote and aggregate join sentinels
+HELD C11 config-rejections: eight invalid configurations correctly rejected (rejections count as HELD)
+HELD C11 send-errors-and-own-id: transport oversize retained; own sender ignored; lookup and code-table sentinels preserved
+HELD C11 packet-limit--1: valid 780-byte packet accepted at 781-byte budget
+HELD C11 packet-limit-+0: valid 781-byte packet accepted at 781-byte budget
+HELD C11 packet-limit-+1: valid 782-byte packet rejected at 781-byte budget
+HELD C12 wire-all-kinds-max-fields: all six kinds round-tripped maximal fields and rejected every truncated prefix
+HELD C12 invalid-encoders: six malformed outbound structures correctly rejected
+HELD C13 mutational-wire-invariants: 20000 seeded random/mutated inputs: no panic, accepted bytes canonical, self alive
+HELD C14 snapshot-repeat-and-replay: two duplicate/loss runs matched both digests and repeated node encodings
+HELD C23 stale-replay-retained-dead: lower/equal alive and suspect replays rejected; higher alive accepted
+HELD C23 stale-replay-retained-left: lower/equal alive and suspect replays rejected; higher alive accepted
+BROKEN C23 stale-replay-after-purge: seed=901 alive(x,7), dead(x,7), wait 2s at retention=1s, replay alive(x,0): dead verdict overturned at incarnation 0
+HELD C7 relay-once-original-sequence: duplicate ACK forwarded once with requester sequence 777
+HELD C7 expired-relay-dropped: ACK at 1.1s did not forward expired 1s relay
+HELD C7 indirect-fanout-distinct: each timeout selected exactly three distinct helpers excluding target
+HELD C8 malformed-seed-with-success-false: malformed reply rejected; aggregate failure or other-seed success delivered once
+HELD C8 malformed-seed-with-success-true: malformed reply rejected; aggregate failure or other-seed success delivered once
+HELD C9 periodic-live-and-dead-sync: with one eligible heal candidate, periodic sync contacted both live and dead/seed targets
+HELD C6 shuffle-varies-across-seeds: 12 seeds produced 12 distinct six-target rotation orders
+HELD C14 read-only-snapshot-isolation: editing Members, All and encoded-byte snapshots did not change subsequent canonical bytes
+HELD C13 structured-hostile-self-updates: 1000 valid hostile sync requests with duplicate self claims preserved self invariants
+HELD C20 explicit-false-suspicion-refuted: one forged same-incarnation suspicion raised victim incarnation and converged without death
+HELD C15 join-leave-crash-churn: 6 seeds 2301..2306, N=20, 7.5% loss, delayed join/leave/crash: converged within 40s after heal
