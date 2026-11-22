@@ -1,0 +1,16 @@
+G0  tools          pass    1s 
+G0  gofmt          pass    0s 
+G0  vet            pass    1s 
+G0  build          pass    1s 
+G0  detlint        pass    2s 
+G0  panics         pass    0s 
+G0  deps           pass    1s 
+G0  comments       pass    0s comments compared with baseline 631b44ede9ffa3ca4a53abc4bcec824ee362d061
+G0  selfcontained  pass    5s 
+G1  unit           pass   67s 
+G2  property       pass  360s rapid seed 166823056793601, 2000 checks, 8 packages
+G3  fuzz           pass  460s 14 fuzz targets, 30s each
+G4  race           pass  963s 
+G5  dst            pass 1726s 500 seeds from base 166823056793601
+G6  docker         pass    0s 
+gate: overall=pass counts_for_landing=true -> agent_work/06-integration/gates/result.json

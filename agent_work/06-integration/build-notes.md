@@ -206,34 +206,40 @@ streaming; limit, section 6). The runtime bounds inbound TCP connections (`MaxCo
 The 3-node cluster profile uses k=2, m=1 (3 shards fit 3 nodes). With 4+2 a 3-node cluster cannot place a
 stripe. The six-node profile from Chunk 0a passed flags objnode never had (`-gossip`, `-rpc`).
 
-## 4. Claims table
+## 4. Claims table (corrected in the repair round)
 
 | Claim the book may publish | Test | Measured |
 |---|---|---|
-| The joined code table has no collision; every code round-trips to its sentinel; unknown → `ErrRemote` | `TestJoinedCodeTableHasNoCollision`, `TestEveryCodeRoundTripsToItsSentinel`, `TestNodeAndAPICodesStayInTheirBlock` | 38 application codes + 8 env codes |
-| No GET returns wrong bytes; every acknowledged PUT reads back after heal; metadata and membership converge (21 nodes, 3 regions, 1% loss, region partition, crash) | `TestClusterPutGetDST` | 500 seeds: every ack read back; converge p50 3.3 s, max 10.2 s |
-| Concurrent writes on both sides of a partition converge to one version per key on every node; every acknowledged metadata write is current, causally superseded or named as a loser in a discard record (oracle independent of occ's classifier) | `TestClusterPartitionHealDST` | 500 seeds: discard events p50 520 (310–715), distinct losers p50 67 (41–95); converge p50 7.5 s, max 12.2 s |
-| After a quota discard the usage is recounted from the manifests and matches them on every node | `TestClusterPartitionHealDST`; canary `TestCanaryNodeSkipsDiscardRecount` | 500 seeds: overshoot p50 1,200 B, max 1,500 B over an 800 B limit; usage matches p50 8.5 s, max 12.2 s after heal; recount writes p50 24 (6–43) across 21 nodes |
-| The losing version's shards are collected after the grace; no live version's shard is ever collected | `TestClusterPartitionHealDST`, every DST (`checkShardsReferenced`) | 500 seeds: loser shards collected p50 30 (18–52) per run; zero live versions collected (invariant every 1,000 events and at the end) |
+| The joined code table has no collision; every code round-trips to its sentinel; unknown → `ErrRemote` | `TestJoinedCodeTableHasNoCollision`, `TestEveryCodeRoundTripsToItsSentinel`, `TestNodeAndAPICodesStayInTheirBlock` | 37 application codes + 8 env codes |
+| No GET returns wrong bytes; every acknowledged PUT reads back after heal; metadata, membership and usage converge (21 nodes, 3 regions, 1% loss, region partition, crash) | `TestClusterPutGetDST` | 500 seeds: every ack read back; converge p50 3.3 s, max 11.0 s |
+| Concurrent writes on both sides of a partition converge to one version per key on every node; every acknowledged write is current, superseded by a later acknowledged write that held it (per key), or named as a loser in a discard record — an oracle built from what each write held, independent of occ's classifier; the discards are visible through `Health` | `TestClusterPartitionHealDST` | 500 seeds: discard events p50 435 (238–611), distinct losers p50 54 (27–81); oracle p50 16 current, 9 superseded, 7 discarded; converge p50 7.1 s, max 12.0 s |
+| Usage equals a recount of the live manifests on every node after every heal (discard-triggered recount, plus the quota audit) | `TestClusterPartitionHealDST`, `TestClusterPutGetDST`, `TestClusterCrashRestartDST`, `TestQuotaRecountsAfterAManifestDiscardDST`, `TestCrashScenarioUsageMatchesARecountOnTheSeedsThatDrifted`; canaries `TestCanaryNodeSkipsDiscardRecount`, `TestCanaryNodeSkipsQuotaAudit` | 500 seeds: partition usage matches p50 8.6 s, max 12.7 s after heal; overshoot p50 500 B, max 700 B over 800 B; drift seeds 7 and 383 fixed by the audit |
+| No node ever deletes a shard of a version that is, or can still become, the winner on any node (oracle on every disk delete, every commit and every 500 steps, from all nodes' metadata, independent of the product's bookkeeping); the losing version's shards are collected after the grace | every full-node DST (`newHarness`); `TestClusterPartitionHealDST` for loser collection | 500 seeds of every DST: no delete of a possible winner; partition loser shards collected p50 23 (11–37) per run |
+| A write acknowledged just before the migration flip survives the migration; a pre-flip write of a peer that was away is never purged | `TestMigrationHoldsAWriteAcknowledgedJustBeforeTheFlipDST`, `TestMigrationLateWriteOfAnIsolatedPeerStaysReadableDST` | 500 seeds each |
+| PUT, overwrite and DELETE traffic on non-coordinators through a migration, under 2% loss and up to 150 ms latency: every acknowledged write is readable, superseded or on a discard record; every live object lives in the final region; both outcomes | `TestClusterMigrationUnderTrafficDST` | 500 seeds: acked p50 45 (12 during the migration); oracle p50 19 current, 17 current-copy, 15 superseded, 6 discarded |
+| Two migrations of one bucket started at the same instant (same or different target) end with exactly one moved; a third on another bucket moves | `TestClusterDuellingMigrationsDST` | 500 seeds: all three terminal p50 14.0 s, max 19.9 s |
+| A bit-rotted dead shard is collected; death evidence gets its own grace; an orphan collection that destroys a later-live write is recorded and the key declared lost; shard deletes over the wire are refused | `TestCorruptShardOfADeadVersionIsCollected`, `TestDeathEvidenceGetsItsOwnGracePeriod`, `TestAWriteWhoseShardsWereCollectedAsOrphansIsRecordedLost`, `TestANodeRefusesShardDeletesOverTheWire` | |
 | A deleted object stays deleted through anti-entropy, a partition heal and a crashed node rejoining | `TestClusterCrashRestartDST`; canary `TestCanaryDeleteResurrected` | deleted 4 per run |
-| A restarted node gets its missing shards back; a wiped node is refilled | `TestClusterCrashRestartDST` | 500 seeds: restarted node whole again p50 6.1 s, max 8.9 s after restart; wiped node refilled p50 15.1 s, max 17.9 s after the wipe |
-| With up to m shards per stripe rotted every GET is correct and every rotted shard is rebuilt, moving the damaged bytes only | `TestClusterBitRotDST` | 500 seeds: 6–36 rotted shards per run, repaired p50 152 ms, max 159 ms; rebuilt bytes / rotted bytes = 1.000 on every seed |
-| Chunk 5's 78-cell failure matrix holds on real components | `TestClusterMigrationFailurePointsDST` | 577 runs (78 cells × base seed + 500 sweep seeds spread over cells), all in their expected state; begin→terminal p50 6.1 s, max 10.7 s (bound 20 s) |
+| A restarted node gets its missing shards back; a wiped node is refilled | `TestClusterCrashRestartDST` | 500 seeds: restarted node whole p50 6.0 s, max 8.4 s after restart; wiped node refilled p50 15.0 s, max 17.4 s |
+| With up to m shards per stripe rotted every GET is correct and every rotted shard is rebuilt, moving the damaged bytes only | `TestClusterBitRotDST` (fails if nothing rotted or rebuilt ≠ rotted bytes) | 500 seeds: 9–33 rotted shards per run, repaired p50 153 ms, max 159 ms; rebuilt/rotted bytes 1.000 every seed |
+| Chunk 5's 78-cell failure matrix holds on real components | `TestClusterMigrationFailurePointsDST` (pinned seeds and the base seed on every cell; the other sweep seeds spread over the cells) | 577 runs, all in their expected state; begin→terminal p50 11.4 s, max 18.9 s (bound 20 s) |
 | A bucket that migrates away leaves no inventory running on the source; a stopped node runs no worker | `TestBucketMigratingAwayStopsItsWorkers`, `TestNodeRefusesMalformedAndPostStopTraffic` | |
 | Object round-trip through the full path | `TestPropObjectRoundTripThroughTheFullPath` (rapid) | 2,000 checks at the gate |
-| A duplicated request and a lost response never double-apply | `TestPropRemoteOperationsAreIdempotent` (rapid) | 2,000 checks at the gate |
-| The same Node code runs on the simulator and on real sockets | `TestConformanceOnTheSimulator`, `TestConformanceOnLoopback` | 4 scenarios |
-| Frame codec: malformed, truncated, oversized input is refused; never a panic | `TestFrameDecodersRejectMalformedInput`, `FuzzFrame` | 30 s at the gate |
+| A duplicated request and a lost response never double-apply | `TestPropRemoteOperationsAreIdempotent` (rapid; fails if no check lost a reply) | 2,000 checks at the gate |
+| The same Node code runs on the simulator and on real sockets | `TestConformanceOnTheSimulator`, `TestConformanceOnLoopback` (`internal/noderuntime`) | 4 scenarios |
+| Frame codec: malformed, truncated, oversized input is refused; never a panic | `TestFrameDecodersRejectMalformedInput`, `FuzzFrame` (`internal/noderuntime`) | 30 s at the gate |
 | The frame limit fits a full Merkle reply and a shard request | `TestFrameLimitCoversMerkleRepliesAndShardRequests` | |
-| One HTTP status table, tested row by row through real HTTP; on a real node for the rows a node produces | `TestStatusTableRowByRowThroughHTTP`, `TestStatusRowsThroughHTTPOnARealNode` | 24 + 11 rows |
+| One HTTP status table, tested row by row through real HTTP; every node row mapped through real HTTP; on a real node for the rows a node produces (`ErrNoMigration`, `ErrUnknownSaga`) | `TestStatusTableRowByRowThroughHTTP` (24 rows), `TestEveryNodeStatusRowThroughHTTP` (10 rows), `TestStatusRowsThroughHTTPOnARealNode` | 34 rows |
+| No present precondition header is ever applied as an unconditional write (row table in 10.6) | `TestHTTPObjectAPIAgainstTheModel`, `FuzzObjectAPI`, `TestPreconditionsOnTheNodeNeverDegradeToUnconditional` | 30 s at the gate |
 | Arbitrary HTTP requests give a status in the table and never a GET that disagrees with the last acknowledged PUT | `FuzzObjectAPI` | 30 s at the gate |
 | Oversized bodies (413), oversized headers (431), slow header/body clients are cut off by the timeouts | `TestServerBoundsHeadersBodiesAndSlowClients` | |
-| Lifecycle: start, double start, use after close, double close, close during start-up, canceled start (synctest) | `TestRuntimeLifecycleInABubble`, `TestRuntimeCloseDuringStartup`, `TestRuntimeStartHonoursItsContext`, `TestRuntimeCallsBeforeStartAreNotReady` | |
-| Cancellation mid put (leaves only collectable shards), get, migration start and status | `TestRuntimeCancelMidPutLeavesOnlyCollectableShards`, `TestCancelMidGetAndMidMigrationReturnContextErrors` | |
+| A crash at any step of a disk write, sync, delete or append leaves the old or the new bytes (the simulator's states), and the new bytes once `Sync` returned | `TestFileDiskCrashLeavesOldOrNewBytes` (POSIX crash model; real power loss not covered) | 5 operations × every step × 3 modes × 2 metadata outcomes |
+| Lifecycle: start, double start, use after close, double close, close while start is in progress, canceled start (synctest) | `TestRuntimeLifecycleInABubble`, `TestCloseWhileStartIsInProgress`, `TestRuntimeStartHonoursItsContext`, `TestRuntimeCallsBeforeStartAreNotReady` | |
+| A call canceled before the loop takes it never applies; one canceled after is applied once and reported (put, get, migration start) | `TestACallCanceledBeforeItReachesTheLoopNeverApplies`, `TestACallCanceledAfterTheLoopTookItAppliesOnceAndIsReported` | |
 | Shutdown under load returns every call; shutdown during repair and restart on the same disk | `TestShutdownUnderLoadReturnsEveryCall`, `TestShutdownDuringRepairAndRestartOnTheSameDisk` | |
-| No goroutine survives (leak check in `TestMain` of `internal/node` and `cmd/objnode`); an untracked goroutine fails it | `TestRealRuntimeLeavesNoGoroutineBehind`, canary `TestCanaryShutdownLeak` | |
-| A loop panic stops the node (recovered and logged), datagram overflow drops and counts | `TestRuntimeRecoversAPanicOnTheLoop`, `TestRuntimeDatagramsToSelfAndQueueOverflow` | |
-| Three Docker peers in three regions start, join, serve a put on one and a get on another, and refuse stale conditional writes | `agent_work/06-integration/cluster-smoke.sh` (host) | section 8 |
+| No goroutine survives (leak check in `TestMain` of `internal/noderuntime` and `cmd/objnode`); an untracked goroutine fails it | `TestRealRuntimeLeavesNoGoroutineBehind`, canary `TestCanaryShutdownLeak` | |
+| A loop panic takes the whole runtime down (sockets closed, every goroutine exited, no Close needed; objnode exits 1); a stalled name lookup never stalls the loop; datagram overflow drops and counts | `TestALoopPanicTakesTheWholeNetworkedRuntimeDown`, `TestServeExitsNonZeroWhenTheNodeLoopPanics`, `TestAStalledNameLookupNeverStallsTheLoop`, `TestRuntimeRecoversAPanicOnTheLoop`, `TestRuntimeDatagramsToSelfAndQueueOverflow` | |
+| Three Docker peers in three regions start, join, serve a put on one and a get on another, and refuse stale conditional writes; two runs can overlap | `agent_work/06-integration/cluster-smoke.sh` (host) | section 10.14 |
 
 ## 5. Changes inside landed packages
 
@@ -328,6 +334,8 @@ None (`grep panic( ` over the new code is empty); no allowlist line needed.
 7. **Dockerfile / dev service**: no change needed.
 
 ## 8. Measurements
+**First build's numbers. Superseded by section 10.14 wherever the repair moved them** (the full-node
+DST table, wall times, coverage, the real runtime and the cluster smoke).
 
 ### Full-node DSTs, 500 seeds (base 58144794855322), virtual time, 21 nodes in 3 regions
 | Metric | min | p50 | p99 | max |
@@ -397,6 +405,7 @@ SMOKE: PASS   (exit 0; full output in cluster-smoke.out)
 ```
 
 ## 9. Commands run and results
+**First build. The repair round's commands and results are in section 10.15.**
 
 All through `docker compose run --rm dev …` unless marked host.
 
@@ -430,3 +439,442 @@ The first gate run (34e1e3d) failed G1 and G4 on one timing-dependent test
 (`TestShutdownDuringRepairAndRestartOnTheSameDisk` read a restarted node before its bucket record had
 arrived); fixed in c233622 (eventual read), plus the continuous GC-safety invariant. Result files are
 left uncommitted under `agent_work/06-integration/gates/`.
+
+## 10. Repair round (REVIEW-1: FAIL, one blocker, eight majors)
+
+Seat: Opus builder (fresh). Every finding below got a regression test written before the fix and
+seen failing on the code before it (the commit message of each fix says how it failed). Commits are
+listed in section 10.13.
+
+### 10.1 Structure change: protocol core and real runtime split
+`internal/node` now holds only what the simulator executes (node, objects, records, meta, inventory,
+migrate, mux, codes, status rows) and passes the determinism lint by hand
+(`detlint -root /src internal/node`: 9 files, 0 findings; the one finding at first, `sortedKeys`
+constrained by `cmp.Ordered`, which admits floats, was fixed by a string/integer constraint).
+`internal/noderuntime` (new) holds the UDP/TCP transports, the frame codec, the file disk and its
+file-system interface, the wall clock and timers, the loop goroutine, `Runtime` and the service
+surface. `cmd/objnode` uses it. API moves: `node.Runtime`, `node.NewRuntime`, `node.RuntimeConfig`,
+`node.FuzzFrame` and the frame codec now live in `noderuntime`; `node.StatusRows` and
+`node.MaxFrame` stay in the core. `cluster-smoke.sh` runs under a compose project named
+`objstore-smoke-<pid>-<random>` and the cluster profile publishes each node's HTTP port on an
+ephemeral loopback port (`127.0.0.1::8080`) that the script reads back with `compose port`, so two
+checkouts (or the gate and CI) can run it at the same time.
+
+### 10.2 Finding 1 (BLOCKER): a write acknowledged just before the flip
+**Tests (each failed on the code before the fix):**
+- `TestMigrationHoldsAWriteAcknowledgedJustBeforeTheFlipDST` (9 nodes, k=2 m=1): at the instant the
+  flip step starts, a non-coordinator P in the source region PUTs a new key while P→coordinator
+  datagrams are dropped and coordinator→P is clogged; both are released when P commits, so P's
+  delta to the coordinator is lost but P answers the pointer check with the new route. Metadata
+  periods are 10 s so the coordinator cannot learn the write by anti-entropy in time. Before the fix
+  the purge deleted the write's shards (the deletion oracle fails at the delete).
+- `TestMigrationLateWriteOfAnIsolatedPeerStaysReadableDST`: the same write, but P's outbound links
+  are dropped right after its shard requests leave and P is isolated when it commits; it rejoins
+  after the migration completed. Before the fix its shards were purged; now the write arrives,
+  wins or loses last-writer-wins, and is readable or on a discard record.
+- `TestClusterMigrationUnderTrafficDST` (9 nodes, k=2 m=1, 2% datagram loss, 1–20 ms in-region and
+  20–150 ms cross-region latency): PUT (new key and overwrite) and DELETE traffic every 75–225 ms on
+  random non-coordinator nodes from 3 s to 13 s, plus 8 fresh-key PUTs spaced 250 ms from the flip
+  instant; odd seeds complete, even seeds are made to compensate (verify
+  refused after acting). After the end and convergence: the ack oracle (10.10) explains every
+  acknowledged PUT and DELETE, every live key reads back bytes of an acknowledged write, every live
+  object lives only in the bucket's final region, and the deletion oracle (10.3) has held
+  throughout. On the code before the fix this test failed on the compensated seeds (finding 9's
+  unrouted placement window, objects spread over all regions); the random traffic alone did not hit
+  the flip race in 120 seeds (nor with 5% loss and fanout to every peer), which is why the targeted
+  test above exists.
+
+**What changed (`internal/node/migrate.go`, `meta.go`, `inventory.go`):**
+- `Pointer` asks every live peer in the coordinator's view for a *pointer view*: route, flip owner
+  (`~flip` = `<saga>|<to>`), and a SHA-256 digest of every manifest record of the bucket (key and
+  version ID, tombstones included). It proceeds only when all equal the coordinator's own view;
+  otherwise `ErrUnsettled` (retried). A peer that has the new route accepts no write for the bucket
+  (route ≠ `~live`), so once every live peer reports the new route and the same manifests, the
+  coordinator holds every write a live peer acknowledged before it stopped accepting writes; the
+  catch-up copy, both roots and the retire run on that.
+- A purge carries an explicit list of versions; the holder deletes exactly those, and refuses any
+  its own metadata calls live (`purge_refused`). Retire's list is every version of the bucket with a
+  `~gc/` marker, after it has (1) swapped each live manifest for its staged copy (IfMatch the source
+  ETag) and marked the replaced version dead, (2) marked dead every copy intent of this saga that is
+  not live, and (3) waited until every live peer's pointer view equals its own (so no live peer
+  still reads a replaced version). Discard's list is its own copy intents. A version nobody recorded
+  as dead is never purged.
+- Copy records a per-saga intent `~cv/<saga>/<version>` before it writes any shard, and the copy's
+  storage version is chosen by the migrator (a dedicated storage node whose random source returns the
+  version the intent names), so Discard and Retire know every version the saga wrote, including a
+  copy whose put failed or was fenced.
+- Copy skips an object whose live version is already one of its intents (a retire interrupted after
+  its swaps), and `Root(To)` counts those, so a retried delete-source step does not re-copy.
+
+**The not-live peer (paused, partitioned, crashed):** its pre-flip write is unknown to the
+coordinator, so its version is on no purge list and its shards stay. When the peer rejoins, the
+write merges: a new key becomes live with its shards in the old region (readable; it moves with the
+next migration, whose purge list names it once it is replaced); an existing key competes with the
+retire's swapped copy under last-writer-wins and one of them is on a discard record (its shards are
+then collected as a loser). Tested by `TestMigrationLateWriteOfAnIsolatedPeerStaysReadableDST`.
+Residual: if the peer stays away longer than `OrphanGrace` (1 h default), the source holders collect
+its shards as orphans (10.3, path 2); the write then arrives and is declared lost with a record,
+never left live and unreadable (`TestAWriteWhoseShardsWereCollectedAsOrphansIsRecordedLost`).
+
+### 10.3 Finding 6: shard collection, its invariant, and the collection rule
+**Invariant (`internal/node/oracle_test.go`, installed in every full-node DST by `newHarness`):**
+each simulated disk is wrapped (`watchDisk`), so every `Delete` of a shard blob is seen as it happens,
+independent of the product's bookkeeping (`Node.Collected` is no longer used by any check). At each
+delete the oracle reads the metadata of every node in the cluster (up, down or paused) and fails if
+the version is referenced by a manifest or staged record on any node that no other node's version
+of that key covers (version-vector) or beats (HLC stamp, node, ID — re-implemented in the test). It
+also fails if a version is committed after any of its shards was deleted (ack time), and every 500
+steps it re-checks every version that lost a shard. It caught the over-the-wire delete (10.3, below)
+and finding 1 on the old code.
+
+**Collection rule (as built; replaces section 3.4):** a shard blob is deleted only by these paths.
+1. *Dead version* (inventory, every maintenance tick): the blob is on disk, no live manifest or staged
+   record in the holder's metadata expects it, the version has evidence of death — a live replicated
+   `~gc/<version>` marker in its bucket, or the holder itself recorded the version as a
+   last-writer-wins loser — and that evidence has been seen by this holder for at least `GCGrace`
+   (counted from when the holder first saw the evidence, not from when the blob became unreferenced).
+   Markers are written by: the node that overwrites or deletes an object (replaced version); every
+   node that records a manifest discard (loser); a coordinator whose put fails after its shards were
+   written (bucket moved, quota, precondition); Retire (replaced source versions; copy intents not
+   live); Discard (its copy intents); a lost-object declaration (path 2).
+2. *Orphan* (inventory): not expected, no evidence, unreferenced for `OrphanGrace` (1 h default; 10 min
+   in the DSTs). Before deleting, the holder writes a replicated record
+   `~orphan/<version>/<node>` listing the (stripe, index) it deletes; if that write fails, nothing is
+   deleted. If a manifest for that version is (or later becomes) live and some stripe has more than m
+   shards on orphan records, the lowest-ID live node tombstones that exact version (IfMatch its ETag),
+   writes `~lost/<version>` on the object, marks the version dead and decrements usage; health
+   reports `lost_objects`. With m or fewer gone, the holders rebuild them as for any missing shard.
+   Evidence: none — this is the stated residual risk (a holder that does not hear of a write for
+   `OrphanGrace`).
+3. *Migration purge*: an explicit list of versions, each with a `~gc/` marker (path 1's evidence, no
+   grace), sent to every live member; each holder refuses a version its metadata calls live.
+   Retire purges only after every live peer holds the swapped manifests.
+Nothing else deletes a shard: a rebuild overwrites a missing or corrupt shard of an expected version
+(never of a dead or purged one), and the node now refuses the storage layer's `OpDeleteShard` over
+the wire (`TestANodeRefusesShardDeletesOverTheWire`, failed before).
+
+**Bit-rotted dead shards:** collection now walks every shard file on disk, including one the scrub
+found corrupt (it used to consider only the healthy-inventory tree), and an inventory stops only when
+no file of its bucket is left, which ends the start/stop loop the reviewer saw
+(`TestCorruptShardOfADeadVersionIsCollected`, failed before). **Grace after evidence:**
+`TestDeathEvidenceGetsItsOwnGracePeriod` (failed before: collected 5 s after the marker arrived).
+
+### 10.4 Finding 3: quota drift
+A manifest-key discard (live or tombstone loser) now schedules the same settled recount as a
+quota-key discard; the recount writes only when the stored figure is wrong.
+`TestQuotaRecountsAfterAManifestDiscardDST` is the reviewer's reproduction (one side overwrites with
+a different size, the other later with the same size, heal); before the fix usage stayed wrong.
+The partition DST's contested overwrites now have sizes 50–149 B on one side, and the put/get, crash
+and partition DSTs each wait until every node's usage equals a recount of the live manifests after
+their heal. **That check found a second drift** (crash scenario, seeds 7 and 383 of the 500-seed
+sweep): a recount written during the partition by a node whose manifests were still incomplete is
+causally newer than every quota version it saw, so after the heal nothing conflicts with it and no
+discard triggers another recount; usage stayed one object high forever. Fix: a **quota audit** in
+maintenance — up to four buckets per tick, round-robin; when stored usage differs from a recount of
+the live manifests and neither the quota record's version nor the bucket's manifest digest has
+changed for `RecountSettle`, the lowest-ID live node writes the recount (only if wrong; counted as
+`QuotaAudits`). The discard-triggered recount stays as the fast path.
+`TestCrashScenarioUsageMatchesARecountOnTheSeedsThatDrifted` replays both seeds;
+`TestCanaryNodeSkipsQuotaAudit` requires both to fail with the audit off; the discard-recount canary
+switches off both layers and also runs the reproduction.
+
+### 10.5 Finding 9: concurrent migrations; routed bucket creation
+Registrations are one key per saga (`~reg/<saga>`), so concurrent registrations commute.
+Flip records its owner in `~flip` and refuses a bucket that is not at the migration's source;
+`Pointer` returns a different owner as superseded (`~<owner>`), and if every peer agrees this saga
+owns the flip but the route disagrees, it re-writes the route and retries — so a same-target duel ends
+with one `moved`. A region-routed bucket is not writable until its route arrives (`writable` checks
+the bucket record's region). `TestClusterDuellingMigrationsDST` (9 nodes, default simulated network): two
+coordinators migrate one bucket at the same instant (odd seeds to different targets, even seeds to
+the same target) while a third migrates another bucket; all three must end, the other bucket must
+move, exactly one of the duel must be `moved`, both buckets must have route = live, no staged,
+registration or claim key may remain, and every object must read back from the final region. Before
+the fix, same-target seeds ended with both `moved` and different-target seeds left a registration.
+
+### 10.6 Finding 5: conditional headers (one row each, PUT, DELETE and tag/ACL writes)
+| Header and value | Result |
+|---|---|
+| `If-Match` absent | unconditional |
+| `If-Match: *` | applies only if the object exists, else 412 |
+| `If-Match: "<etag>"` (one or a list) | applies only if one listed strong tag equals the current ETag, else 412 |
+| `If-Match: W/"<etag>"` | weak tags never match (RFC 9110 strong comparison): 412 if no strong tag matches |
+| `If-Match: ""` (empty quoted tag) | a valid tag that matches nothing: 412 |
+| `If-Match:` empty field, whitespace only, or only empty list elements (`" , ,"`) | an empty list matches nothing: 412 |
+| `If-Match: abc` (unquoted), `"abc` (unterminated), `""""` (quote inside), `*, "a"` (* in a list) | malformed: 400 |
+| `If-None-Match: *` | applies only if the object does not exist, else 412 |
+| `If-None-Match:` anything else (empty, whitespace, a tag, a list) | unsupported: 400 |
+| both headers | 400 |
+| an etag that is not one of the node's (through the Go API) | 412 (was 400) |
+Tests: rows added to `TestHTTPObjectAPIAgainstTheModel`; `FuzzObjectAPI` sends either header with any
+value and fails if a PUT or DELETE carrying one was applied when an independent evaluation says it
+could not hold (the counterexample it found in 15 s on the old code, `If-Match: " "` applied
+unconditionally, is kept in `testdata/fuzz/FuzzObjectAPI`);
+`TestPreconditionsOnTheNodeNeverDegradeToUnconditional`. API change: `storage.Condition` gains
+`IfMatchList bool` and `IfMatchAny []string` (the parsed strong tags).
+
+### 10.7 Finding 4: file disk durability
+`Write`: create a temp file in `<data>/.tmp/`, write all bytes (short writes looped), fsync it, close,
+rename over the target. `Sync`: fsync the file, its directory, and every ancestor directory this disk
+created since the last sync (each fresh directory's parent). The first `Append` to a missing blob goes
+through the same temp-and-rename path, so a new log never survives a crash as an empty file. Opening
+the disk removes temp files a crash left behind. `Delete` is made durable by `Sync` (directory fsync).
+**What a crash leaves** (power loss, file-system model below): a blob is its last synced bytes or the
+bytes of the write in progress, never torn; an append keeps its old bytes plus possibly a prefix of
+the unsynced append (exactly the simulator's torn crash); a blob whose `Sync` returned nil survives.
+Unlike the simulator, the real disk may keep an *unsynced* write after a crash (the rename or the
+page cache reached the device); protocol code relies only on synced writes surviving.
+**Test:** `TestFileDiskCrashLeavesOldOrNewBytes` runs the disk on an in-memory POSIX model where only
+fsynced file data survives a crash and un-fsynced directory changes are either all lost or all kept
+(both are checked); for overwrite, create-under-new-directories, delete, append and first-append it
+crashes at every step (and separately fails each step, and short-writes), reopens, and requires old
+or new bytes, and new bytes whenever `Sync` returned nil. It failed on the old step order (a synced
+blob under a new directory vanished), and fails again if the temp-file fsync is removed (an empty
+renamed blob). **Not covered:** the real file system's power-loss behaviour (ordering guarantees of a
+specific file system, device write caches, fsync honesty) cannot be tested here; the model encodes
+POSIX's guarantees only.
+
+### 10.8 Finding 8: runtime hazards
+- No lookup on the loop: a send to a `host:port` not in the address cache parses numeric addresses
+  directly; a host name starts a lookup on a tracked goroutine with a timeout
+  (`RuntimeConfig.Lookup`, `ResolveTimeout` 5 s) and drops that datagram (`unresolved_sends`); the
+  result is posted back to the loop. UDP writes carry a 100 ms deadline (`SendTimeout`). Dials already
+  ran off the loop. `TestAStalledNameLookupNeverStallsTheLoop`.
+- A loop panic records `Err()` (`ErrPanicked`), closes the UDP socket, the listener and every tracked
+  connection from the loop's own recovery, cancels the runtime context and closes `Done()`; readers,
+  acceptor, handlers, outbound requests and lookups all exit with no `Close`, and `Shutdown` still
+  returns. `TestALoopPanicTakesTheWholeNetworkedRuntimeDown` (real sockets; leak check before any
+  Close; the listener refuses). `cmd/objnode` waits on its signal context or `Done()` and exits 1 on
+  a loop failure (`TestServeExitsNonZeroWhenTheNodeLoopPanics`).
+- **Not done:** disk I/O still runs on the loop. `env.Disk` is synchronous by contract (frozen), and
+  every protocol package writes and syncs inline; a stalled disk stalls the node. Making it
+  asynchronous is a simulator change (request 10.12.6).
+
+### 10.9 Finding 7: lifecycle and cancellation tests
+`call` checks the caller's context before queueing and again when the loop takes the call. A call is
+in one of five states (queued, running, canceled, delivered, left), moved by compare-and-swap: a call
+canceled while queued never runs and returns the context error ("not applied"); a call canceled after
+the loop took it runs once, returns `ErrOutcomeUnknown` joined with the context error, and when it
+finishes the runtime counts it (`abandoned_calls`) and logs "<op> finished after its caller left".
+Tests: `TestACallCanceledBeforeItReachesTheLoopNeverApplies` (20 pre-canceled bucket creates never
+apply; a PUT canceled while queued behind a held loop never reaches storage);
+`TestACallCanceledAfterTheLoopTookItAppliesOnceAndIsReported` (PUT, GET and migration start canceled
+at the moment the loop takes them — a test hook on the loop cancels and waits until the caller has
+left — the PUT applied exactly once, three reports); `TestCloseWhileStartIsInProgress` (start paused by
+a hook after it entered start-up; Close runs concurrently; start returns `ErrClosed`). `Runtime.Inspect`
+runs a function on the loop. Removed: `TestRuntimeCloseDuringStartup`,
+`TestRuntimeCancelMidPutLeavesOnlyCollectableShards`, `TestCancelMidGetAndMidMigrationReturnContextErrors`.
+A canceled PUT never leaves partial state behind by itself: either it never ran, or it ran to its end
+(success, or failure with its version marked dead when the manifest is known). A storage-phase
+failure leaves shards of an unknown version, collected as orphans (10.3, path 2).
+
+### 10.10 Finding 2: the last-writer-wins oracle
+`ackOracle` (`oracle_test.go`), fed by `Config.CommitSink` (every client commit on any node: the
+record the writer held, the version written): an acknowledged write is explained as *current* (the
+final record is it), *current-copy* (the final record holds the same content: the migration's copy),
+*superseded* (a later acknowledged write's held record, or the acknowledged write whose content that
+held record carries, had it in its ancestry — ancestry is per key by construction), or *discarded*
+(named as a loser by a discard callback). Nothing uses version-vector coverage across keys. With the
+oracle fixed the 500-seed sweep found no failure (section 10.11).
+
+### 10.11 Findings 10 and 11; measurements that moved
+- `migrator.Copy` schedules its first step (`TestMigrationCopyNeverCallsBackInsideTheCall`).
+- Health renders discard keys as `kind:part/part` (no `%q`); the partition DST checks that a node
+  reports the discards through `Health` (count and recent records).
+- `node.StatusRows` (10 rows) are each mapped through real HTTP (`TestEveryNodeStatusRowThroughHTTP`);
+  a real node produces `ErrNoMigration` (400) and now `ErrUnknownSaga` (404, `Node.Migration`).
+  `ErrStaleRequest` (code 186), which nothing returned, is removed.
+- `TestClusterBitRotDST` fails if nothing was rotted or rebuilt bytes ≠ rotted bytes; the idempotency
+  property dropped its vacuous loop and fails if no check lost a reply.
+- `matrixSeeds` runs every pinned seed and the base seed on every cell and spreads the other sweep
+  seeds over the cells (`TestMatrixSeedsRunEveryPinnedSeedOnEveryCell`); at `DST_SEEDS=500` that is
+  78 + 499 = 577 runs (section 7's 578 was wrong).
+- Dead code removed: `Node.orphanSince`, the sorted-set record (`encodeSet`/`decodeSet`, replaced by
+  per-saga keys).
+- `realNet.Request` refuses a non-positive timeout and a self-request over the frame limit.
+
+### 10.12 Requests to the orchestrator (replaces section 7)
+1. **Determinism lint:** add `internal/node` to the roots in `detlint_dirs` of `gate.sh`
+   (`for d in env sim gossip erasure merkle occ saga node`). Run by hand on this branch:
+   `detlint -root /src internal/node` → 9 files, 0 findings.
+2. **Coverage floor:** add `internal/node` and `internal/noderuntime` to `floor_pkgs` (section 10.14
+   has the figures). `internal/storage` stays above the floor as a package; its added files are
+   reported separately in 10.14.
+3. **Race:** add `internal/noderuntime` and `cmd/objnode` to the `-race -count=3` loop of G4.
+4. **Cluster smoke on the host:** after the container run, call
+   `agent_work/06-integration/cluster-smoke.sh` from the repository root with no arguments (needs
+   Docker on the host; it uses its own compose project name and ephemeral loopback ports, so it can
+   run next to another checkout's run; exit status non-zero on any failure).
+5. **Sweep budget:** see 10.14 — state whether the measured 500-seed wall time of `internal/node`
+   is acceptable or which DST should move to the hardening chunk's budget.
+6. **Simulator change request (informational, nothing blocked):** `env.Disk` is synchronous, so the
+   real runtime does file I/O and fsync on the node loop (finding 8 asked for no blocking I/O there).
+   Moving it off the loop needs an asynchronous disk interface in the frozen `env` package and in
+   every protocol package's persistence path. Not attempted.
+7. **PLAN wording:** 7.2's collection rule is the one in 10.3 (three deletion paths, evidence for
+   each); tombstones, GC markers, orphan and loss records are retained indefinitely (7.5 mentions a
+   retention period); migration "verify pointer" is "every live peer agrees on route, flip owner and
+   the bucket's manifest digest" (7.7); the migration purge deletes a named list of dead versions,
+   not "everything not live". 7.4's "manifest tree per bucket" is one metadata tree per node
+   (unchanged from section 7 item 5).
+8. **C4 corrections at landing:** as section 7 item 5, plus: the real runtime is its own component
+   (`internal/noderuntime`) between `cmd/objnode` and the node core.
+
+### 10.13 Commits of the repair round (oldest first)
+`0117c5b` split protocol core / runtime · `7547131` smoke under its own project and ports ·
+`30f67c8` failing tests for findings 1, 2, 3, 6, 9 · `b1a5fcd` evidence-only purge, pointer agreement,
+per-saga keys, collection rule, manifest-discard recount · `df394f4` late-flip set-up deadline ·
+`03d84b1` failing precondition tests · `cc85906` entity-tag parsing · `14f717d` file disk durability
+and crash test · `71feb10` runtime hazards and exact cancellation · `838619a` findings 10 and 11 ·
+`16297f4` usage recount checked after every heal · `9505b80` shard deletes over the wire refused ·
+`f2a1691` two set-up fixes the sweep exposed, per-seed cost cuts · `994c005` quota audit ·
+`de2a763`, `4dfcd2a` pointer and accessor tests, gofmt · `97b9850` smoke output · then these notes.
+
+### 10.14 Numbers that moved (all in the `dev` container unless "host")
+**Full-node DSTs, 500 seeds (`DST_SEEDS=500 go test ./internal/node -run DST -v`, default base),
+virtual time.** Every one of the 10 DSTs held all its seeds (the matrix 577 runs).
+| Metric | min | p50 | p99 | max |
+|---|---|---|---|---|
+| PutGet: metadata + membership convergence after heal | 1.21 s | 3.27 s | 9.66 s | 10.96 s |
+| Partition: convergence after heal | 3.61 s | 7.09 s | 11.51 s | 12.01 s |
+| Partition: acknowledged writes per run | 16 | 23 | 26 | 26 |
+| Partition: discard events per run (all nodes' sinks) | 238 | 435 | 601 | 611 |
+| Partition: distinct lost versions per run | 27 | 54 | 74 | 81 |
+| Partition: distinct lost object versions per run | 2 | 4 | 7 | 7 |
+| Partition: acknowledged writes explained as current / superseded / discarded (oracle) | 13 / 2 / 3 | 16 / 9 / 7 | 17 / 14 / 11 | 18 / 15 / 12 |
+| Partition: quota overshoot over an 800 B limit | 200 B | 500 B | 600 B | 700 B |
+| Partition: usage equals a recount on every node, after heal | 4.56 s | 8.62 s | 12.26 s | 12.75 s |
+| Partition: recount writes per run (21 nodes) | 3 | 18 | 35 | 38 |
+| Partition: loser shards collected per run | 11 | 23 | 35 | 37 |
+| Crash: convergence after heal | 0.99 s | 2.04 s | 3.74 s | 4.38 s |
+| Crash: restarted node holds all its shards, from restart | 4.99 s | 6.04 s | 7.74 s | 8.38 s |
+| Crash: wiped node refilled, from the wipe | 14.0 s | 15.0 s | 16.7 s | 17.4 s |
+| Bit-rot: rotted shards per run | 9 | 20 | 31 | 33 |
+| Bit-rot: all rotted shards repaired, from the rot | 134 ms | 153 ms | 159 ms | 159 ms |
+| Bit-rot: rebuilt bytes per rotted byte | 1.000 | 1.000 | 1.000 | 1.000 |
+| Matrix: begin → terminal state (577 runs) | 0 | 11.4 s | 16.5 s | 18.9 s (bound 20 s) |
+| Migration under traffic: begin → terminal | 0 | 11.7 s | 25.9 s | 27.6 s |
+| Migration under traffic: acknowledged writes per run (during the migration) | 13 (0) | 45 (12) | 65 (32) | 68 (39) |
+| Migration under traffic: writes refused busy (bucket moving) | 0 | 17 | 57 | 62 |
+| Migration under traffic: oracle current / current-copy / superseded / discarded | | 19 / 17 / 15 / 6 | 30 / 27 / 29 / 14 | 33 / 29 / 30 / 16 |
+| Duel: begin → all three terminal | 8.4 s | 14.0 s | 19.5 s | 19.9 s |
+The matrix's begin→terminal time roughly doubled (p50 6.1 s → 11.4 s, max 10.7 s → 18.9 s against
+the 20 s bound) because delete-source now waits for every live peer's pointer view twice (pointer,
+then retire). The partition scenario's discard counts fell because its contested phase is 6 rounds
+instead of 10. The "0" minima are compensated runs of an empty bucket, which finish within one
+virtual instant (every step completes through zero-delay timers).
+
+**Wall time (dev container, 4 cores shared):**
+| Run | Wall |
+|---|---|
+| `go test ./internal/node` (default seeds) | 45 s |
+| `go test ./internal/noderuntime` | 9 s |
+| `DST_SEEDS=500 go test ./internal/node -run DST` standalone, every DST in parallel | **1,345 s (22.4 min): over the ~10 min budget** |
+Per test (wall of its slowest shard, while running alongside the others): put/get 255 s, traffic
+257 s, partition 216 s, crash 164 s, duel 136 s, bit-rot 133 s, late-flip 45 s, isolated 37 s,
+quota 21 s, matrix 673 cell-seconds. A CPU profile of all DSTs: about half the time is the landed
+OCC store re-encoding and hashing the whole metadata document on every merge, then the metadata
+Merkle worker's scrub (13%) and the inventory maintenance (13%). What was cut: the partition
+scenario's contest (10 → 6 rounds) and grace (10 s → 6 s); the traffic DST's fanout, loss and load;
+idle grace waits in the duel and traffic DSTs; sequential sweeps sharded; top-level DSTs in parallel.
+Not cut: seeds, node counts, invariants. Further cuts that would work but change measured numbers or
+the landed OCC package: lower `ScrubBatch`/`InventoryScrub` in the DST configurations, or OCC
+persistence that does not re-encode the whole document per merge (request 10.12.5).
+
+**Coverage (default seeds):** `internal/node` 86.2%, `internal/noderuntime` 87.7%, `cmd/objnode` 82.5%,
+`internal/testutil/leakcheck` 80.6%, `internal/storage` package above the floor, its added files
+(`api.go` + `http.go`) 87.3% of statements. Uncovered in `internal/node`: OCC persist failures inside
+migration steps (Retire, Promote, Discard, dropIntents error returns), `RecordMeta` and `setScalar`
+error paths, the `designated` refusal branch of the audit on the nodes that are not lowest, merkle
+`Tree.Set` errors, the scoped storage-node construction failure. In `internal/noderuntime`: listener
+`Accept` errors other than close, UDP write errors, resolver failures logged on the loop, the
+connection-semaphore refusal, a response frame over the frame limit.
+
+**Real runtime (3 nodes, loopback, one process, k=2 m=1, 1 MiB stripes,
+`MEASURE_RUNTIME=1 go test ./internal/noderuntime -run TestMeasureLoopbackRuntime -v`):**
+| Metric | Before the repair | Now |
+|---|---|---|
+| 1 MiB PUT (8 sequential, round-robin) | 9.9 MiB/s, p50 100 ms, max 154 ms | 5.7 MiB/s, p50 174 ms, max 241 ms |
+| 1 MiB GET (from another node) | 42.0 MiB/s, p50 25 ms | 48.0 MiB/s, p50 16 ms, max 39 ms |
+| 32 MiB PUT (4 sequential) | 19.4 MiB/s, p50 1.70 s | 11.5 MiB/s, p50 2.70 s, max 3.32 s |
+| 32 MiB GET | 71.4 MiB/s, p50 441 ms | 61.2 MiB/s, p50 522 ms, max 538 ms |
+| goroutines at idle (3 nodes + test) | 11 | 11 |
+| goroutines, peak under 16 concurrent 1 MiB puts | 90 | 96 |
+| heap at idle (3 nodes) | 1.7 MiB | 0.6 MiB |
+PUTs are slower because every blob write now fsyncs its temp file before the rename, in addition to
+the file and directory fsync at `Sync` (finding 4); GET numbers vary run to run on the shared machine.
+
+**Cluster smoke (host):** `agent_work/06-integration/cluster-smoke.sh` → PASS, exit 0, 7 s with a
+warm build cache (output in `cluster-smoke.out`); two copies started at the same moment both passed
+(projects `objstore-smoke-851512-…` and `…851513-…`, disjoint ephemeral ports) and left no container.
+Compose warns that the shared `objstore-gomod`/`objstore-gocache` volumes were created by project
+`objstore`; harmless (they are named volumes shared on purpose).
+
+### 10.15 Commands run in the repair round and their results
+All through `docker compose run --rm -T dev …` unless marked host.
+| Command | Result |
+|---|---|
+| `gofmt -l internal cmd`, `go vet ./...`, `go build ./...` | clean |
+| `detlint -root /src internal/node` (hand-run, tools built from `agent_work/gates/detlint`) | 9 files, 0 findings |
+| `go test -count=1 -cover ./internal/node ./internal/noderuntime ./cmd/objnode ./internal/testutil/leakcheck` | ok; 86.2%, 87.7%, 82.5%, 80.6% |
+| `go test -race -count=3 ./internal/noderuntime ./cmd/objnode ./internal/storage` | ok (21 s, 2 s, 37 s) |
+| `DST_SEEDS=500 go test ./internal/node -run DST -v` standalone (default base) | ok, 1,345 s; every DST held every seed |
+| two earlier 500-seed runs of the same | found the set-up and quota-audit issues fixed in `f2a1691` and `994c005` (each listed there) |
+| `DST_SEEDS=200 DST_SEED_BASE=7000` on the new DSTs | 7 late-flip set-up deadlines (fixed in `df394f4`), all else held |
+| `go test ./internal/storage -run '^$' -fuzz '^FuzzObjectAPI$' -fuzztime 20s` on the old code | found `If-Match: " "` applied unconditionally (corpus file committed) |
+| `MEASURE_RUNTIME=1 … TestMeasureLoopbackRuntime` | section 10.14 |
+| `agent_work/06-integration/cluster-smoke.sh` (host), once and twice concurrently | PASS, exit 0 each |
+| `agent_work/gates/gate.sh 06-integration` (host) on `97b9850` | **overall=pass, counts_for_landing=true** (summary below; `repair-runs/gate-summary.txt`) |
+| `agent_work/adversarial/06-integration/run-all.sh` (host) | exit 2: held 18, broken 0, setup errors 4 (below) |
+
+Gate summary (`97b9850`, stage build, seed 166823056793601, comment baseline 631b44e):
+```
+G0 tools/gofmt/vet/build/detlint/panics/deps/comments/selfcontained  pass
+G1 unit        pass    67s
+G2 property    pass   360s  (2000 checks, 8 packages)
+G3 fuzz        pass   460s  (14 targets, 30 s each)
+G4 race        pass   963s  (internal/node -race -count=3: 671 s)
+G5 dst         pass  1726s  (500 seeds, whole module)
+G6 docker      pass
+overall=pass counts_for_landing=true
+```
+This gate run predates the notes commit that follows it; no Go file changed after `97b9850`.
+
+**Independent harness (`run-all.sh`, not edited; output in `repair-runs/harness-run-all.txt`):**
+`SUMMARY held=18 broken=0 setup_errors=4`. Why, exactly:
+- a01 simulator, a02 loopback, a04 CLI: the harness module does not compile — its `real.go` uses
+  `node.Runtime`, `node.NewRuntime` and `node.RuntimeConfig`, which moved to `internal/noderuntime`
+  (the structure change the repair brief ordered). Not a product regression. To give evidence anyway,
+  a scratch copy of the harness with only those three references changed to `noderuntime` (copy
+  deleted afterwards, nothing committed) ran all three Go drivers: **247 HELD, 0 BROKEN** (240
+  simulator, 6 loopback, 1 CLI; `repair-runs/harness-moved-path.txt`).
+- a03 existing checks: 18 HELD; 19 named tests "no result" because they moved to
+  `internal/noderuntime` (`TestConformanceOnTheSimulator`, `TestConformanceOnLoopback`,
+  `TestLoopbackClusterServesObjectsAcrossNodes`, `TestFrameRoundTrips`,
+  `TestFrameDecodersRejectMalformedInput`, `TestFrameLimitCoversMerkleRepliesAndShardRequests`,
+  `TestRuntimeConfigValidation`, `TestStatusRowsThroughHTTPOnARealNode`, `TestRuntimeLifecycleInABubble`,
+  `TestRuntimeStartHonoursItsContext`, `TestRuntimeCallsBeforeStartAreNotReady`,
+  `TestShutdownUnderLoadReturnsEveryCall`, `TestShutdownDuringRepairAndRestartOnTheSameDisk`,
+  `TestRealRuntimeLeavesNoGoroutineBehind`, `TestRuntimeRecoversAPanicOnTheLoop`,
+  `TestRuntimeDatagramsToSelfAndQueueOverflow`; all pass there, in the gate) or were replaced as
+  finding 7 asked (`TestRuntimeCloseDuringStartup` → `TestCloseWhileStartIsInProgress`;
+  `TestRuntimeCancelMidPutLeavesOnlyCollectableShards` and
+  `TestCancelMidGetAndMidMigrationReturnContextErrors` →
+  `TestACallCanceledBeforeItReachesTheLoopNeverApplies` and
+  `TestACallCanceledAfterTheLoopTookItAppliesOnceAndIsReported`).
+- No check pinned a status code that changed. One status did change: an `If-Match` with an etag that
+  is not one of the node's is 412 now (was 400); a malformed (unquoted) one is still 400.
+The harness's `evidence/` files were restored from a copy taken before the run.
+
+### 10.16 Chosen not to do, and why
+- **Sweep budget.** The 500-seed sweep of `internal/node` is 22.4 min, over the ~10 min guideline;
+  cutting it further means cutting seeds, nodes or checks, or changing the landed OCC store's
+  whole-document persistence (10.14). Left for the orchestrator (request 10.12.5).
+- **Asynchronous disk.** Needs a simulator/`env` change (request 10.12.6).
+- **Re-homing strays.** A late write that lands in the old region stays readable there and is moved
+  by the next migration; no background mover was built (it would add concurrent swaps on many nodes).
+  Not counted in health.
+- **`ErrOutcomeUnknown` crossing HTTP.** It is joined with the context error, so the status table maps
+  it as the context error (503/504); no separate status row.
+- **Persisting `recountDue`/`losers`.** Still in memory (section 6); the quota audit now repairs a
+  dropped recount, and the `~gc/` marker for a loser is durable.
+- **`PLAN.md`, `STATE.md`, `README.md`, gate files, docs:** not touched (rules); requests in 10.12.
