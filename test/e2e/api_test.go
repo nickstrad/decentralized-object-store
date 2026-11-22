@@ -25,6 +25,8 @@ const (
 	opQuota
 	opStartMigration
 	opMigration
+	opTags
+	opACL
 )
 
 var errBadCall = errors.New("e2e: malformed client call")
@@ -48,6 +50,7 @@ type apiResult struct {
 	Info  storage.ObjectInfo    `json:",omitempty"`
 	Infos []storage.ObjectInfo  `json:",omitempty"`
 	Tag   storage.TagInfo       `json:",omitempty"`
+	Tags  []storage.TagInfo     `json:",omitempty"`
 	ACL   storage.ACLInfo       `json:",omitempty"`
 	Quota storage.QuotaInfo     `json:",omitempty"`
 	Mig   storage.MigrationInfo `json:",omitempty"`
@@ -174,6 +177,12 @@ func (a *apiNode) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	case opMigration:
 		mi, err := n.Migration(args.ID)
 		send(apiResult{Mig: mi}, nil, err)
+	case opTags:
+		ts, err := n.Tags(args.Bucket, args.Key)
+		send(apiResult{Tags: ts}, nil, err)
+	case opACL:
+		ai, err := n.ACL(args.Bucket, args.Principal)
+		send(apiResult{ACL: ai}, nil, err)
 	default:
 		reply(nil, errBadCall)
 	}

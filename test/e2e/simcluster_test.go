@@ -228,7 +228,7 @@ func (c *simCluster) call(k *Call, op byte, a apiArgs, data []byte) *Call {
 			if err == nil {
 				var r apiResult
 				r, k.Data, err = decodeResult(resp)
-				k.Info, k.Infos, k.Tag, k.ACL, k.Quota, k.Mig = r.Info, r.Infos, r.Tag, r.ACL, r.Quota, r.Mig
+				k.Info, k.Infos, k.Tag, k.Tags, k.ACL, k.Quota, k.Mig = r.Info, r.Infos, r.Tag, r.Tags, r.ACL, r.Quota, r.Mig
 			}
 			k.Err = err
 			c.ledger.settle(k)
@@ -266,6 +266,14 @@ func (c *simCluster) PutTag(at Node, bucket, key, name, value string, cond stora
 
 func (c *simCluster) PutACL(at Node, bucket, principal, perm string, cond storage.Condition) *Call {
 	return c.call(&Call{Op: "acl", At: at, Bucket: bucket, Key: principal}, opPutACL, apiArgs{Bucket: bucket, Principal: principal, Perm: perm, Cond: cond}, nil)
+}
+
+func (c *simCluster) Tags(at Node, bucket, key string) *Call {
+	return c.call(&Call{Op: "tags", At: at, Bucket: bucket, Key: key}, opTags, apiArgs{Bucket: bucket, Key: key}, nil)
+}
+
+func (c *simCluster) ACL(at Node, bucket, principal string) *Call {
+	return c.call(&Call{Op: "acl-get", At: at, Bucket: bucket, Key: principal}, opACL, apiArgs{Bucket: bucket, Principal: principal}, nil)
 }
 
 func (c *simCluster) SetQuota(at Node, bucket string, bytes, objects uint64) *Call {
@@ -457,4 +465,36 @@ func (c *simCluster) boot() error {
 	}
 	_, err := c.Await("cluster formed", 30*time.Second, c.Converged)
 	return err
+}
+
+func (c *simCluster) storageBytesMoved() uint64 { return c.moved[2] }
+
+func (c *simCluster) expectedShards(n Node) ([]string, error) {
+	ns := c.upNodes()
+	if len(ns) == 0 {
+		return nil, fmt.Errorf("e2e: no node up")
+	}
+	rd, err := ns[0].OCC().Reader()
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, k := range rd.Keys() {
+		if len(k) == 0 || occ.Kind(k[0]) != occ.KindManifest || !rd.Record(k).Live() {
+			continue
+		}
+		v, _ := rd.Record(k).Version()
+		man := manifestOf(k, v)
+		if man == nil {
+			continue
+		}
+		for s := range man.Stripes {
+			for i, sh := range man.Stripes[s].Shards {
+				if string(sh.Node) == n.ID {
+					out = append(out, man.ShardID(s, i).BlobName())
+				}
+			}
+		}
+	}
+	return out, nil
 }

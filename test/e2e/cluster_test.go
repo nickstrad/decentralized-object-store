@@ -29,6 +29,7 @@ type Call struct {
 	Infos  []storage.ObjectInfo
 	Data   []byte
 	Tag    storage.TagInfo
+	Tags   []storage.TagInfo
 	ACL    storage.ACLInfo
 	Quota  storage.QuotaInfo
 	Mig    storage.MigrationInfo
@@ -61,6 +62,8 @@ type Cluster interface {
 	List(at Node, bucket string) *Call
 	PutTag(at Node, bucket, key, name, value string, cond storage.Condition) *Call
 	PutACL(at Node, bucket, principal, perm string, cond storage.Condition) *Call
+	Tags(at Node, bucket, key string) *Call
+	ACL(at Node, bucket, principal string) *Call
 	SetQuota(at Node, bucket string, bytes, objects uint64) *Call
 	Quota(at Node, bucket string) *Call
 	StartMigration(at Node, bucket, to string) *Call
