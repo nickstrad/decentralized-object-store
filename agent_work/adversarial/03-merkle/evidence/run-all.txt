@@ -12,9 +12,9 @@ HELD C12 cost-grid: 18 size/divergence pairs through N=100000 satisfy the publis
 HELD C6 mutate-during-diff: initiator mutations between every request leave the original snapshot diff intact
 HELD C9 small-frontier-convergence: caps 1, 3 and 7 truncate truthfully and repeated repairs converge
 HELD C5 leaf-cap: 4096-entry leaf permits updates/replacement and rejects entry 4097 atomically
-BROKEN C8 single-leaf-reply-size: seed=731903 Build(1, ground(992,1024)); Answer(0101010100) returned 1049541 bytes > 1048576
+HELD C8 single-leaf-reply-size: single legal leaf stays within MaxReplyBytes
 HELD C8 multi-leaf-batching: 4000 long keys complete exactly in 7 trips with each reply <=1 MiB
-BROKEN C12 batched-round-trip-bound: seed=731903 N=984 depth=1 d=984 keylen=1024: trips=3 > Depth+1=2
+HELD C12 batched-round-trip-bound: batched replies obey Depth+1
 BROKEN C31 clustered-hash-cost: seed=731903 N=46 depth=DepthFor(46)=2 d=1 same-leaf keys: hashes=49 > plan 16*d*(Depth+1)=48; leaf-load bound holds
 HELD C7 protocol-state: four ordered levels, stable repeated requests, 35+1 equal bytes and ErrSession guards
 HELD C10 malformed-wire: 13 truncated, noncanonical, unordered and wrong-kind messages rejected
@@ -72,4 +72,4 @@ HELD C25 regression-TestErrorDepthOverflow: existing test passed with DST base 7
 HELD C26 regression-TestCodeEntries: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
 HELD C27 regression-TestNewWorkerValidation: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
 HELD C28 regression-TestCanarySkippedBranch: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
-SUMMARY held=70 broken=4 setup_errors=0 elapsed_seconds=76
+SUMMARY held=72 broken=2 setup_errors=0 elapsed_seconds=44
