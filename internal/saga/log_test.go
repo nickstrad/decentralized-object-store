@@ -51,6 +51,10 @@ func recordEnds(t testing.TB, recs []saga.Record) []int {
 	return ends
 }
 
+// TestLogAppendRecover proves log record round-trip, torn-tail prefix decoding,
+// ErrLogCorrupt on damaged middle/last/oversized/non-canonical frames, torn-tail
+// truncation and empty-log deletion on recovery, and recovery from torn crashes
+// at every record boundary in the simulator.
 func TestLogAppendRecover(t *testing.T) {
 	recs, blob := sampleLog(t)
 	ends := recordEnds(t, recs)
@@ -240,6 +244,9 @@ func TestLogAppendRecover(t *testing.T) {
 	}
 }
 
+// TestLogCorruptMiddleRecordFailsRecovery proves that a damaged middle record
+// fails Recover and Status with ErrLogCorrupt, leaves the blob untouched on
+// disk, schedules no work, and blocks Begin from reusing the ID.
 func TestLogCorruptMiddleRecordFailsRecovery(t *testing.T) {
 	d := newMemDisk()
 	name := saga.DefaultPrefix + "m"
@@ -270,6 +277,8 @@ func TestLogCorruptMiddleRecordFailsRecovery(t *testing.T) {
 	}
 }
 
+// TestRecoverRetriesReadErrors proves that transient disk read failures during
+// Recover are reported on startup and retried on a timer until the saga finishes.
 func TestRecoverRetriesReadErrors(t *testing.T) {
 	f := newFx(2, 2)
 	s := newSingle(t, 3, f, saga.Config{Policy: testPolicy()})
@@ -286,6 +295,8 @@ func TestRecoverRetriesReadErrors(t *testing.T) {
 	}
 }
 
+// TestDecodeLogOnSimDiskAfterTornCrash proves that DecodeLog cleanly decodes
+// the durable prefix left by sim.Disk after CrashTorn across 20 seeds.
 func TestDecodeLogOnSimDiskAfterTornCrash(t *testing.T) {
 	for seed := int64(1); seed <= 20; seed++ {
 		s := sim.New(sim.Config{Seed: seed})

@@ -1,3 +1,12 @@
+// Package sagasim provides a simulated model cluster, a reusable 78-cell
+// migration failure-point matrix runner, and nemesis and dueling-migration
+// scenario drivers for internal/saga.
+//
+// Any cluster implementation can satisfy Harness and run the matrix through Run;
+// fault injection wraps the migration saga.Definition and Engine Config.Hook so
+// it works identically across model and real storage components. Harness.Build
+// must apply BuildOptions.Wrap and BuildOptions.Configure (cells fail if their
+// fault never fires) and may advance virtual time to warm up before returning.
 package sagasim
 
 import (
@@ -12,6 +21,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 )
 
+// Bucket is the default bucket name seeded by Build and migrated by the matrix
+// and scenario drivers.
 const (
 	Bucket         = "bk"
 	clientRetry    = 200 * time.Millisecond
@@ -20,6 +31,7 @@ const (
 	defaultObjects = 8
 )
 
+// Options configures a simulated model cluster constructed by Build.
 type Options struct {
 	Coordinators []sim.NodeSpec
 	Stores       []sim.NodeSpec
@@ -31,6 +43,7 @@ type Options struct {
 	Configure    func(id env.NodeID, cfg *saga.Config)
 }
 
+// Model holds handles and verification helpers for a cluster built by Build.
 type Model struct {
 	s         *sim.Sim
 	o         Options
@@ -41,18 +54,25 @@ type Model struct {
 	calls     map[env.NodeID][]int
 }
 
+// Coordinator is a simulated node process hosting one saga.Engine wired to
+// sagasim.Ops.
 type Coordinator struct {
 	e   env.Env
 	eng *saga.Engine
 	err error
 }
 
+// Start and OnDatagram are no-ops; coordProcess initializes and recovers the
+// engine on boot, and coordinators only issue outbound requests.
 func (c *Coordinator) Start()                        {}
 func (c *Coordinator) OnDatagram(env.NodeID, []byte) {}
+
+// OnRequest rejects inbound requests with env.ErrInvalidArgument.
 func (c *Coordinator) OnRequest(_ env.NodeID, _ []byte, reply env.Reply) {
 	reply(nil, fmt.Errorf("sagasim: coordinator %s serves no requests: %w", c.e.ID, env.ErrInvalidArgument))
 }
 
+// EncodeState returns the hosted engine's canonical state bytes, or {0} before init.
 func (c *Coordinator) EncodeState() []byte {
 	if c.eng == nil {
 		return []byte{0}
@@ -60,8 +80,10 @@ func (c *Coordinator) EncodeState() []byte {
 	return c.eng.EncodeState()
 }
 
+// Engine returns the coordinator's hosted saga.Engine, or nil if initialization failed.
 func (c *Coordinator) Engine() *saga.Engine { return c.eng }
 
+// Err returns any error returned by saga.New or Engine.Recover at startup.
 func (c *Coordinator) Err() error { return c.err }
 
 type coordProcess struct {
@@ -82,6 +104,8 @@ func (c *countingStep) Do(call saga.Call, done func([]byte, error)) {
 	c.Step.Do(call, done)
 }
 
+// objects generates n key-sorted initial objects using four-digit keys so keys
+// remain lexicographically ordered up to 9999 (> MaxObjects).
 func objects(n int) []KV {
 	out := make([]KV, n)
 	for i := range out {
@@ -90,6 +114,9 @@ func objects(n int) []KV {
 	return out
 }
 
+// Build constructs a deterministic Sim and Model containing the configured
+// stores, coordinators, and optional client, seeded with Bucket at o.Source.
+// It returns env.ErrInvalidArgument if o.Objects exceeds MaxObjects.
 func Build(seed int64, o Options) (*sim.Sim, *Model, error) {
 	table, err := env.NewCodeTable(Codes()...)
 	if err != nil {
@@ -159,6 +186,7 @@ func (m *Model) coordinator(id env.NodeID) *Coordinator {
 	return cp.Coordinator
 }
 
+// Engine returns the live, unpaused saga.Engine on coordinator id, or nil.
 func (m *Model) Engine(id env.NodeID) *saga.Engine {
 	if c := m.coordinator(id); c != nil {
 		return c.eng
@@ -166,6 +194,8 @@ func (m *Model) Engine(id env.NodeID) *saga.Engine {
 	return nil
 }
 
+// Begin starts a bucket-migration saga on coordinator coord, returning
+// env.ErrUnreachable if coord is not running or paused.
 func (m *Model) Begin(coord env.NodeID, id saga.ID, in saga.MigrationInput) error {
 	eng := m.Engine(coord)
 	if eng == nil {
@@ -174,6 +204,8 @@ func (m *Model) Begin(coord env.NodeID, id saga.ID, in saga.MigrationInput) erro
 	return eng.Begin(id, saga.MigrationName, in.Encode())
 }
 
+// Status returns saga id's status from coordinator coord and whether the lookup
+// succeeded.
 func (m *Model) Status(coord env.NodeID, id saga.ID) (saga.Status, bool) {
 	eng := m.Engine(coord)
 	if eng == nil {
@@ -183,10 +215,13 @@ func (m *Model) Status(coord env.NodeID, id saga.ID) (saga.Status, bool) {
 	return st, err == nil
 }
 
+// Attempts returns a copy of the per-step Do call counts recorded on coord.
 func (m *Model) Attempts(coord env.NodeID) []int { return slices.Clone(m.calls[coord]) }
 
+// Stores returns a copy of the store node IDs in the model cluster.
 func (m *Model) Stores() []env.NodeID { return slices.Clone(m.stores) }
 
+// Acked returns the number of client writes acknowledged so far.
 func (m *Model) Acked() int { return len(m.acked) }
 
 func (m *Model) client() *Client {
@@ -201,6 +236,8 @@ func (m *Model) client() *Client {
 	return c
 }
 
+// Write issues a client write for key "w<i:03d>" if the client node is live and
+// unpaused, recording the attempt so CheckWrites can verify durability.
 func (m *Model) Write(i int) {
 	c := m.client()
 	if c == nil || m.s.Status(m.o.Client.ID).Paused {
@@ -211,11 +248,14 @@ func (m *Model) Write(i int) {
 	c.put(kv, 0)
 }
 
+// WritesIdle reports whether no client writes are currently in flight.
 func (m *Model) WritesIdle() bool {
 	c := m.client()
 	return m.o.Client == nil || c == nil || c.inflight == 0
 }
 
+// Client is a simulated workload node that looks up the routing pointer on a
+// random store replica and writes objects to the named store, retrying on error.
 type Client struct {
 	e        env.Env
 	m        *Model
@@ -224,12 +264,16 @@ type Client struct {
 	failed   int
 }
 
+// Start and OnDatagram are no-ops; writes are driven through Model.Write.
 func (c *Client) Start()                        {}
 func (c *Client) OnDatagram(env.NodeID, []byte) {}
+
+// OnRequest rejects inbound requests with env.ErrInvalidArgument.
 func (c *Client) OnRequest(_ env.NodeID, _ []byte, reply env.Reply) {
 	reply(nil, env.ErrInvalidArgument)
 }
 
+// EncodeState returns a deterministic summary of in-flight, acked, and failed writes.
 func (c *Client) EncodeState() []byte {
 	return []byte(fmt.Sprintf("%d/%d/%d", c.inflight, c.acked, c.failed))
 }
@@ -279,6 +323,7 @@ func (m *Model) view(loc string) (storeState, bool) {
 	return st, err == nil
 }
 
+// Pointers returns the durable routing-pointer target for bucket on each store.
 func (m *Model) Pointers(bucket string) []string {
 	var out []string
 	for _, id := range m.stores {
@@ -289,6 +334,8 @@ func (m *Model) Pointers(bucket string) []string {
 	return out
 }
 
+// Pointer returns the agreed routing-pointer target across all stores, or "" if
+// replicas disagree or no stores exist.
 func (m *Model) Pointer(bucket string) string {
 	ps := m.Pointers(bucket)
 	for _, p := range ps {
@@ -370,6 +417,10 @@ func (m *Model) checkEmptyExcept(bucket string, keep string) error {
 	return nil
 }
 
+// CheckAt verifies that every pointer replica names loc, loc holds bucket live
+// with no leftover registrations and all original objects (exact root when no
+// client ran), and every other store holds no live, staged, or orphan data.
+// Failures wrap ErrCheck.
 func (m *Model) CheckAt(bucket, loc string) error {
 	if err := m.checkPointer(bucket, loc); err != nil {
 		return err
@@ -380,10 +431,15 @@ func (m *Model) CheckAt(bucket, loc string) error {
 	return m.checkEmptyExcept(bucket, loc)
 }
 
+// CheckMoved verifies that in.Bucket is live and settled at in.To.
 func (m *Model) CheckMoved(in saga.MigrationInput) error { return m.CheckAt(in.Bucket, in.To) }
 
+// CheckCompensated verifies that in.Bucket remains live at in.From with zero
+// orphans or leftover claims elsewhere.
 func (m *Model) CheckCompensated(in saga.MigrationInput) error { return m.CheckAt(in.Bucket, in.From) }
 
+// CheckWrites verifies that every acknowledged client write is present in bucket
+// at loc and no unattempted object exists there, returning ErrCheck otherwise.
 func (m *Model) CheckWrites(bucket, loc string) error {
 	st, _ := m.view(loc)
 	bk := st.bucket(bucket)
@@ -403,6 +459,10 @@ func (m *Model) CheckWrites(bucket, loc string) error {
 	return nil
 }
 
+// CheckDuel verifies that competing migrations ended terminal with all pointer
+// replicas agreeing on one live holder, all other stores empty, the winner
+// reporting OutcomeMoved, and any other completed migration reporting
+// OutcomeSuperseded. Failures wrap ErrCheck.
 func (m *Model) CheckDuel(ins []saga.MigrationInput, states []saga.State, outcomes []string) error {
 	if len(ins) == 0 {
 		return checkf("no migrations")
@@ -430,6 +490,8 @@ func (m *Model) CheckDuel(ins []saga.MigrationInput, states []saga.State, outcom
 	return nil
 }
 
+// AddInvariants registers the "sagasim/one-live-location" safety invariant on s,
+// checking every 20 events that at most one store holds Bucket live.
 func (m *Model) AddInvariants(s *sim.Sim) {
 	s.AddInvariant("sagasim/one-live-location", invariantEvery, func() error {
 		live := 0

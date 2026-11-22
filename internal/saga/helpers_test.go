@@ -44,6 +44,8 @@ type fcall struct {
 	inc     uint32
 }
 
+// fx is a scriptable multi-step test fixture that tracks side effects, call
+// order, and whether any callback fired after RecEnd became durable.
 type fx struct {
 	n, pivot   int
 	do         [][]result

@@ -107,6 +107,10 @@ func runMigration(t *testing.T, ops *fakeOps, input []byte) saga.Status {
 	return st
 }
 
+// TestMigrationWorkflow proves every bucket-migration control path against fake
+// ops: clean move, verification mismatch, catch-up mismatch retry, superseded
+// cleanup, already-retired promotion, invalid input, and retried forward and
+// compensation errors.
 func TestMigrationWorkflow(t *testing.T) {
 	in := saga.MigrationInput{Bucket: "bk", From: "a", To: "b"}
 	happy := []string{"claim", "copy", "root b", "flip", "pointer", "seal", "copy", "root a", "root b", "retire", "promote"}

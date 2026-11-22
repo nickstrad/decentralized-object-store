@@ -18,6 +18,8 @@ const (
 	sagaCodeMax env.Code = env.CodeAppMin + 95
 )
 
+// TestCodesLieInTheSagaBlock proves that every wire code in saga.Codes falls in
+// the allocated 144..159 block with its expected value.
 func TestCodesLieInTheSagaBlock(t *testing.T) {
 	if sagaCodeMin != 144 || sagaCodeMax != 159 {
 		t.Fatalf("block %d..%d, want 144..159", sagaCodeMin, sagaCodeMax)
@@ -56,6 +58,9 @@ func (d *faultyDisk) Sync(name string) error {
 	return d.Disk.Sync(name)
 }
 
+// TestBeginWriteFailureOnSimDiskIsNotNotFound proves that when Begin fails
+// during Append or Sync on sim.Disk, cleanup removes any unsynced blob and the
+// returned error matches env.ErrIO without a spurious env.ErrNotFound.
 func TestBeginWriteFailureOnSimDiskIsNotNotFound(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
@@ -143,6 +148,9 @@ func (m *mutatingStep) Compensate(c saga.Call, done func(error)) {
 	done(nil)
 }
 
+// TestStepCannotCorruptTheEngineSnapshot proves that in-place mutations of
+// Call.Input or Call.Outputs by a step do not affect subsequent retries or
+// Engine.Status.
 func TestStepCannotCorruptTheEngineSnapshot(t *testing.T) {
 	d := newMemDisk()
 	clk := &manualClock{now: 10}
@@ -170,6 +178,8 @@ func TestStepCannotCorruptTheEngineSnapshot(t *testing.T) {
 	}
 }
 
+// TestMigrationInputValidateMatchesTheCodec proves that MigrationInput.Validate
+// enforces the same 1024-byte per-field bound as DecodeMigrationInput.
 func TestMigrationInputValidateMatchesTheCodec(t *testing.T) {
 	long := strings.Repeat("x", 1025)
 	edge := strings.Repeat("y", 1024)

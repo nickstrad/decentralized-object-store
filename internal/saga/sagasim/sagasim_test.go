@@ -94,6 +94,9 @@ func ask(s *Store, op byte, fields ...string) ([]byte, error) {
 
 func stamp(ts int64) string { return string(binary.BigEndian.AppendUint64(nil, uint64(ts))) }
 
+// TestWireRejectsMalformed proves that decodeFields, decodeObjs, and
+// decodeState reject truncated, trailing, and out-of-range inputs with
+// ErrMalformed while valid store states round-trip cleanly.
 func TestWireRejectsMalformed(t *testing.T) {
 	good := encodeFields(opRoot, []byte("bk"))
 	bad := [][]byte{
@@ -129,6 +132,9 @@ func TestWireRejectsMalformed(t *testing.T) {
 	}
 }
 
+// TestStoreOperations proves store registration, sealing, claiming, orphan
+// preservation on release, copy fencing, LWW pointer tie-breaking, malformed
+// request rejection, and startup load retries.
 func TestStoreOperations(t *testing.T) {
 	tests := []struct {
 		name string
@@ -366,6 +372,9 @@ func (d *driver) OnRequest(_ env.NodeID, _ []byte, reply env.Reply) {
 }
 func (d *driver) EncodeState() []byte { return nil }
 
+// TestOpsAgainstStores proves Ops wire round-trips against simulated Store
+// nodes, including ErrUnsettled on disagreeing pointer replicas and
+// saga.ErrPermanent on unknown locations or missing buckets.
 func TestOpsAgainstStores(t *testing.T) {
 	table, err := env.NewCodeTable(Codes()...)
 	if err != nil {
@@ -425,6 +434,8 @@ func TestOpsAgainstStores(t *testing.T) {
 	}
 }
 
+// TestRunnerOnTheModel proves deterministic execution, report population, and
+// harness error propagation for Run on ModelHarness.
 func TestRunnerOnTheModel(t *testing.T) {
 	h := ModelHarness()
 	cells := Cells()
@@ -455,6 +466,8 @@ func (errHarness) Build(seed int64, o BuildOptions) (*sim.Sim, Cluster, error) {
 	return sim.New(sim.Config{Seed: seed}), nil, env.ErrInvalidArgument
 }
 
+// TestModelAccessors proves Model lookup, client write tracking, and ErrCheck
+// failures from CheckWrites, CheckDuel, and CheckMoved.
 func TestModelAccessors(t *testing.T) {
 	s, m, err := Build(1, Options{
 		Coordinators: []sim.NodeSpec{{ID: "c1", Region: "r"}},
@@ -516,6 +529,8 @@ func TestModelAccessors(t *testing.T) {
 	}
 }
 
+// TestScenariosOnTheModel proves deterministic execution of NemesisRun and
+// DuelRun on the model cluster and checks that NemesisKinds excludes bit-rot.
 func TestScenariosOnTheModel(t *testing.T) {
 	nr := &NemesisReport{}
 	np := NemesisParams{Start: env.Time(300 * time.Millisecond), Phases: 1, Chaos: 3 * time.Second, Heal: time.Second, MaxGap: 300 * time.Millisecond,

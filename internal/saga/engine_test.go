@@ -13,6 +13,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 )
 
+// TestStateMachineTable proves that Resume accepts every legal record sequence,
+// plans the right next action, preserves metadata, and rejects illegal sequences
+// (including RecAbort without an open intent) with ErrLogCorrupt.
 func TestStateMachineTable(t *testing.T) {
 	const steps, pivot, maxA = 4, 2, 3
 	run := saga.StateRunning
@@ -122,6 +125,9 @@ func TestStateMachineTable(t *testing.T) {
 	})
 }
 
+// TestRetryBackoffSchedule proves exponential backoff capping, saturation,
+// seeded jitter bounds, policy validation, exact inter-attempt wait timing, and
+// step timeout retries.
 func TestRetryBackoffSchedule(t *testing.T) {
 	p := saga.Policy{MaxAttempts: 10, BaseDelay: 100 * time.Millisecond, MaxDelay: time.Second, StepTimeout: time.Second}
 	t.Run("delays double from the base and stop at the cap", func(t *testing.T) {
@@ -234,6 +240,9 @@ func TestRetryBackoffSchedule(t *testing.T) {
 	})
 }
 
+// TestCompensationOrder proves reverse-order compensation, unbounded retry of
+// failing compensations before moving to the next step, pivot-1 start on
+// definitive pivot refusal, and no forward execution after compensation starts.
 func TestCompensationOrder(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -282,6 +291,8 @@ func TestCompensationOrder(t *testing.T) {
 	}
 }
 
+// TestIdempotencyKey proves unambiguous key formatting, stability of Key across
+// retries and crashes, and propagation of begin time, input, and prior outputs.
 func TestIdempotencyKey(t *testing.T) {
 	t.Run("keys differ across sagas and steps and encode unambiguously", func(t *testing.T) {
 		keys := []saga.Key{{Saga: "a", Step: 1}, {Saga: "a", Step: 2}, {Saga: "b", Step: 1}, {Saga: "a1", Step: 1}, {Saga: "a", Step: 11}, {Saga: "", Step: 0}}
@@ -369,6 +380,8 @@ func (p *probeStep) Do(c saga.Call, done func([]byte, error)) {
 }
 func (p *probeStep) Compensate(c saga.Call, done func(error)) { done(nil) }
 
+// TestPivotSemantics proves that the pivot retries past MaxAttempts on retryable
+// errors, aborts only on ErrPermanent, and never compensates steps at or past it.
 func TestPivotSemantics(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -436,6 +449,8 @@ func TestPivotSemantics(t *testing.T) {
 	})
 }
 
+// TestStepErrorFields proves that *StepError populates Saga, Step, Attempt,
+// Compensation, Error formatting, and Unwrap chaining.
 func TestStepErrorFields(t *testing.T) {
 	f := newFx(2, 2)
 	f.do[1] = []result{retry(false), permanent()}
@@ -466,6 +481,8 @@ func TestStepErrorFields(t *testing.T) {
 	}
 }
 
+// TestPermanentStopsRetry proves that ErrPermanent aborts immediately without
+// further attempts while retryable errors run up to Policy.MaxAttempts.
 func TestPermanentStopsRetry(t *testing.T) {
 	f := newFx(3, 3)
 	f.do[1] = []result{permanent(), retry(false), retry(false)}
@@ -488,6 +505,7 @@ func TestPermanentStopsRetry(t *testing.T) {
 	}
 }
 
+// TestSagaNotFound proves that Status returns ErrSagaNotFound for an unknown ID.
 func TestSagaNotFound(t *testing.T) {
 	clk := &manualClock{}
 	e := memEnv(newMemDisk(), clk)
@@ -500,6 +518,8 @@ func TestSagaNotFound(t *testing.T) {
 	}
 }
 
+// TestCodesRoundTrip proves that every sentinel in Codes encodes above
+// CodeAppMin and decodes back to a *RemoteError matching the original sentinel.
 func TestCodesRoundTrip(t *testing.T) {
 	table, err := env.NewCodeTable(saga.Codes()...)
 	if err != nil {
@@ -518,6 +538,9 @@ func TestCodesRoundTrip(t *testing.T) {
 	}
 }
 
+// TestEngineEdges proves engine validation, Begin/Recover error handling,
+// suspension on log write errors, custom prefixes, freeze semantics, duplicate
+// step-callback suppression, and per-step statistics.
 func TestEngineEdges(t *testing.T) {
 	newEng := func(t *testing.T, d *memDisk, cfg saga.Config, defs ...saga.Definition) (*saga.Engine, *manualClock) {
 		t.Helper()

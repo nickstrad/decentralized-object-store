@@ -8,6 +8,14 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// Bounds enforced by both the store write path (env.ErrTooLarge) and the
+// on-disk/object-list decoder (ErrMalformed):
+//   - MaxObjects: maximum objects per bucket (worst-case encoded list fits in sim.DefaultMaxMessage).
+//   - MaxKey: maximum object key length in bytes.
+//   - MaxValue: maximum object value length in bytes.
+//   - MaxName: maximum length in bytes for bucket names, saga IDs, locations, and writers.
+//   - MaxRegs: maximum concurrent migration registrations per bucket.
+//   - MaxBuckets: maximum buckets and maximum routing pointers stored per node.
 const (
 	MaxObjects = 4096
 	MaxKey     = 128
@@ -133,6 +141,8 @@ func appendObjs(b []byte, objs []KV) ([]byte, error) {
 	return b, nil
 }
 
+// readObjs decodes a length-prefixed object list and requires strictly ascending
+// keys so Store.opPut's binary-search invariant holds after reloads and copies.
 func readObjs(r *reader) []KV {
 	n := r.count("object count", MaxObjects)
 	var out []KV

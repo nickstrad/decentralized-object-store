@@ -39,6 +39,8 @@ func (w warmHarness) Build(seed int64, o BuildOptions) (*sim.Sim, Cluster, error
 	return s, cl, nil
 }
 
+// TestRunnerOnAWarmedUpCluster proves that Run times migrations relative to
+// s.Now() across all 78 cells when Harness.Build warms the cluster up to 25 s.
 func TestRunnerOnAWarmedUpCluster(t *testing.T) {
 	h := warmHarness{inner: ModelHarness(), until: env.Time(warmup)}
 	for _, c := range Cells() {
@@ -64,6 +66,8 @@ func TestRunnerOnAWarmedUpCluster(t *testing.T) {
 	}
 }
 
+// TestRunOptionsOverrideBoundSettleAndPolicy proves that non-zero Bound, Settle,
+// and Policy in RunOptions override defaults and scale injected failure counts.
 func TestRunOptionsOverrideBoundSettleAndPolicy(t *testing.T) {
 	h := ModelHarness()
 	cell := Cell{Step: 0, Kind: FailMidCompensation, Torn: true}
@@ -100,6 +104,8 @@ func TestRunOptionsOverrideBoundSettleAndPolicy(t *testing.T) {
 	}
 }
 
+// TestRunnerFaultsTouchOnlyTheMatrixSaga proves that matrix hooks and wrapped
+// steps pass foreign saga IDs through untouched without mutating cell state.
 func TestRunnerFaultsTouchOnlyTheMatrixSaga(t *testing.T) {
 	for _, c := range Cells() {
 		st := &cellState{cell: c, calls: make([]int, MigrationSteps), lastComp: MigrationSteps, policy: MatrixPolicy()}
@@ -147,6 +153,8 @@ func (nilSimHarness) Build(int64, BuildOptions) (*sim.Sim, Cluster, error) {
 	return nil, nil, env.ErrInvalidArgument
 }
 
+// TestRunnerSurvivesAHarnessWithoutASim proves that Run allocates a fallback
+// Sim and records the error when Harness.Build returns a nil *sim.Sim.
 func TestRunnerSurvivesAHarnessWithoutASim(t *testing.T) {
 	s := Run(nilSimHarness{}, Cells()[0], RunOptions{})(7)
 	if s == nil || !errors.Is(s.Err(), env.ErrInvalidArgument) {
@@ -172,6 +180,8 @@ func (d droppingHarness) Build(seed int64, o BuildOptions) (*sim.Sim, Cluster, e
 	return ModelHarness().Build(seed, o)
 }
 
+// TestRunnerFailsACellWhoseFaultNeverFired proves that Run fails with ErrCheck
+// whenever a harness omits Wrap or Hook and prevents a cell's fault from firing.
 func TestRunnerFailsACellWhoseFaultNeverFired(t *testing.T) {
 	for _, d := range []droppingHarness{{dropWrap: true}, {dropHook: true}} {
 		for _, c := range Cells() {
@@ -187,6 +197,8 @@ func TestRunnerFailsACellWhoseFaultNeverFired(t *testing.T) {
 	}
 }
 
+// TestRunnerFailsADoubleCellWithoutASecondCrash proves that every double-crash
+// cell fails with ErrCheck if its second crash is suppressed.
 func TestRunnerFailsADoubleCellWithoutASecondCrash(t *testing.T) {
 	for _, c := range Cells() {
 		if !c.Double {
@@ -222,6 +234,8 @@ func (h hookFilter) Build(seed int64, o BuildOptions) (*sim.Sim, Cluster, error)
 	return ModelHarness().Build(seed, o)
 }
 
+// TestScenarioDriversAcceptNilReports proves that NemesisRun and DuelRun run
+// cleanly when given a nil report pointer.
 func TestScenarioDriversAcceptNilReports(t *testing.T) {
 	np := NemesisParams{Start: env.Time(300 * time.Millisecond), Phases: 1, Chaos: time.Second, Heal: time.Second, MaxGap: 300 * time.Millisecond,
 		Converge: time.Minute, Writes: 2, WriteGap: 300 * time.Millisecond, Tick: 100 * time.Millisecond}
@@ -233,6 +247,8 @@ func TestScenarioDriversAcceptNilReports(t *testing.T) {
 	}
 }
 
+// TestCodesLieInTheSagaBlock proves that sagasim.Codes registers unique wire
+// codes in the 144..159 block and builds a valid env.CodeTable.
 func TestCodesLieInTheSagaBlock(t *testing.T) {
 	if codeBlockMin != 144 || codeBlockMax != 159 {
 		t.Fatalf("block %d..%d", codeBlockMin, codeBlockMax)
@@ -259,6 +275,9 @@ func TestCodesLieInTheSagaBlock(t *testing.T) {
 	}
 }
 
+// TestObjectListCodecHasNoCliff proves that encodeObjs/decodeObjs round-trip
+// up to MaxObjects within sim.DefaultMaxMessage and reject over-bound or
+// malformed inputs with env.ErrTooLarge or ErrMalformed.
 func TestObjectListCodecHasNoCliff(t *testing.T) {
 	for _, n := range []int{0, 1, overCliff, bigBucket, MaxObjects} {
 		objs := objects(n)
@@ -301,6 +320,8 @@ func TestObjectListCodecHasNoCliff(t *testing.T) {
 	}
 }
 
+// TestStoreReloadsAndCopiesABucketAboveTheOldLimit proves that a Store persists,
+// reloads across restart, and dumps a bucket holding 333 objects.
 func TestStoreReloadsAndCopiesABucketAboveTheOldLimit(t *testing.T) {
 	d := &mapDisk{blobs: map[string][]byte{}}
 	clk := &nopClock{}
@@ -330,6 +351,9 @@ func TestStoreReloadsAndCopiesABucketAboveTheOldLimit(t *testing.T) {
 	}
 }
 
+// TestStoreWritePathEnforcesTheBound proves that every store write operation
+// accepts up to MaxObjects, MaxKey, MaxValue, MaxName, MaxRegs, and MaxBuckets,
+// refuses past each bound with env.ErrTooLarge, and reloads cleanly at the cap.
 func TestStoreWritePathEnforcesTheBound(t *testing.T) {
 	d := &mapDisk{blobs: map[string][]byte{}}
 	clk := &nopClock{}
@@ -386,6 +410,8 @@ func TestStoreWritePathEnforcesTheBound(t *testing.T) {
 	}
 }
 
+// TestBuildRefusesAnUnstorableBucket proves that Build rejects Objects > MaxObjects
+// with env.ErrInvalidArgument.
 func TestBuildRefusesAnUnstorableBucket(t *testing.T) {
 	_, _, err := Build(1, Options{Stores: threeStores(), Source: "a", Objects: MaxObjects + 1, Policy: MatrixPolicy()})
 	if !errors.Is(err, env.ErrInvalidArgument) {
@@ -393,6 +419,8 @@ func TestBuildRefusesAnUnstorableBucket(t *testing.T) {
 	}
 }
 
+// TestMigrationOfABucketAboveTheOldLimit proves that buckets of 33 and 300
+// objects migrate cleanly even when the target store crashes and restarts.
 func TestMigrationOfABucketAboveTheOldLimit(t *testing.T) {
 	for _, n := range []int{overCliff, bigBucket} {
 		run := func(seed int64) *sim.Sim {

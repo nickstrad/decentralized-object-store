@@ -11,6 +11,8 @@ import (
 
 const ppm = 1_000_000
 
+// Policy controls step retry bounds, exponential backoff, jitter, and per-attempt
+// timeouts for an Engine.
 type Policy struct {
 	MaxAttempts int
 	BaseDelay   time.Duration
@@ -19,10 +21,13 @@ type Policy struct {
 	JitterPPM   int64
 }
 
+// DefaultPolicy returns a valid retry and timeout policy for general use.
 func DefaultPolicy() Policy {
 	return Policy{MaxAttempts: 5, BaseDelay: 50 * time.Millisecond, MaxDelay: 5 * time.Second, StepTimeout: 10 * time.Second, JitterPPM: 100_000}
 }
 
+// Validate checks that every Policy field is within its legal range, returning
+// env.ErrInvalidArgument otherwise.
 func (p Policy) Validate() error {
 	switch {
 	case p.MaxAttempts < 1:
@@ -37,6 +42,9 @@ func (p Policy) Validate() error {
 	return nil
 }
 
+// Backoff returns BaseDelay*2^(attempt-1) capped at MaxDelay, plus uniform
+// jitter in [0, delay*JitterPPM/1e6] drawn from r when JitterPPM > 0 and r != nil.
+// Arithmetic stays in integers and saturates at math.MaxInt64.
 func (p Policy) Backoff(attempt int, r *rand.Rand) time.Duration {
 	d := p.BaseDelay
 	for i := 1; i < attempt && d < p.MaxDelay; i++ {
@@ -52,6 +60,7 @@ func (p Policy) Backoff(attempt int, r *rand.Rand) time.Duration {
 	if p.JitterPPM <= 0 || r == nil {
 		return d
 	}
+	// Split d/ppm and d%ppm to avoid int64 overflow before dividing by ppm.
 	span := int64(d)/ppm*p.JitterPPM + int64(d)%ppm*p.JitterPPM/ppm
 	if span <= 0 {
 		return d

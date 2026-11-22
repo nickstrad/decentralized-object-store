@@ -10,6 +10,12 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 )
 
+// Matrix runner defaults and shape constants:
+//   - MigrationSteps: number of steps in the bucket-migration workflow (5).
+//   - MatrixObjects: default object count seeded by ModelHarness and NemesisRun.
+//   - MatrixCells: total failure-matrix cells returned by Cells (78).
+//   - MatrixBound: default virtual-time deadline from migration start to terminal state.
+//   - MatrixSettle: default post-terminal virtual-time settle period before checks run.
 const (
 	MigrationSteps = saga.MigrationSteps
 	MatrixObjects  = 8
@@ -22,12 +28,21 @@ const (
 	lostAfterPivot = 2
 )
 
+// MatrixPolicy returns the default saga.Policy used by Run and the scenario drivers.
 func MatrixPolicy() saga.Policy {
 	return saga.Policy{MaxAttempts: 3, BaseDelay: 50 * time.Millisecond, MaxDelay: time.Second, StepTimeout: 5 * time.Second, JitterPPM: 100_000}
 }
 
+// FailureKind identifies the fault injection mode of a matrix Cell.
 type FailureKind uint8
 
+// Failure injection modes tested across the migration workflow:
+//   - FailBeforeAction: step refuses with saga.ErrPermanent without acting.
+//   - FailAfterAction: step acts, then its callback is replaced with env.ErrTimeout.
+//   - FailMidCompensation: pivot refuses; named step's compensation acts then fails 2*MaxAttempts times.
+//   - CrashBeforeAction: coordinator freezes and crashes after appending RecIntent, before Sync.
+//   - CrashAfterAction: coordinator freezes and crashes after appending RecDone, before Sync.
+//   - CrashMidCompensation: pivot refuses; coordinator freezes and crashes after appending RecCompDone, before Sync.
 const (
 	FailBeforeAction FailureKind = iota + 1
 	FailAfterAction
@@ -37,6 +52,7 @@ const (
 	CrashMidCompensation
 )
 
+// String returns the canonical hyphenated name of k, or "kind-N" if unknown.
 func (k FailureKind) String() string {
 	switch k {
 	case FailBeforeAction:
@@ -63,6 +79,9 @@ func (k FailureKind) midComp() bool {
 	return k == FailMidCompensation || k == CrashMidCompensation
 }
 
+// Cell specifies one point in the failure matrix: target step index, fault kind,
+// whether crashes tear the log tail (Torn), and whether a second torn crash
+// fires on the first log append after restart (Double).
 type Cell struct {
 	Step   int
 	Kind   FailureKind
@@ -72,6 +91,7 @@ type Cell struct {
 
 var stepNames = [MigrationSteps]string{saga.StepAllocate, saga.StepCopy, saga.StepVerify, saga.StepFlip, saga.StepDeleteSource}
 
+// Name returns a stable subtest-friendly label for c.
 func (c Cell) Name() string {
 	step := "step" + strconv.Itoa(c.Step)
 	if c.Step >= 0 && c.Step < MigrationSteps {
@@ -89,6 +109,7 @@ func (c Cell) Name() string {
 	return n
 }
 
+// Want returns the terminal saga.State expected when c completes cleanly.
 func (c Cell) Want() saga.State {
 	switch {
 	case c.Kind.midComp():
@@ -101,6 +122,9 @@ func (c Cell) Want() saga.State {
 	return saga.StateCompleted
 }
 
+// Cells returns all 78 matrix cells covering every step, failure kind (with
+// mid-compensation cells for pre-pivot steps only), torn/untorn variants, and
+// double-crash variants for crash kinds.
 func Cells() []Cell {
 	var out []Cell
 	kinds := []FailureKind{FailBeforeAction, FailAfterAction, FailMidCompensation, CrashBeforeAction, CrashAfterAction, CrashMidCompensation}
@@ -123,12 +147,16 @@ func Cells() []Cell {
 	return out
 }
 
+// BuildOptions passes the effective policy, step wrapper, and engine config
+// hook from Run into Harness.Build.
 type BuildOptions struct {
 	Policy    saga.Policy
 	Wrap      func(saga.Definition) saga.Definition
 	Configure func(*saga.Config)
 }
 
+// Cluster is the narrow handle Run uses to drive and verify a migration on any
+// simulated cluster implementation.
 type Cluster interface {
 	Coordinator() env.NodeID
 	Begin(id saga.ID) error
@@ -138,12 +166,16 @@ type Cluster interface {
 	CheckCompensated() error
 }
 
+// Harness constructs a simulated cluster for Run. Build may advance the Sim's
+// clock to warm up cluster state before returning.
 type Harness interface {
 	Build(seed int64, o BuildOptions) (*sim.Sim, Cluster, error)
 }
 
 type modelHarness struct{}
 
+// ModelHarness returns a Harness backed by this package's three-store simulated
+// model cluster.
 func ModelHarness() Harness { return modelHarness{} }
 
 type modelCluster struct {
@@ -186,6 +218,8 @@ func (c *modelCluster) LogName(id saga.ID) string { return saga.DefaultPrefix + 
 func (c *modelCluster) CheckMoved() error         { return c.m.CheckMoved(c.in) }
 func (c *modelCluster) CheckCompensated() error   { return c.m.CheckCompensated(c.in) }
 
+// RunOptions customizes Run. Zero Bound, Settle, and Policy default to
+// MatrixBound, MatrixSettle, and MatrixPolicy().
 type RunOptions struct {
 	Configure func(*saga.Config)
 	Report    *Report
@@ -215,6 +249,7 @@ func (o RunOptions) policy() saga.Policy {
 	return o.Policy
 }
 
+// Report records timing, fault counts, and terminal status from one matrix Run.
 type Report struct {
 	State     saga.State
 	Outcome   string
@@ -281,6 +316,8 @@ func (st *cellState) crash(torn bool) {
 	})
 }
 
+// hook intercepts log appends for matrixSaga only, freezing and scheduling a
+// coordinator crash at the cell's configured record boundary or recovery append.
 func (st *cellState) hook(p saga.Point) bool {
 	c := st.cell
 	if p.Saga != matrixSaga {
@@ -329,6 +366,8 @@ func (s *injStep) Do(c saga.Call, done func([]byte, error)) {
 		st.note(fmt.Errorf("sagasim: step %d ran after the end record: %w", s.i, ErrCheck))
 	}
 	switch {
+	// Keep FailBeforeAction sticky up to the pivot so a torn abort record still
+	// retries into the same definitive refusal rather than succeeding.
 	case cell.Kind == FailBeforeAction && s.i == cell.Step && (!st.failFired || s.i <= saga.MigrationPivot):
 		st.failFired = true
 		done(nil, injected("refusal", saga.ErrPermanent))
@@ -392,6 +431,11 @@ func (st *cellState) wrap(d saga.Definition) saga.Definition {
 	return d
 }
 
+// Run returns a deterministic simulation function for one matrix Cell on h.
+// It starts the migration 20 ms after h.Build returns, waits for a terminal
+// state within the effective bound plus settle window, asserts the cell's fault
+// actually fired and terminal checks pass, and records any failure in Sim.Err
+// wrapped with ErrCheck.
 func Run(h Harness, c Cell, o RunOptions) func(seed int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
 		st := &cellState{cell: c, policy: o.policy(), calls: make([]int, MigrationSteps), lastComp: MigrationSteps}
@@ -473,6 +517,8 @@ func (st *cellState) check(cl Cluster, sta saga.Status) error {
 	return cl.CheckCompensated()
 }
 
+// injected verifies that every fault required by the cell actually fired, so a
+// harness that omits Wrap or Hook cannot pass silently.
 func (st *cellState) injected() error {
 	c := st.cell
 	switch {

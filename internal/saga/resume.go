@@ -8,8 +8,15 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// Action is the next transition planned by Resume or the engine loop for a saga.
 type Action uint8
 
+// Planned engine actions returned in Snapshot.Next:
+//   - ActNone: the saga is terminal and needs no further work.
+//   - ActDo: log an intent and execute the next attempt of Snapshot.Step.
+//   - ActAbort: log an abort record and switch to compensation.
+//   - ActCompensate: log a compensation intent and run Compensate for Snapshot.Step.
+//   - ActEnd: log the terminal record with Snapshot.End.
 const (
 	ActNone Action = iota
 	ActDo
@@ -18,6 +25,9 @@ const (
 	ActEnd
 )
 
+// Snapshot is the pure state reconstructed by folding a saga's log records.
+// Next holds the planned action; when Next is ActEnd, End holds the terminal
+// State to record.
 type Snapshot struct {
 	Def     string
 	Begun   env.Time
@@ -43,6 +53,9 @@ func (sh shape) validate() error {
 	return nil
 }
 
+// abortFrom returns the highest step to compensate when aborting at step.
+// A pre-pivot failure may have partially acted, so compensation includes step;
+// a definitive pivot failure did not apply, so compensation starts at pivot-1.
 func (sh shape) abortFrom(step int) int {
 	if step < sh.pivot {
 		return step
@@ -50,6 +63,10 @@ func (sh shape) abortFrom(step int) int {
 	return sh.pivot - 1
 }
 
+// Resume replays recs against a definition of steps with pivot index and
+// pre-pivot attempt bound maxAttempts, returning the reconstructed Snapshot and
+// its planned Next action. It returns env.ErrInvalidArgument for an invalid
+// shape and ErrLogCorrupt if recs is empty or contains an illegal transition.
 func Resume(recs []Record, steps, pivot, maxAttempts int) (Snapshot, error) {
 	sh := shape{steps: steps, pivot: pivot, maxAttempts: maxAttempts}
 	if err := sh.validate(); err != nil {
@@ -72,6 +89,8 @@ func bad(why string) error {
 	return fmt.Errorf("%s: %w", why, ErrLogCorrupt)
 }
 
+// apply validates and folds one log record into s; both Resume and Engine.write
+// use it so illegal transitions are rejected before reaching disk.
 func (s *Snapshot) apply(r Record, sh shape) error {
 	if s.State == 0 {
 		if r.Kind != RecBegin {
@@ -93,6 +112,7 @@ func (s *Snapshot) apply(r Record, sh shape) error {
 		if s.State != StateRunning || r.Step != s.Step || !s.Open || r.Attempt != s.Attempt {
 			return bad(fmt.Sprintf("done %d/%d at step %d attempt %d", r.Step, r.Attempt, s.Step, s.Attempt))
 		}
+		// Clip before appending so a trial snapshot copy never aliases the live slice backing array.
 		s.Outputs = append(slices.Clip(s.Outputs), bytes.Clone(r.Data))
 		s.Step, s.Attempt, s.Open = s.Step+1, 0, false
 	case RecAbort:
@@ -123,6 +143,8 @@ func (s *Snapshot) apply(r Record, sh shape) error {
 	return nil
 }
 
+// plan derives the next action from s alone; attempt counts are durable in the
+// log, so the pre-pivot retry bound holds across crashes.
 func (s *Snapshot) plan(sh shape) {
 	s.Next, s.End = ActNone, 0
 	switch s.State {

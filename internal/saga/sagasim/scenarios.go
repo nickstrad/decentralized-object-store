@@ -10,6 +10,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 )
 
+// NemesisKinds returns sim.ChaosKinds excluding bit-rot, wipe-disk, and
+// wipe-rejoin, because coordinator logs are local and unrecoverable disk loss
+// leaves a saga broken or unfinished by design.
 func NemesisKinds() []sim.FaultKind {
 	var out []sim.FaultKind
 	for _, k := range sim.ChaosKinds() {
@@ -22,6 +25,8 @@ func NemesisKinds() []sim.FaultKind {
 	return out
 }
 
+// NemesisParams configures a chained-migration chaos run in NemesisRun.
+// A zero Objects defaults to MatrixObjects.
 type NemesisParams struct {
 	Start    env.Time
 	Phases   int
@@ -35,6 +40,7 @@ type NemesisParams struct {
 	Objects  int
 }
 
+// NemesisReport captures summary counts and settle timing from NemesisRun.
 type NemesisReport struct {
 	Sagas       int
 	Completed   int
@@ -50,8 +56,14 @@ func threeStores() []sim.NodeSpec {
 	return []sim.NodeSpec{{ID: "a", Region: "ra"}, {ID: "b", Region: "rb"}, {ID: "c", Region: "rc"}}
 }
 
+// NemesisRun returns a deterministic simulation function that chains bucket
+// migrations around three stores while a client writes concurrently under
+// nemesis chaos, verifying convergence and write durability after healing.
+// res may be nil; each invocation uses its own report when res is nil so the
+// returned closure is safe to call concurrently.
 func NemesisRun(p NemesisParams, res *NemesisReport) func(seed int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
+		// Shadow res per invocation so concurrent callers with nil res never race.
 		res := res
 		if res == nil {
 			res = &NemesisReport{}
@@ -146,6 +158,7 @@ func NemesisRun(p NemesisParams, res *NemesisReport) func(seed int64) *sim.Sim {
 	}
 }
 
+// DuelParams configures the competing-migrations partition scenario in DuelRun.
 type DuelParams struct {
 	Converge     time.Duration
 	MaxStagger   time.Duration
@@ -153,6 +166,8 @@ type DuelParams struct {
 	MaxPartition time.Duration
 }
 
+// DuelReport captures the terminal states, outcomes, winning pointer location,
+// and heal/finish times from DuelRun.
 type DuelReport struct {
 	States   [2]saga.State
 	Outcomes [2]string
@@ -161,8 +176,13 @@ type DuelReport struct {
 	Finished env.Time
 }
 
+// DuelRun returns a deterministic simulation function in which two coordinators
+// migrate the same bucket to different targets across a network partition,
+// verifying via CheckDuel that after healing one location holds the bucket, all
+// pointer replicas agree, and the loser cleans up its target. res may be nil.
 func DuelRun(p DuelParams, res *DuelReport) func(seed int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
+		// Shadow res per invocation so concurrent callers with nil res never race.
 		res := res
 		if res == nil {
 			res = &DuelReport{}

@@ -44,6 +44,10 @@ func storedObjs(t *testing.T, s *Store) []KV {
 	return bk.Objs
 }
 
+// TestStoreKeepsObjectsSortedPastOneThousand proves that Store keeps object
+// lists sorted for seeds of 2000 and MaxObjects-1 objects in any order, updates
+// overwrites in place, collapses duplicate seed keys, and rejects unsorted or
+// duplicate keys on decode with ErrMalformed.
 func TestStoreKeepsObjectsSortedPastOneThousand(t *testing.T) {
 	if got := objects(MaxObjects); !slices.IsSortedFunc(got, func(a, b KV) int { return strings.Compare(a.Key, b.Key) }) {
 		t.Fatal("objects(MaxObjects) is not sorted")
@@ -95,6 +99,8 @@ func TestStoreKeepsObjectsSortedPastOneThousand(t *testing.T) {
 	}
 }
 
+// TestRunClosuresShareNoReport proves that one NemesisRun or DuelRun closure
+// created with a nil report can be invoked concurrently without racing.
 func TestRunClosuresShareNoReport(t *testing.T) {
 	np := NemesisParams{Start: env.Time(300 * time.Millisecond), Phases: 1, Chaos: time.Second, Heal: time.Second, MaxGap: 300 * time.Millisecond,
 		Converge: time.Minute, Writes: 2, WriteGap: 300 * time.Millisecond, Tick: 100 * time.Millisecond}

@@ -14,6 +14,13 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/saga"
 )
 
+// Sentinel errors returned by model stores, Ops, and cluster checks:
+//   - ErrBusy: source cannot be sealed while another saga is registered or not live,
+//     or a relayed copy was overtaken by a later bucket operation.
+//   - ErrMoved: a client put targeted a store that does not hold the bucket live.
+//   - ErrUnsettled: routing pointer replicas returned different locations.
+//   - ErrCheck: a post-run or invariant verification check failed.
+//   - ErrMalformed: an RPC message, object list, or persisted store blob failed decoding.
 var (
 	ErrBusy      = errors.New("sagasim: bucket busy")
 	ErrMoved     = errors.New("sagasim: bucket not writable here")
@@ -22,6 +29,7 @@ var (
 	ErrMalformed = errors.New("sagasim: malformed message")
 )
 
+// Wire status codes for sagasim sentinels within the saga 144..159 block.
 const (
 	CodeBusy      env.Code = env.CodeAppMin + 88
 	CodeMoved     env.Code = env.CodeAppMin + 89
@@ -29,6 +37,7 @@ const (
 	CodeMalformed env.Code = env.CodeAppMin + 91
 )
 
+// Codes returns saga.Codes extended with this package's wire error mappings.
 func Codes() []env.CodeEntry {
 	return append(saga.Codes(),
 		env.CodeEntry{Code: CodeBusy, Err: ErrBusy},
@@ -70,6 +79,7 @@ const (
 	opPut
 )
 
+// KV is one key/value object stored in a model bucket.
 type KV struct {
 	Key string
 	Val []byte
@@ -131,6 +141,8 @@ func decodeFields(b []byte) (byte, [][]byte, error) {
 	return op, out, nil
 }
 
+// Root returns the SHA-256 digest over objs in slice order, used as the model's
+// Merkle root for copy and catch-up verification.
 func Root(objs []KV) []byte {
 	h := sha256.New()
 	for _, o := range objs {
@@ -176,6 +188,8 @@ func (st *storeState) pointer(bucket string) (pointerState, int) {
 	return pointerState{Bucket: bucket}, -1
 }
 
+// newer defines the total LWW order for routing pointers: timestamp, then
+// writer ID, then target location so equal stamps still converge deterministically.
 func newer(a, b pointerState) bool {
 	if a.TS != b.TS {
 		return a.TS > b.TS
@@ -186,12 +200,17 @@ func newer(a, b pointerState) bool {
 	return a.Loc > b.Loc
 }
 
+// BucketSeed specifies the initial location and objects of a bucket loaded by
+// NewStore when a store starts with an empty disk.
 type BucketSeed struct {
 	Name string
 	Loc  env.NodeID
 	Objs []KV
 }
 
+// Store is a simulated storage node hosting bucket state and a routing-pointer
+// replica, persisted as one synced blob on env.Disk. Operations are idempotent
+// per saga ID, and two-hop copies are fenced by a per-bucket generation counter.
 type Store struct {
 	e        env.Env
 	seeds    []BucketSeed
@@ -203,15 +222,18 @@ type Store struct {
 	fenced   int
 }
 
+// NewStore returns a process factory that creates a Store initialized with seeds.
 func NewStore(seeds []BucketSeed) func(env.Env) env.Process {
 	return func(e env.Env) env.Process { return &Store{e: e, seeds: seeds, gens: map[string]uint64{}} }
 }
 
+// fence advances bucket's generation so any in-flight copyFrom reply is rejected.
 func (s *Store) fence(bucket string) uint64 {
 	s.gens[bucket]++
 	return s.gens[bucket]
 }
 
+// Start loads persisted store state from disk, or initializes it from seeds.
 func (s *Store) Start() { s.load() }
 
 func (s *Store) load() {
@@ -242,6 +264,8 @@ func (s *Store) load() {
 	}
 }
 
+// sortedObjs returns a key-sorted copy of objs with duplicate keys collapsed
+// (last entry wins) so opPut's binary search holds for any seed order.
 func sortedObjs(objs []KV) []KV {
 	out := slices.Clone(objs)
 	slices.SortStableFunc(out, func(a, b KV) int { return strings.Compare(a.Key, b.Key) })
@@ -272,8 +296,11 @@ func (s *Store) persist() error {
 	return s.e.Disk.Sync(stateBlob)
 }
 
+// OnDatagram ignores datagrams; Store communicates only via requests.
 func (s *Store) OnDatagram(env.NodeID, []byte) {}
 
+// EncodeState returns a deterministic digest input for s's volatile and
+// persisted state.
 func (s *Store) EncodeState() []byte {
 	b := []byte{0}
 	if s.loaded {
@@ -293,6 +320,8 @@ func permanent(format string, args ...any) error {
 	return fmt.Errorf("sagasim: "+format+": %w", append(args, saga.ErrPermanent)...)
 }
 
+// OnRequest decodes and executes one store RPC, persisting state before replying
+// on any mutation. While loading, all requests fail retryably with env.ErrIO.
 func (s *Store) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	s.served++
 	if !s.loaded {
@@ -396,6 +425,8 @@ func (s *Store) handle(op byte, f [][]byte) ([]byte, bool, error) {
 		if len(bk.Objs) == 0 {
 			s.st.drop(name)
 		} else {
+			// Leave un-discarded objects visible as retired orphans so copy
+			// compensation is required and cannot be masked by Unclaim.
 			bk.Status, bk.Owner = statusRetired, ""
 		}
 		return nil, true, nil
@@ -489,6 +520,9 @@ func (s *Store) handle(op byte, f [][]byte) ([]byte, bool, error) {
 	return nil, false, fmt.Errorf("sagasim: op %d: %w", op, ErrMalformed)
 }
 
+// copyFrom pulls the bucket's objects from source node from and stages them
+// locally, fencing the two-hop reply against concurrent discard, release,
+// claim, promote, or newer copy operations.
 func (s *Store) copyFrom(name, sagaID string, from env.NodeID, reply env.Reply) {
 	owned := func() *bucketState {
 		bk := s.st.bucket(name)

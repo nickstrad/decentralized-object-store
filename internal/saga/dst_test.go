@@ -34,6 +34,10 @@ const (
 	duelMaxPart     = 6 * time.Second
 )
 
+// TestMigrationFailurePointsDST proves across all 78 failure-matrix cells that
+// every migration ends deterministically either Completed (bucket moved, root
+// verified, pointer flipped) or Compensated (zero orphans, pointer unchanged)
+// within MatrixBound.
 func TestMigrationFailurePointsDST(t *testing.T) {
 	h := sagasim.ModelHarness()
 	cells := sagasim.Cells()
@@ -58,6 +62,9 @@ func TestMigrationFailurePointsDST(t *testing.T) {
 	}
 }
 
+// TestMatrixCellsCoverEveryFailurePoint proves that sagasim.Cells has no
+// duplicates and includes every step and failure-kind combination (with
+// mid-compensation cells restricted to pre-pivot steps).
 func TestMatrixCellsCoverEveryFailurePoint(t *testing.T) {
 	seen := map[string]bool{}
 	for _, c := range sagasim.Cells() {
@@ -91,6 +98,10 @@ func TestMatrixCellsCoverEveryFailurePoint(t *testing.T) {
 	}
 }
 
+// TestCanarySkippedCompensation plants saga.PlantSkippedCompensation to skip
+// step 1 (copy) or step 0 (allocate) compensation without calling Compensate,
+// proving the matrix checks catch the leaked orphans or claim with ErrCheck
+// while skipping verify's no-op compensation passes.
 func TestCanarySkippedCompensation(t *testing.T) {
 	h := sagasim.ModelHarness()
 	cell := sagasim.Cell{Step: saga.MigrationPivot, Kind: sagasim.FailBeforeAction}
@@ -122,6 +133,10 @@ func TestCanarySkippedCompensation(t *testing.T) {
 	}
 }
 
+// TestMigrationUnderNemesisDST proves that chained bucket migrations under
+// network, pause, crash, and read-error chaos converge after healing with the
+// bucket in exactly one location, more than 32 objects stored, and zero lost
+// acknowledged writes.
 func TestMigrationUnderNemesisDST(t *testing.T) {
 	p := sagasim.NemesisParams{
 		Start: nemesisStart, Phases: nemesisPhases, Chaos: nemesisChaos, Heal: nemesisHeal, MaxGap: nemesisMaxGap,
@@ -144,6 +159,9 @@ func TestMigrationUnderNemesisDST(t *testing.T) {
 	})
 }
 
+// TestDuelingMigrationsDST proves that two coordinators migrating the same
+// bucket to different targets across a partition converge after healing to one
+// live location, an agreed pointer across all replicas, and a cleaned-up loser.
 func TestDuelingMigrationsDST(t *testing.T) {
 	p := sagasim.DuelParams{Converge: duelConverge, MaxStagger: duelMaxStagger, MinPartition: duelMinPart, MaxPartition: duelMaxPart}
 	winners := map[string]int{}
@@ -159,6 +177,9 @@ func TestDuelingMigrationsDST(t *testing.T) {
 	t.Logf("DUEL winners %v", winners)
 }
 
+// TestModelClusterReportsBadInput proves that invalid migration inputs
+// (self-move, missing bucket, unknown target) compensate cleanly without
+// disturbing the existing bucket.
 func TestModelClusterReportsBadInput(t *testing.T) {
 	tests := []struct {
 		name string
@@ -206,6 +227,8 @@ func TestModelClusterReportsBadInput(t *testing.T) {
 	}
 }
 
+// TestMigrationInputCodec proves round-trip encoding and env.ErrInvalidArgument
+// rejection of truncated, trailing, or semantically invalid MigrationInputs.
 func TestMigrationInputCodec(t *testing.T) {
 	in := saga.MigrationInput{Bucket: "b1", From: "x", To: "y"}
 	out, err := saga.DecodeMigrationInput(in.Encode())

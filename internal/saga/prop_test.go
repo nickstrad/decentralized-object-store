@@ -292,6 +292,10 @@ func checkTerminal(t *rapid.T, s *sim.Sim, f *fx, sc scenario) {
 	}
 }
 
+// TestPropTerminalState proves that under random step outcomes (including
+// pre-pivot retry exhaustion and post-pivot ErrPermanent) and up to four
+// hook-placed or timed torn/untorn crashes, the engine reaches the same terminal
+// state, side effects, and compensation order as the reference model.
 func TestPropTerminalState(t *testing.T) {
 	var exhausted, postPerm int
 	rapid.Check(t, func(t *rapid.T) {
@@ -316,6 +320,8 @@ func TestPropTerminalState(t *testing.T) {
 	}
 }
 
+// TestPropNoStepAfterTerminal proves that no forward step or compensation runs
+// once RecEnd is durable, including under slow callbacks and late torn crashes.
 func TestPropNoStepAfterTerminal(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		sc := drawScenario(t)
@@ -455,6 +461,9 @@ func sameDisk(a, b map[string][]byte) bool {
 	return true
 }
 
+// TestPropRecoveryIdempotent proves that recovering twice from any byte prefix
+// of any valid log produces the same durable disk, status, and first planned
+// action as recovering once.
 func TestPropRecoveryIdempotent(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		steps := rapid.IntRange(1, 4).Draw(t, "steps")
@@ -515,6 +524,10 @@ func TestPropRecoveryIdempotent(t *testing.T) {
 	})
 }
 
+// FuzzSagaLogRecover proves that arbitrary byte slices never panic DecodeLog,
+// Resume, or Engine.Recover: every input either returns ErrLogCorrupt/
+// ErrInvalidArgument without modifying disk, deletes an empty/torn-only log, or
+// preserves the valid prefix and finishes cleanly.
 func FuzzSagaLogRecover(f *testing.F) {
 	recs, blob := sampleLog(f)
 	f.Add([]byte{})
