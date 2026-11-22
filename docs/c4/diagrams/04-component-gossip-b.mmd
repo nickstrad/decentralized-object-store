@@ -1,7 +1,9 @@
 %% draw-visual: -x 4 -y 1 -p 0
 graph LR
   PROBE[Probe] -->|3| INDIRECT[Indirect probe]
-  INDIRECT -->|5| SUSP[Suspicion state machine]
-  SUSP -->|7| DISSEM[Piggybacked dissemination]
-  PROBE -->|4| SUSP
+  PROBE -->|4| SUSP[Suspicion state machine]
+  PROBE -->|16| DISSEM[Piggybacked dissemination]
   PROBE -->|9| ENV[internal/env]
+  PROBE -->|26| JOIN[Join and leave]
+  JOIN -->|12| FSYNC[Full-state sync]
+  FSYNC -->|20| WIRE[Wire codec]

@@ -1,0 +1,10 @@
+sequenceDiagram
+    participant A as Prober A
+    participant H as Helper H
+    participant T as Target T
+    A--xT: Ping(seq=7) lost
+    Note over A: ProbeTimeout (400ms)
+    A->>H: PingReq(7, T)
+    H->>T: Ping(seq=12)
+    T->>H: Ack(seq=12)
+    H->>A: Ack(seq=7)

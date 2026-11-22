@@ -2,7 +2,10 @@
 graph LR
   JOIN[Join and leave] -->|1| VIEW[Membership view]
   PROBE[Probe] -->|2| VIEW
+  INDIRECT[Indirect probe] -->|5| VIEW
   SUSP[Suspicion state machine] -->|6| VIEW
   FSYNC[Full-state sync] -->|8| VIEW
+  DISSEM[Piggybacked dissemination] -->|15| VIEW
   STORAGE[Storage engine] -->|10| VIEW
   CRDT[CRDT metadata] -->|11| VIEW
+  VIEW -->|13| SUSP2[Suspicion state machine]

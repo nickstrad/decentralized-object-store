@@ -9,6 +9,13 @@
       "status": "published"
     },
     {
+      "n": 2,
+      "slug": "swim-gossip",
+      "title": "SWIM Gossip Membership",
+      "file": "chapters/02-swim-gossip.md",
+      "status": "published"
+    },
+    {
       "n": 3,
       "slug": "reed-solomon-erasure-coding",
       "title": "Reed-Solomon Erasure Coding",

@@ -1,0 +1,7 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  DISSEM[Piggybacked dissemination] -->|21| ENV[internal/env]
+  FSYNC[Full-state sync] -->|22| ENV
+  SUSP[Suspicion state machine] -->|23| ENV
+  INDIRECT[Indirect probe] -->|24| ENV
+  JOIN[Join and leave] -->|25| ENV

@@ -14,16 +14,16 @@ is `pgregory.net/rapid`, restricted to test files and checked by a gate.
 
 ## Current status
 
-The foundation tooling, deterministic simulator, Reed-Solomon erasure coding
-with the local chunk store, and the Saga engine with bucket migration are built,
-along with chapters 1, 3, and 6 of the book. Each remaining building block lands
-in its own chunk together with a book chapter.
+The foundation tooling, deterministic simulator, SWIM gossip membership,
+Reed-Solomon erasure coding with the local chunk store, and the Saga engine with
+bucket migration are built, along with chapters 1, 2, 3, and 6 of the book. Each
+remaining building block lands in its own chunk together with a book chapter.
 
 | Building block | Status | Scope |
 | --- | --- | --- |
 | Foundation | Built | Docker environment (Go 1.26.11), landing gates (G0–G6), gate canaries, book scaffold, target C4 diagrams, site |
 | Deterministic simulator | Built | Environment interfaces (`internal/env`), single-threaded discrete-event simulator (`internal/sim`), sweep harness (`internal/sim/simtest`), and `cmd/objsim` |
-| SWIM gossip membership | Planned (next) | Failure detection and membership dissemination |
+| SWIM gossip membership | Built | Direct and indirect probing, suspicion with incarnation refutation, piggybacked gossip, clean leave, bounded tombstones, and push-pull partition-heal sync (`internal/gossip`) |
 | Reed-Solomon erasure coding | Built | GF(2^8) Cauchy codec (`internal/erasure`, 4+2 default), checksummed chunk store, striping, manifests, region-aware placement, and striped PUT/GET node (`internal/storage`) |
 | Merkle-tree anti-entropy | Planned | Tree diffing and background repair |
 | OCC metadata | Planned | ETags, conditional writes, version vectors to detect concurrency, and last-writer-wins with every discarded write counted and logged |
@@ -100,6 +100,7 @@ the owning gate to go red for the right reason.
 - **The Book:** [book/manifest.json](book/manifest.json) is the table of
   contents; chapters live in `book/chapters/`. Published chapters: Chapter 1,
   [Deterministic Simulation Testing](book/chapters/01-deterministic-simulation.md),
+  Chapter 2, [SWIM Gossip Membership](book/chapters/02-swim-gossip.md),
   Chapter 3,
   [Reed-Solomon Erasure Coding](book/chapters/03-reed-solomon-erasure-coding.md),
   and Chapter 6, [Sagas](book/chapters/06-sagas.md).
