@@ -423,10 +423,9 @@ bound stays 20 s). Default `go test ./internal/saga/...` about 3 s (both package
 base-1 500-seed DST sweep of `internal/saga` 55.9 s (59 s wall with the container).
 
 **Not done, and why:**
-- The decoder does not require object keys to be sorted and unique; every writer keeps
-  them sorted (`opPut` inserts in order, seeds are generated sorted), and the root is
-  computed over the list as stored, so an unsorted list could only come from a bug the
-  checks would already catch.
+- (Superseded by "REVIEW-2 nits" below: the store now sorts seeds on load and the
+  decoder rejects object keys that are not strictly ascending. The earlier claim that
+  seeds were generated sorted was false above 1,000 objects.)
 - A pointer flip refused for exceeding `MaxBuckets` at the pivot would be retried
   forever; no test creates more than one migrated bucket per store, and the bound
   exists so the state stays readable, not as a product limit.
@@ -461,3 +460,33 @@ Gate wall time 8 min 4 s. Also run before the gate, all in the dev container:
 packages ok). No `panic(` added, no panic-allowlist line, no detlint exemption. Errors
 intentionally ignored: unchanged from the list above. The only commit after the gated one
 adds this paragraph.
+
+## REVIEW-2 nits
+
+1. **Unsorted object lists past 1,000 seeded objects.** `objects(n)` used `o%03d`, so
+   for n > 1000 the keys were not sorted and `opPut`'s binary search could miss an
+   existing key, duplicating it or refusing an overwrite at the bound. Test (written
+   first, failed on the old code): `TestStoreKeepsObjectsSortedPastOneThousand` in
+   `internal/saga/sagasim/review2_test.go` — seeds of 2,000 objects (helper keys, and
+   unpadded `o%d` keys in reverse order) keep a sorted list, overwrites of `o1000`,
+   `o500` and the last key replace in place (count stays 2,000); a seed of
+   `MaxObjects-1` unpadded keys accepts exactly one new key, accepts an overwrite at the
+   bound, refuses the next new key with `env.ErrTooLarge`, and stays at `MaxObjects`;
+   duplicate seed keys collapse to one (the later wins); an encoded list with keys out
+   of order or repeated decodes as `ErrMalformed`. Fix: sortedness is now a store
+   guarantee, not a helper property — `Store.load` builds seeded lists with
+   `sortedObjs` (stable sort by key, later duplicate wins), and `readObjs` (used by the
+   disk-state decoder and by `decodeObjs` for copies) rejects keys that are not strictly
+   ascending; `opPut` is the only other writer and inserts in order. `objects(n)` now
+   formats `o%04d`, sorted up to 9,999 > `MaxObjects`.
+2. **Shared report in `NemesisRun`/`DuelRun`.** With a nil report the closure assigned
+   the captured parameter, so concurrent calls of one closure raced. Test:
+   `TestRunClosuresShareNoReport` runs one `NemesisRun(p, nil)` and one
+   `DuelRun(p, nil)` closure from four goroutines each under `-race` (detlint skips
+   `_test.go` files, so goroutines are allowed there); it reported a race on the old
+   code. Fix: each invocation shadows the report (`res := res`) before defaulting it.
+
+Run in the dev container after the fix: `gofmt -l .` (empty), `go vet ./...` (ok),
+`go test -count=1 ./internal/saga/...` (ok, 3.0 s / 2.2 s), the same with `-race` (ok,
+12.0 s each), `go test -count=1 ./internal/saga -rapid.checks=2000` (ok, 5.1 s;
+`sagasim` has no rapid flag). Full gate not run here (orchestrator runs it).
