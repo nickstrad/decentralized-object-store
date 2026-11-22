@@ -2,6 +2,7 @@ package node
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -473,6 +474,11 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 
 func (n *Node) serveStorage(from env.NodeID, body []byte, reply env.Reply) {
 	op, id, blob, derr := storage.DecodeShardRequest(body)
+	if derr == nil && op == storage.OpDeleteShard {
+		n.stats.Malformed++
+		reply(nil, fmt.Errorf("node %s: shard delete from %s: shards are deleted only by collection or purge: %w", n.e.ID, from, ErrMalformed))
+		return
+	}
 	var sum [32]byte
 	if derr == nil && op == storage.OpPutShard {
 		sum = storage.BlobChecksum(blob)
@@ -485,8 +491,6 @@ func (n *Node) serveStorage(from env.NodeID, body []byte, reply env.Reply) {
 					if err := inv.actual.Set(id.BlobName(), merkle.Hash(sum)); err != nil {
 						n.logf("inventory %s: %v", id.BlobName(), err)
 					}
-				case storage.OpDeleteShard:
-					inv.actual.Delete(id.BlobName())
 				}
 			}
 		}

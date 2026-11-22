@@ -207,3 +207,36 @@ func TestAWriteWhoseShardsWereCollectedAsOrphansIsRecordedLost(t *testing.T) {
 	}
 	_ = fmt.Sprint
 }
+
+func TestANodeRefusesShardDeletesOverTheWire(t *testing.T) {
+	h := smallCluster(t, 1)
+	n := h.node(h.ids[0])
+	if err := n.CreateBucket(storage.BucketSpec{Name: "w"}); err != nil {
+		t.Fatal(err)
+	}
+	oi, err := h.syncPut(t, h.ids[0], storage.PutRequest{Bucket: "w", Key: "k", Data: make([]byte, 100)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var holder env.NodeID
+	var name string
+	for _, id := range h.ids {
+		if names := shardsOf(h, id, oi.Version); len(names) > 0 {
+			holder, name = id, names[0]
+			break
+		}
+	}
+	sid, err := storage.ParseBlobName(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got error
+	replied := false
+	h.node(holder).OnRequest(h.ids[2], append([]byte{2}, storage.EncodeShardRequest(storage.OpDeleteShard, sid, nil)...), func(_ []byte, err error) { got, replied = err, true })
+	if err := h.s.RunUntilConverged(h.s.Now().Add(time.Second), func() bool { return replied }); err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || len(shardsOf(h, holder, oi.Version)) == 0 {
+		t.Fatalf("a shard delete over the wire was served (%v); the shard is gone: %v", got, len(shardsOf(h, holder, oi.Version)) == 0)
+	}
+}
