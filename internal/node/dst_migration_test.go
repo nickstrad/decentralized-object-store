@@ -183,6 +183,7 @@ func (c *nodeCluster) CheckMoved() error       { return c.checkAt(migTo, migFrom
 func (c *nodeCluster) CheckCompensated() error { return c.checkAt(migFrom, migTo) }
 
 func TestClusterMigrationFailurePointsDST(t *testing.T) {
+	t.Parallel()
 	cells := sagasim.Cells()
 	if len(cells) != sagasim.MatrixCells {
 		t.Fatalf("%d cells, want %d", len(cells), sagasim.MatrixCells)

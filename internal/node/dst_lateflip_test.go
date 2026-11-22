@@ -177,7 +177,8 @@ func lateFlipRun(res *lateResult, isolate bool) func(seed int64) *sim.Sim {
 }
 
 func TestMigrationHoldsAWriteAcknowledgedJustBeforeTheFlipDST(t *testing.T) {
-	simtest.Sweep(t, func(t *testing.T, seed int64) {
+	t.Parallel()
+	sweepSharded(t, func(t *testing.T, seed int64) {
 		var res lateResult
 		simtest.RequireDeterministic(t, seed, lateFlipRun(&res, false))
 		if !res.committedBeforeRoute {
@@ -187,7 +188,8 @@ func TestMigrationHoldsAWriteAcknowledgedJustBeforeTheFlipDST(t *testing.T) {
 }
 
 func TestMigrationLateWriteOfAnIsolatedPeerStaysReadableDST(t *testing.T) {
-	simtest.Sweep(t, func(t *testing.T, seed int64) {
+	t.Parallel()
+	sweepSharded(t, func(t *testing.T, seed int64) {
 		var res lateResult
 		simtest.RequireDeterministic(t, seed, lateFlipRun(&res, true))
 		if !res.committedBeforeRoute {

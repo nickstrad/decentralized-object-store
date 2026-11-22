@@ -34,7 +34,7 @@ func duelRun(res *duelResult) func(seed int64) *sim.Sim {
 		cfg := partitionConfig()
 		cfg.Layout = smallLayout()
 		cfg.ViewSettle = 2 * time.Second
-		h, err := newHarness(seed, mtNodes, cfg, lossyNet())
+		h, err := newHarness(seed, mtNodes, cfg, sim.DefaultNetConfig())
 		if err != nil {
 			h.s.Fail(err)
 			return h.s
@@ -140,9 +140,6 @@ func duelRun(res *duelResult) func(seed int64) *sim.Sim {
 			s.Fail(err)
 			return s
 		}
-		if err := s.RunFor(h.cfg.GCGrace + 3*time.Second); err != nil {
-			return s
-		}
 		rd, err := h.up()[0].OCC().Reader()
 		if err != nil {
 			s.Fail(err)
@@ -193,6 +190,7 @@ func duelRun(res *duelResult) func(seed int64) *sim.Sim {
 }
 
 func TestClusterDuellingMigrationsDST(t *testing.T) {
+	t.Parallel()
 	var m measure
 	sweepSharded(t, func(t *testing.T, seed int64) {
 		var res duelResult

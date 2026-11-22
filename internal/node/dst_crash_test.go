@@ -217,6 +217,7 @@ func crashRun(res *crashResult) func(seed int64) *sim.Sim {
 }
 
 func TestClusterCrashRestartDST(t *testing.T) {
+	t.Parallel()
 	var m measure
 	sweepSharded(t, func(t *testing.T, seed int64) {
 		var res crashResult

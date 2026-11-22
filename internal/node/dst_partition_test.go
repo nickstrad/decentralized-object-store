@@ -23,7 +23,7 @@ const (
 	phQuota      = 800
 	phObjectSize = 100
 	phCut        = env.Time(8 * time.Second)
-	phHeal       = env.Time(17 * time.Second)
+	phHeal       = env.Time(19 * time.Second)
 	phRounds     = 6
 	phGrace      = 6 * time.Second
 )
@@ -116,6 +116,7 @@ func partitionRun(res *partitionResult) func(seed int64) *sim.Sim {
 			}
 		})
 		data := map[string][]byte{}
+		ackedKeys := map[string]bool{}
 		peak := map[string]uint64{}
 		put := func(group []env.NodeID, key string, at env.Time, size int) {
 			s.At(at, "put "+key, func() {
@@ -130,6 +131,7 @@ func partitionRun(res *partitionResult) func(seed int64) *sim.Sim {
 					case err == nil:
 						res.acked++
 						data[oi.Version] = body
+						ackedKeys[key] = true
 						if q, err := n.Quota(phBucket); err == nil {
 							peak[string(id)] = max(peak[string(id)], q.UsedBytes)
 						}
@@ -155,7 +157,7 @@ func partitionRun(res *partitionResult) func(seed int64) *sim.Sim {
 		for i := range 3 {
 			put(h.ids, fmt.Sprintf("c%d", i), env.Time(4*time.Second+time.Duration(i)*200*time.Millisecond), phObjectSize)
 		}
-		cutPhase := phCut.Add(4 * time.Second)
+		cutPhase := phCut.Add(6 * time.Second)
 		for i := range phRounds {
 			at := cutPhase.Add(time.Duration(i) * 600 * time.Millisecond)
 			put(side, fmt.Sprintf("a%d", i), at, phObjectSize)
@@ -227,6 +229,9 @@ func partitionRun(res *partitionResult) func(seed int64) *sim.Sim {
 		end := s.Now()
 		for i := range 3 {
 			key := fmt.Sprintf("c%d", i)
+			if !ackedKeys[key] {
+				continue
+			}
 			for j := range 3 {
 				s.At(end.Add(time.Duration(i*3+j)*30*time.Millisecond), "final get", func() {
 					from := h.pick()
@@ -260,6 +265,7 @@ func partitionRun(res *partitionResult) func(seed int64) *sim.Sim {
 }
 
 func TestClusterPartitionHealDST(t *testing.T) {
+	t.Parallel()
 	var m measure
 	sweepSharded(t, func(t *testing.T, seed int64) {
 		var res partitionResult

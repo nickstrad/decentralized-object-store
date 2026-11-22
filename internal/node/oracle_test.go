@@ -266,14 +266,40 @@ func (o *gcOracle) check() error {
 		return nil
 	}
 	rds := o.readers()
-	vs := make([]storage.VersionID, 0, len(o.deleted))
-	for v := range o.deleted {
+	type cand struct {
+		key string
+		v   occ.Version
+	}
+	byVersion := map[storage.VersionID][]cand{}
+	for _, rd := range rds {
+		for _, k := range rd.Keys() {
+			x, ok := rd.Record(k).Version()
+			if !ok {
+				continue
+			}
+			if sv, ok := o.ref(k, x); ok && len(o.deleted[sv]) > 0 {
+				byVersion[sv] = append(byVersion[sv], cand{key: k, v: x})
+			}
+		}
+	}
+	vs := make([]storage.VersionID, 0, len(byVersion))
+	for v := range byVersion {
 		vs = append(vs, v)
 	}
 	slices.Sort(vs)
 	for _, v := range vs {
-		if k, ok := o.protector(v, rds); ok {
-			return fmt.Errorf("version %s can still win %q but its shard %s was deleted", v, k, o.deleted[v][0])
+		for _, c := range byVersion[v] {
+			beaten := false
+			for _, other := range rds {
+				y, ok := other.Record(c.key).Version()
+				if ok && y.ID() != c.v.ID() && (covers(y, c.v) || lwwAfter(y, c.v)) {
+					beaten = true
+					break
+				}
+			}
+			if !beaten {
+				return fmt.Errorf("version %s can still win %q but its shard %s was deleted", v, c.key, o.deleted[v][0])
+			}
 		}
 	}
 	return nil

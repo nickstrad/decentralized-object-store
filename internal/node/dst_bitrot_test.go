@@ -154,6 +154,7 @@ func bitRotRun(res *bitRotResult) func(seed int64) *sim.Sim {
 }
 
 func TestClusterBitRotDST(t *testing.T) {
+	t.Parallel()
 	var m measure
 	sweepSharded(t, func(t *testing.T, seed int64) {
 		var res bitRotResult

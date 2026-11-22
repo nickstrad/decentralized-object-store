@@ -50,7 +50,12 @@ func quotaDriftRun(seed int64) *sim.Sim {
 		return s
 	}
 	if err := s.RunUntilConverged(s.Now().Add(30*time.Second), func() bool {
-		return len(h.node(a[0]).Gossip().Members()) == 3 && len(h.node(b[0]).Gossip().Members()) == 3
+		for _, id := range h.ids {
+			if len(h.node(id).Gossip().Members()) != 3 {
+				return false
+			}
+		}
+		return true
 	}); err != nil {
 		s.Fail(fmt.Errorf("sides never saw each other die: %w", err))
 		return s
@@ -74,7 +79,8 @@ func quotaDriftRun(seed int64) *sim.Sim {
 }
 
 func TestQuotaRecountsAfterAManifestDiscardDST(t *testing.T) {
-	simtest.Sweep(t, func(t *testing.T, seed int64) {
+	t.Parallel()
+	sweepSharded(t, func(t *testing.T, seed int64) {
 		simtest.RequireDeterministic(t, seed, quotaDriftRun)
 	})
 }

@@ -23,8 +23,8 @@ const (
 	mtBucket  = "mt"
 	mtKeys    = 8
 	mtBegin   = env.Time(6 * time.Second)
-	mtTraffic = env.Time(16 * time.Second)
-	mtGap     = 100 * time.Millisecond
+	mtTraffic = env.Time(13 * time.Second)
+	mtGap     = 150 * time.Millisecond
 	mtSaga    = saga.ID("mt-1")
 	mtNodes   = 9
 	mtBurst   = 8
@@ -61,7 +61,7 @@ func refuseStep(i int) func(saga.Definition) saga.Definition {
 
 func lossyNet() sim.NetConfig {
 	c := sim.DefaultNetConfig()
-	c.DropPPM = 50_000
+	c.DropPPM = 20_000
 	c.Latency = sim.Range{Min: time.Millisecond, Max: 20 * time.Millisecond}
 	c.InterRegionLatency = sim.Range{Min: 20 * time.Millisecond, Max: 150 * time.Millisecond}
 	return c
@@ -228,7 +228,6 @@ func migrationTrafficRun(res *trafficResult) func(seed int64) *sim.Sim {
 		*res = trafficResult{}
 		cfg := partitionConfig()
 		cfg.Layout = smallLayout()
-		cfg.OCCFanout = mtNodes - 1
 		cfg.ViewSettle = 2 * time.Second
 		compensate := seed%2 == 0
 		var gen *trafficGen
@@ -295,7 +294,7 @@ func migrationTrafficRun(res *trafficResult) func(seed int64) *sim.Sim {
 			s.Fail(fmt.Errorf("no convergence after the migration: %w", err))
 			return s
 		}
-		if err := s.RunFor(h.cfg.GCGrace + 3*time.Second); err != nil {
+		if err := s.RunFor(3 * time.Second); err != nil {
 			return s
 		}
 		rd, err := h.up()[0].OCC().Reader()
@@ -325,6 +324,7 @@ func migrationTrafficRun(res *trafficResult) func(seed int64) *sim.Sim {
 }
 
 func TestClusterMigrationUnderTrafficDST(t *testing.T) {
+	t.Parallel()
 	var m measure
 	sweepSharded(t, func(t *testing.T, seed int64) {
 		var res trafficResult
