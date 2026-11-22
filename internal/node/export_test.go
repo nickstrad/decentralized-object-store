@@ -16,3 +16,35 @@ func ManifestOfRecord(b []byte) (*storage.Manifest, error) {
 }
 
 func SetCanaryUntrackedGoroutine(release chan struct{}) { canaryUntrackedGoroutine = release }
+
+func DecodeRecordsForTest(b []byte) []error {
+	_, e1 := decodeObject(b)
+	_, e2 := decodeBucket(b)
+	_, e3 := decodeStaged(b)
+	_, e4 := decodeSet(b)
+	return []error{e1, e2, e3, e4}
+}
+
+func EncodeSetForTest(ids []string) []byte { return encodeSet(ids) }
+
+func EncodeStagedForTest(saga string, obj []byte) []byte {
+	return encodeStaged(stagedRecord{Saga: saga, Object: obj})
+}
+
+func NodeRequestForTest(op byte, fields ...string) []byte {
+	var w wbuf
+	w.byte(chNode)
+	w.byte(op)
+	for _, f := range fields {
+		w.str(f)
+	}
+	return w.b
+}
+
+func (n *Node) MigratorForTest() *migrator { return n.mig }
+
+const (
+	OpMetaFetch = opMetaFetch
+	OpPointer   = opPointer
+	OpPurge     = opPurge
+)
