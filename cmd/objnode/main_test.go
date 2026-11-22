@@ -134,18 +134,30 @@ func freePort(t *testing.T) string {
 // HTTP listener cannot bind.
 func TestServeAndShutdownOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	id := freePort(t)
-	ready := make(chan string, 1)
-	done := make(chan int, 1)
-	var stderr safeBuffer
-	go func() {
-		done <- run(ctx, []string{"-id", id, "-region", "a", "-data", t.TempDir(), "-http", "127.0.0.1:0", "-k", "1", "-m", "0", "-stripe", "1024"}, &stderr, func(a string, _ *noderuntime.Runtime) { ready <- a })
-	}()
-	var addr string
-	select {
-	case addr = <-ready:
-	case code := <-done:
-		t.Fatalf("objnode exited %d: %s", code, stderr.String())
+	defer cancel()
+	var (
+		id     string
+		addr   string
+		done   chan int
+		stderr *safeBuffer
+	)
+	for attempt := 0; addr == ""; attempt++ {
+		id = freePort(t)
+		ready := make(chan string, 1)
+		done = make(chan int, 1)
+		stderr = &safeBuffer{}
+		errs := stderr
+		go func() {
+			done <- run(ctx, []string{"-id", id, "-region", "a", "-data", t.TempDir(), "-http", "127.0.0.1:0", "-k", "1", "-m", "0", "-stripe", "1024"}, errs, func(a string, _ *noderuntime.Runtime) { ready <- a })
+		}()
+		select {
+		case addr = <-ready:
+		case code := <-done:
+			if attempt < 3 && strings.Contains(stderr.String(), "address already in use") {
+				continue
+			}
+			t.Fatalf("objnode exited %d: %s", code, stderr.String())
+		}
 	}
 	resp, err := http.Get("http://" + addr + "/_health")
 	if err != nil {
