@@ -126,7 +126,7 @@ func (c Config) Validate() error {
 		return fmt.Errorf("node: config: merkle depth %d: %w", c.MetaDepth, ErrConfig)
 	}
 	if c.ScrubBatch < 0 || c.InventoryScrub < 0 || c.OCCFanout < 0 {
-		return fmt.Errorf("node: config: scrub batch %d or inventory scrub %d: %w", c.ScrubBatch, c.InventoryScrub, ErrConfig)
+		return fmt.Errorf("node: config: scrub batch %d, inventory scrub %d or occ fanout %d: %w", c.ScrubBatch, c.InventoryScrub, c.OCCFanout, ErrConfig)
 	}
 	if c.MaxObjectSize < 0 || c.MaxObjectSize > MaxObjectSizeLimit {
 		return fmt.Errorf("node: config: max object size %d outside [0, %d]: %w", c.MaxObjectSize, MaxObjectSizeLimit, ErrConfig)
