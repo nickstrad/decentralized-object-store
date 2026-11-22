@@ -1,0 +1,110 @@
+--- PASS: TestCanaryE1NodesThatMisreportTheirRegionFailTheSpreadCheck (0.36s)
+--- PASS: TestCanaryE2ANodeDeafToAntiEntropyNeverConverges (0.70s)
+--- PASS: TestCanaryE3RepairThatNeverRunsMissesTheBound (0.95s)
+--- PASS: TestCanaryE4AMigrationThatSkipsDeletingTheSourceFails (5.98s)
+--- PASS: TestCanaryE5ACopyThatIsNeverCompensatedLeavesOrphans (0.72s)
+--- PASS: TestCanaryE6ARestartedNodeDeafToAntiEntropyNeverCatchesUp (0.74s)
+--- PASS: TestCanaryE7ShardsThatAreNeverCollectedFailTheOrphanCheck (1.00s)
+--- PASS: TestCanaryE8ADeafSideNeverReachesOneVersionPerKey (0.56s)
+--- PASS: TestLedgerFlagsBytesNoClientWroteUnderThatVersion (0.00s)
+--- PASS: TestLossOracleFlagsADeclarationWhileEveryStripeHasKShards (0.09s)
+--- PASS: TestDeletionOracleFlagsAShardOfTheCurrentWinner (0.07s)
+--- PASS: TestOrphanCheckFlagsAShardNoManifestExpects (0.08s)
+--- PASS: TestLiveReadableOrLostFlagsAnUnreadableLiveKeyWithNoLossRecord (0.07s)
+--- PASS: TestSpreadOracleFlagsMoreThanMShardsInOneRegion (0.07s)
+--- PASS: TestAckOracleFlagsALostWriteMissingFromEveryDiscardLog (0.12s)
+--- PASS: TestHealthReportsTheMetadataDigestAndRoot (0.07s)
+--- SKIP: TestE1MultiRegionPutGetR (0.00s)
+--- SKIP: TestE2PartitionAndHealR (0.00s)
+--- SKIP: TestE3BitRotRepairR (0.00s)
+--- SKIP: TestE4MigrationUnderTrafficR (0.00s)
+--- SKIP: TestE6CrashRestartWipeR (0.00s)
+--- SKIP: TestE8LocalFirstMetadataSyncR (0.00s)
+--- SKIP: TestE5RollbackKillTargetMidCopyR (0.00s)
+--- SKIP: TestE5RollbackKillCoordinatorMidSagaR (0.00s)
+--- SKIP: TestE9ShutdownUnderLoadR (0.00s)
+--- SKIP: TestCanaryE9AKilledNodeFailsTheCleanShutdownChecks (0.00s)
+--- SKIP: TestTierRHarnessLeavesNothingBehindWhenATestFails (0.00s)
+--- SKIP: TestDefaultBuildCarriesNoFaultInjection (0.00s)
+--- PASS: TestE4MigrationUnderTrafficS (0.00s)
+--- PASS: TestE3BitRotRepairS (0.00s)
+--- PASS: TestE2PartitionAndHealS (0.00s)
+--- PASS: TestE7NemesisHealingCyclesS (0.00s)
+--- PASS: TestE1MultiRegionPutGetS (0.00s)
+--- PASS: TestE6CrashRestartWipeS (0.00s)
+--- PASS: TestE8LocalFirstMetadataSyncS (0.00s)
+--- PASS: TestE1MultiRegionMultiMBPutGetS (0.00s)
+--- PASS: TestE5MigrationEveryFailurePointS (0.01s)
+--- PASS: FuzzClusterNemesis (5.11s)
+ok  	github.com/nickstrad/decentralized-object-store/test/e2e	994.877s
+harness_test.go:118: MEASURE e4/live_readable n=16 min=77 p50=84 p99=114 max=114
+harness_test.go:118: MEASURE e4/migrate_under_traffic_ms n=16 min=18942 p50=19980 p99=32550 max=32550
+harness_test.go:118: MEASURE e4/objects_readable n=16 min=19 p50=23 p99=29 max=29
+harness_test.go:118: MEASURE e4/purge_after_terminal_ms n=16 min=0 p50=0 p99=0 max=0
+harness_test.go:118: MEASURE e4/traffic n=16 min=187 p50=197 p99=320 max=320
+harness_test.go:118: MEASURE e4/traffic_busy_or_unavailable n=16 min=62 p50=64 p99=107 max=107
+harness_test.go:118: MEASURE e4/traffic_ok n=16 min=123 p50=134 p99=213 max=213
+harness_test.go:118: MEASURE e3/bucket_bytes n=83 min=4745784 p50=4745784 p99=4745784 max=4745784
+harness_test.go:118: MEASURE e3/damaged_bytes n=83 min=98868 p50=148302 p99=181288 max=181288
+harness_test.go:118: MEASURE e3/moved_per_damaged_ppm n=83 min=4105177 p50=4458478 p99=5014564 max=5014564
+harness_test.go:118: MEASURE e3/rebuilt_per_damaged_ppm n=83 min=1000000 p50=1000000 p99=1000000 max=1000000
+harness_test.go:118: MEASURE e3/repair_ms n=83 min=920 p50=2000 p99=2060 max=2060
+harness_test.go:118: MEASURE e3/repair_under_reads_ms n=83 min=0 p50=1240 p99=1920 max=1920
+harness_test.go:118: MEASURE e3/shards_rotted n=83 min=19 p50=24 p99=29 max=29
+harness_test.go:118: MEASURE e2/contested_current n=83 min=16 p50=16 p99=16 max=16
+harness_test.go:118: MEASURE e2/contested_discarded n=83 min=13 p50=13 p99=13 max=13
+harness_test.go:118: MEASURE e2/converge_ms n=83 min=4140 p50=8580 p99=11320 max=11320
+harness_test.go:118: MEASURE e2/declared_lost n=83 min=0 p50=0 p99=0 max=0
+harness_test.go:118: MEASURE e2/detect_ms n=83 min=6540 p50=7160 p99=9100 max=9100
+harness_test.go:118: MEASURE e2/discards_max_node n=83 min=28 p50=35 p99=41 max=41
+harness_test.go:118: MEASURE e2/live_lost n=83 min=0 p50=0 p99=0 max=0
+harness_test.go:118: MEASURE e2/live_readable n=83 min=9 p50=9 p99=9 max=9
+harness_test.go:118: MEASURE e2/oracle_discarded n=83 min=12 p50=12 p99=12 max=12
+harness_test.go:118: MEASURE e2/oracle_superseded n=83 min=9 p50=9 p99=9 max=9
+harness_test.go:118: MEASURE e2/puts_acked n=83 min=9 p50=9 p99=9 max=9
+harness_test.go:118: MEASURE e2/puts_unavailable n=83 min=6 p50=6 p99=6 max=6
+harness_test.go:118: MEASURE e7/availability_gets n=199 min=2 p50=21 p99=39 max=40
+harness_test.go:118: MEASURE e7/converge_after_heal_ms n=796 min=0 p50=7720 p99=18460 max=26240
+harness_test.go:118: MEASURE e7/cycles n=199 min=4 p50=4 p99=4 max=4
+harness_test.go:118: MEASURE e7/declared_lost n=199 min=0 p50=0 p99=0 max=0
+harness_test.go:118: MEASURE e7/discards n=199 min=34 p50=85 p99=144 max=165
+harness_test.go:118: MEASURE e7/faults_applied n=199 min=5 p50=12 p99=20 max=21
+harness_test.go:118: MEASURE e7/faults_skipped_by_budget n=199 min=0 p50=2 p99=5 max=5
+harness_test.go:118: MEASURE e7/gets n=199 min=37 p50=59 p99=83 max=84
+harness_test.go:118: MEASURE e7/gets_ok n=199 min=8 p50=35 p99=59 max=59
+harness_test.go:118: MEASURE e7/migrations_compensated n=199 min=0 p50=0 p99=0 max=0
+harness_test.go:118: MEASURE e7/migrations_completed n=199 min=0 p50=1 p99=4 max=4
+harness_test.go:118: MEASURE e7/puts n=199 min=29 p50=43 p99=59 max=60
+harness_test.go:118: MEASURE e7/puts_ok n=199 min=15 p50=37 p99=59 max=60
+harness_test.go:118: MEASURE e7/repair_after_converge_ms n=796 min=0 p50=0 p99=0 max=20
+harness_test.go:118: MEASURE e1/get_max_ms n=66 min=162 p50=165 p99=167 max=167
+harness_test.go:118: MEASURE e1/objects n=66 min=33 p50=33 p99=33 max=33
+harness_test.go:118: MEASURE e1/put_max_ms n=66 min=134 p50=151 p99=162 max=162
+harness_test.go:118: MEASURE e1/reads n=66 min=660 p50=660 p99=660 max=660
+harness_test.go:118: MEASURE e1/stripes_spread_checked n=66 min=42 p50=42 p99=42 max=42
+harness_test.go:118: MEASURE e6/acked n=83 min=24 p50=24 p99=24 max=24
+harness_test.go:118: MEASURE e6/catch_up_ms n=83 min=1140 p50=4760 p99=9280 max=9280
+harness_test.go:118: MEASURE e6/inc_after n=83 min=1 p50=1 p99=2 max=2
+harness_test.go:118: MEASURE e6/inc_before n=83 min=0 p50=0 p99=0 max=0
+harness_test.go:118: MEASURE e6/live_lost n=83 min=0 p50=0 p99=0 max=0
+harness_test.go:118: MEASURE e6/refill_ms n=83 min=1160 p50=2160 p99=5480 max=5480
+harness_test.go:118: MEASURE e6/rejoin_ms n=83 min=620 p50=4760 p99=9280 max=9280
+harness_test.go:118: MEASURE e6/unavailable n=83 min=0 p50=0 p99=0 max=0
+harness_test.go:118: MEASURE e6/victim_shards n=83 min=3 p50=7 p99=12 max=12
+harness_test.go:118: MEASURE e6/wiped_shards n=83 min=2 p50=8 p99=13 max=13
+harness_test.go:118: MEASURE e8/conditional_writes n=166 min=25 p50=25 p99=25 max=25
+harness_test.go:118: MEASURE e8/contested_current n=166 min=15 p50=15 p99=15 max=15
+harness_test.go:118: MEASURE e8/contested_discarded n=166 min=8 p50=8 p99=8 max=8
+harness_test.go:118: MEASURE e8/converge_ms n=166 min=4220 p50=5600 p99=9500 max=9760
+harness_test.go:118: MEASURE e8/discards_max_node n=166 min=13 p50=17 p99=21 max=23
+harness_test.go:118: MEASURE e8/oracle_discarded n=166 min=7 p50=7 p99=7 max=7
+harness_test.go:118: MEASURE e8/stale_refused n=166 min=6 p50=6 p99=6 max=6
+harness_test.go:118: MEASURE e1mb/get_max_ms n=13 min=1112 p50=1131 p99=1175 max=1175
+harness_test.go:118: MEASURE e1mb/objects n=13 min=3 p50=3 p99=3 max=3
+harness_test.go:118: MEASURE e1mb/put_max_ms n=13 min=958 p50=993 p99=1024 max=1024
+harness_test.go:118: MEASURE e1mb/reads n=13 min=60 p50=60 p99=60 max=60
+harness_test.go:118: MEASURE e1mb/stripes_spread_checked n=13 min=99 p50=99 p99=99 max=99
+harness_test.go:118: MEASURE e5/begin_to_terminal_ms n=160 min=0 p50=11552 p99=16974 max=17202
+harness_test.go:118: MEASURE e5/compensated n=68 min=1 p50=1 p99=1 max=1
+harness_test.go:118: MEASURE e5/completed n=92 min=1 p50=1 p99=1 max=1
+harness_test.go:118: MEASURE e5/crashes n=160 min=0 p50=1 p99=2 max=2

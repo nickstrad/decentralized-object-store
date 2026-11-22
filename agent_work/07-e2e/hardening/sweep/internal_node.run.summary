@@ -1,0 +1,127 @@
+--- PASS: TestAbsenceRecordKeyRoundTripsForAnyHolderName (0.00s)
+--- PASS: TestMalformedAbsenceRecordNamesAreIgnored (0.00s)
+--- PASS: TestGossipViewAdaptsMembershipForEveryConsumer (0.00s)
+--- PASS: TestChannelPrefixRoundTrips (0.00s)
+--- PASS: TestJoinedCodeTableHasNoCollision (0.00s)
+--- PASS: TestEveryCodeRoundTripsToItsSentinel (0.00s)
+--- PASS: TestNodeAndAPICodesStayInTheirBlock (0.00s)
+--- PASS: TestCanaryDeleteResurrected (1.22s)
+--- PASS: TestCrashScenarioUsageMatchesARecountOnTheSeedsThatDrifted (1.78s)
+--- PASS: TestCanaryNodeSkipsQuotaAudit (3.84s)
+--- PASS: TestMatrixSeedsRunEveryPinnedSeedOnEveryCell (0.00s)
+--- PASS: TestCanaryNodeSkipsDiscardRecount (7.70s)
+--- PASS: TestFlipAfterACrashBetweenItsWritesLeavesTheBucketWritable (0.07s)
+--- PASS: TestCorruptShardOfADeadVersionIsCollected (0.01s)
+--- PASS: TestDeathEvidenceGetsItsOwnGracePeriod (0.01s)
+--- PASS: TestAWriteWhoseShardsWereCollectedAsOrphansIsRecordedLost (0.06s)
+--- PASS: TestOrphanRecordsAccumulateAcrossMaintenanceTicks (0.04s)
+--- PASS: TestANodeRefusesShardDeletesOverTheWire (0.00s)
+--- PASS: TestLiveReadableOrLostOracleCatchesAnUnreadableLiveKey (0.00s)
+--- PASS: TestAnOrphanedWriteWithAnUnwrittenShardIsDeclaredLost (0.03s)
+--- PASS: TestAnOrphanedWriteWithEnoughShardsLeftStaysReadable (0.02s)
+--- PASS: TestAnOrphanedWriteWithAnUnwrittenShardIsDeclaredLostAtFourPlusTwo (0.06s)
+--- PASS: TestAnOrphanedWriteWithEnoughShardsLeftStaysReadableAtFourPlusTwo (0.04s)
+--- PASS: TestAMultiStripeWriteWithOneUnrecoverableStripeIsDeclaredLost (0.11s)
+--- PASS: TestAMultiStripeWriteWithOneStripeRottedDuringThePartitionIsDeclaredLost (0.06s)
+--- PASS: TestAHolderThatCannotBeHeardFromBlocksALossDeclaration (0.18s)
+--- PASS: TestMoreThanMShardsRottedBeyondRepairIsDeclaredLost (0.11s)
+--- PASS: TestOneRottedStripeWithinMIsRepairedNotDeclaredLost (0.02s)
+--- PASS: TestAHolderThatRecordedItHoldsNoShardRefusesItLater (0.00s)
+--- PASS: TestTheLossRecordIsCommittedBeforeTheManifestIsTombstoned (0.03s)
+--- PASS: TestAStaleShardWriteToAWipedHolderOfADeclaredLostVersionIsCollected (0.05s)
+--- PASS: TestQuotaRefusesAPutOverTheLimit (0.00s)
+--- PASS: TestBucketMetadataAPIOnOneNode (0.03s)
+--- PASS: TestConfigValidationRejectsEachBadField (0.00s)
+--- PASS: TestRecordDecodersRejectMalformedBytes (0.00s)
+--- PASS: TestNodeRefusesMalformedAndPostStopTraffic (0.00s)
+--- PASS: TestBucketMigratingAwayStopsItsWorkers (0.31s)
+--- PASS: TestMigrationClaimOfAWronglyRoutedBucketIsPermanent (0.00s)
+--- PASS: TestPreconditionsOnTheNodeNeverDegradeToUnconditional (0.00s)
+--- PASS: TestMigrationCopyNeverCallsBackInsideTheCall (0.00s)
+--- PASS: TestMigrationStatusOfAnUnknownSagaIsUnknownSaga (0.00s)
+--- PASS: TestPointerDecidesFromTheAgreedFlipOwner (0.01s)
+--- PASS: TestNodeSurfaceAccessors (0.00s)
+--- PASS: TestAckOracleKeepsIdenticalPayloadsOnTwoKeysApart (0.00s)
+--- PASS: TestPropObjectRoundTripThroughTheFullPath (2.58s)
+--- PASS: TestPropRemoteOperationsAreIdempotent (2.31s)
+--- PASS: TestArbitrationOrphansPlusAnUnwrittenShardFixed (0.06s)
+--- PASS: TestConfirmRepeatedReadErrorsOnAllHoldersAndRottedPeer (0.01s)
+--- PASS: TestConfirmReadErrorOnlyDuringStateAbsent (0.01s)
+--- PASS: TestConfirmPeerReadErrorBlocksUnrecoverableDeclarationUntilCleared (0.01s)
+--- PASS: TestConfirmK1M0SingleHolderRepeatedReadErrors (0.00s)
+--- PASS: TestConfirmAReadErrorOnAnIndexedShardStartsNoRebuild (0.04s)
+--- PASS: TestConfirmAbsenceRecordArrivesBeforeFirstReply (0.00s)
+--- PASS: TestConfirmAbsenceRecordArrivesBetweenReplies (0.00s)
+--- PASS: TestConfirmCrashAndRestartInMiddleOfRebuild (0.01s)
+--- PASS: TestConfirmOracleSoundness (0.04s)
+--- PASS: TestLateShardAfterOrphanCollectionBeforeAbsenceSavesObject (0.02s)
+--- PASS: TestLateShardDuringRebuildPreventsAbsenceRecord (0.01s)
+--- PASS: TestLateShardAfterAbsenceBeforeDeclarationRefused (0.01s)
+--- PASS: TestResidualCaseBWipedHolderBeforeDeclaration (0.01s)
+--- PASS: TestLocalTransientDiskIOErrorMustNotDeclareHealthyObjectLost (0.01s)
+--- PASS: TestLossDeclarationRacesConcurrentOverwriteAndDelete (0.10s)
+--- PASS: TestDualDeclarersInPartitionedCluster (0.06s)
+--- PASS: TestNonHolderAndCrossStripeAbsenceRecordsIgnored (0.02s)
+--- PASS: TestLossDeclarationAfterBucketMigration (0.11s)
+--- PASS: TestStagedMigrationCopyNeverWritesAbsenceWhileStaged (0.04s)
+--- PASS: TestSlashHolderIDsEndToEndLossDeclaration (0.02s)
+--- PASS: TestOrphanManifestArrivesJustBeforeGrace (0.05s)
+--- PASS: TestOrphanStaggeredCollectionAcrossTicks (0.24s)
+--- PASS: TestEdgeLayoutsAndShortAndZeroObjects (0.06s)
+--- PASS: TestHolderIntactRestartPreservesAbsenceRefusal (0.00s)
+--- PASS: TestDeclarerCrashBetweenLossRecordAndTombstone (0.04s)
+--- PASS: TestServeStorageRefusesShardWriteBeforeMetadataLoads (0.00s)
+--- PASS: TestWipedHolderRebuildRacesOwnAbsenceRecord (0.00s)
+--- PASS: TestHolderPauseResumeBlocksThenAllowsDeclaration (0.04s)
+--- PASS: TestClusterDuellingMigrationsDST (0.00s)
+--- PASS: TestMigrationHoldsAWriteAcknowledgedJustBeforeTheFlipDST (0.00s)
+--- PASS: TestClusterCrashRestartDST (0.00s)
+--- PASS: TestClusterBitRotDST (0.00s)
+--- PASS: TestQuotaRecountsAfterAManifestDiscardDST (0.00s)
+--- PASS: TestMigrationLateWriteOfAnIsolatedPeerStaysReadableDST (0.00s)
+--- PASS: TestClusterPutGetDST (0.00s)
+--- PASS: TestClusterMigrationUnderTrafficDST (0.00s)
+--- PASS: TestClusterPartitionHealDST (0.00s)
+--- PASS: TestClusterMigrationFailurePointsDST (0.01s)
+ok  	github.com/nickstrad/decentralized-object-store/internal/node	1294.983s
+helpers_test.go:299: MEASURE duel/elapsed_ms n=442 min=8407 p50=14062 p99=19350 max=20013
+helpers_test.go:299: MEASURE crash/converge_ms n=442 min=1187 p50=2068 p99=3384 max=4946
+helpers_test.go:299: MEASURE crash/deleted n=442 min=4 p50=4 p99=4 max=4
+helpers_test.go:299: MEASURE crash/rebuilt_shards n=442 min=0 p50=4 p99=9 max=11
+helpers_test.go:299: MEASURE crash/restart_repair_ms n=442 min=5187 p50=6068 p99=7384 max=8946
+helpers_test.go:299: MEASURE crash/wipe_refill_ms n=442 min=14187 p50=15068 p99=16384 max=17946
+helpers_test.go:299: MEASURE bitrot/get_ok n=442 min=24 p50=24 p99=24 max=24
+helpers_test.go:299: MEASURE bitrot/rebuilt_per_rotted_x1000 n=442 min=1000 p50=1000 p99=1000 max=1000
+helpers_test.go:299: MEASURE bitrot/repair_ms n=442 min=133 p50=152 p99=159 max=1119
+helpers_test.go:299: MEASURE bitrot/rotted_shards n=442 min=9 p50=20 p99=31 max=39
+helpers_test.go:299: MEASURE putget/acked n=442 min=12 p50=13 p99=13 max=13
+helpers_test.go:299: MEASURE putget/converge_ms n=442 min=1215 p50=3279 p99=9457 max=10206
+helpers_test.go:299: MEASURE putget/get_miss n=442 min=9 p50=16 p99=22 max=25
+helpers_test.go:299: MEASURE putget/get_ok n=442 min=27 p50=36 p99=41 max=43
+helpers_test.go:299: MEASURE putget/late_acked n=442 min=0 p50=1 p99=1 max=1
+helpers_test.go:299: MEASURE putget/late_lost n=442 min=0 p50=0 p99=1 max=1
+helpers_test.go:299: MEASURE putget/late_orphans_plus_unwritten n=442 min=0 p50=0 p99=1 max=1
+helpers_test.go:299: MEASURE putget/late_recoverable n=442 min=0 p50=0 p99=1 max=1
+helpers_test.go:299: MEASURE migtraffic/acked n=442 min=11 p50=44 p99=62 max=64
+helpers_test.go:299: MEASURE migtraffic/acked_during_migration n=442 min=0 p50=12 p99=31 max=35
+helpers_test.go:299: MEASURE migtraffic/elapsed_ms n=442 min=0 p50=12214 p99=25728 max=26368
+helpers_test.go:299: MEASURE migtraffic/oracle_current n=400 min=1 p50=18 p99=31 max=33
+helpers_test.go:299: MEASURE migtraffic/oracle_current-copy n=221 min=8 p50=17 p99=25 max=26
+helpers_test.go:299: MEASURE migtraffic/oracle_discarded n=430 min=1 p50=7 p99=15 max=18
+helpers_test.go:299: MEASURE migtraffic/oracle_superseded n=441 min=1 p50=16 p99=29 max=32
+helpers_test.go:299: MEASURE migtraffic/refused_busy n=442 min=0 p50=20 p99=56 max=63
+helpers_test.go:299: MEASURE partition/acked n=442 min=17 p50=23 p99=26 max=27
+helpers_test.go:299: MEASURE partition/collected_loser_shards n=442 min=11 p50=24 p99=35 max=36
+helpers_test.go:299: MEASURE partition/converge_ms n=442 min=3724 p50=7025 p99=11485 max=12395
+helpers_test.go:299: MEASURE partition/discard_events n=442 min=237 p50=443 p99=583 max=604
+helpers_test.go:299: MEASURE partition/distinct_losers n=442 min=29 p50=56 p99=76 max=82
+helpers_test.go:299: MEASURE partition/object_losers n=442 min=2 p50=5 p99=7 max=7
+helpers_test.go:299: MEASURE partition/oracle_current n=442 min=13 p50=16 p99=17 max=18
+helpers_test.go:299: MEASURE partition/oracle_discarded n=442 min=3 p50=7 p99=11 max=12
+helpers_test.go:299: MEASURE partition/oracle_superseded n=442 min=1 p50=9 p99=14 max=15
+helpers_test.go:299: MEASURE partition/quota_overshoot_bytes n=442 min=300 p50=500 p99=600 max=700
+helpers_test.go:299: MEASURE partition/quota_refused n=442 min=0 p50=0 p99=1 max=2
+helpers_test.go:299: MEASURE partition/quota_settle_ms n=442 min=4349 p50=8731 p99=12395 max=12801
+helpers_test.go:299: MEASURE partition/recount_writes n=442 min=3 p50=20 p99=38 max=43
+helpers_test.go:299: MEASURE matrix/elapsed_ms n=519 min=0 p50=11239 p99=15542 max=15996
+helpers_test.go:299: MEASURE matrix/runs n=519 min=1 p50=1 p99=1 max=1

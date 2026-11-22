@@ -1,0 +1,111 @@
+DST_SEEDS=500 DST_SEED_BASE=7001 go test ./test/e2e -count=1 -v -timeout 120m (commit 95d562c, dev container)
+--- PASS: TestCanaryE1NodesThatMisreportTheirRegionFailTheSpreadCheck (0.32s)
+--- PASS: TestCanaryE2ANodeDeafToAntiEntropyNeverConverges (0.57s)
+--- PASS: TestCanaryE3RepairThatNeverRunsMissesTheBound (0.86s)
+--- PASS: TestCanaryE4AMigrationThatSkipsDeletingTheSourceFails (5.13s)
+--- PASS: TestCanaryE5ACopyThatIsNeverCompensatedLeavesOrphans (0.77s)
+--- PASS: TestCanaryE6ARestartedNodeDeafToAntiEntropyNeverCatchesUp (0.67s)
+--- PASS: TestCanaryE7ShardsThatAreNeverCollectedFailTheOrphanCheck (0.99s)
+--- PASS: TestCanaryE8ADeafSideNeverReachesOneVersionPerKey (0.55s)
+--- PASS: TestLedgerFlagsBytesNoClientWroteUnderThatVersion (0.00s)
+--- PASS: TestLossOracleFlagsADeclarationWhileEveryStripeHasKShards (0.08s)
+--- PASS: TestDeletionOracleFlagsAShardOfTheCurrentWinner (0.06s)
+--- PASS: TestOrphanCheckFlagsAShardNoManifestExpects (0.06s)
+--- PASS: TestLiveReadableOrLostFlagsAnUnreadableLiveKeyWithNoLossRecord (0.10s)
+--- PASS: TestSpreadOracleFlagsMoreThanMShardsInOneRegion (0.05s)
+--- PASS: TestAckOracleFlagsALostWriteMissingFromEveryDiscardLog (0.11s)
+--- PASS: TestHealthReportsTheMetadataDigestAndRoot (0.07s)
+--- SKIP: TestE1MultiRegionPutGetR (0.00s)
+--- SKIP: TestE2PartitionAndHealR (0.00s)
+--- SKIP: TestE3BitRotRepairR (0.00s)
+--- SKIP: TestE4MigrationUnderTrafficR (0.00s)
+--- SKIP: TestE6CrashRestartWipeR (0.00s)
+--- SKIP: TestE8LocalFirstMetadataSyncR (0.00s)
+--- SKIP: TestE5RollbackKillTargetMidCopyR (0.00s)
+--- SKIP: TestE5RollbackKillCoordinatorMidSagaR (0.00s)
+--- SKIP: TestE9ShutdownUnderLoadR (0.00s)
+--- SKIP: TestTierRHarnessLeavesNothingBehindWhenATestFails (0.00s)
+--- SKIP: TestDefaultBuildCarriesNoFaultInjection (0.00s)
+MEASURE e2/contested_current n=125 min=16 p50=16 p99=16 max=16
+MEASURE e2/contested_discarded n=125 min=13 p50=13 p99=13 max=13
+MEASURE e2/converge_ms n=125 min=4640 p50=8500 p99=10880 max=11560
+MEASURE e2/declared_lost n=125 min=0 p50=0 p99=0 max=0
+MEASURE e2/detect_ms n=125 min=6200 p50=7300 p99=9500 max=10040
+MEASURE e2/discards_max_node n=125 min=28 p50=36 p99=44 max=45
+MEASURE e2/live_lost n=125 min=0 p50=0 p99=0 max=0
+MEASURE e2/live_readable n=125 min=9 p50=9 p99=9 max=9
+MEASURE e2/oracle_discarded n=125 min=12 p50=12 p99=12 max=12
+MEASURE e2/oracle_superseded n=125 min=9 p50=9 p99=9 max=9
+MEASURE e2/puts_acked n=125 min=9 p50=9 p99=9 max=9
+MEASURE e2/puts_unavailable n=125 min=6 p50=6 p99=6 max=6
+--- PASS: TestE2PartitionAndHealS (0.04s)
+MEASURE e4/live_readable n=25 min=79 p50=91 p99=101 max=101
+MEASURE e4/migrate_under_traffic_ms n=25 min=18969 p50=24849 p99=26883 max=26883
+MEASURE e4/objects_readable n=25 min=20 p50=24 p99=28 max=28
+MEASURE e4/purge_after_terminal_ms n=25 min=0 p50=0 p99=0 max=0
+MEASURE e4/traffic n=25 min=187 p50=245 p99=265 max=265
+MEASURE e4/traffic_busy_or_unavailable n=25 min=62 p50=84 p99=88 max=88
+MEASURE e4/traffic_ok n=25 min=125 p50=160 p99=177 max=177
+--- PASS: TestE4MigrationUnderTrafficS (0.04s)
+MEASURE e3/bucket_bytes n=125 min=4745784 p50=4745784 p99=4745784 max=4745784
+MEASURE e3/damaged_bytes n=125 min=98958 p50=148302 p99=181288 max=197736
+MEASURE e3/moved_per_damaged_ppm n=125 min=4015475 p50=4458807 p99=4872393 max=5015461
+MEASURE e3/rebuilt_per_damaged_ppm n=125 min=1000000 p50=1000000 p99=1000000 max=1000000
+MEASURE e3/repair_ms n=125 min=960 p50=2000 p99=2040 max=2040
+MEASURE e3/repair_under_reads_ms n=125 min=0 p50=1240 p99=1940 max=1940
+MEASURE e3/shards_rotted n=125 min=20 p50=24 p99=28 max=28
+--- PASS: TestE3BitRotRepairS (0.04s)
+MEASURE e1mb/get_max_ms n=20 min=1096 p50=1131 p99=1181 max=1181
+MEASURE e1mb/objects n=20 min=3 p50=3 p99=3 max=3
+MEASURE e1mb/put_max_ms n=20 min=965 p50=997 p99=1075 max=1075
+MEASURE e1mb/reads n=20 min=60 p50=60 p99=60 max=60
+MEASURE e1mb/stripes_spread_checked n=20 min=99 p50=99 p99=99 max=99
+--- PASS: TestE1MultiRegionMultiMBPutGetS (0.00s)
+MEASURE e8/conditional_writes n=250 min=25 p50=25 p99=25 max=25
+MEASURE e8/contested_current n=250 min=15 p50=15 p99=15 max=15
+MEASURE e8/contested_discarded n=250 min=8 p50=8 p99=8 max=8
+MEASURE e8/converge_ms n=250 min=3920 p50=5500 p99=9000 max=10640
+MEASURE e8/discards_max_node n=250 min=12 p50=17 p99=20 max=22
+MEASURE e8/oracle_discarded n=250 min=7 p50=7 p99=7 max=7
+MEASURE e8/stale_refused n=250 min=6 p50=6 p99=6 max=6
+--- PASS: TestE8LocalFirstMetadataSyncS (0.00s)
+MEASURE e6/acked n=125 min=24 p50=24 p99=24 max=24
+MEASURE e6/catch_up_ms n=125 min=1140 p50=5140 p99=9860 max=10420
+MEASURE e6/inc_after n=125 min=1 p50=1 p99=2 max=2
+MEASURE e6/inc_before n=125 min=0 p50=0 p99=0 max=0
+MEASURE e6/live_lost n=125 min=0 p50=0 p99=0 max=0
+MEASURE e6/refill_ms n=125 min=1140 p50=2160 p99=6000 max=6420
+MEASURE e6/rejoin_ms n=125 min=900 p50=5140 p99=9860 max=10420
+MEASURE e6/unavailable n=125 min=0 p50=0 p99=0 max=0
+MEASURE e6/victim_shards n=125 min=3 p50=7 p99=13 max=14
+MEASURE e6/wiped_shards n=125 min=1 p50=7 p99=13 max=14
+--- PASS: TestE6CrashRestartWipeS (0.00s)
+MEASURE e7/availability_gets n=300 min=4 p50=20 p99=39 max=42
+MEASURE e7/converge_after_heal_ms n=1200 min=0 p50=7600 p99=18720 max=26200
+MEASURE e7/cycles n=300 min=4 p50=4 p99=4 max=4
+MEASURE e7/declared_lost n=300 min=0 p50=0 p99=0 max=0
+MEASURE e7/discards n=300 min=38 p50=88 p99=132 max=145
+MEASURE e7/faults_applied n=300 min=7 p50=12 p99=18 max=18
+MEASURE e7/faults_skipped_by_budget n=300 min=0 p50=1 p99=6 max=6
+MEASURE e7/gets n=300 min=32 p50=59 p99=79 max=83
+MEASURE e7/gets_ok n=300 min=15 p50=35 p99=59 max=64
+MEASURE e7/migrations_compensated n=300 min=0 p50=0 p99=0 max=1
+MEASURE e7/migrations_completed n=300 min=0 p50=1 p99=3 max=3
+MEASURE e7/puts n=300 min=31 p50=43 p99=55 max=57
+MEASURE e7/puts_ok n=300 min=19 p50=39 p99=51 max=54
+MEASURE e7/repair_after_converge_ms n=1200 min=0 p50=0 p99=0 max=0
+--- PASS: TestE7NemesisHealingCyclesS (0.00s)
+MEASURE e1/get_max_ms n=100 min=162 p50=165 p99=168 max=168
+MEASURE e1/objects n=100 min=33 p50=33 p99=33 max=33
+MEASURE e1/put_max_ms n=100 min=141 p50=151 p99=164 max=164
+MEASURE e1/reads n=100 min=660 p50=660 p99=660 max=660
+MEASURE e1/stripes_spread_checked n=100 min=42 p50=42 p99=42 max=42
+--- PASS: TestE1MultiRegionPutGetS (0.01s)
+MEASURE e5/begin_to_terminal_ms n=202 min=0 p50=11374 p99=16648 max=16916
+MEASURE e5/compensated n=90 min=1 p50=1 p99=1 max=1
+MEASURE e5/completed n=112 min=1 p50=1 p99=1 max=1
+MEASURE e5/crashes n=202 min=0 p50=1 p99=2 max=2
+--- PASS: TestE5MigrationEveryFailurePointS (0.05s)
+--- PASS: FuzzClusterNemesis (5.71s)
+ok  	github.com/nickstrad/decentralized-object-store/test/e2e	1494.437s
+EXIT 0 wall=1496s
