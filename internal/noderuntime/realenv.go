@@ -176,7 +176,10 @@ func (d *fileDisk) syncChain(dir string) error {
 	if err := d.syncDir(dir); err != nil {
 		return err
 	}
-	for cur := dir; d.fresh[cur] && cur != d.dir; cur = filepath.Dir(cur) {
+	for cur := dir; cur != d.dir && cur != filepath.Dir(cur); cur = filepath.Dir(cur) {
+		if !d.fresh[cur] {
+			continue
+		}
 		if err := d.syncDir(filepath.Dir(cur)); err != nil {
 			return err
 		}
