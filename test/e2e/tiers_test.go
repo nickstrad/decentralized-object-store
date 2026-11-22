@@ -137,3 +137,29 @@ func TestE8LocalFirstMetadataSyncS(t *testing.T) {
 		m.add("e8/oracle_discarded", int64(tally["discarded"]))
 	})
 }
+
+func TestE4MigrationUnderTrafficS(t *testing.T) {
+	t.Parallel()
+	var m measure
+	t.Cleanup(func() { m.report(t) })
+	sweep(t, seedsFor(t, 1), func(t *testing.T, seed int64) {
+		var res e4Result
+		var oc outcome
+		runSim(t, seed, defaultSimOptions(), func(c *simCluster) error {
+			var err error
+			res, err = scenarioE4(c, simBounds, e4Params{objects: 8, size: 2*simStripe + 5})
+			if err != nil {
+				return err
+			}
+			_, oc, err = c.finalChecks(false)
+			return err
+		})
+		m.ms("e4/migrate_under_traffic", res.migrate)
+		m.ms("e4/purge_after_terminal", res.purge)
+		m.add("e4/traffic", int64(res.traffic))
+		m.add("e4/traffic_ok", int64(res.trafficOK))
+		m.add("e4/traffic_busy_or_unavailable", int64(res.trafficBusy))
+		m.add("e4/objects_readable", int64(res.objects))
+		m.add("e4/live_readable", int64(oc.readable))
+	})
+}
