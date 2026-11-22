@@ -8,12 +8,13 @@ import (
 )
 
 type bounds struct {
-	converge  time.Duration
-	repair    time.Duration
-	migrate   time.Duration
-	catchUp   time.Duration
-	refill    time.Duration
-	readBatch int
+	converge   time.Duration
+	repair     time.Duration
+	migrate    time.Duration
+	catchUp    time.Duration
+	refill     time.Duration
+	readBatch  int
+	writeBatch int
 }
 
 func waitAll(c Cluster, calls ...*Call) error {
@@ -106,16 +107,23 @@ func scenarioE1(c Cluster, b bounds, p e1Params) (e1Result, error) {
 	if err := createBucket(c, b, storage.BucketSpec{Name: bucket}); err != nil {
 		return res, err
 	}
-	var puts []*Call
+	var puts, batch []*Call
 	for _, r := range c.Regions() {
 		for i, size := range p.sizes {
 			via := pick(c, inRegion(c, r))
-			puts = append(puts, c.Put(via, bucket, fmt.Sprintf("%s-%02d-%d", r, i, size), randomBytes(c.Rand(), size), storage.Condition{}))
+			batch = append(batch, c.Put(via, bucket, fmt.Sprintf("%s-%02d-%d", r, i, size), randomBytes(c.Rand(), size), storage.Condition{}))
+			if b.writeBatch > 0 && len(batch) >= b.writeBatch {
+				if err := waitAll(c, batch...); err != nil {
+					return res, err
+				}
+				puts, batch = append(puts, batch...), nil
+			}
 		}
 	}
-	if err := waitAll(c, puts...); err != nil {
+	if err := waitAll(c, batch...); err != nil {
 		return res, err
 	}
+	puts = append(puts, batch...)
 	for _, k := range puts {
 		res.putTime = max(res.putTime, k.Ended-k.Began)
 	}
