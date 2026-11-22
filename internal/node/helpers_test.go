@@ -64,7 +64,41 @@ func newHarness(seed int64, n int, cfg node.Config, net sim.NetConfig) (*harness
 		}
 	}
 	h.cfg = cfg
-	return h, h.s.AddCluster(h.ids, dstRegions, node.NewFactory(cfg))
+	if err := h.s.AddCluster(h.ids, dstRegions, node.NewFactory(cfg)); err != nil {
+		return h, err
+	}
+	h.s.AddInvariant("node/no-live-version-collected", 1000, h.noLiveVersionCollected)
+	return h, nil
+}
+
+func (h *harness) noLiveVersionCollected() error {
+	for _, n := range h.up() {
+		cs := n.Collected()
+		if len(cs) == 0 {
+			continue
+		}
+		rd, err := n.OCC().Reader()
+		if err != nil {
+			continue
+		}
+		live := map[storage.VersionID]bool{}
+		for _, k := range rd.Keys() {
+			if len(k) == 0 || occ.Kind(k[0]) != occ.KindManifest {
+				continue
+			}
+			if val, _, err := rd.Get(k); err == nil {
+				if man, err := manifestOf(val); err == nil {
+					live[man.Version] = true
+				}
+			}
+		}
+		for _, c := range cs {
+			if live[c.Version] {
+				return fmt.Errorf("node %s collected shards of version %s, live in its own metadata", n.ID(), c.Version)
+			}
+		}
+	}
+	return nil
 }
 
 func (h *harness) node(id env.NodeID) *node.Node {

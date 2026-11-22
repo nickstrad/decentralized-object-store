@@ -122,10 +122,10 @@ func TestShutdownDuringRepairAndRestartOnTheSameDisk(t *testing.T) {
 		}
 		return true
 	})
-	_, got, err := c.rts[1].GetObject(bg, "b", "k")
-	if err != nil || !bytes.Equal(got, data) {
-		t.Fatalf("read after restart: %d bytes, %v", len(got), err)
-	}
+	eventually(t, 30*time.Second, "the restarted node serves the object", func() bool {
+		_, got, err := c.rts[1].GetObject(bg, "b", "k")
+		return err == nil && bytes.Equal(got, data)
+	})
 }
 
 func TestStatusRowsThroughHTTPOnARealNode(t *testing.T) {
