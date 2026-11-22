@@ -23,6 +23,7 @@ const (
 	DefaultRecountSettle  = 3 * time.Second
 	DefaultMaxObjectSize  = 32 << 20
 	DefaultRPCTimeout     = time.Second
+	DefaultViewSettle     = 5 * time.Second
 	MaxObjectSizeLimit    = 1 << 30
 	MaxRebuilds           = 8
 	QuotaAttempts         = 5
@@ -44,6 +45,7 @@ type Config struct {
 	RecountSettle  time.Duration
 	MaxObjectSize  int64
 	RPCTimeout     time.Duration
+	ViewSettle     time.Duration
 	SagaPolicy     saga.Policy
 	WrapMigration  func(saga.Definition) saga.Definition
 	ConfigureSaga  func(*saga.Config)
@@ -85,6 +87,9 @@ func (c Config) WithDefaults() Config {
 	if c.RPCTimeout == 0 {
 		c.RPCTimeout = DefaultRPCTimeout
 	}
+	if c.ViewSettle == 0 {
+		c.ViewSettle = DefaultViewSettle
+	}
 	if c.SagaPolicy == (saga.Policy{}) {
 		c.SagaPolicy = saga.DefaultPolicy()
 	}
@@ -99,7 +104,7 @@ func (c Config) Validate() error {
 	if ShardRequestSize(c.Layout) > MaxFrame {
 		return fmt.Errorf("node: config: shard request of %d bytes over the %d-byte frame: %w", ShardRequestSize(c.Layout), MaxFrame, ErrConfig)
 	}
-	for _, d := range []time.Duration{c.RequestTimeout, c.OCCPeriod, c.MetaPeriod, c.MaintainPeriod, c.GCGrace, c.RecountSettle, c.RPCTimeout} {
+	for _, d := range []time.Duration{c.RequestTimeout, c.OCCPeriod, c.MetaPeriod, c.MaintainPeriod, c.GCGrace, c.RecountSettle, c.RPCTimeout, c.ViewSettle} {
 		if d < 0 {
 			return fmt.Errorf("node: config: negative duration %v: %w", d, ErrConfig)
 		}
@@ -184,11 +189,13 @@ type Node struct {
 	mig    *migrator
 
 	started     bool
+	viewChanged env.Time
 	stopped     bool
 	maintTimer  env.Timer
 	inv         map[string]*inventory
 	orphanSince map[string]env.Time
 	losers      map[storage.VersionID]bool
+	purged      map[storage.VersionID]bool
 	recountDue  map[string]env.Time
 	rebuilding  int
 	cache       map[occ.ETag]objectRecord
@@ -225,7 +232,7 @@ func New(e env.Env, cfg Config) (*Node, error) {
 	n := &Node{
 		e: e, cfg: cfg, net: chanNet{net: e.Net, ch: chNode},
 		scoped: map[env.Region]*storage.Node{}, inv: map[string]*inventory{},
-		orphanSince: map[string]env.Time{}, losers: map[storage.VersionID]bool{},
+		orphanSince: map[string]env.Time{}, losers: map[storage.VersionID]bool{}, purged: map[storage.VersionID]bool{},
 		recountDue: map[string]env.Time{}, cache: map[occ.ETag]objectRecord{},
 	}
 	n.view = &gossipView{self: e.ID}
@@ -292,6 +299,7 @@ func (n *Node) logf(f string, a ...any) {
 }
 
 func (n *Node) Start() {
+	n.viewChanged = n.e.Clock.Now()
 	n.occ.Start()
 	n.gossip.Start()
 	n.ensureStarted()
@@ -389,6 +397,10 @@ func (n *Node) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	}
 }
 
+func (n *Node) ViewSettled() bool {
+	return n.e.Clock.Now().Sub(n.viewChanged) >= n.cfg.ViewSettle && len(n.view.Peers()) > 0
+}
+
 func (n *Node) EncodeState() []byte {
 	var w wbuf
 	w.bytes(n.gossip.EncodeState())
@@ -412,6 +424,9 @@ func (n *Node) EncodeState() []byte {
 }
 
 func (n *Node) onMember(ev gossip.Event) {
+	if ev.Kind == gossip.EventJoined {
+		n.viewChanged = n.e.Clock.Now()
+	}
 	if ev.Kind == gossip.EventDied || ev.Kind == gossip.EventLeft {
 		n.stats.MemberDeaths++
 	}

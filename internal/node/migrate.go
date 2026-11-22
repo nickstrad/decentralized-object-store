@@ -214,7 +214,7 @@ func (g *migrator) Copy(c saga.Call, m saga.MigrationInput, done func([]byte, er
 			done(nil, err)
 			return
 		}
-		done(g.root(rd, m.Bucket, m.To, id), nil)
+		done(g.root(rd, m, m.To, id), nil)
 	}
 	var step func(i int)
 	step = func(i int) {
@@ -286,28 +286,6 @@ func (g *migrator) dropStale(bucket, id string) error {
 	return nil
 }
 
-func (g *migrator) regionOf(id env.NodeID) env.Region {
-	if id == g.n.e.ID {
-		return g.n.e.Region
-	}
-	m, err := g.n.gossip.Lookup(id)
-	if err != nil {
-		return ""
-	}
-	return m.Region
-}
-
-func (g *migrator) placedIn(man *storage.Manifest, loc string) bool {
-	for _, s := range man.Stripes {
-		for _, ref := range s.Shards {
-			if string(g.regionOf(ref.Node)) != loc {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 func rootEntry(key string, man *storage.Manifest) merkle.Entry {
 	h := sha256.New()
 	h.Write(man.ContentSHA[:])
@@ -317,24 +295,18 @@ func rootEntry(key string, man *storage.Manifest) merkle.Entry {
 	return merkle.Entry{Key: key, Hash: sum}
 }
 
-func (g *migrator) root(rd occ.Reader, bucket, loc, id string) []byte {
-	staged := map[string]*storage.Manifest{}
-	for _, s := range g.staged(rd, bucket) {
-		if s.rec.Saga == id {
-			staged[s.object] = s.obj.Manifest
-		}
-	}
+func (g *migrator) root(rd occ.Reader, m saga.MigrationInput, loc, id string) []byte {
 	entries := map[string]merkle.Entry{}
-	for _, o := range g.n.liveObjects(rd, bucket) {
-		if s, ok := staged[o.key]; ok && g.placedIn(s, loc) {
-			entries[o.key] = rootEntry(o.key, s)
-		} else if g.placedIn(o.rec.Manifest, loc) {
-			entries[o.key] = rootEntry(o.key, o.rec.Manifest)
+	switch loc {
+	case m.To:
+		for _, s := range g.staged(rd, m.Bucket) {
+			if s.rec.Saga == id {
+				entries[s.object] = rootEntry(s.object, s.obj.Manifest)
+			}
 		}
-	}
-	for _, k := range sortedKeys(staged) {
-		if _, ok := entries[k]; !ok && g.placedIn(staged[k], loc) {
-			entries[k] = rootEntry(k, staged[k])
+	case m.From:
+		for _, o := range g.n.liveObjects(rd, m.Bucket) {
+			entries[o.key] = rootEntry(o.key, o.rec.Manifest)
 		}
 	}
 	list := make([]merkle.Entry, 0, len(entries))
@@ -351,12 +323,17 @@ func (g *migrator) root(rd occ.Reader, bucket, loc, id string) []byte {
 
 func (g *migrator) Root(c saga.Call, bucket, loc string, done func([]byte, error)) {
 	g.n.later(func() {
+		m, err := saga.DecodeMigrationInput(c.Input)
+		if err != nil || m.Bucket != bucket {
+			done(nil, permanent(fmt.Errorf("node: root of %q: input %+v: %w", bucket, m, ErrMalformed)))
+			return
+		}
 		rd, err := g.n.reader()
 		if err != nil {
 			done(nil, err)
 			return
 		}
-		done(g.root(rd, bucket, loc, string(c.Key.Saga)), nil)
+		done(g.root(rd, m, loc, string(c.Key.Saga)), nil)
 	})
 }
 
@@ -404,6 +381,12 @@ func (g *migrator) keep(bucket string) (map[storage.VersionID]bool, error) {
 }
 
 func (g *migrator) purgeRegion(bucket, region string, done func(error)) {
+	if !g.n.ViewSettled() {
+		g.n.later(func() {
+			done(fmt.Errorf("node: purge %q in %q: membership view still settling: %w", bucket, region, ErrUnsettled))
+		})
+		return
+	}
 	keep, err := g.keep(bucket)
 	if err != nil {
 		done(err)
@@ -468,6 +451,12 @@ func (g *migrator) Pointer(c saga.Call, bucket string, done func(string, error))
 	rd, err := g.n.reader()
 	if err != nil {
 		g.n.later(func() { done("", err) })
+		return
+	}
+	if !g.n.ViewSettled() {
+		g.n.later(func() {
+			done("", fmt.Errorf("node: pointer of %q: membership view still settling: %w", bucket, ErrUnsettled))
+		})
 		return
 	}
 	local, _ := rd.Route(bucket)

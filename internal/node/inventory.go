@@ -191,7 +191,7 @@ func (n *Node) checkInventory(inv *inventory, exp map[string]expectedShard) {
 	for _, d := range res.Diffs {
 		switch {
 		case d.HasLocal && (!d.HasRemote || d.Local != d.Remote):
-			if !inv.rebuilding[d.Key] && n.rebuilding < MaxRebuilds {
+			if !inv.rebuilding[d.Key] && n.rebuilding < MaxRebuilds && !n.purged[exp[d.Key].man.Version] {
 				n.rebuild(inv, d.Key, exp[d.Key])
 			}
 		case !d.HasLocal && d.HasRemote:
@@ -258,7 +258,7 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 			return
 		}
 		enc, err := storage.EncodeStripe(codec, man.Version, stripe, data)
-		if err != nil || storage.BlobChecksum(enc[es.idx]) != want[es.idx] {
+		if err != nil || storage.BlobChecksum(enc[es.idx]) != want[es.idx] || n.purged[man.Version] {
 			n.stats.RebuildFailures++
 			return
 		}
@@ -333,6 +333,7 @@ func (n *Node) purge(bucket string, keep map[storage.VersionID]bool) (int, error
 		if keep[id.Version] {
 			continue
 		}
+		n.purged[id.Version] = true
 		if err := n.store.Store().Delete(id); err != nil && !isNotFound(err) {
 			return c, err
 		}
