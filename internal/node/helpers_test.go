@@ -264,4 +264,3 @@ func (m *measure) report(t *testing.T) {
 		t.Logf("MEASURE %s n=%d min=%d p50=%d p99=%d max=%d", k, len(v), v[0], v[len(v)/2], v[min(len(v)-1, len(v)*99/100)], v[len(v)-1])
 	}
 }
-
