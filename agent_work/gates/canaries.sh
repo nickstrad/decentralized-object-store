@@ -73,19 +73,19 @@ base_pkg() {
   printf 'package sim\n\nimport "testing"\n\nfunc TestDouble(t *testing.T) {\n\tif Double(2) != 4 {\n\t\tt.Fatal("double")\n\t}\n}\n' > internal/sim/zz_canary_test.go
 }
 
-plant_gofmt()    { printf 'package buildcheck\nfunc   zzUnformatted( ) int {return 1}\n' > internal/buildcheck/zz_canary.go; }
+plant_gofmt()    { mkdir -p internal/buildcheck; printf 'package buildcheck\nfunc   zzUnformatted( ) int {return 1}\n' > internal/buildcheck/zz_canary.go; }
 plant_timenow()  { mkdir -p internal/sim; printf 'package sim\n\nimport "time"\n\nfunc zzNow() int64 {\n\treturn time.Now().UnixNano()\n}\n' > internal/sim/zz_canary.go; }
 plant_alias()    { mkdir -p internal/sim; printf 'package sim\n\nimport clock "time"\n\nvar zzNow = clock.Now\n' > internal/sim/zz_canary.go; }
 plant_goroutine(){ mkdir -p internal/sim; printf 'package sim\n\nfunc zzSpawn(f func()) {\n\tgo f()\n}\n' > internal/sim/zz_canary.go; }
 plant_require()  { printf '\nrequire golang.org/x/sys v0.30.0\n' >> go.mod; }
-plant_rapid()    { printf 'package buildcheck\n\nimport "pgregory.net/rapid"\n\nvar zzGen = rapid.Int()\n' > internal/buildcheck/zz_canary.go; }
-plant_tagged()   { printf '//go:build never\n\npackage buildcheck\n\nimport _ "github.com/klauspost/reedsolomon"\n' > internal/buildcheck/zz_canary.go; }
+plant_rapid()    { mkdir -p internal/buildcheck; printf 'package buildcheck\n\nimport "pgregory.net/rapid"\n\nvar zzGen = rapid.Int()\n' > internal/buildcheck/zz_canary.go; }
+plant_tagged()   { mkdir -p internal/buildcheck; printf '//go:build never\n\npackage buildcheck\n\nimport _ "github.com/klauspost/reedsolomon"\n' > internal/buildcheck/zz_canary.go; }
 plant_gowork()   { printf 'go 1.26.0\n\nuse .\n' > go.work; }
-plant_panic()    { printf 'package buildcheck\n\nfunc zzBoom() {\n\tpanic("unlisted")\n}\n' > internal/buildcheck/zz_canary.go; }
+plant_panic()    { mkdir -p internal/buildcheck; printf 'package buildcheck\n\nfunc zzBoom() {\n\tpanic("unlisted")\n}\n' > internal/buildcheck/zz_canary.go; }
 plant_stale()    { printf 'internal/buildcheck/nowhere.go\tGone\tan entry that matches no panic\n' >> agent_work/gates/panic-allowlist.txt; }
-plant_comment()  { printf 'package buildcheck\n\n// zzNote is a comment written before the prose stage.\nconst zzNote = 1\n' > internal/buildcheck/zz_canary.go; }
+plant_comment()  { mkdir -p internal/buildcheck; printf 'package buildcheck\n\n// zzNote is a comment written before the prose stage.\nconst zzNote = 1\n' > internal/buildcheck/zz_canary.go; }
 plant_docpath()  { printf '\nSee /root/Software/decentralized-object-store for the checkout.\n' >> README.md; }
-plant_gopath()   { printf 'package buildcheck\n\nconst zzWhere = "/root/briefs/objstore-p2-x.md"\n' > internal/buildcheck/zz_canary.go; }
+plant_gopath()   { mkdir -p internal/buildcheck; printf 'package buildcheck\n\nconst zzWhere = "/root/briefs/objstore-p2-x.md"\n' > internal/buildcheck/zz_canary.go; }
 plant_import()   { mkdir -p internal/sim; printf 'package sim\n\nimport "sync"\n\nvar zzMu sync.Mutex\n' > internal/sim/zz_canary.go; }
 plant_reflect()  { mkdir -p internal/sim; printf 'package sim\n\nimport "reflect"\n\nfunc zzKeys(m map[string]int) []reflect.Value {\n\treturn reflect.ValueOf(m).MapKeys()\n}\n' > internal/sim/zz_canary.go; }
 plant_helper() {
@@ -97,13 +97,13 @@ plant_tagclock() { mkdir -p internal/sim; printf 'package sim\n' > internal/sim/
 plant_tagonly()  { mkdir -p internal/sim; printf '//go:build missingtag\n\npackage sim\n\nimport "time"\n\nvar zzAttack = time.Now()\n' > internal/sim/zz_canary.go; }
 plant_ptrfmt()   { mkdir -p internal/sim; printf 'package sim\n\nimport "fmt"\n\nfunc zzAddr(p *int) string {\n\treturn fmt.Sprintf("%%v", p)\n}\n' > internal/sim/zz_canary.go; }
 plant_sortties() { mkdir -p internal/sim; printf 'package sim\n\nimport "sort"\n\nfunc zzKeys(m map[string]int) []string {\n\tvar a []string\n\tfor k := range m {\n\t\ta = append(a, k)\n\t}\n\tsort.Slice(a, func(i, j int) bool { return false })\n\treturn a\n}\n' > internal/sim/zz_canary.go; }
-plant_asm()      { printf 'package buildcheck\n\nfunc zzTicks() uint64\n' > internal/buildcheck/zz_canary.go; printf '#include "textflag.h"\n\nTEXT ·zzTicks(SB), NOSPLIT, $0-8\n\tRDTSC\n\tSHLQ $32, DX\n\tORQ DX, AX\n\tMOVQ AX, ret+0(FP)\n\tRET\n' > internal/buildcheck/zz_canary_amd64.s; }
+plant_asm()      { mkdir -p internal/buildcheck; printf 'package buildcheck\n\nfunc zzTicks() uint64\n' > internal/buildcheck/zz_canary.go; printf '#include "textflag.h"\n\nTEXT ·zzTicks(SB), NOSPLIT, $0-8\n\tRDTSC\n\tSHLQ $32, DX\n\tORQ DX, AX\n\tMOVQ AX, ret+0(FP)\n\tRET\n' > internal/buildcheck/zz_canary_amd64.s; }
 plant_nestedmod(){ mkdir -p extras; printf 'module example.org/extra\n\ngo 1.26.0\n\nrequire example.org/evil v1.0.0\n' > extras/go.mod; printf 'package extra\n' > extras/x.go; }
-plant_shadow()   { printf '//go:build never\n\npackage buildcheck\n\nfunc panic(any) {}\n' > internal/buildcheck/zz_shadow.go; printf 'package buildcheck\n\nfunc zzBoom() {\n\tpanic("unlisted")\n}\n' > internal/buildcheck/zz_canary.go; }
-plant_fakedir()  { printf 'package buildcheck\n\n//go: this is prose dressed as a directive\nconst zzNote = 1\n' > internal/buildcheck/zz_canary.go; }
-plant_generated(){ printf '// Code generated by a human who wanted to write prose. DO NOT EDIT.\n\npackage buildcheck\n\nconst zzNote = 1\n' > internal/buildcheck/zz_canary.go; }
-plant_vet()      { printf 'package buildcheck\n\nimport "fmt"\n\nfunc zzVet() string {\n\treturn fmt.Sprintf("%%d", "not a number")\n}\n' > internal/buildcheck/zz_canary.go; }
-plant_build()    { printf 'package buildcheck\n\nfunc zzBroken() int {\n\treturn zzUndefined\n}\n' > internal/buildcheck/zz_canary.go; }
+plant_shadow()   { mkdir -p internal/buildcheck; printf '//go:build never\n\npackage buildcheck\n\nfunc panic(any) {}\n' > internal/buildcheck/zz_shadow.go; printf 'package buildcheck\n\nfunc zzBoom() {\n\tpanic("unlisted")\n}\n' > internal/buildcheck/zz_canary.go; }
+plant_fakedir()  { mkdir -p internal/buildcheck; printf 'package buildcheck\n\n//go: this is prose dressed as a directive\nconst zzNote = 1\n' > internal/buildcheck/zz_canary.go; }
+plant_generated(){ mkdir -p internal/buildcheck; printf '// Code generated by a human who wanted to write prose. DO NOT EDIT.\n\npackage buildcheck\n\nconst zzNote = 1\n' > internal/buildcheck/zz_canary.go; }
+plant_vet()      { mkdir -p internal/buildcheck; printf 'package buildcheck\n\nimport "fmt"\n\nfunc zzVet() string {\n\treturn fmt.Sprintf("%%d", "not a number")\n}\n' > internal/buildcheck/zz_canary.go; }
+plant_build()    { mkdir -p internal/buildcheck; printf 'package buildcheck\n\nfunc zzBroken() int {\n\treturn zzUndefined\n}\n' > internal/buildcheck/zz_canary.go; }
 plant_badlink()  { mkdir -p docs; printf '# Front page\n\n[missing](nowhere.md)\n' > docs/index.md; }
 plant_symlink()  { ln -s ../../STATE.md book/chapters/zz-private.md; }
 plant_unnamed() {
