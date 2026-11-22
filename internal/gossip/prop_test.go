@@ -1,8 +1,13 @@
 package gossip_test
 
 import (
+	"encoding/binary"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,8 +40,15 @@ func applyAll(v *gossip.View, ups []gossip.Member) {
 	}
 }
 
+func drawMergeUpdates(t *rapid.T) []gossip.Member {
+	return rapid.SliceOfN(genUpdate(propIDs, 4), 0, 40).Draw(t, "updates")
+}
+
 func propViewMergeCommutative(t *rapid.T) {
-	ups := rapid.SliceOfN(genUpdate(propIDs, 4), 0, 40).Draw(t, "updates")
+	checkViewMerge(t, drawMergeUpdates(t))
+}
+
+func checkViewMerge(t *rapid.T, ups []gossip.Member) {
 	perm := rapid.Permutation(ups).Draw(t, "perm")
 	split := rapid.IntRange(0, len(ups)).Draw(t, "split")
 
@@ -80,7 +92,8 @@ func TestPropViewMergeIsCommutative(t *testing.T) {
 	rapid.Check(t, propViewMergeCommutative)
 }
 
-func viewMergeSeeds() [][]byte {
+func viewMergeSeeds(tb testing.TB) [][]byte {
+	tb.Helper()
 	pattern := func(n int, f func(i int) byte) []byte {
 		b := make([]byte, n)
 		for i := range b {
@@ -88,10 +101,8 @@ func viewMergeSeeds() [][]byte {
 		}
 		return b
 	}
-	return [][]byte{
+	seeds := [][]byte{
 		pattern(64, func(int) byte { return 0 }),
-		pattern(256, func(int) byte { return 1 }),
-		pattern(1024, func(i int) byte { return byte(i % 2) }),
 		pattern(1024, func(i int) byte { return byte(i % 3) }),
 		pattern(1024, func(i int) byte {
 			if i%8 == 7 {
@@ -100,10 +111,26 @@ func viewMergeSeeds() [][]byte {
 			return 0
 		}),
 	}
+	raw, err := os.ReadFile(filepath.Join("testdata", "merge-seeds.txt"))
+	if err != nil {
+		tb.Fatalf("read merge seeds: %v", err)
+	}
+	for i, block := range strings.Split(strings.TrimSpace(string(raw)), "\n\n") {
+		var b []byte
+		for _, word := range strings.Fields(block) {
+			u, err := strconv.ParseUint(word, 0, 64)
+			if err != nil {
+				tb.Fatalf("merge seed %d: word %q: %v", i, word, err)
+			}
+			b = binary.LittleEndian.AppendUint64(b, u)
+		}
+		seeds = append(seeds, b)
+	}
+	return seeds
 }
 
 func FuzzViewMergeLaws(f *testing.F) {
-	for _, b := range viewMergeSeeds() {
+	for _, b := range viewMergeSeeds(f) {
 		f.Add(b)
 	}
 	f.Fuzz(rapid.MakeFuzz(propViewMergeCommutative))
@@ -111,7 +138,7 @@ func FuzzViewMergeLaws(f *testing.F) {
 
 func TestFuzzSeedsRunWithoutSkipping(t *testing.T) {
 	prop := rapid.MakeFuzz(propViewMergeCommutative)
-	for i, b := range viewMergeSeeds() {
+	for i, b := range viewMergeSeeds(t) {
 		skipped := false
 		t.Run(fmt.Sprintf("FuzzViewMergeLaws seed %d of %d bytes", i, len(b)), func(t *testing.T) {
 			defer func() { skipped = t.Skipped() }()
@@ -120,6 +147,23 @@ func TestFuzzSeedsRunWithoutSkipping(t *testing.T) {
 		if skipped {
 			t.Errorf("seed %d (%d bytes) of FuzzViewMergeLaws skips under go test", i, len(b))
 		}
+	}
+}
+
+func TestFuzzSeedsDrawNonEmptyViews(t *testing.T) {
+	seeds := viewMergeSeeds(t)
+	large := 0
+	for i, b := range seeds {
+		n := -1
+		t.Run(fmt.Sprintf("seed %d", i), func(t *testing.T) {
+			rapid.MakeFuzz(func(rt *rapid.T) { n = len(drawMergeUpdates(rt)) })(t, b)
+		})
+		if n >= 5 {
+			large++
+		}
+	}
+	if large < 2 {
+		t.Fatalf("%d of %d FuzzViewMergeLaws seeds draw five or more updates, want at least 2", large, len(seeds))
 	}
 }
 
