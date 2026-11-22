@@ -1,0 +1,10 @@
+%% draw-visual: -x 3 -y 1 -p 0
+sequenceDiagram
+  participant I as Initiator
+  participant R as Responder
+  I->>R: L0: depth + root (35 B)
+  R-->>I: equal (1 B) or 16 child hashes
+  I->>R: L1..D-1: mismatched paths
+  R-->>I: bitmap + non-zero child hashes
+  I->>R: LD: leaf paths (+ resume key)
+  R-->>I: leaf entries (0x03 or 0x05 cut)
