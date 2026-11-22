@@ -573,3 +573,86 @@ func TestTheLossRecordIsCommittedBeforeTheManifestIsTombstoned(t *testing.T) {
 		t.Fatalf("commits of the declaration came in the order %v; the loss record must be first, so a crash between the two leaves no key deleted without a record", order)
 	}
 }
+
+func TestAStaleShardWriteToAWipedHolderOfADeclaredLostVersionIsCollected(t *testing.T) {
+	h, _ := lossHarness(t, 10, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)
+	h.gc.off = true
+	w, a := h.ids[9], h.ids[0]
+	if err := h.s.Clog(w, a); err != nil {
+		t.Fatal(err)
+	}
+	oi, err := h.syncPut(t, w, storage.PutRequest{Bucket: "g", Key: "k", Data: make([]byte, 700)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	man := h.mans[oi.Version]
+	if _, ok := holderOf(man, 0, w); ok {
+		t.Fatal("the case needs a writer outside the placement")
+	}
+	name, ok := holderOf(man, 0, a)
+	if !ok {
+		t.Fatalf("the case needs %s in the placement", a)
+	}
+	rotted := 0
+	for _, ref := range man.Stripes[0].Shards {
+		if ref.Node == a || rotted == 2 {
+			continue
+		}
+		n, _ := holderOf(man, 0, ref.Node)
+		if err := h.s.BitRot(ref.Node, n); err != nil {
+			t.Fatal(err)
+		}
+		rotted++
+	}
+	if err := h.s.RunUntilConverged(h.s.Now().Add(30*time.Second), func() bool { return len(h.declared) > 0 && h.converged() }); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.WipeRejoin(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.RunFor(time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.Unclog(w, a); err != nil {
+		t.Fatal(err)
+	}
+	stored := func() bool {
+		_, ok := h.s.Disk(a).Peek(name)
+		return ok
+	}
+	if err := h.s.RunUntilConverged(h.s.Now().Add(time.Second), stored); err != nil {
+		t.Fatalf("the case needs the stale shard write to land on the wiped holder: %v", err)
+	}
+	if err := h.s.RunUntilConverged(h.s.Now().Add(60*time.Second), h.converged); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.RunFor(h.cfg.GCGrace + 30*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.Err(); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range h.ids {
+		if left := shardsOf(h, id, oi.Version); len(left) > 0 {
+			t.Fatalf("%s still holds %v of the declared-lost version after the grace period", id, left)
+		}
+	}
+	for _, n := range h.up() {
+		rd, err := n.OCC().Reader()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rd.Record(occ.ManifestKey("g", "k")).Live() {
+			t.Fatalf("%s: the declared-lost version is live again", n.ID())
+		}
+		if !rd.Record(occ.TagKey("g", "k", "~lost/"+oi.Version)).Live() {
+			t.Fatalf("%s: the loss record is gone", n.ID())
+		}
+		if _, _, err := h.syncGet(t, n.ID(), "g", "k"); !isNotFoundErr(err) {
+			t.Fatalf("%s: get of the declared-lost object returned %v, want not found", n.ID(), err)
+		}
+	}
+	if len(h.declared) != 1 {
+		t.Fatalf("declarations %v, want exactly one", h.declared)
+	}
+}

@@ -1141,13 +1141,25 @@ once every holder of every such stripe is up, holds the manifest and can reach t
 then the key stays live and unreadable, with GET failing with `ErrUnavailable` (503). A holder that
 never returns, such as a node removed for good, keeps it so forever: the code cannot tell such a
 holder from a partitioned one. A wiped disk (`WipeRejoin`) loses the holder's own copy of its record
-until metadata sync returns it. A writer's shard request sent before the wipe and delivered to the
-new incarnation in that window would be stored, which would falsify the record; if k-1 other good
-shards exist as well, a version that could be rebuilt again is, or stays, declared lost. This needs
-a disk loss on a holder of a stripe already below k and a request in flight across that holder's
-manifest sync, rebuild round, record, wipe and restart. The simulator delivers such a request (it
-addresses a node, not an incarnation); the real runtime does not (the connection dies with the
-process). This path is not tested and not closed. The tombstone
+until metadata sync returns it, and with it the refusal of that shard. A writer's shard request sent
+before the wipe and delivered to the new incarnation in that window is stored. The simulator
+delivers such a request (it addresses a node, not an incarnation); the real runtime does not (the
+connection dies with the process). Two cases follow.
+(a) The version is already declared lost: the stored shard belongs to a version that is dead on
+record. The holder gets the death marker by metadata sync and collects the shard after `GCGrace`; the
+key stays not live with its loss record on every node
+(`TestAStaleShardWriteToAWipedHolderOfADeclaredLostVersionIsCollected`, the first confirm pass's
+scenario). Between the write and the collection the disks hold k shards of a version already
+declared lost.
+(b) The version is not yet declared: the record is false until the holder's shard goes. If the other
+k-1 good shards exist, the stripe can be read and rebuilt, and no further absence record is written
+for it; if more than m records were already written, the version is declared lost although k shards
+exist at that moment. This needs a disk loss on a record-holding holder of a stripe already below k
+and a shard write held in the network across that holder's wipe and restart. Not closed and not
+tested. A closure was built and withdrawn: a node that starts with empty metadata refused shard
+writes until its first metadata sync round, which also refused the first writes of every new
+cluster (`TestMigrationHoldsAWriteAcknowledgedJustBeforeTheFlipDST` failed on all three shards).
+The tombstone
 discards a concurrent newer write of the same key only under last-writer-wins, counted and logged.
 The orphan rule itself is unchanged: a write whose writer stays away longer than `OrphanGrace` can
 lose its shards and then be declared lost.
