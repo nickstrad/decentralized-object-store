@@ -23,6 +23,13 @@
       "status": "published"
     },
     {
+      "n": 4,
+      "slug": "merkle-anti-entropy",
+      "title": "Merkle-Tree Anti-Entropy",
+      "file": "chapters/04-merkle-anti-entropy.md",
+      "status": "published"
+    },
+    {
       "n": 6,
       "slug": "sagas",
       "title": "Sagas",
