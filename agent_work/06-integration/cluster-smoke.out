@@ -1,0 +1,27 @@
+SMOKE: starting node-a1 node-b1 node-c1
+ Network objstore_cluster Creating 
+ Network objstore_cluster Creating 
+ Network objstore_cluster Created 
+ Network objstore_cluster Created 
+ Container objstore-node-c1-1 Creating 
+ Container objstore-node-b1-1 Creating 
+ Container objstore-node-a1-1 Creating 
+ Container objstore-node-a1-1 Created 
+ Container objstore-node-b1-1 Created 
+ Container objstore-node-c1-1 Created 
+ Container objstore-node-c1-1 Starting 
+ Container objstore-node-a1-1 Starting 
+ Container objstore-node-b1-1 Starting 
+ Container objstore-node-c1-1 Started 
+ Container objstore-node-a1-1 Started 
+ Container objstore-node-b1-1 Started 
+SMOKE: all three nodes answer /_health
+SMOKE: every node sees three alive members in regions a,b,c
+SMOKE: bucket created on node-a1 is visible on node-b1 and node-c1
+SMOKE: PUT 1500000 bytes on node-a1: ETag "c3415ade83328f81087c7e59aa314c0e9248cb04e182e54be4fc5a82e7545170" version 9656131069d0c109
+SMOKE: GET on node-c1 returns the same 1500000 bytes (sha256 0de52bcd9da0bec7d5313ff2a4ff6324d4b6cca36968f2533faf0008b2c01e68)
+SMOKE: create-only PUT (If-None-Match: *) on node-b1 over the object: 412
+SMOKE: PUT If-Match the current ETag: 200; the same ETag again: 412
+SMOKE: health on node-a1 reports 0 last-writer-wins discards
+SMOKE: PASS
+exit=0

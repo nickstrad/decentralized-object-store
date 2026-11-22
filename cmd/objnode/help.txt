@@ -1,0 +1,12 @@
+id
+region
+listen
+http
+data
+seeds
+k
+m
+stripe
+max-object
+shutdown-timeout
+config
