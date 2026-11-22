@@ -142,3 +142,5 @@ Exported `2d34871` into `/tmp/neon2-prefix` and ran `go test -count=1 ./internal
    `docker compose run --rm -T -e GOMAXPROCS=2 -w /src/agent_work/gates/detlint dev go run . -root /src internal/node` — PASS (`checked 9 files in 1 packages`).
 9. Frozen packages check:
    `git diff 1dc99da..HEAD -- internal/env internal/sim` — empty.
+
+FINDINGS CLOSED (orchestrator, 2026-11-22): all four majors and both nits are fixed on the chunk branch (build-notes.md section 15); the twenty scenarios run as `internal/node/secondeyes_*_test.go`; a focused confirm by a fresh reviewer found all six closed (NEON-CONFIRM.md).

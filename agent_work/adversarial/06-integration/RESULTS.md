@@ -46,3 +46,10 @@ Sample sizes are tens of seeds per full-node scenario (see `ATTACKS.md`), not th
 product's own named tests under the harness's seeds. The full 78-cell × 500-seed
 migration matrix on real components is not run here or in the gate; it belongs to the
 hardening chunk.
+
+## Rerun after the loss-declaration fix and the second-eyes round (2026-11-22)
+
+`run-all.sh` on the chunk branch after build-notes sections 14 and 15: 662 held, 0 broken, no set-up
+errors, 404 s. The harness has no scenario for loss declaration; that rule is covered by the node
+package's own tests, the confirm pass (`06-integration/ARBITRATION-2.md`) and the second independent
+pass, whose scenarios are kept in `neon-second-eyes/` and run as `internal/node/secondeyes_*_test.go`.

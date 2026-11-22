@@ -47,3 +47,5 @@ VERDICT: NITS
    `docker compose run --rm -T -e GOMAXPROCS=2 dev go test -count=1 ./internal/node -run Prop -rapid.checks=2000 -v` — PASS (85.198s).
 7. 50-seed DST sweep:
    `docker compose run --rm -T -e GOMAXPROCS=2 -e DST_SEEDS=50 dev go test -count=1 ./internal/node -run 'DST$' -v` — PASS (312.240s).
+
+NITS CLOSED (orchestrator, 2026-11-22): the one new nit is fixed (a disk read error no longer drops a shard from the inventory, and a failed rebuild indexes an intact local shard; `TestConfirmAReadErrorOnAnIndexedShardStartsNoRebuild`, failing first), and the inaccurate sentences in build-notes.md section 15 are corrected. This change was made after the confirm pass and is covered by the package tests and the final gate, not by a further review.
