@@ -756,7 +756,7 @@ func (n *Node) Health() storage.Health {
 		{Name: "recounts", Value: s.Recounts}, {Name: "recount_writes", Value: s.RecountWrites},
 		{Name: "puts", Value: s.Puts}, {Name: "put_failures", Value: s.PutFailures}, {Name: "gets", Value: s.Gets},
 		{Name: "get_failures", Value: s.GetFailures}, {Name: "deletes", Value: s.Deletes},
-		{Name: "rebuilds", Value: s.Rebuilds}, {Name: "rebuild_failures", Value: s.RebuildFailures},
+		{Name: "rebuilds", Value: s.Rebuilds}, {Name: "rebuild_failures", Value: s.RebuildFailures}, {Name: "rebuilt_bytes", Value: s.RebuiltBytes},
 		{Name: "collected_shards", Value: s.Collected}, {Name: "collected_loser_shards", Value: s.CollectedLoser},
 		{Name: "meta_rounds", Value: ms.Rounds}, {Name: "meta_repaired", Value: ms.Repaired},
 		{Name: "malformed", Value: s.Malformed}, {Name: "member_deaths", Value: s.MemberDeaths},
