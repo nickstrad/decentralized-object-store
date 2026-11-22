@@ -388,7 +388,7 @@ func (rt *Runtime) enqueue(d inboundDatagram) {
 func (rt *Runtime) track(c net.Conn) bool {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	if rt.state == stateClosed {
+	if rt.state == stateClosed || rt.ctx.Err() != nil || rt.panicked.Load() {
 		return false
 	}
 	rt.conns[c] = struct{}{}
