@@ -1,0 +1,7 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  STORE[Store] -->|6| DOC[Document, LWW merge]
+  STORE -->|7| VERSION[Version and record]
+  STORE -->|8| DISCARD[Discard record]
+  STORE -->|9| HLC[Hybrid logical clock]
+  STORE -->|10| ENC[Canonical encoding]

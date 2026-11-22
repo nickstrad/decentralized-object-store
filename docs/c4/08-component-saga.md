@@ -18,7 +18,7 @@ flowchart TB
   ENV["Environment interfaces<br/>internal/env"]
   STORAGE["Storage engine<br/>internal/storage"]
   MERKLE["Merkle anti-entropy<br/>internal/merkle"]
-  CRDT["CRDT metadata<br/>internal/crdt"]
+  OCC["OCC metadata<br/>internal/occ"]
   DST["DST harness, test system<br/>internal/sim"]
   API -->|1| ORCH
   ORCH -->|2| WORKFLOW
@@ -30,7 +30,7 @@ flowchart TB
   ORCH -->|8| ENV
   STEPS -->|9| STORAGE
   STEPS -->|10| MERKLE
-  STEPS -->|11| CRDT
+  STEPS -->|11| OCC
   ORCH -->|12| RECOVERY
   SIM -->|13| STEPS
   SIM -->|14| ORCH
@@ -38,7 +38,7 @@ flowchart TB
   SIM -->|16| ENV
   SIM -->|17| DST
   classDef ext stroke-dasharray:4 3
-  class API,ENV,STORAGE,MERKLE,CRDT,DST ext
+  class API,ENV,STORAGE,MERKLE,OCC,DST ext
 ```
 
 Terminal rendering, in 4 parts. Each numbered relationship appears in exactly one part.
@@ -73,7 +73,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
                                        │             └───────────────────┘
                                        │
                                        │             ┌───────────────────┐
-                                       └─────────11─►│   CRDT metadata   │
+                                       └─────────11─►│    OCC metadata   │
                                                      └───────────────────┘
 ```
 
@@ -142,7 +142,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 8 | Orchestrator | Environment interfaces | Appends and syncs records; step timeout and backoff timers; jitter (Disk, Clock, Rand) |
 | 9 | Step interfaces | Storage engine | Allocate target, copy shards, delete source (target design) |
 | 10 | Step interfaces | Merkle anti-entropy | Verify Merkle root (target design; the merkle package is built, and the step is bound to it in Chunk 6) |
-| 11 | Step interfaces | CRDT metadata | Flip routing pointer (LWW-Register) (target design) |
+| 11 | Step interfaces | OCC metadata | Flip the bucket's routing pointer: `SetRoute`, an unconditional write settled by last-writer-wins (target design; the occ package is built, and the step is bound to it in Chunk 6) |
 | 12 | Orchestrator | Recovery | Checks each record against the same state machine before writing it, and takes its next action from it |
 | 13 | Model cluster | Step interfaces | Implements `MigrationOps` over the model stores (`sagasim.Ops`) |
 | 14 | Model cluster | Orchestrator | Its coordinator process hosts the `Engine`; the matrix runner freezes it at a chosen record through `Config.Hook` |

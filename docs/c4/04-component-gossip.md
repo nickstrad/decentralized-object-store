@@ -8,7 +8,7 @@ All components but the wire codec and the `View` lattice are parts of one single
 ```mermaid
 flowchart TB
   STORAGE["Storage engine<br/>internal/storage"]
-  CRDT["CRDT metadata<br/>internal/crdt"]
+  OCC["OCC metadata<br/>internal/occ"]
   subgraph GOSSIP["internal/gossip"]
     JOIN["Join and leave"]
     PROBE["Probe"]
@@ -30,7 +30,7 @@ flowchart TB
   FSYNC -->|8| VIEW
   PROBE -->|9| ENV
   STORAGE -->|10| VIEW
-  CRDT -->|11| VIEW
+  OCC -->|11| VIEW
   JOIN -->|12| FSYNC
   VIEW -->|13| SUSP
   VIEW -->|14| DISSEM
@@ -47,7 +47,7 @@ flowchart TB
   JOIN -->|25| ENV
   PROBE -->|26| JOIN
   classDef ext stroke-dasharray:4 3
-  class STORAGE,CRDT,ENV ext
+  class STORAGE,OCC,ENV ext
 ```
 
 Terminal rendering, in 4 parts. Each numbered relationship appears in exactly one part.
@@ -85,7 +85,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 └─────────────────────────┘             │
                                         │
 ┌─────────────────────────┐             │
-│      CRDT metadata      ├─────11──────┘
+│       OCC metadata      ├─────11──────┘
 └─────────────────────────┘
 ```
 
@@ -183,7 +183,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 8 | Full-state sync | Membership view | Sends the whole view and merges the peer's; picks one random live member and one heal target from dead entries, dead tombstones and seeds that are not live |
 | 9 | Probe | Environment interfaces | Period and probe-timeout timers; random probe order (Clock, Rand) |
 | 10 | Storage engine | Membership view | Reads Membership for shard placement (target design) |
-| 11 | CRDT metadata | Membership view | Reads Membership for replication peer choice (target design) |
+| 11 | OCC metadata | Membership view | Reads the live members as its replication peers, through the `Membership` interface `internal/occ` declares (target design) |
 | 12 | Join and leave | Full-state sync | A join is the push-pull sync sent to every seed; the first reply completes it |
 | 13 | Membership view | Suspicion state machine | Starts the suspicion timer when a member becomes suspect, by probe or by gossip, and stops it when the member leaves suspect; hands claims about this node itself to refutation |
 | 14 | Membership view | Piggybacked dissemination | Queues every accepted change for gossip, except a dead or left verdict about a member this node never held |
