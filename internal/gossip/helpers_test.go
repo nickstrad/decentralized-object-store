@@ -37,6 +37,7 @@ func (t *fakeTimer) Reset(d time.Duration) bool {
 	return was
 }
 
+// fakeClock is a manual virtual clock with FIFO tie-breaking for single-node unit tests.
 type fakeClock struct {
 	now    env.Time
 	seq    uint64
@@ -100,6 +101,7 @@ type pendingRequest struct {
 	cb      func([]byte, error)
 }
 
+// fakeNet records outbound datagrams and pending requests for manual delivery in unit tests.
 type fakeNet struct {
 	sent     []sent
 	requests []pendingRequest
@@ -130,6 +132,7 @@ func (n *fakeNet) takeRequests() []pendingRequest {
 	return out
 }
 
+// harness pairs a single Node with a fakeClock, fakeNet, and recorded events.
 type harness struct {
 	t      tester
 	clock  *fakeClock

@@ -1,3 +1,21 @@
+// Package gossip implements SWIM cluster membership and failure detection as a
+// single-threaded env.Process.
+//
+// Each Node probes peers in shuffled round-robin order, uses indirect ping-req
+// probes on direct timeout, scales suspicion timeouts and piggyback retransmit
+// limits with ceil(log2 N), refutes suspicion or death by raising its volatile
+// incarnation number, and runs periodic push-pull sync against live members,
+// dead entries/tombstones, and remembered seeds so healed partitions re-merge.
+//
+// Rules for callers:
+//   - A Node acts only through env.Clock, env.Rand, and env.Transport (env.Disk
+//     is unused) and must be driven by a single serialized event loop.
+//   - Subscribe callbacks run synchronously inside the handler that changed the
+//     view; Join completion callbacks never run inside Join.
+//   - Plain SWIM is unauthenticated: a forged dead claim at math.MaxUint32
+//     saturates incarnation and cannot be refuted. Expired dead/left entries
+//     move to a bounded tombstone table (MaxTombstones) so monotonicity and
+//     post-retention partition healing hold while tombstones are not evicted.
 package gossip
 
 import (
@@ -13,8 +31,15 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// EventKind identifies the membership transition reported in an Event.
 type EventKind uint8
 
+// Membership transition event kinds emitted to subscribers:
+//   - EventJoined: a previously non-live or unknown member became live.
+//   - EventSuspected: a member entered StateSuspect (follows EventJoined if first seen suspect).
+//   - EventRecovered: a suspected member refuted and returned to StateAlive.
+//   - EventDied: a live member transitioned to StateDead.
+//   - EventLeft: a live member transitioned to StateLeft.
 const (
 	EventJoined EventKind = iota + 1
 	EventSuspected
@@ -23,6 +48,7 @@ const (
 	EventLeft
 )
 
+// String returns the canonical lowercase name of k, or "event(N)" if unknown.
 func (k EventKind) String() string {
 	switch k {
 	case EventJoined:
@@ -39,18 +65,29 @@ func (k EventKind) String() string {
 	return "event(" + strconv.Itoa(int(k)) + ")"
 }
 
+// Event describes one membership state transition observed at virtual time At.
 type Event struct {
 	Kind   EventKind
 	Member Member
 	At     env.Time
 }
 
+// Membership is the read and subscription surface exposed to other cluster
+// components. All methods return plain values.
 type Membership interface {
+	// Members returns all live (StateAlive or StateSuspect) members, including
+	// self, sorted by ID.
 	Members() []Member
+	// Lookup returns any currently retained entry for id, or ErrNotMember if
+	// unknown or buried.
 	Lookup(id env.NodeID) (Member, error)
+	// Subscribe registers fn to be called synchronously whenever a member
+	// transitions between membership states.
 	Subscribe(fn func(Event))
 }
 
+// Stats holds monotonic diagnostic counters for a Node's datagram traffic,
+// probing, suspicion, refutation, sync exchanges, and resource bounds.
 type Stats struct {
 	Sent              uint64
 	SendErrors        uint64
@@ -112,6 +149,8 @@ type probeState struct {
 	timer  env.Timer
 }
 
+// Node is a single-threaded SWIM gossip member implementing env.Process and
+// Membership. A Node is not safe for concurrent use.
 type Node struct {
 	e     env.Env
 	cfg   Config
@@ -153,6 +192,9 @@ type Node struct {
 var _ env.Process = (*Node)(nil)
 var _ Membership = (*Node)(nil)
 
+// New constructs a Node for e with cfg (applying defaults before validation).
+// It returns env.ErrInvalidArgument if cfg is invalid, e.ID is empty or longer
+// than MaxIDLen, e.Region exceeds MaxIDLen, or Clock, Net, or Rand is nil.
 func New(e env.Env, cfg Config) (*Node, error) {
 	cfg = cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -182,6 +224,8 @@ func New(e env.Env, cfg Config) (*Node, error) {
 	return n, nil
 }
 
+// remember records distinct non-self, non-empty seed IDs up to MaxSeeds for
+// lonely rejoin retries and periodic partition-heal syncs.
 func (n *Node) remember(seeds []env.NodeID) {
 	for _, s := range seeds {
 		if len(n.seeds) >= MaxSeeds {
@@ -193,12 +237,16 @@ func (n *Node) remember(seeds []env.NodeID) {
 	}
 }
 
+// Start arms the periodic probe and push-pull sync timers and initiates a join
+// to any configured seeds. Calling Start more than once or after Leave is a no-op.
 func (n *Node) Start() {
 	if n.started || n.closed {
 		return
 	}
 	n.started = true
 	n.enqueue(n.self)
+	// Randomize initial probe and sync offsets so nodes started together do not
+	// fire probe or sync bursts in lockstep.
 	n.tick = n.e.Clock.AfterFunc(randDuration(n, n.cfg.ProbeInterval), n.onTick)
 	n.syncTimer = n.e.Clock.AfterFunc(n.cfg.SyncInterval/2+randDuration(n, n.cfg.SyncInterval), n.onSync)
 	if len(n.seeds) > 0 {
@@ -210,12 +258,19 @@ func randDuration(n *Node, d time.Duration) time.Duration {
 	return time.Duration(n.e.Rand.Int64N(int64(d)))
 }
 
+// Self returns this node's own membership record.
 func (n *Node) Self() Member { return n.self }
 
+// Members returns all live (StateAlive or StateSuspect) members, including
+// self, sorted by ID.
 func (n *Node) Members() []Member { return n.view.Live() }
 
+// All returns every entry currently retained in the view, including dead and
+// left entries within DeadRetention, sorted by ID.
 func (n *Node) All() []Member { return n.view.All() }
 
+// Tombstones returns the buried dead and left verdicts currently remembered
+// after DeadRetention expiry, sorted by ID.
 func (n *Node) Tombstones() []Member {
 	out := make([]Member, 0, len(n.tombs))
 	for _, r := range n.tombFIFO {
@@ -227,8 +282,12 @@ func (n *Node) Tombstones() []Member {
 	return out
 }
 
+// LiveCount returns the number of live (StateAlive or StateSuspect) members,
+// including self.
 func (n *Node) LiveCount() int { return n.view.LiveCount() }
 
+// Lookup returns the retained view entry for id, or an error wrapping
+// ErrNotMember if id is unknown or has been buried as a tombstone.
 func (n *Node) Lookup(id env.NodeID) (Member, error) {
 	m, ok := n.view.Get(id)
 	if !ok {
@@ -237,16 +296,22 @@ func (n *Node) Lookup(id env.NodeID) (Member, error) {
 	return m, nil
 }
 
+// Subscribe appends fn to the list of listeners called synchronously on every
+// membership state transition. Nil callbacks are ignored.
 func (n *Node) Subscribe(fn func(Event)) {
 	if fn != nil {
 		n.subs = append(n.subs, fn)
 	}
 }
 
+// Stats returns a snapshot of the node's diagnostic counters.
 func (n *Node) Stats() Stats { return n.stats }
 
+// LastError returns the most recent non-fatal datagram, sync, refutation, or
+// view-bound error recorded by the node, or nil if none has occurred.
 func (n *Node) LastError() error { return n.lastErr }
 
+// Closed reports whether Leave has been called on this node.
 func (n *Node) Closed() bool { return n.closed }
 
 func (n *Node) record(counter *uint64, err error) {
@@ -261,6 +326,9 @@ func (n *Node) emit(kind EventKind, m Member) {
 	}
 }
 
+// OnDatagram processes an inbound SWIM datagram (ping, ack, ping-req, or
+// gossip). Datagrams from self are ignored; datagrams arriving after Leave or
+// failing size, decode, or kind validation are dropped and counted in Stats.
 func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 	if from == n.self.ID {
 		return
@@ -274,6 +342,8 @@ func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 		n.record(&n.stats.Malformed, fmt.Errorf("gossip: datagram from %s: %d bytes over the %d-byte limit: %w", from, len(msg), n.cfg.MaxPacket, ErrMalformed))
 		return
 	}
+	// Take ownership of the scratch decode buffer before invoking handlers so
+	// any nested call cannot alias the same backing array.
 	rx := n.rx
 	n.rx = nil
 	m, err := decodeInto(msg, rx, n.known)
@@ -310,6 +380,8 @@ func (n *Node) known(id []byte) (Member, bool) {
 	return m, ok
 }
 
+// pruneRelays expires relays past their deadline in FIFO order and compacts
+// stale references left by already-answered relays once the FIFO exceeds 2*MaxRelays.
 func (n *Node) pruneRelays(now env.Time) {
 	i := 0
 	for i < len(n.relayFIFO) && now > n.relayFIFO[i].expires {
@@ -334,6 +406,8 @@ func (n *Node) onPingReq(from env.NodeID, m Message) {
 		return
 	}
 	now := n.e.Clock.Now()
+	// Prune on arrival so expired relays free slots even before Start or under
+	// long probe intervals, then enforce the hard MaxRelays cap.
 	n.pruneRelays(now)
 	if len(n.relays) >= MaxRelays {
 		n.stats.RelaysDropped++
@@ -341,6 +415,7 @@ func (n *Node) onPingReq(from env.NodeID, m Message) {
 	}
 	n.seq++
 	seq := n.seq
+	// Record the relay only if the ping was actually accepted by the transport.
 	if !n.sendWith(m.Target, Message{Kind: KindPing, Seq: seq}, nil) {
 		return
 	}
@@ -367,6 +442,8 @@ func (n *Node) onAck(seq uint32) {
 	}
 }
 
+// receive routes updates about self to refutation and all other updates to the
+// membership view so a node never applies a non-alive state to itself.
 func (n *Node) receive(u Member) {
 	if u.ID == n.self.ID {
 		n.refute(u)
@@ -379,10 +456,13 @@ func (n *Node) refute(u Member) {
 	if n.closed {
 		return
 	}
+	// Ignore stale claims and exact matches; a region mismatch at equal
+	// incarnation must still be refuted because Supersedes breaks ties by region.
 	if u.Incarnation < n.self.Incarnation || (u.Incarnation == n.self.Incarnation && u.State == StateAlive && u.Region == n.self.Region) {
 		return
 	}
 	if u.Incarnation == math.MaxUint32 {
+		// Incarnation cannot increment past MaxUint32; saturate without wrap.
 		n.stats.RefuteOverflows++
 		n.lastErr = fmt.Errorf("gossip: %s claims %s at the maximum incarnation; cannot refute: %w", u.ID, u.State.String(), env.ErrInvalidArgument)
 		if n.self.Incarnation == math.MaxUint32 {
@@ -432,6 +512,11 @@ func (n *Node) apply(u Member) bool {
 		return false
 	}
 	if !had {
+		// Invariant: n.view and n.tombs are disjoint. A non-superseding dead/left
+		// verdict for a buried ID is dropped so peers purging at different times
+		// never resurrect it; a non-superseding live claim reinstates the buried
+		// verdict for one DeadRetention (quietly, not gossiped) so a wiped or
+		// lagging node learns the verdict and refutes above it.
 		if t, ok := n.tombs[u.ID]; ok && !Supersedes(u, t.m) {
 			if u.State.Live() && n.admit(u.ID) {
 				delete(n.tombs, u.ID)
@@ -479,6 +564,8 @@ func (n *Node) apply(u Member) bool {
 			n.emit(EventLeft, u)
 		}
 	}
+	// Do not re-gossip second-hand dead/left verdicts about members this node
+	// never held; sync replies still carry them for DeadRetention.
 	if had || isLive {
 		n.enqueue(u)
 	}
@@ -503,6 +590,8 @@ func (n *Node) startSuspicion(l *memberLocal, u Member) {
 	})
 }
 
+// addToRotation inserts a newly live peer into a random slot in the unvisited
+// remainder of the current probe round in O(1) time.
 func (n *Node) addToRotation(id env.NodeID) {
 	if n.rotating[id] {
 		return
@@ -514,6 +603,8 @@ func (n *Node) addToRotation(id env.NodeID) {
 	n.rotating[id] = true
 }
 
+// nextTarget returns the next live non-self peer in the shuffled round-robin
+// schedule, rebuilding and reshuffling the round when exhausted.
 func (n *Node) nextTarget() (env.NodeID, bool) {
 	for range 2 {
 		for n.rotIdx < len(n.rotation) {
@@ -554,6 +645,9 @@ func (n *Node) onTick() {
 	now := n.e.Clock.Now()
 	n.pruneRelays(now)
 	n.purge(now)
+	// If this node knows no live peer other than itself, retry remembered seeds
+	// once per probe period (one join in flight at a time) so early join packet
+	// loss does not leave it isolated until the first periodic sync.
 	if n.view.LiveCount() <= 1 && len(n.seeds) > 0 && n.joins == 0 {
 		n.stats.Rejoins++
 		n.join(n.seeds, nil)
@@ -635,6 +729,9 @@ func (n *Node) purge(now env.Time) {
 	n.queue = slices.DeleteFunc(n.queue, func(q *queued) bool { return n.qindex[q.m.ID] != q })
 }
 
+// bury records an expired dead/left verdict as a tombstone, evicting the
+// oldest-buried tombstone when at MaxTombstones and compacting stale FIFO
+// entries left by reinstatements or rejoins past 2*MaxTombstones.
 func (n *Node) bury(m Member) {
 	for len(n.tombs) >= MaxTombstones {
 		ref := n.tombFIFO[0]
@@ -666,8 +763,13 @@ func (n *Node) enqueue(m Member) {
 	n.queue = append(n.queue, q)
 }
 
+// piggyback selects updates to attach to an outbound datagram to peer to
+// within MaxPacket and MaxUpdates: explicit leads first, then to's own
+// non-alive entry (so a suspected or dead peer learns about it even after the
+// queue is spent), then queued updates ordered by fewest transmissions and newest first.
 func (n *Node) piggyback(to env.NodeID, size int, lead []Member) []Member {
 	budget := n.cfg.MaxPacket - size
+	// Take ownership of the scratch slice before encoding so nested calls never alias it.
 	out := n.tx[:0]
 	n.tx = nil
 	var first []Member
@@ -740,6 +842,13 @@ func (n *Node) sendWith(to env.NodeID, m Message, lead []Member) bool {
 	return true
 }
 
+// Join contacts every non-self, non-empty seed in seeds with a full-state sync
+// request and remembers those seeds (up to MaxSeeds) for future heal syncs and
+// lonely rejoins. It returns ErrClosed if Leave has already been called.
+// Otherwise done (if non-nil) runs asynchronously: with nil on the first seed
+// reply, or after all seeds fail with ErrJoinFailed joined with each cause.
+// Joining with no non-self seeds bootstraps a single-node cluster and reports
+// nil (or ErrClosed if Leave runs before the deferred callback fires).
 func (n *Node) Join(seeds []env.NodeID, done func(error)) error {
 	if n.closed {
 		return fmt.Errorf("gossip: join: %w", ErrClosed)
@@ -760,6 +869,7 @@ func (n *Node) join(seeds []env.NodeID, done func(error)) {
 		}
 	}
 	if len(targets) == 0 {
+		// Defer through AfterFunc(0) so done never runs synchronously inside Join.
 		n.e.Clock.AfterFunc(0, func() {
 			if n.closed {
 				done(fmt.Errorf("gossip: join: %w", ErrClosed))
@@ -796,6 +906,7 @@ func (n *Node) syncWith(peer env.NodeID, cb func(error)) {
 	if err != nil {
 		n.record(&n.stats.SyncErrors, fmt.Errorf("gossip: sync with %s: %w", peer, err))
 		failed := n.lastErr
+		// Report encode failures asynchronously so Join's callback contract holds.
 		n.e.Clock.AfterFunc(0, func() { cb(failed) })
 		return
 	}
@@ -841,6 +952,8 @@ func (n *Node) onSync() {
 			heal = append(heal, id)
 		}
 	}
+	// Include buried dead tombstones (never StateLeft) and non-live remembered
+	// seeds so partitions longer than DeadRetention can still re-merge.
 	for _, r := range n.tombFIFO {
 		if t, ok := n.tombs[r.id]; ok && t.order == r.order && t.m.State == StateDead {
 			heal = append(heal, r.id)
@@ -863,6 +976,9 @@ func (n *Node) onSync() {
 	n.syncTimer = n.e.Clock.AfterFunc(n.cfg.SyncInterval, n.onSync)
 }
 
+// OnRequest handles an inbound KindSyncReq by merging the sender's updates and
+// replying once with the merged view as KindSyncResp. It replies with ErrClosed
+// after Leave or ErrMalformed for invalid or non-sync payloads.
 func (n *Node) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	if n.closed {
 		reply(nil, fmt.Errorf("gossip: sync from %s: %w", from, ErrClosed))
@@ -888,12 +1004,17 @@ func (n *Node) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	reply(resp, nil)
 }
 
+// Leave marks this node StateLeft at its current incarnation, broadcasts a
+// gossip datagram led by its leave entry to every live peer, stops all timers,
+// and closes the node. Calling Leave more than once returns ErrClosed.
 func (n *Node) Leave() error {
 	if n.closed {
 		return fmt.Errorf("gossip: leave: %w", ErrClosed)
 	}
 	n.self.State = StateLeft
 	n.view.Apply(n.self)
+	// Replace any still-queued StateAlive self entry before sending so leave
+	// datagrams carry self once, as StateLeft.
 	n.enqueue(n.self)
 	for _, m := range n.view.Live() {
 		n.sendWith(m.ID, Message{Kind: KindGossip}, []Member{n.self})
@@ -912,6 +1033,9 @@ func (n *Node) Leave() error {
 	return nil
 }
 
+// EncodeState returns a deterministic binary snapshot of the node's volatile
+// state (self, view, dissemination queue, tombstones, relay count, seeds, and
+// counters) for simulator state-digest comparison.
 func (n *Node) EncodeState() []byte {
 	b := []byte{Version}
 	b = appendMember(b, n.self)

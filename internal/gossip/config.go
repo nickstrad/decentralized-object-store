@@ -9,6 +9,20 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// Protocol defaults and validation bounds:
+//   - DefaultProbeInterval: protocol period; one peer is probed each period.
+//   - DefaultProbeTimeout: direct-ack wait before indirect ping-req; must be below ProbeInterval.
+//   - DefaultIndirectProbes: number of peers asked to relay a timed-out probe (k).
+//   - DefaultSuspicionMult: suspicion timeout multiplier on ceil(log2 N) * ProbeInterval.
+//   - DefaultRetransmitMult: piggyback transmission multiplier on ceil(log2 N) (lambda).
+//   - DefaultSyncInterval: period for push-pull full-state sync and partition-heal sync.
+//   - DefaultSyncTimeout: request timeout for sync and join exchanges.
+//   - DefaultDeadRetention: duration dead and left entries stay in the view before burial.
+//   - DefaultMaxPacket: datagram byte budget for outbound and inbound packets.
+//   - MaxIndirectProbes, MaxMult, MaxPacketLimit, MaxInterval: upper bounds enforced by Validate.
+//   - MaxTombstones: maximum buried verdicts kept per node before evicting the oldest.
+//   - MaxRelays: maximum concurrent in-flight ping-req relays kept per node.
+//   - MaxSeeds: maximum distinct non-self seed addresses accepted or remembered per node.
 const (
 	DefaultProbeInterval  = time.Second
 	DefaultProbeTimeout   = 400 * time.Millisecond
@@ -29,6 +43,12 @@ const (
 	MaxSeeds          = 256
 )
 
+// Config configures a Node. Zero numeric or duration fields select the
+// corresponding Default* constant (MaxMembers defaults to MaxUpdates).
+// MaxPacket is assumed uniform across the cluster: inbound datagrams larger
+// than MaxPacket are dropped as malformed. MaxMembers bounds the view entry
+// count (including self) so sync messages fit the wire count field; deployments
+// with long IDs or regions should set it lower to stay within transport limits.
 type Config struct {
 	Seeds          []env.NodeID
 	ProbeInterval  time.Duration
@@ -45,6 +65,8 @@ type Config struct {
 	noIndirect bool
 }
 
+// WithDefaults returns a copy of c with a cloned Seeds slice and zero fields
+// replaced by their defaults.
 func (c Config) WithDefaults() Config {
 	c.Seeds = slices.Clone(c.Seeds)
 	if c.ProbeInterval == 0 {
@@ -80,6 +102,9 @@ func (c Config) WithDefaults() Config {
 	return c
 }
 
+// Validate checks that every field of c (typically after WithDefaults) lies
+// within its protocol bounds. It returns an error wrapping env.ErrInvalidArgument
+// if any field or seed ID is invalid.
 func (c Config) Validate() error {
 	bad := func(what string, v int64) error {
 		return fmt.Errorf("gossip: config: %s %d out of range: %w", what, v, env.ErrInvalidArgument)
@@ -116,6 +141,8 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// log2Ceil computes max(1, ceil(log2(n))) in integer arithmetic so scaling
+// decisions never depend on floating point.
 func log2Ceil(n int) int {
 	if n <= 2 {
 		return 1
@@ -123,10 +150,14 @@ func log2Ceil(n int) int {
 	return bits.Len(uint(n - 1))
 }
 
+// SuspicionTimeout returns how long a suspected member stays suspect before
+// being declared dead in a cluster of n live members: SuspicionMult * max(1, ceil(log2(n))) * ProbeInterval.
 func (c Config) SuspicionTimeout(n int) time.Duration {
 	return time.Duration(c.SuspicionMult*log2Ceil(n)) * c.ProbeInterval
 }
 
+// RetransmitLimit returns how many times a queued update is piggybacked before
+// leaving the dissemination queue in a cluster of n live members: RetransmitMult * max(1, ceil(log2(n))).
 func (c Config) RetransmitLimit(n int) int {
 	return c.RetransmitMult * log2Ceil(n)
 }

@@ -88,10 +88,15 @@ func checkViewMerge(t *rapid.T, ups []gossip.Member) {
 	}
 }
 
+// TestPropViewMergeIsCommutative proves that View.Apply forms a commutative,
+// associative, idempotent max-lattice ordered by Supersedes across arbitrary
+// update permutations, duplicates, and splits.
 func TestPropViewMergeIsCommutative(t *testing.T) {
 	rapid.Check(t, propViewMergeCommutative)
 }
 
+// viewMergeSeeds returns byte buffers for FuzzViewMergeLaws: three synthetic
+// patterns plus non-empty rapid draw buffers from testdata/merge-seeds.txt.
 func viewMergeSeeds(tb testing.TB) [][]byte {
 	tb.Helper()
 	pattern := func(n int, f func(i int) byte) []byte {
@@ -129,6 +134,8 @@ func viewMergeSeeds(tb testing.TB) [][]byte {
 	return seeds
 }
 
+// FuzzViewMergeLaws searches the View merge lattice laws under Go's coverage-
+// guided fuzzer via rapid.MakeFuzz.
 func FuzzViewMergeLaws(f *testing.F) {
 	for _, b := range viewMergeSeeds(f) {
 		f.Add(b)
@@ -136,6 +143,8 @@ func FuzzViewMergeLaws(f *testing.F) {
 	f.Fuzz(rapid.MakeFuzz(propViewMergeCommutative))
 }
 
+// TestFuzzSeedsRunWithoutSkipping proves that every corpus seed of
+// FuzzViewMergeLaws executes to completion under plain go test without skipping.
 func TestFuzzSeedsRunWithoutSkipping(t *testing.T) {
 	prop := rapid.MakeFuzz(propViewMergeCommutative)
 	for i, b := range viewMergeSeeds(t) {
@@ -150,6 +159,8 @@ func TestFuzzSeedsRunWithoutSkipping(t *testing.T) {
 	}
 }
 
+// TestFuzzSeedsDrawNonEmptyViews proves that at least two FuzzViewMergeLaws
+// corpus seeds draw five or more updates rather than exercising only empty views.
 func TestFuzzSeedsDrawNonEmptyViews(t *testing.T) {
 	seeds := viewMergeSeeds(t)
 	large := 0
@@ -232,6 +243,9 @@ func compareID(a, b env.NodeID) int {
 	return 0
 }
 
+// propRecordMonotonicAcrossPurge checks that a node's effective record for each
+// member (view entry or tombstone) never vanishes or moves down the Supersedes
+// order across random gossip deliveries and DeadRetention purges.
 func propRecordMonotonicAcrossPurge(t *rapid.T) {
 	h := newHarness(t, "self", gossip.Config{DeadRetention: time.Second})
 	ids := []env.NodeID{"a", "b", "c"}
@@ -276,6 +290,9 @@ func propRecordMonotonicAcrossPurge(t *rapid.T) {
 	}
 }
 
+// TestPropIncarnationMonotonic proves that self stays alive with monotonic
+// incarnation, views stay sorted with non-decreasing incarnations, and each
+// member's effective record never regresses across retention purges.
 func TestPropIncarnationMonotonic(t *testing.T) {
 	rapid.Check(t, propIncarnationMonotonic)
 	rapid.Check(t, propRecordMonotonicAcrossPurge)

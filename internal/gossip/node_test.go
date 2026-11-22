@@ -55,6 +55,9 @@ func probeRound(t *testing.T, h *harness, n int) []env.NodeID {
 	return targets
 }
 
+// TestProbeTargetRotation proves shuffled round-robin probing of every live
+// peer once per round, skipping dead members, admitting mid-round joiners, and
+// staying silent when alone.
 func TestProbeTargetRotation(t *testing.T) {
 	t.Run("each live member is probed exactly once per round and rounds are reshuffled", func(t *testing.T) {
 		h := newHarness(t, "self", gossip.Config{})
@@ -121,6 +124,10 @@ func TestProbeTargetRotation(t *testing.T) {
 	})
 }
 
+// TestProbeAndIndirectProbe proves direct ping/ack, indirect ping-req fan-out
+// through k distinct peers, indirect ack recovery, suspicion-to-death expiry,
+// refutation cancellation, single-use relay forwarding and expiry, and log2(N)
+// scaling of suspicion timeout and retransmit limit.
 func TestProbeAndIndirectProbe(t *testing.T) {
 	setup := func(t *testing.T, cfg gossip.Config) (*harness, env.NodeID, uint32) {
 		h := newHarness(t, "self", cfg)
@@ -295,6 +302,10 @@ func countUpdates(t *testing.T, ss []sent) map[string]int {
 	return out
 }
 
+// TestPiggybackSelectionAndLimit proves exact lambda*ceil(log2 N) transmission
+// counts, strict MaxPacket enforcement, freshest-first priority, leading with
+// the recipient's own suspicion even after the queue drains, replacement of
+// older queued updates, and dropping stale updates without re-gossiping.
 func TestPiggybackSelectionAndLimit(t *testing.T) {
 	t.Run("each update is piggybacked exactly lambda*log2(N) times and then dropped", func(t *testing.T) {
 		h := newHarness(t, "self", gossip.Config{})
@@ -401,6 +412,10 @@ func TestPiggybackSelectionAndLimit(t *testing.T) {
 	})
 }
 
+// TestJoin proves multi-seed join failure reporting (ErrJoinFailed with every
+// cause), single-seed success, malformed-reply rejection, single-node
+// bootstrap, Start seed joins, lonely periodic retries (one in flight at a
+// time), and refuting an older incarnation on rejoin.
 func TestJoin(t *testing.T) {
 	resp := func(t *testing.T, ms ...gossip.Member) []byte {
 		b, err := gossip.Message{Kind: gossip.KindSyncResp, Updates: ms}.Encode()
@@ -565,6 +580,9 @@ func TestJoin(t *testing.T) {
 	})
 }
 
+// TestSyncRequests proves push-pull sync merging, malformed request rejection,
+// periodic sync targeting both live peers and dead/seed heal candidates, and
+// purging dead and left entries after DeadRetention.
 func TestSyncRequests(t *testing.T) {
 	t.Run("a sync request is merged and answered with the merged view", func(t *testing.T) {
 		h := newHarness(t, "self", gossip.Config{})
@@ -645,6 +663,9 @@ func TestSyncRequests(t *testing.T) {
 	})
 }
 
+// TestOperationsAfterLeave proves that Leave broadcasts StateLeft to live
+// peers, stops all timers, rejects further Leave/Join/OnRequest with ErrClosed
+// (mapped through the wire code table), and drops datagrams while counting them.
 func TestOperationsAfterLeave(t *testing.T) {
 	h := newHarness(t, "self", gossip.Config{})
 	announce(h, peerIDs(3)...)
@@ -711,6 +732,9 @@ func TestOperationsAfterLeave(t *testing.T) {
 	})
 }
 
+// TestErrors proves handling of oversize packets, transport send errors,
+// malformed or self-addressed datagrams, ErrNotMember lookups, wire code table
+// round-trips for every sentinel, and Config/Env validation failures.
 func TestErrors(t *testing.T) {
 	t.Run("an inbound packet over MaxPacket is dropped as malformed", func(t *testing.T) {
 		h := newHarness(t, "self", gossip.Config{})
@@ -833,6 +857,8 @@ func TestErrors(t *testing.T) {
 	})
 }
 
+// TestEncodeStateIsCanonical proves that identical histories produce identical
+// EncodeState bytes and differing views produce distinct encodings.
 func TestEncodeStateIsCanonical(t *testing.T) {
 	run := func() *harness {
 		h := newHarness(t, "self", gossip.Config{})

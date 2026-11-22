@@ -8,10 +8,14 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// Version is the wire protocol version byte carried at offset 0 of every packet.
 const Version byte = 1
 
+// Kind identifies the SWIM message type carried on a datagram or sync exchange.
 type Kind uint8
 
+// Wire message kinds. KindPing..KindGossip travel as datagrams; KindSyncReq
+// and KindSyncResp travel only on the request/response path.
 const (
 	KindPing Kind = iota + 1
 	KindAck
@@ -21,6 +25,7 @@ const (
 	KindSyncResp
 )
 
+// String returns the canonical hyphenated name of k, or "kind(N)" if unknown.
 func (k Kind) String() string {
 	switch k {
 	case KindPing:
@@ -43,6 +48,11 @@ func (k Kind) valid() bool { return k >= KindPing && k <= KindSyncResp }
 
 func (k Kind) datagram() bool { return k >= KindPing && k <= KindGossip }
 
+// Wire framing limits:
+//   - MaxIDLen: maximum byte length of a NodeID or Region (1-byte length prefix).
+//   - MaxUpdates: maximum updates per message (uint16 count field, 65,535).
+//   - MinPacket: minimum valid Config.MaxPacket (781 bytes), large enough for a
+//     maximum-length ping-req header plus one maximum-length member update.
 const (
 	MaxIDLen      = 255
 	MaxUpdates    = 1<<16 - 1
@@ -52,6 +62,8 @@ const (
 	MinPacket     = headerSize + 1 + MaxIDLen + maxUpdateSize
 )
 
+// Message is the decoded form of a SWIM datagram or push-pull sync payload.
+// Target is populated only when Kind is KindPingReq.
 type Message struct {
 	Kind    Kind
 	Seq     uint32
@@ -59,8 +71,10 @@ type Message struct {
 	Updates []Member
 }
 
+// UpdateSize returns the encoded wire length in bytes of a single Member update.
 func UpdateSize(u Member) int { return 7 + len(u.ID) + len(u.Region) }
 
+// Size returns the exact encoded wire length in bytes of m.
 func (m Message) Size() int {
 	n := headerSize
 	if m.Kind == KindPingReq {
@@ -76,6 +90,10 @@ func invalid(what string, args ...any) error {
 	return fmt.Errorf("gossip: encode: "+what+": %w", append(args, env.ErrInvalidArgument)...)
 }
 
+// Encode serializes m in canonical big-endian wire format:
+// version(u8) | kind(u8) | seq(u32) | [target(len u8, bytes) if ping-req] |
+// count(u16) | count*(state u8 | incarnation u32 | id | region).
+// It returns env.ErrInvalidArgument if any field violates wire constraints.
 func (m Message) Encode() ([]byte, error) {
 	if !m.Kind.valid() {
 		return nil, invalid("kind %d", uint8(m.Kind))
@@ -168,6 +186,10 @@ func (d *decoder) str(lenWhat, what string) string {
 	return string(d.take(n, what))
 }
 
+// Decode parses a canonical wire-encoded Message from b. It rejects unknown
+// versions, kinds, or states, empty IDs or targets, truncated payloads, counts
+// exceeding the remaining bytes, and trailing bytes with ErrMalformed.
+// Returned strings are copied out of b so the caller may reuse b safely.
 func Decode(b []byte) (Message, error) {
 	return decodeInto(b, nil, nil)
 }
@@ -187,6 +209,8 @@ func (d *decoder) member() Member {
 	if d.err != nil {
 		return u
 	}
+	// Reuse existing immutable strings for known members to avoid per-datagram
+	// string allocations without aliasing the inbound byte buffer.
 	if d.known != nil {
 		if k, ok := d.known(id); ok {
 			u.ID = k.ID
@@ -203,6 +227,8 @@ func (d *decoder) member() Member {
 	return u
 }
 
+// decodeInto parses b into an optional reusable update slice dst, reusing known
+// member strings through known when provided.
 func decodeInto(b []byte, dst []Member, known func(id []byte) (Member, bool)) (Message, error) {
 	d := &decoder{b: b, known: known}
 	var m Message
@@ -221,6 +247,8 @@ func decodeInto(b []byte, dst []Member, known func(id []byte) (Member, bool)) (M
 		}
 	}
 	count := int(d.u16("update count"))
+	// Check the minimum byte requirement before allocating m.Updates so a
+	// short packet claiming MaxUpdates cannot force a large allocation.
 	if d.err == nil && count*minUpdateSize > len(b)-d.off {
 		d.fail("update count " + strconv.Itoa(count) + " exceeds the packet")
 	}
@@ -237,6 +265,7 @@ func decodeInto(b []byte, dst []Member, known func(id []byte) (Member, bool)) (M
 			m.Updates = append(m.Updates, u)
 		}
 	}
+	// Reject trailing bytes so Encode(Decode(b)) == b holds for every accepted input.
 	if d.err == nil && d.off != len(b) {
 		d.fail(strconv.Itoa(len(b)-d.off) + " trailing bytes")
 	}

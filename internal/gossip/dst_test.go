@@ -74,6 +74,9 @@ type evKey struct {
 	kind    gossip.EventKind
 }
 
+// recorder tracks membership events across every simulated node and fails the
+// run if any observer overturns a dead or left verdict without a higher
+// incarnation, even after retention purges.
 type recorder struct {
 	s      *sim.Sim
 	counts map[evKey]int
@@ -408,6 +411,9 @@ func convergeRun(n int, out *convergeOut) func(seed int64) *sim.Sim {
 	}
 }
 
+// shardedSweep partitions seeds across parallel shards while running each
+// shard's seeds sequentially so finished simulations are freed promptly and
+// peak memory stays bounded to one simulation per shard.
 func shardedSweep(t *testing.T, shards int64, fn func(t *testing.T, seed int64)) {
 	t.Helper()
 	seeds := simtest.Seeds(t)
@@ -430,6 +436,10 @@ func shardedSweep(t *testing.T, shards int64, fn func(t *testing.T, seed int64))
 	}
 }
 
+// TestSWIMConvergenceDST proves deterministic replay and view convergence within
+// convergeC*ceil(log2 N) periods after faults stop at N=20, 50, and 100 under
+// 5-10% link loss with late joins, crashes, and clean leaves, within the
+// per-node datagram budget and with zero false deaths.
 func TestSWIMConvergenceDST(t *testing.T) {
 	t.Parallel()
 	for _, n := range []int{20, 50, 100} {
@@ -479,6 +489,9 @@ func asymRunFn(cfg gossip.Config, out *asymOut) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestSWIMAsymmetricLinkDST proves that a single one-way blocked link in a
+// 12-node cluster causes zero suspicions and zero evictions over 300 seconds
+// when indirect probes are enabled.
 func TestSWIMAsymmetricLinkDST(t *testing.T) {
 	t.Parallel()
 	var sus tally
@@ -496,6 +509,9 @@ func TestSWIMAsymmetricLinkDST(t *testing.T) {
 	})
 }
 
+// TestCanaryNoIndirectProbe plants a bug—disabling indirect probes via
+// WithoutIndirectProbes—in the asymmetric-link scenario and proves that the
+// scenario catches it on every seed (suspicions occur instead of zero).
 func TestCanaryNoIndirectProbe(t *testing.T) {
 	t.Parallel()
 	var sus, died tally
@@ -556,6 +572,9 @@ func crashRun(out *crashOut) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestSWIMCrashDetectionDST proves that a crashed node in a 20-node cluster
+// under 5% link loss is declared dead by every survivor within detectBound with
+// zero false deaths of healthy nodes.
 func TestSWIMCrashDetectionDST(t *testing.T) {
 	t.Parallel()
 	var det tally
@@ -618,6 +637,9 @@ func partitionRun(out *time.Duration) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestSWIMPartitionHealDST proves that after region r0 is partitioned until
+// both sides declare each other dead, healing the network re-merges all views
+// identically within healBound.
 func TestSWIMPartitionHealDST(t *testing.T) {
 	t.Parallel()
 	var heal tally
@@ -671,6 +693,9 @@ func refuteRunFn(out *refuteOut) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestSWIMRefutationDST proves that a briefly paused node becomes suspected,
+// refutes by raising its incarnation upon resuming, is never declared dead, and
+// leaves all cluster views identical.
 func TestSWIMRefutationDST(t *testing.T) {
 	t.Parallel()
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
@@ -736,6 +761,10 @@ func restartRun(waitForDeath bool, out *restartOut) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestSWIMRestartSameIDDST proves that a wiped node rejoining with the same ID
+// (either after being declared dead or before anyone noticed its crash) becomes
+// alive everywhere within rejoinBound at an incarnation no lower than before
+// and strictly higher when its old entry was not alive.
 func TestSWIMRestartSameIDDST(t *testing.T) {
 	t.Parallel()
 	for _, wait := range []bool{true, false} {
@@ -783,6 +812,8 @@ func joinFailRun(out *error) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestJoinNoReachableSeedDST proves through the simulator that Join against
+// crashed and unknown seeds reports ErrJoinFailed wrapping env.ErrUnreachable.
 func TestJoinNoReachableSeedDST(t *testing.T) {
 	t.Parallel()
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
@@ -876,6 +907,9 @@ func tombstoneOf(n *gossip.Node, id env.NodeID) (gossip.Member, bool) {
 	return gossip.Member{}, false
 }
 
+// TestDeadEntriesStayPurgedDST proves that after a crash or clean leave, every
+// survivor purges the victim exactly once, retains a matching tombstone, and
+// never resurrects or reinstates the entry for 3*DeadRetention under periodic sync.
 func TestDeadEntriesStayPurgedDST(t *testing.T) {
 	t.Parallel()
 	for _, leave := range []bool{false, true} {
@@ -961,6 +995,10 @@ func longPartitionRun(seedCrashed bool, out *time.Duration) func(seed int64) *si
 	}
 }
 
+// TestSWIMLongPartitionHealDST proves that a partition held past DeadRetention
+// until both sides have buried each other still re-merges within longHealBound,
+// both when a remembered Join seed sits across the cut and when the only seed
+// crashed beforehand so only dead tombstones point across.
 func TestSWIMLongPartitionHealDST(t *testing.T) {
 	t.Parallel()
 	for _, seedCrashed := range []bool{false, true} {

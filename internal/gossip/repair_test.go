@@ -70,6 +70,13 @@ func syncReq(t tester, ms ...gossip.Member) []byte {
 	return b
 }
 
+// TestDeadEntryLifetime proves the full retention and tombstone lifecycle:
+// staggered purges never resurrect a dead entry across syncs, stale live claims
+// reinstate the buried verdict quietly (allowing a wiped node to refute above
+// it), equal/older verdicts are dropped, higher incarnations start a new life,
+// stranger verdicts are not re-gossiped, tombstones cap at MaxTombstones with
+// oldest-first eviction and bounded FIFO backlog, and heal syncs contact dead
+// tombstones but never left ones.
 func TestDeadEntryLifetime(t *testing.T) {
 	t.Run("two nodes that purge a dead member at different times never resurrect it in each other", func(t *testing.T) {
 		cfg := gossip.Config{DeadRetention: 10 * time.Second}
@@ -320,6 +327,9 @@ func TestDeadEntryLifetime(t *testing.T) {
 	})
 }
 
+// TestJoinSeedsAreRemembered proves that seeds passed to Join are retried while
+// alone and used by heal syncs, remembered seeds are capped at MaxSeeds, and a
+// self-only seed list triggers no join retries.
 func TestJoinSeedsAreRemembered(t *testing.T) {
 	t.Run("seeds given to Join are retried while alone and contacted by the heal sync", func(t *testing.T) {
 		h := newHarness(t, "self", gossip.Config{})
@@ -388,6 +398,10 @@ func TestJoinSeedsAreRemembered(t *testing.T) {
 	})
 }
 
+// TestRelayBounds proves that ping-req floods stay capped at MaxRelays with
+// excess counted in RelaysDropped, expired relays are pruned on arrival without
+// a tick, answered relays keep the expiry FIFO bounded at 2*MaxRelays, and
+// relays whose outbound ping fails are not retained.
 func TestRelayBounds(t *testing.T) {
 	const flood = 10_000
 	t.Run("a ping-req flood keeps at most MaxRelays relays and counts the rest", func(t *testing.T) {
@@ -461,6 +475,10 @@ func TestRelayBounds(t *testing.T) {
 	})
 }
 
+// TestViewBounds proves that Config.MaxMembers caps view growth (recording
+// ErrViewFull while allowing known members to transition and purges to free
+// room), a view filled to MaxUpdates still encodes valid syncs and datagrams,
+// and out-of-range MaxMembers values are rejected.
 func TestViewBounds(t *testing.T) {
 	t.Run("a sync request cannot grow the view past MaxMembers", func(t *testing.T) {
 		h := newHarness(t, "self", gossip.Config{MaxMembers: 10, DeadRetention: time.Second})
@@ -539,6 +557,9 @@ func TestViewBounds(t *testing.T) {
 	})
 }
 
+// TestCallbacksNeverRunInsideTheRegisteringCall proves that Join and Subscribe
+// never invoke their callbacks synchronously and that Join callbacks report
+// ErrClosed (merging nothing) if Leave happens before completion.
 func TestCallbacksNeverRunInsideTheRegisteringCall(t *testing.T) {
 	t.Run("Join with no other seed reports later, not inside Join", func(t *testing.T) {
 		h := newHarness(t, "self", gossip.Config{})
@@ -630,6 +651,9 @@ func TestCallbacksNeverRunInsideTheRegisteringCall(t *testing.T) {
 	})
 }
 
+// TestRepairNits proves that a region mismatch at equal incarnation is refuted,
+// leave packets carry self once as StateLeft, and every gossip wire code lies
+// within the reserved 80..95 block.
 func TestRepairNits(t *testing.T) {
 	t.Run("a peer holding this node alive at its incarnation in another region is refuted", func(t *testing.T) {
 		h := newHarness(t, "self", gossip.Config{})

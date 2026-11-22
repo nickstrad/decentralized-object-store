@@ -11,6 +11,9 @@ import (
 
 const fuzzMaxInput = 64 << 10
 
+// FuzzGossipWire proves that Decode never panics, returns ErrMalformed or a
+// canonical Message with Encode(Decode(b)) == b, and that feeding arbitrary
+// bytes to OnDatagram and OnRequest preserves node invariants and packet bounds.
 func FuzzGossipWire(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{gossip.Version})

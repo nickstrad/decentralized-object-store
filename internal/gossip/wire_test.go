@@ -40,6 +40,8 @@ func wireCases() []struct {
 	}
 }
 
+// TestWireRoundTrip proves exact Size accounting, lossless encode/decode round
+// trips, canonical re-encoding, and golden wire bytes in testdata/wire-golden.txt.
 func TestWireRoundTrip(t *testing.T) {
 	golden := map[string]string{}
 	path := filepath.Join("testdata", goldenWire)
@@ -98,6 +100,8 @@ func normalize(m gossip.Message) gossip.Message {
 	return m
 }
 
+// TestDecodeMalformed proves that truncated, unknown-field, over-counted,
+// empty-ID/target, and trailing-byte packets are rejected with ErrMalformed.
 func TestDecodeMalformed(t *testing.T) {
 	valid := func(m gossip.Message) []byte {
 		b, err := m.Encode()
@@ -148,6 +152,7 @@ func TestDecodeMalformed(t *testing.T) {
 	}
 }
 
+// valid2 crafts a wire ping whose single update has an empty member ID.
 func valid2(t *testing.T) []byte {
 	t.Helper()
 	b, err := gossip.Message{Kind: gossip.KindPing, Seq: 1, Updates: []gossip.Member{mem("a", 1, gossip.StateAlive)}}.Encode()
@@ -159,6 +164,9 @@ func valid2(t *testing.T) []byte {
 	return append(c, b[15:]...)
 }
 
+// TestEncodeRejectsInvalidMessages proves that Encode refuses invalid kinds,
+// misplaced or over-long targets, bad updates, and counts above MaxUpdates with
+// env.ErrInvalidArgument.
 func TestEncodeRejectsInvalidMessages(t *testing.T) {
 	long := env.NodeID(strings.Repeat("x", gossip.MaxIDLen+1))
 	many := make([]gossip.Member, gossip.MaxUpdates+1)

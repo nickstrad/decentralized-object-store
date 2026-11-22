@@ -25,6 +25,10 @@ var (
 	left      = outcome{changed: true, events: []gossip.EventKind{gossip.EventLeft}}
 )
 
+// TestStateTransitions proves the full 16-pair alive/suspect/dead/left
+// transition matrix at lower, equal, and higher incarnations—plus unknown
+// members and region tie-breaking—against both Node (including emitted events)
+// and View.Apply.
 func TestStateTransitions(t *testing.T) {
 	const base = 5
 	type row struct {
@@ -154,6 +158,9 @@ func TestStateTransitions(t *testing.T) {
 	})
 }
 
+// TestIncarnationRules proves self-refutation, monotonic self incarnation,
+// no self-declared death, saturation without wrap at MaxUint32, ignoring
+// claims after Leave, and overturning death only at a higher incarnation.
 func TestIncarnationRules(t *testing.T) {
 	selfInc := func(h *harness) uint32 { return h.node.Self().Incarnation }
 	refuted := func(t *testing.T, h *harness, want uint32) {
@@ -272,6 +279,8 @@ func TestIncarnationRules(t *testing.T) {
 	})
 }
 
+// TestViewAccessors proves View sorting, live filtering, removal, invalid
+// input rejection, and string formatting for State, EventKind, and Kind.
 func TestViewAccessors(t *testing.T) {
 	v := gossip.NewView()
 	for _, m := range []gossip.Member{
@@ -323,6 +332,8 @@ func TestViewAccessors(t *testing.T) {
 	}
 }
 
+// TestViewApplyRemoveWithoutReadStaysBounded proves that alternating View.Apply
+// and View.Remove compacts the internal ID slice without needing an ordered read.
 func TestViewApplyRemoveWithoutReadStaysBounded(t *testing.T) {
 	v := gossip.NewView()
 	v.Apply(gossip.Member{ID: "a", State: gossip.StateAlive})
