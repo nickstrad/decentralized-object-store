@@ -57,6 +57,7 @@ type simCluster struct {
 	ids     []env.NodeID
 	nodes   []Node
 	cli     map[string]env.Env
+	disks   map[env.NodeID]env.Disk
 	cfg     node.Config
 	o       *simOracle
 	ledger  *Ledger
@@ -68,7 +69,7 @@ type simCluster struct {
 
 func newSimCluster(seed int64, opts simOptions) *simCluster {
 	table, err := node.CodeTable()
-	c := &simCluster{cli: map[string]env.Env{}, ledger: newLedger(), moved: map[byte]uint64{}, opts: opts}
+	c := &simCluster{cli: map[string]env.Env{}, disks: map[env.NodeID]env.Disk{}, ledger: newLedger(), moved: map[byte]uint64{}, opts: opts}
 	if err != nil {
 		c.s = sim.New(sim.Config{Seed: seed})
 		c.s.Fail(err)
@@ -121,6 +122,7 @@ func (c *simCluster) factory(e env.Env) env.Process {
 	id := e.ID
 	cfg.CommitSink = func(key string, held occ.Record, v occ.Version) { c.o.commit(id, key, held, v) }
 	cfg.DiscardSink = func(key string, w, l occ.Version) { c.o.discard(id, key, w, l) }
+	c.disks[id] = e.Disk
 	e = e.WithDisk(watchDisk{Disk: e.Disk, id: id, o: c.o})
 	e = e.WithNet(countNet{Transport: e.Net, moved: c.moved})
 	if c.opts.wrap != nil {
@@ -181,19 +183,19 @@ func (c *simCluster) upNodes() []*node.Node {
 	return out
 }
 
-func (c *simCluster) Tier() string             { return "S" }
-func (c *simCluster) Nodes() []Node            { return slices.Clone(c.nodes) }
-func (c *simCluster) Regions() []string        { return slices.Clone(c.regions) }
-func (c *simCluster) Layout() storage.Layout   { return c.cfg.Layout }
-func (c *simCluster) Rand() *rand.Rand         { return c.s.WorkloadRand() }
-func (c *simCluster) Now() time.Duration       { return time.Duration(c.s.Now()) }
-func (c *simCluster) Ledger() *Ledger          { return c.ledger }
-func (c *simCluster) Up(n Node) bool           { return c.node(env.NodeID(n.ID)) != nil }
-func (c *simCluster) Err() error               { return c.s.Err() }
-func (c *simCluster) fail(err error)           { c.s.Fail(err) }
-func (c *simCluster) sim() *sim.Sim            { return c.s }
-func (c *simCluster) ready() bool              { return c.allReady() }
-func (c *simCluster) idOf(n Node) env.NodeID   { return env.NodeID(n.ID) }
+func (c *simCluster) Tier() string              { return "S" }
+func (c *simCluster) Nodes() []Node             { return slices.Clone(c.nodes) }
+func (c *simCluster) Regions() []string         { return slices.Clone(c.regions) }
+func (c *simCluster) Layout() storage.Layout    { return c.cfg.Layout }
+func (c *simCluster) Rand() *rand.Rand          { return c.s.WorkloadRand() }
+func (c *simCluster) Now() time.Duration        { return time.Duration(c.s.Now()) }
+func (c *simCluster) Ledger() *Ledger           { return c.ledger }
+func (c *simCluster) Up(n Node) bool            { return c.node(env.NodeID(n.ID)) != nil }
+func (c *simCluster) Err() error                { return c.s.Err() }
+func (c *simCluster) fail(err error)            { c.s.Fail(err) }
+func (c *simCluster) sim() *sim.Sim             { return c.s }
+func (c *simCluster) ready() bool               { return c.allReady() }
+func (c *simCluster) idOf(n Node) env.NodeID    { return env.NodeID(n.ID) }
 func (c *simCluster) nodeOf(id env.NodeID) Node { return c.nodes[slices.Index(c.ids, id)] }
 
 func (c *simCluster) allReady() bool {

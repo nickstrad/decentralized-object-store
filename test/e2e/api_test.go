@@ -101,9 +101,9 @@ type apiNode struct {
 	onPut func(n *node.Node, bucket, key string)
 }
 
-func (a *apiNode) Start()                              { a.p.Start() }
+func (a *apiNode) Start()                               { a.p.Start() }
 func (a *apiNode) OnDatagram(from env.NodeID, m []byte) { a.p.OnDatagram(from, m) }
-func (a *apiNode) EncodeState() []byte                 { return a.p.EncodeState() }
+func (a *apiNode) EncodeState() []byte                  { return a.p.EncodeState() }
 
 func (a *apiNode) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	if len(req) == 0 || req[0] != chAPI {
@@ -181,9 +181,9 @@ func (a *apiNode) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 
 type clientProc struct{ e env.Env }
 
-func (c *clientProc) Start()                       {}
+func (c *clientProc) Start()                        {}
 func (c *clientProc) OnDatagram(env.NodeID, []byte) {}
-func (c *clientProc) EncodeState() []byte          { return []byte(c.e.ID) }
+func (c *clientProc) EncodeState() []byte           { return []byte(c.e.ID) }
 func (c *clientProc) OnRequest(_ env.NodeID, _ []byte, r env.Reply) {
 	r(nil, errBadCall)
 }
