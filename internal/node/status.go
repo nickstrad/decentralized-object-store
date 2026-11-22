@@ -11,7 +11,6 @@ func StatusRows() []storage.StatusRow {
 		{Err: ErrUnknownSaga, Status: 404},
 		{Err: ErrFenced, Status: 409},
 		{Err: ErrStale, Status: 409},
-		{Err: ErrStaleRequest, Status: 409},
 		{Err: ErrMalformed, Status: 400},
 		{Err: ErrFrame, Status: 400},
 		{Err: ErrConfig, Status: 400},

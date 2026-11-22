@@ -63,3 +63,7 @@ func ManifestOfStaged(b []byte) (*storage.Manifest, error) {
 func EncodePointerViewForTest(route, owner string) []byte {
 	return pointerView{route: route, owner: owner}.encode()
 }
+
+func (n *Node) CopyForTest(c saga.Call, in saga.MigrationInput, done func([]byte, error)) {
+	n.mig.Copy(c, in, done)
+}

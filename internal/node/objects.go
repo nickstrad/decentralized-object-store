@@ -2,6 +2,7 @@ package node
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -625,6 +626,9 @@ func (n *Node) Migration(id string) (storage.MigrationInfo, error) {
 		return storage.MigrationInfo{}, ErrStopped
 	}
 	st, err := n.engine.Status(saga.ID(id))
+	if errors.Is(err, saga.ErrSagaNotFound) {
+		return storage.MigrationInfo{}, fmt.Errorf("node: migration %q: %w: %w", id, ErrUnknownSaga, err)
+	}
 	if err != nil {
 		return storage.MigrationInfo{}, fmt.Errorf("node: migration %q: %w", id, err)
 	}

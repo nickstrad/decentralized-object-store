@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/node"
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
 	"github.com/nickstrad/decentralized-object-store/internal/saga"
 	"github.com/nickstrad/decentralized-object-store/internal/saga/sagasim"
@@ -189,8 +189,12 @@ func TestClusterMigrationFailurePointsDST(t *testing.T) {
 	}
 	var m measure
 	seeds := simtest.Seeds(t)
+	pinned, err := simtest.PinnedSeeds("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i, c := range cells {
-		mine := matrixSeeds(seeds, i, len(cells))
+		mine := matrixSeeds(seeds, pinned, i, len(cells))
 		t.Run(c.Name(), func(t *testing.T) {
 			t.Parallel()
 			for _, seed := range mine {
@@ -209,17 +213,46 @@ func TestClusterMigrationFailurePointsDST(t *testing.T) {
 	t.Cleanup(func() { m.report(t) })
 }
 
-var _ = node.Config{}
-
-func matrixSeeds(seeds []int64, cell, cells int) []int64 {
-	if len(seeds) == 0 {
-		return nil
-	}
-	out := []int64{seeds[0]}
-	for j := cell; j < len(seeds); j += cells {
-		if j != 0 {
-			out = append(out, seeds[j])
+func matrixSeeds(seeds, pinned []int64, cell, cells int) []int64 {
+	var out, rest []int64
+	for _, s := range seeds {
+		if slices.Contains(pinned, s) {
+			out = append(out, s)
+		} else {
+			rest = append(rest, s)
 		}
 	}
+	if len(rest) == 0 {
+		return out
+	}
+	out = append(out, rest[0])
+	for j := 1 + cell; j < len(rest); j += cells {
+		out = append(out, rest[j])
+	}
 	return out
+}
+
+func TestMatrixSeedsRunEveryPinnedSeedOnEveryCell(t *testing.T) {
+	pinned := []int64{900, 901}
+	seeds := []int64{900, 901, 1, 2, 3, 4, 5, 6, 7}
+	cover := map[int64]int{}
+	for c := range 3 {
+		got := matrixSeeds(seeds, pinned, c, 3)
+		for _, want := range []int64{900, 901, 1} {
+			if !slices.Contains(got, want) {
+				t.Fatalf("cell %d runs %v, missing %d", c, got, want)
+			}
+		}
+		for _, s := range got {
+			cover[s]++
+		}
+	}
+	for _, s := range seeds {
+		if cover[s] == 0 {
+			t.Fatalf("seed %d runs on no cell", s)
+		}
+	}
+	if got := matrixSeeds([]int64{42}, nil, 5, 78); !slices.Equal(got, []int64{42}) {
+		t.Fatalf("a single replay seed runs as %v on a cell", got)
+	}
 }

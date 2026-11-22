@@ -138,6 +138,14 @@ func bitRotRun(res *bitRotResult) func(seed int64) *sim.Sim {
 		for _, n := range h.up() {
 			res.rebuiltBytes += n.Stats().RebuiltBytes
 		}
+		if res.rotted == 0 {
+			s.Fail(fmt.Errorf("the scenario rotted no shard"))
+			return s
+		}
+		if res.rebuiltBytes != uint64(res.rottedBytes) {
+			s.Fail(fmt.Errorf("rebuilt %d bytes for %d rotted bytes", res.rebuiltBytes, res.rottedBytes))
+			return s
+		}
 		if err := h.checkShardsReferenced(false); err != nil {
 			s.Fail(err)
 		}

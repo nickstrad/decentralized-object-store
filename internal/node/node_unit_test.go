@@ -388,3 +388,30 @@ func TestPreconditionsOnTheNodeNeverDegradeToUnconditional(t *testing.T) {
 		t.Fatalf("delete with a list holding the current etag: %v", err)
 	}
 }
+
+func TestMigrationCopyNeverCallsBackInsideTheCall(t *testing.T) {
+	h := smallCluster(t, 1)
+	n := h.node(h.ids[0])
+	if err := n.CreateBucket(storage.BucketSpec{Name: "e", Region: "r0"}); err != nil {
+		t.Fatal(err)
+	}
+	in := saga.MigrationInput{Bucket: "e", From: "r0", To: "r1"}
+	for _, bucket := range []string{"e", "missing"} {
+		in.Bucket = bucket
+		ran := false
+		n.CopyForTest(saga.Call{Key: saga.Key{Saga: "s", Step: 1}, Input: in.Encode()}, in, func([]byte, error) { ran = true })
+		if ran {
+			t.Fatalf("copy of %q called back inside the call", bucket)
+		}
+		if err := h.s.RunUntilConverged(h.s.Now().Add(5*time.Second), func() bool { return ran }); err != nil {
+			t.Fatalf("copy of %q never called back: %v", bucket, err)
+		}
+	}
+}
+
+func TestMigrationStatusOfAnUnknownSagaIsUnknownSaga(t *testing.T) {
+	h := smallCluster(t, 1)
+	if _, err := h.node(h.ids[0]).Migration("nope"); !errors.Is(err, node.ErrUnknownSaga) {
+		t.Fatalf("status of an unknown migration: %v", err)
+	}
+}

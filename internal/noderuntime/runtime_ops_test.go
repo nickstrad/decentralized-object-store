@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -155,5 +156,35 @@ func TestStatusRowsThroughHTTPOnARealNode(t *testing.T) {
 	}
 	if _, err := c.rts[0].Quota(bg, "b"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type rowService struct {
+	storage.Service
+	err error
+}
+
+func (r rowService) GetObject(context.Context, string, string) (storage.ObjectInfo, []byte, error) {
+	return storage.ObjectInfo{}, nil, r.err
+}
+
+func TestEveryNodeStatusRowThroughHTTP(t *testing.T) {
+	rows := node.StatusRows()
+	if len(rows) == 0 {
+		t.Fatal("no node status rows")
+	}
+	for _, row := range rows {
+		h := storage.NewHandler(rowService{err: fmt.Errorf("node: wrapped: %w", row.Err)}, storage.Limits{}, rows...)
+		srv := httptest.NewServer(h)
+		resp, err := http.Get(srv.URL + "/b/k")
+		if err != nil {
+			srv.Close()
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		srv.Close()
+		if resp.StatusCode != row.Status {
+			t.Errorf("%v: status %d, want %d", row.Err, resp.StatusCode, row.Status)
+		}
 	}
 }
