@@ -7,13 +7,20 @@ byline. Other writers may be working under `book/`, `README.md` and `docs/` at t
 time — do not touch those.
 
 ## Files
-Every `.go` file under `internal/node`, the HTTP object API in `internal/storage`, and `cmd/objnode` (sub-packages and test files included), plus any
-`cmd/*/help.txt` this chunk created. The code was written with no comments on purpose.
-Do not touch files outside these packages (comments elsewhere already exist).
+The product and test Go files that have no comments yet, in these packages:
+`internal/node` (every file), `internal/noderuntime` (every file),
+`internal/storage/httpapi` (every file), `internal/storage/api.go`,
+`internal/testutil/leakcheck/leakcheck.go`, `internal/occ/node_merge.go` (only the code
+this branch added: `git diff main..HEAD -- internal/occ/node_merge.go`), and
+`cmd/objnode/main.go` with its tests. Also `cmd/objnode/help.txt`: it holds only bare flag
+names, one per line; KEEP one flag per line, in the same order, and turn each line into
+`<flag>  <one-line description>` (read `cmd/objnode/main.go` for what each flag does and
+how the file is printed; run `docker compose run --rm -T dev go test ./cmd/objnode` after).
+Do not touch files outside this list (comments elsewhere already exist).
 
 ## Source material (read first)
 `agent_work/06-integration/build-notes.md` (the builder's account of intent, design choices,
-claims, every round section, narrowed claims), `agent_work/06-integration/REVIEW-*.md`,
+claims, every round section, narrowed claims), `agent_work/06-integration/REVIEW-*.md`, `agent_work/06-integration/ARBITRATION-*.md`,
 `agent_work/adversarial/06-integration/RESULTS.md`, and the plan item "Chunk 6" in PLAN.md 4.2 with
 the section 7 decisions it cites. Existing commented packages (`internal/sim`,
 `internal/env`) show the house style. Where a claim was narrowed, comments state the
@@ -41,7 +48,18 @@ Plain, concrete English; short sentences; no hype. Concise above all.
    - `docker compose run --rm -T dev go build ./...` and `go vet ./...` succeed;
    - `git diff -U0 -- '*.go' | grep '^[+-]' | grep -v '^+++\|^---' | grep -vE '^[+-][[:space:]]*(//.*)?$'`
      prints NOTHING;
-   - `docker compose run --rm -T dev go test ./internal/node/...` passes.
+   - `docker compose run --rm -T dev go test ./internal/node/... ./internal/noderuntime/... ./internal/storage/... ./cmd/...` passes.
 3. Self-contained: never mention this machine, absolute paths, agents, models, reviews,
    briefs, chunk numbers or how the text was produced; no file under `agent_work/`.
 4. Accuracy over coverage: never state a guarantee the tests do not show.
+
+## Points the comments must get right
+- When a version is declared lost (`internal/node/inventory.go`; build notes section 14):
+  state the rule exactly as section 14 does — absence records, written only after every
+  other holder of the stripe answered; more than m of them for one stripe; an unreachable
+  holder blocks the decision; the loss record is written before the tombstone — and its
+  "Residual limit" in its stated form. Nothing stronger.
+- Last-writer-wins: concurrent versions are never kept side by side; every discard is
+  counted and logged.
+- Another process (a test run) is reading this tree while you work: never leave a file
+  in a state that does not compile.

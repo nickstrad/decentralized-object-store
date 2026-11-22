@@ -4,7 +4,8 @@ Seat: Gemini 4 Neon, prose writer (fresh). You are in a git worktree (branch
 `chunk/06-integration`). You write ONE chapter file and its diagram sources:
 - `book/chapters/07-object-store-and-sync-engine.md`
 - `book/chapters/diagrams/07-*.mmd`
-Touch nothing else (another writer is adding comments to the Go files at the same time —
+and ONE small update to an existing chapter, `book/chapters/06-sagas.md` (see "The
+sagas chapter" below). Touch nothing else (another writer is adding comments to the Go files at the same time —
 read the code, do not edit it). Do NOT run any git write command. Do not edit
 `book/manifest.json`.
 
@@ -45,11 +46,36 @@ First line of the file, exactly: `# The Object Store and Sync Engine`
 
 ## Evidence (verified; use these and nothing stronger)
 `agent_work/06-integration/build-notes.md` (claims table, measurements, every round section),
-`agent_work/06-integration/REVIEW-*.md`, `agent_work/adversarial/06-integration/RESULTS.md`. Every number
+`agent_work/06-integration/REVIEW-*.md`, `agent_work/06-integration/ARBITRATION-*.md`,
+`agent_work/adversarial/06-integration/RESULTS.md`. Every number
 in the chapter comes from those files. Narrowed claims go in narrowed form. Say what is
 proven only on the simulator and what waits for the integrated node. Building blocks not
 yet in `book/chapters/` are "coming chapters", without links; published chapters may be
 linked relatively (`01-deterministic-simulation.md`).
+
+## What this chapter must cover
+One node wiring the five earlier building blocks (membership, erasure-coded storage,
+metadata with conditional writes and last-writer-wins, Merkle anti-entropy, sagas); the
+same protocol core under the simulator and under the real UDP/TCP/file runtime
+(`internal/noderuntime`); the HTTP object API with conditional requests
+(`internal/storage/httpapi`); `cmd/objnode` and the three-node Docker cluster. Two rules
+need exact wording, taken from the build notes and nothing stronger:
+- Shard collection and loss (build notes 10.3 and section 14): when a shard may be
+  deleted; when a version is declared lost (absence records from more than m holders of
+  one stripe, each written only after every other holder answered; an unreachable holder
+  blocks the decision, so such a key stays live and unreadable until the holder returns);
+  and the "Residual limit" of section 14 in its stated form, including the wiped-holder
+  case.
+- Last-writer-wins: concurrent versions are never kept side by side; one wins by hybrid
+  logical clock, the other is discarded, and every discard is counted and logged. Never
+  describe siblings as the design.
+
+## The sagas chapter
+`book/chapters/06-sagas.md` says its failure matrix ran on a model cluster and that the
+run on real components was still to come. That run now exists (build notes: the 78-cell
+migration matrix on real components, and the migration tests under live traffic). Update
+only the sentences that say so, with the numbers from the build notes; keep the rest of
+that chapter as it is.
 
 ## Rules
 - Plain, concrete English; short sentences; no hype. Teach, do not sell.
