@@ -245,7 +245,7 @@ func partitionRun(res *partitionResult) func(seed int64) *sim.Sim {
 				})
 			}
 		}
-		if err := s.RunFor(h.cfg.GCGrace + 10*time.Second); err != nil {
+		if err := s.RunFor(h.cfg.GCGrace + 5*time.Second); err != nil {
 			return s
 		}
 		if err := h.checkShardsReferenced(true); err != nil {

@@ -19,6 +19,7 @@ const (
 	tagRetired    = "~retired"
 	tagClaim      = "~claim/"
 	tagStage      = "~stage/"
+	tagGC         = "~gc/"
 	maxField      = 1 << 16
 )
 

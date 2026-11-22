@@ -231,25 +231,34 @@ func (n *Node) commitPut(req storage.PutRequest, region string, pre occ.Precondi
 		return
 	}
 	if !bs.writable() || bs.route != region {
+		n.markDead(req.Bucket, man.Version)
 		fail(fmt.Errorf("node: bucket %q moved during the put: %w", req.Bucket, storage.ErrBusy))
 		return
 	}
 	key := occ.ManifestKey(req.Bucket, req.Key)
 	dBytes, dObjects := n.delta(rd, key, man.Size)
-	if err := n.quotaCheck(rd, bs, dBytes, dObjects); err != nil {
+	dead := func(err error) {
+		n.markDead(req.Bucket, man.Version)
 		fail(err)
+	}
+	if err := n.quotaCheck(rd, bs, dBytes, dObjects); err != nil {
+		dead(err)
 		return
 	}
 	rec := objectRecord{ContentType: req.ContentType, Manifest: man}
 	val, err := encodeObject(rec)
 	if err != nil {
-		fail(err)
+		dead(err)
 		return
 	}
+	old, _, oldErr := n.object(rd, key)
 	v, err := n.occ.Put(key, val, pre)
 	if err != nil {
-		fail(fmt.Errorf("node: commit %s/%s: %w", req.Bucket, req.Key, err))
+		dead(fmt.Errorf("node: commit %s/%s: %w", req.Bucket, req.Key, err))
 		return
+	}
+	if oldErr == nil {
+		n.markDead(req.Bucket, old.Manifest.Version)
 	}
 	n.stats.Puts++
 	n.RecordMeta(key)
@@ -336,6 +345,7 @@ func (n *Node) DeleteObject(bucket, key string, cond storage.Condition) (storage
 	if oerr == nil {
 		n.usage(bucket, -old.Manifest.Size, -1)
 		oi.Version = old.Manifest.Version.String()
+		n.markDead(bucket, old.Manifest.Version)
 	}
 	return oi, nil
 }

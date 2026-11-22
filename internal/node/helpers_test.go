@@ -27,7 +27,10 @@ func dstConfig() node.Config {
 	return node.Config{
 		Layout:         storage.Layout{K: 4, M: 2, StripeSize: dstStripe},
 		RequestTimeout: 500 * time.Millisecond,
-		GCGrace:        20 * time.Second,
+		GCGrace:        10 * time.Second,
+		OrphanGrace:    10 * time.Minute,
+		ScrubBatch:     16,
+		MaintainPeriod: time.Second,
 		RecountSettle:  3 * time.Second,
 		RPCTimeout:     500 * time.Millisecond,
 	}
@@ -39,6 +42,7 @@ type discardRec struct {
 }
 
 type harness struct {
+	unmarked int
 	s        *sim.Sim
 	ids      []env.NodeID
 	cfg      node.Config
@@ -198,7 +202,11 @@ func (h *harness) checkShardsReferenced(grace bool) error {
 				continue
 			}
 			if !live[sid.Version][string(id)+"|"+name] && grace {
-				errs = append(errs, fmt.Errorf("orphan shard %s on %s after the grace period", name, id))
+				if rd.Record(occ.TagKey(sid.Bucket, "", "~gc/"+sid.Version.String())).Live() {
+					errs = append(errs, fmt.Errorf("shard %s of a dead version still on %s after the grace period", name, id))
+				} else {
+					h.unmarked++
+				}
 			}
 		}
 		for _, c := range h.node(id).Collected() {

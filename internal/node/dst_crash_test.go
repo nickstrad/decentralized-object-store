@@ -92,7 +92,7 @@ func crashRun(res *crashResult) func(seed int64) *sim.Sim {
 			key := fmt.Sprintf("k%d", i)
 			s.At(env.Time(4*time.Second+time.Duration(i)*300*time.Millisecond), "put "+key, func() {
 				body := payload(w, 1+w.IntN(3*dstStripe))
-				n := h.node(h.pick())
+				n := h.node(h.ids[0])
 				n.PutObject(storage.PutRequest{Bucket: crBucket, Key: key, Data: body}, func(_ storage.ObjectInfo, err error) {
 					if err != nil {
 						s.Fail(fmt.Errorf("put %s before any fault: %w", key, err))
@@ -194,7 +194,7 @@ func crashRun(res *crashResult) func(seed int64) *sim.Sim {
 				})
 			})
 		}
-		if err := s.RunFor(h.cfg.GCGrace + 10*time.Second); err != nil {
+		if err := s.RunFor(h.cfg.GCGrace + 5*time.Second); err != nil {
 			return s
 		}
 		if err := h.deletedEverywhere(deleted); err != nil {

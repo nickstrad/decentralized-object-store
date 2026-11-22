@@ -19,7 +19,9 @@ const (
 	DefaultMetaDepth      = 3
 	DefaultMaintainPeriod = 500 * time.Millisecond
 	DefaultScrubBatch     = 64
+	DefaultInventoryScrub = 16
 	DefaultGCGrace        = 10 * time.Minute
+	DefaultOrphanGrace    = time.Hour
 	DefaultRecountSettle  = 3 * time.Second
 	DefaultMaxObjectSize  = 32 << 20
 	DefaultRPCTimeout     = time.Second
@@ -41,7 +43,9 @@ type Config struct {
 	MetaDepth      int
 	MaintainPeriod time.Duration
 	ScrubBatch     int
+	InventoryScrub int
 	GCGrace        time.Duration
+	OrphanGrace    time.Duration
 	RecountSettle  time.Duration
 	MaxObjectSize  int64
 	RPCTimeout     time.Duration
@@ -75,8 +79,14 @@ func (c Config) WithDefaults() Config {
 	if c.ScrubBatch == 0 {
 		c.ScrubBatch = DefaultScrubBatch
 	}
+	if c.InventoryScrub == 0 {
+		c.InventoryScrub = DefaultInventoryScrub
+	}
 	if c.GCGrace == 0 {
 		c.GCGrace = DefaultGCGrace
+	}
+	if c.OrphanGrace == 0 {
+		c.OrphanGrace = DefaultOrphanGrace
 	}
 	if c.RecountSettle == 0 {
 		c.RecountSettle = DefaultRecountSettle
@@ -104,7 +114,7 @@ func (c Config) Validate() error {
 	if ShardRequestSize(c.Layout) > MaxFrame {
 		return fmt.Errorf("node: config: shard request of %d bytes over the %d-byte frame: %w", ShardRequestSize(c.Layout), MaxFrame, ErrConfig)
 	}
-	for _, d := range []time.Duration{c.RequestTimeout, c.OCCPeriod, c.MetaPeriod, c.MaintainPeriod, c.GCGrace, c.RecountSettle, c.RPCTimeout, c.ViewSettle} {
+	for _, d := range []time.Duration{c.RequestTimeout, c.OCCPeriod, c.MetaPeriod, c.MaintainPeriod, c.GCGrace, c.OrphanGrace, c.RecountSettle, c.RPCTimeout, c.ViewSettle} {
 		if d < 0 {
 			return fmt.Errorf("node: config: negative duration %v: %w", d, ErrConfig)
 		}
@@ -112,8 +122,8 @@ func (c Config) Validate() error {
 	if c.MetaDepth < merkle.MinDepth || c.MetaDepth > merkle.MaxDepth {
 		return fmt.Errorf("node: config: merkle depth %d: %w", c.MetaDepth, ErrConfig)
 	}
-	if c.ScrubBatch < 0 {
-		return fmt.Errorf("node: config: scrub batch %d: %w", c.ScrubBatch, ErrConfig)
+	if c.ScrubBatch < 0 || c.InventoryScrub < 0 {
+		return fmt.Errorf("node: config: scrub batch %d or inventory scrub %d: %w", c.ScrubBatch, c.InventoryScrub, ErrConfig)
 	}
 	if c.MaxObjectSize < 0 || c.MaxObjectSize > MaxObjectSizeLimit {
 		return fmt.Errorf("node: config: max object size %d outside [0, %d]: %w", c.MaxObjectSize, MaxObjectSizeLimit, ErrConfig)
@@ -166,6 +176,7 @@ type Stats struct {
 	InventoryStop   uint64
 	SagasEnded      uint64
 	MemberDeaths    uint64
+	GCMarkers       uint64
 }
 
 type collectRecord struct {
@@ -412,7 +423,7 @@ func (n *Node) EncodeState() []byte {
 	for _, v := range []uint64{s.Malformed, s.Stopped, s.Puts, s.PutFailures, s.Gets, s.GetFailures, s.Deletes,
 		s.Discards, s.DiscardedObject, s.QuotaDiscards, s.Recounts, s.RecountWrites, s.RecountErrors, s.UsageErrors,
 		s.MetaStale, s.MetaMerged, s.Scrubbed, s.ScrubCorrupt, s.Rebuilds, s.RebuildFailures, s.RebuiltBytes,
-		s.Collected, s.CollectedLoser, s.Purged, s.InventoryStart, s.InventoryStop, s.SagasEnded, s.MemberDeaths} {
+		s.Collected, s.CollectedLoser, s.Purged, s.InventoryStart, s.InventoryStop, s.SagasEnded, s.MemberDeaths, s.GCMarkers} {
 		w.uvarint(v)
 	}
 	if n.started {
@@ -511,6 +522,7 @@ func (n *Node) handleDiscard(key string, loser occ.Version) {
 		}
 		n.stats.DiscardedObject++
 		n.losers[rec.Manifest.Version] = true
+		n.markDead(rec.Manifest.Bucket, rec.Manifest.Version)
 	}
 }
 
@@ -559,6 +571,27 @@ func (n *Node) usage(bucket string, dBytes, dObjects int64) {
 		n.stats.UsageErrors++
 		n.recountDue[bucket] = n.e.Clock.Now().Add(n.cfg.RecountSettle)
 	}
+}
+
+func gcKey(bucket string, v storage.VersionID) string {
+	return bucketKey(bucket, tagGC+v.String())
+}
+
+func (n *Node) markDead(bucket string, v storage.VersionID) {
+	rd, err := n.occ.Reader()
+	if err != nil {
+		return
+	}
+	k := gcKey(bucket, v)
+	if rd.Record(k).Live() {
+		return
+	}
+	if _, err := n.occ.SetScalar(k, []byte{1}); err != nil {
+		n.logf("gc marker %s: %v", k, err)
+		return
+	}
+	n.stats.GCMarkers++
+	n.RecordMeta(k)
 }
 
 func (n *Node) RecordMeta(key string) {

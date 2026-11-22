@@ -100,6 +100,14 @@ func (n *Node) localBuckets() []string {
 	return slices.Compact(out)
 }
 
+func (n *Node) dead(rd occ.Reader, name string) bool {
+	id, err := storage.ParseBlobName(name)
+	if err != nil {
+		return false
+	}
+	return n.losers[id.Version] || rd.Record(gcKey(id.Bucket, id.Version)).Live()
+}
+
 func (n *Node) runInventories(rd occ.Reader) {
 	exp := n.expectedAll(rd)
 	buckets := append(sortedKeys(exp), n.localBuckets()...)
@@ -119,7 +127,7 @@ func (n *Node) runInventories(rd occ.Reader) {
 			n.inv[b] = inv
 			n.stats.InventoryStart++
 		}
-		n.checkInventory(inv, exp[b])
+		n.checkInventory(rd, inv, exp[b])
 		if len(exp[b]) == 0 && inv.actual.Len() == 0 && len(inv.rebuilding) == 0 {
 			delete(n.inv, b)
 			n.stats.InventoryStop++
@@ -147,7 +155,7 @@ func (n *Node) scrubShard(inv *inventory, name string) {
 	}
 }
 
-func (n *Node) checkInventory(inv *inventory, exp map[string]expectedShard) {
+func (n *Node) checkInventory(rd occ.Reader, inv *inventory, exp map[string]expectedShard) {
 	names, err := n.e.Disk.List(shardPrefix(inv.bucket))
 	if err != nil {
 		return
@@ -155,7 +163,7 @@ func (n *Node) checkInventory(inv *inventory, exp map[string]expectedShard) {
 	union := append(slices.Clone(names), inv.actual.Keys()...)
 	slices.Sort(union)
 	union = slices.Compact(union)
-	if inv.full || len(union) <= n.cfg.ScrubBatch {
+	if inv.full {
 		inv.full = false
 		for _, name := range union {
 			n.scrubShard(inv, name)
@@ -165,7 +173,7 @@ func (n *Node) checkInventory(inv *inventory, exp map[string]expectedShard) {
 		if found {
 			i++
 		}
-		for c := 0; c < n.cfg.ScrubBatch; c++ {
+		for c := 0; c < min(n.cfg.InventoryScrub, len(union)); c++ {
 			name := union[(i+c)%len(union)]
 			n.scrubShard(inv, name)
 			inv.cursor = name
@@ -199,7 +207,8 @@ func (n *Node) checkInventory(inv *inventory, exp map[string]expectedShard) {
 			if !ok {
 				since = now
 			}
-			if now.Sub(since) >= n.cfg.GCGrace {
+			age := now.Sub(since)
+			if age >= n.cfg.OrphanGrace || (age >= n.cfg.GCGrace && n.dead(rd, d.Key)) {
 				n.collect(inv, d.Key)
 				continue
 			}
