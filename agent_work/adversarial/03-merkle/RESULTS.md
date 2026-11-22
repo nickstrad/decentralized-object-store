@@ -6,7 +6,7 @@ orchestrator. Check list and exact reproductions: `ATTACKS.md`. Raw output: `evi
 | Run | Tree | Held | Broken |
 |---|---|---|---|
 | 1, during review 1, before the repair round | 3c0a41e + notes | 70 | 4 |
-| 2, after the repair round (final) |  | 72 | 2 |
+| 2, after the repair round (final) | b72807a | 72 | 2 |
 
 ## The four checks that broke in run 1
 
