@@ -755,7 +755,7 @@ discarded, and the discard is counted and logged.
   be lost to a concurrent write under partition; the system guarantees convergence and a
   record of the loss, not preservation).
 - C4: the component diagram drawn at kickoff for `internal/crdt`
-  (`docs/c4/07-component-crdt.md`) is redrawn as the OCC component in this chunk's landing (no sibling component).
+  (then `docs/c4/07-component-crdt.md`) was redrawn as the OCC component in this chunk's landing and renamed `docs/c4/07-component-occ.md` (no sibling component).
 - Size: about 1,300 code + 2,100 tests.
 
 #### Chunk 5 — Saga engine and the bucket-migration workflow (spec Commit 5)

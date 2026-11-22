@@ -13,16 +13,15 @@ last-writer-wins on the hybrid logical clock, every discard counted and logged
 folded into PLAN 9.1, 7.5 and Chunk 4); Docker is the one environment; the book is the
 learning artifact; C4 diagrams are kept current).
 
-Status: PHASE 2 (BUILD) RUNNING since 2026-11-21. LANDED: Step 0, Chunk 0a (foundation
-tooling, 8205edf + c5117c5), Chunk 0b (simulator, ceb5438, tag `freeze-0b`, chapter 1 live),
-Chunk 2 (erasure coding and chunk store, c39eb79, chapter 3 live — landed ahead of Chunk 1,
-which was still in repair). In flight: Chunks 1, 3, 4, 5 (board below).
+Status: PHASE 2 (BUILD) RUNNING since 2026-11-21. LANDED: Step 0, 0a, 0b and ALL FIVE
+protocol chunks (1–5); book chapters 1–6 are live. IN FLIGHT: Chunk 6 (integration), Opus
+build. Then Chunks 7 and 8 in sequence.
 
 Seats (this project only): Fable orchestrates, gates and lands; Opus writes
 product Go (logic only, no comments), fresh agent and worktree per chunk, at
 most 3 at once; Gemini 4 Neon reviews Opus and writes all reader-facing prose
-once, late, per chunk (book chapter draft, comments, README, site copy, CLI
-help); Astra (gpt-6-astra) writes adversarial harnesses per chunk and
+once, late, per chunk (book chapter, comments, README, site copy, CLI
+help); Astra (gpt-6-astra) writes independent test harnesses per chunk and
 arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.md.
 
 ## Chunk board
@@ -30,109 +29,109 @@ arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.
 | Chunk | What it is | State |
 |---|---|---|
 | Step 0 | Sign-off rulings applied to PLAN.md | LANDED |
-| 0a | Foundation: go.mod, Docker environment, gate scripts and canaries, detlint, orchestration scripts, vendored kb, book site on Pages, CI | LANDED 8205edf (arbitration PASS; 50/50 canaries; adversarial 99 held / 9 narrowed); follow-up c5117c5 (SQLite header in the image so `kb-sync.sh index` works). CI green, site serving the new front page |
-| 0b | Deterministic simulator (internal/env, internal/sim, simtest, cmd/objsim) | LANDED ceb5438, tag `freeze-0b` (API frozen). Reviews FAIL → NITS → NITS closed; adversarial 58 of 60 hold, 1 narrowed, 1 repaired-but-scored-broken; chapter 1 live at book/deterministic-simulation.html; C4 marks sim + env as built |
-| 1 | SWIM gossip membership (internal/gossip) | Repair round done, gate green; harness rerun 72 held / 1 disputed (RESULTS.md N1). Neon re-review `01-gossip-rereview` RUNNING. AFTER: nits or arbitration, then prose (chapter 02-swim-gossip, comments, status), C4, knowledge, INDEX, manifest, final gate, land |
-| 2 | Reed-Solomon erasure coding and chunk store (internal/erasure, internal/storage) | LANDED c39eb79 (reviews FAIL → NITS closed; adversarial 41 held, 1 narrowed; final gate green; chapter 3 live at book/reed-solomon-erasure-coding.html; C4 05 and 09 as built, object API still planned) |
-| 3 | Merkle anti-entropy (internal/merkle) | The one Opus repair round `03-merkle-repair1` is RUNNING (5 review nits + 4 broken bound checks). AFTER: commit gates, rebase, rerun harness, RESULTS.md, Neon re-review, prose, land |
-| 4 | Optimistic concurrency control for metadata (internal/occ) | LWW rework done and gated; Neon REVIEW-2 FAIL (two real holes in every-loss-recorded + 1 nit; everything else FIXED); Astra harness vs LWW: 59 held, 2 broken (quota recount). Opus round `04-occ-lww2` RUNNING (brief agent_work/04-occ/objstore-p2-04-occ-lww-round2.md; treated as the owner-directed LWW amendment round per the ruling's process note). AFTER: rerun harness + RESULTS.md, then ASTRA ARBITRATION on REVIEW-2 + the round (second-FAIL rule; write ARBITRATION-1.md; soften the brief), then prose, C4 redraw of 07 as OCC without siblings, land |
-| 5 | Saga engine and bucket migration (internal/saga) | Repair done; REVIEW-2 NITS, nits fixed and CLOSED; harness 125 held / 0 broken (RESULTS.md). Neon chapter (`05-saga-chapter`) and comments (`05-saga-comments`) stages dispatched. AFTER: commit prose with the Prose-By trailer, status prose, C4 (08), knowledge, INDEX, manifest (chapter 6), final gate, land |
-| 6 | Integration: node, real runtime, HTTP object API, cmd/objnode | not started (needs 1–5) |
-| 7 | E2E suite, nemesis cycles, fuzz hardening | not started |
-| 8 | Publishing finish: the assembled book | not started |
+| 0a | Foundation: go.mod, Docker environment, gate scripts and canaries, detlint, orchestration scripts, vendored kb, book site on Pages, CI | LANDED 8205edf + c5117c5 |
+| 0b | Deterministic simulator (internal/env, internal/sim, simtest, cmd/objsim) | LANDED ceb5438, tag `freeze-0b` (API frozen); chapter 1 |
+| 1 | SWIM gossip membership (internal/gossip) | LANDED 3074279; chapter 2; review FAIL → repair → NITS closed; harness 72 held, 1 pins removed behaviour |
+| 2 | Reed-Solomon erasure coding and chunk store (internal/erasure, internal/storage) | LANDED c39eb79; chapter 3; review FAIL → repair → NITS closed; harness 41 held, 1 narrowed |
+| 3 | Merkle anti-entropy (internal/merkle) | LANDED 2a86f4c; chapter 4; review NITS → repair → PASS; harness 72 held, 2 restated (cost bounds; PLAN 2.2/7.4 updated) |
+| 4 | Optimistic concurrency control for metadata, last-writer-wins (internal/occ) | LANDED 9acc7ea; chapter 5; review FAIL → LWW rework → FAIL → round 2 → Astra arbitration NITS closed; harness 60 held, 1 expects exactly one record per loss |
+| 5 | Saga engine and bucket migration (internal/saga) | LANDED 4892ab9; chapter 6; review FAIL → repair → NITS closed; harness 125 held |
+| 6 | Integration: node, real runtime, HTTP object API, cmd/objnode | Opus build `06-integration-build` dispatched 2026-11-22 (worktree `06-integration`, brief /root/briefs/objstore-p2-06-integration-build.md, copied to agent_work/06-integration/) |
+| 7 | E2E suite, nemesis cycles, fuzz hardening | not started (needs 6) |
+| 8 | Publishing finish: the assembled book (assembly and polish only) | not started |
 
 ## In progress
 
-- Builder slots (cap 3, repairs count): `03-merkle-repair1`, `04-occ-lww2`; one free.
-  Nothing is queued for a builder. Stage briefs come from agent_work/orch/mkstage.py (run
-  it from inside the chunk's worktree; pass launch.sh ABSOLUTE paths).
-  `agent_work/orch/waitany.sh <secs> <run>...` waits for the first to stop.
-- Landing docs (C4 refresh checked against the code, docs/knowledge entry, INDEX rows,
-  manifest entry) were done for Chunk 2 by an orchestrator subagent as four commits staged
-  by path while Neon wrote the status prose; same recipe for the others (worked example:
-  commits `c4: mark erasure coding and the chunk store as built` and the three after it).
-  Chapters may publish out of numeric order; the site build accepts gaps.
-- CI on main was RED from the simulator landing until 2026-11-22: canaries.sh planted
-  files in internal/buildcheck, a placeholder package the simulator landing removed (38 of
-  50 caught). Fixed by creating the directory in each plant (orchestrator tooling fix, the
-  14 affected canaries re-run green locally; not separately reviewed). Check `gh run list`
-  after each push.
-- ASTRA BRIEFS: its provider's content filter cut off three runs whose briefs spoke of
-  attacks and hostile input. Always pass an Astra brief through
-  `agent_work/orch/soften.sh <brief>` before launching (plain testing vocabulary; asks for
-  the report early). Softened runs (sagas rerun, Merkle) completed normally.
-- After each repair exits 0: commit its gates dir, rebase on main, orchestrator reruns
-  `agent_work/adversarial/<slug>/run-all.sh` and writes RESULTS.md, Neon re-review
-  (mkstage `rereview`), then prose stages, C4, final gate, land (pipeline below).
-- Wire-code blocks (duplicates are rejected when Chunk 6 joins the tables): gossip 80–95,
-  storage 96–111, merkle 112–127, occ 128–143, saga 144–159. Gossip, storage and merkle
-  already comply; occ and saga move into their blocks in their repair rounds (both briefs say so).
-- LWW ruling follow-ups: README and front page corrected (3e34482). Still to carry: the
-  Chunk 4 chapter brief (mkstage already says siblings are a road not taken), the C4
-  redraw without a sibling component, and Chunk 6's brief (PLAN 4.2 Chunk 6 is amended).
-- Per chunk when its build exits 0 (see the 0b history in agent_work/0b-simulator/ for
-  worked examples of every brief): rebase on main if main moved; orchestrator gate
-  (`agent_work/gates/gate.sh <slug>`); Neon review (probe first); one Opus repair if
-  NITS/FAIL; Neon re-review (second FAIL → Astra arbitration, ARBITRATION-N.md); Astra
-  adversarial brief → run its `run-all.sh` → RESULTS.md; one Opus round for broken claims;
-  Neon review of that round; Neon prose WITHOUT commits (comments + help; chapter
-  `book/chapters/NN-slug.md` with Mermaid + draw-visual embeds; README + docs/index.md
-  status) — orchestrator checks the comment-only diff and commits with the trailer
-  `Prose-By: Gemini 4 Neon`; manifest entry (status "published") in a non-prose commit; C4
-  refresh (model.json statuses, diagram header lines, README table; chunk 4 also redraws
-  07-component-crdt as OCC); docs/knowledge entry; INDEX rows; `GATE_STAGE=final` gate and
-  `prose-check.sh main HEAD` on the FINAL rebased tree; commit result.json; `land.sh`;
-  verify Pages + chapter URL 200; remove the worktree; `kb-sync.sh index`; STATE; progress.
-- LESSON (cost one extra gate run): do not commit to main between a chunk's final gate and
-  its landing — land.sh needs the branch rebased on main and the gate result bound to the
-  rebased tip. Check land.sh's exit status directly; never chain a tag or push after a pipe.
-- Landing order: numeric (PLAN 5.3); a chunk that is green early waits in a ready state,
-  or lands out of order if a predecessor is stuck for a working session (record it here).
-- Publish ruling (Nick, 2026-11-21): every chunk's chapter goes LIVE at that chunk's
-  landing; Chunk 8 is assembly and polish only. Working as designed since 0b.
-- Simulator ruling: kernel extraction later, not now; the extraction note is
-  docs/knowledge/sim-kernel-extraction-note.md.
+- Chunk 6 build (one Opus run; a large chunk — expect hours). When it exits 0: commit its
+  gates dir, rebase on main if main moved, then the per-chunk pipeline below. Its brief
+  binds: wire-code blocks; last-writer-wins handling in the node (discard counter on the
+  health surface, quota recount on discard, the loser's shards collected and never the
+  winner's); tombstones through anti-entropy; the saga failure matrix on real components;
+  PLAN 2.5 concurrency rules; three canaries; a `cluster` compose smoke script.
+- Chunk 6 landing extras beyond the usual: Chunk 5's chapter (book/chapters/06-sagas.md)
+  is updated by Neon with the real-component evidence; the C4 relationships still marked
+  planned become as-built (or are corrected to what was built); chapter
+  `07-object-store-and-sync-engine`; the builder's gate-change requests (cluster smoke in
+  the gate, coverage floors for new packages) are the orchestrator's to apply, with a
+  canary each.
 
-## Next steps, in order
+## Per-chunk pipeline (as run for chunks 1–5; worked examples in each agent_work/<slug>/)
 
-1. Wave B: finish and land chunks 1–5 (pipeline per chunk below); repairs for 4 then 2 as slots free.
-2. Chunks 6, 7, 8 in sequence.
+1. Build exits 0 → commit `agent_work/<slug>/gates/`, rebase on main. The builder's own
+   build-stage gate (`counts_for_landing=true`) is accepted; the final gate is re-run.
+2. In parallel: Neon review (`mkstage.py <slug> review base=main n=1`) and Astra harness
+   (`mkstage.py <slug> adversarial`, THEN `agent_work/orch/soften.sh <brief>` — Astra's
+   provider filter cuts off briefs that speak of attacks; softened briefs run normally).
+   Commit the harness when Astra stops.
+3. One Opus repair round takes the review findings and the broken checks together
+   (brief written by hand; examples `objstore-p2-*-repair1.md`). Then: commit gates, rebase,
+   orchestrator re-runs `agent_work/adversarial/<slug>/run-all.sh`, writes RESULTS.md (the
+   harness rewrites its evidence files — commit them with RESULTS.md BEFORE any rebase),
+   Neon re-review (`mkstage.py <slug> rereview base=<sha of the review-1 record commit> n=2`;
+   check the generated brief names a real base). NITS → small Opus nit-fix brief → append a
+   `NITS CLOSED` line. Second FAIL → Astra arbitration (ARBITRATION-1.md; land.sh takes it
+   as the verdict; example agent_work/04-occ/objstore-p2-04-occ-arbitration.md).
+4. Prose (Neon, no commits; orchestrator commits by path with trailer `Prose-By: Gemini 4
+   Neon`): chapter and comments in parallel once code is final (comments only after the
+   last code change); then, after rebasing on current main, status prose (README +
+   docs/index.md) while an orchestrator subagent writes the landing docs as four commits
+   staged by path: C4 refresh CHECKED AGAINST THE CODE, docs/knowledge entry, INDEX row,
+   manifest entry (worked example: the four commits before each landing merge).
+5. `GATE_STAGE=final agent_work/gates/gate.sh <slug>` and `agent_work/gates/prose-check.sh
+   main HEAD` on the final rebased tree; commit result.json; write the tour message;
+   `agent_work/orch/land.sh <slug> chunk/<slug> <message-file>`; verify the chapter URL
+   returns 200; remove the worktree (KEEP the branch); STATE; progress line.
+- LESSON: do not commit to main between a chunk's final gate and its landing.
+- LESSON: a 30 s fuzz run of `FuzzSimSchedule` timed out once in a final gate under
+  machine load (`context deadline exceeded`, no failing input); the rerun on the same
+  commit passed. Record such a rerun in the result commit message; investigate if it repeats.
+- Helpers: `agent_work/orch/launch.sh <run> <opus|neon|astra> <worktree> <ABSOLUTE brief>`,
+  `waitany.sh <secs> <run>...`, `mkstage.py` (run inside the worktree), `soften.sh`.
 
-## Open decisions / blockers
+## Open items (none blocks the build)
 
-- None waiting on Nick; his rulings are complete for Phase 2.
-- CUTOFF: the Claude sign-in on this VM ends between 2026-11-25 and
-  2026-11-28. Rule (OQ-14): stop at the last landed chunk, leave any in-flight
-  chunk unmerged in its worktree unless it passes every gate cleanly, make
-  this file an exact resume document, write the done marker with
-  STOPPED-AT-CUTOFF. Chunks do not move to other seats.
-- c4-sdk neighbour elements — owner: Nick, not blocking. c4-sdk 0.1.0 has no
-  per-view external tag, so docs/c4/model.json carries eight `n-*` stand-in
-  elements. Detail: docs/c4/README.md, "Model notes".
+- CI on main: the canary fix (242fad4) is correct locally, but no CI run has COMPLETED
+  since — a run takes longer than the gap between landings (one ran 57 min before the
+  next push cancelled it). Check `gh run list --workflow CI` during the Chunk 6 build;
+  if a run still fails or exceeds an hour, find where the time goes (50 canaries, each
+  a gate run on a growing tree) and fix the CI job, with review.
+- The canary fix itself (agent_work/gates/canaries.sh, 12 lines) has not had a
+  cross-family review; fold it into Chunk 6's review brief.
+- docs/c4 diagrams 1 and 2 still draw a "Sync client" person marked "not to be built"
+  (OQ-7 decided node-level sync only). Removing it renumbers both views — owner: Nick,
+  or do it in Chunk 8's final C4 pass.
+- Book chapters are accurate but dense (close to compressed specifications). Style
+  verdict is Nick's; Chunk 8 is the consistency edit.
+- OCC's LWW round 2 was run as the owner-directed amendment round (ruling's process
+  note) before arbitration rather than after; recorded in the progress log.
+- c4-sdk neighbour elements — owner: Nick, not blocking (docs/c4/README.md, "Model notes").
+- CUTOFF: the Claude sign-in on this VM ends between 2026-11-25 and 2026-11-28. Rule
+  (OQ-14): stop at the last landed chunk, leave any in-flight chunk unmerged in its
+  worktree unless it passes every gate cleanly, make this file an exact resume document,
+  write the done marker with STOPPED-AT-CUTOFF. Chunks do not move to other seats.
 
 ## Facts a resuming agent needs
 
-- Per-chunk pipeline and gates: PLAN.md sections 2.9 and 6. Every gate runs
-  through Docker. No chunk lands without: green Docker gate suite, Neon
-  review PASS, adversarial results recorded, Neon prose done, C4 current.
+- Rulings in force: OCC replaces CRDTs; SIBLINGS ARE OUT — last-writer-wins with every
+  discard counted and logged (/root/briefs/objstore-lww-ruling-2026-11-21.md, PLAN 9.1);
+  every chunk's chapter goes live at its landing, Chunk 8 is assembly only
+  (/root/briefs/objstore-publish-ruling-2026-11-21.md); simulator kernel extraction is
+  later, not now (docs/knowledge/sim-kernel-extraction-note.md).
+- Wire-code blocks: gossip 80–95, storage 96–111, merkle 112–127, occ 128–143 (131
+  unassigned), saga 144–159, node and object API 160–191.
 - Briefs: /root/briefs/objstore-p2-<topic>.md. Run logs, pid and exit files:
   /root/runs/objstore-p2-*. Progress log: /root/runs/objstore-phase2-progress.txt.
   Done marker (only at completion or cutoff): /root/runs/objstore-phase2-done.txt.
 - Worktrees: /root/Software/decentralized-object-store-work/NN-<slug>, branch
-  chunk/NN-<slug>. Live: 01-gossip, 03-merkle, 04-occ, 05-saga. Orchestration scripts: agent_work/orch/ (launch.sh,
-  wait.sh, land.sh, seat-probe.sh). A second Neon FAIL goes to Astra arbitration; land.sh
-  takes the newest ARBITRATION-N.md as the verdict when one exists. A NITS review needs a
-  `NITS CLOSED` line appended by the orchestrator once each nit is closed.
+  chunk/NN-<slug>. Live: 06-integration. Branches of landed chunks are kept.
 - Gate stages: `agent_work/gates/gate.sh <chunk>` (build stage, on a chunk branch, before
   prose) and `GATE_STAGE=final ...` (after prose, and the only form that runs on main).
 - Site: https://nickstrad.github.io/decentralized-object-store/ — built by
-  .github/scripts/build_site.py through .github/workflows/pages.yml on every
-  push to main. The book site since 0a landed; the book index lists
-  chapters as they are published (chapters 1 and 3 so far).
-- C4 set: docs/c4/ (c4-sdk bundle model.json, nine diagram files). The simulator and internal/env are marked built (status `existing`). The
-  07-component-crdt diagram still shows the pre-amendment CRDT design and is
-  redrawn as the OCC component (last-writer-wins, no sibling component) when Chunk 4 lands; other diagrams move from
-  TARGET to as-built as their chunks land.
+  .github/scripts/build_site.py through .github/workflows/pages.yml on every push to
+  main; the book index lists chapters 1–6.
+- C4 set: docs/c4/ (c4-sdk bundle model.json, nine diagram files; 07 is
+  07-component-occ.md). Every protocol package is drawn as built; relationships between
+  packages and to the object API and node runtime stay planned until Chunk 6 lands.
 - Neon routes: direct (google/gemini-4-neon via opencode) is primary;
   OpenRouter fallback is out of credits until 2026-12-01. Probe with
   agent_work/orch/seat-probe.sh before each chunk's first Neon stage. Neon (opencode) cannot
