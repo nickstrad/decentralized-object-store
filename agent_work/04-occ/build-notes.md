@@ -508,7 +508,14 @@ strconv strings time` plus `internal/env`.
 2. `Membership` is declared in `internal/occ` (`Peers() []env.NodeID`); Chunk 6 wires gossip's
    live view into it.
 3. Chunk 6: wire `Config.OnDiscard` to (a) metrics and (b) a deferred `RecountQuota` for quota
-   keys, after the node has synced.
+   keys, after the node has synced. Records are emitted at least once across crashes (the
+   outbox); a consumer that needs exactly-once de-duplicates on `(node, key, loser ID)`.
+4. The independent harness check `partition-two-writer` (`agent_work/adversarial/04-occ/sim.go`)
+   asserts one hook in total per lost version, the round-1 rule that LWW round 2 item 2(b)
+   replaces. It now reports BROKEN although the behaviour is the one the brief requires (see
+   "Gate and commands"). Its author should change `w.hooks == 1` to compare with the number
+   of nodes that held or received the loser (here 2), or drop it in favour of
+   `len(w.lost) == 1`.
 
 ## Repair round (2026-11-21): the LWW ruling and review 1
 
@@ -595,7 +602,8 @@ delivery-tracking wrapper; the golden `state-v2.golden` is replaced by `state-v3
 
 ### API changes
 
-Added: `OpenStore(cfg, state) (*Store, error)`; `DiscardDedupLen`, `DiscardOutboxLen`;
+Added: `OpenStore(cfg, state) (*Store, error)` (`cfg.Epoch`, `Counter`, `Discards` and `Doc` are
+ignored: the blob supplies them); `DiscardDedupLen`, `DiscardOutboxLen`;
 `ErrUsageOverflow`, `CodeUsageOverflow` (136). Changed: `Store.Merge`'s bool now means "the
 document changed" (a merge that only records a rejected loser returns `false` but persists);
 the state blob format (`OCS2`, with tail, outbox and window) and so `Store.EncodeState`'s
@@ -639,8 +647,8 @@ test-only follow-up `f4d4471`):
 | `go test ./internal/occ -run '^$' -fuzz '^<T>$' -fuzztime 30s -fuzzminimizetime 5s` | `FuzzOCCConditionalWrite` 11,740 execs, `FuzzOCCMergeLaws` 17,659, `FuzzOCCDecode` 263,594; PASS, no crasher |
 | `go test -run '^$' -bench BenchmarkMergeDoc -benchmem -benchtime 20x ./internal/occ` | numbers above |
 | retirement switched off by a temporary edit (not committed), `DST_SEEDS=500 go test -v -run 'TestMultiRegionConvergenceDST\|TestWriterLostAfterDeliveryDST\|TestOfflineRegionDST'` | all pass; context sizes above |
-| `agent_work/gates/gate.sh 04-occ` (host) | GATE_RESULT |
-| `agent_work/adversarial/04-occ/run-all.sh` (host) | HARNESS_RESULT |
+| `agent_work/gates/gate.sh 04-occ` (host, `3094597`, clean tree) | `gate: overall=pass counts_for_landing=true`. G0 all pass (comments against baseline `6d44948`); G1 unit 31 s; G2 rapid 2,000 checks (seed 53413714705202), 2 packages, 97 s; G3 fuzz 4 targets × 30 s, 134 s; G4 race 35 s; G5 500 seeds from base 53413714705202, 239 s; G6 pass |
+| `agent_work/adversarial/04-occ/run-all.sh` (host, `3094597`, harness not edited) | `SUMMARY held=60 broken=1 setup_errors=0 elapsed_seconds=45`. Both round-1 BROKEN checks now hold: `HELD C17 recount-stale-noop` and `HELD C23 recount-overflow`. The one BROKEN is `C6,C9,C31 partition-two-writer` (`seed=4701 seed=4702 missing/excess discard`), which held in round 1. It asserts `w.lost[loser] && len(w.lost) == 1 && w.hooks == 1`: exactly one record in total for the one lost version. Item 2(b) of this round's brief replaces that rule: the winner's node now records the rejected loser too. A throwaway probe of the same schedule (same seeds, network and period; not committed) showed on all 10 seeds one lost version, recorded once on each node (counters 1 and 1, two hooks naming the same version ID): `len(lost) == 1` and counter = hooks = logs hold, `hooks == 1` cannot. The check needs `hooks` compared with the number of nodes that held or received the loser, or `len(lost) == 1` alone; the harness is not this seat's to edit (see "Requests to the orchestrator"). The harness's committed evidence files were restored after the run so its own record stays as its author left it |
 
 Round 1 for reference: the gate passed on `0879e715` (`overall=pass counts_for_landing=true`).
 
