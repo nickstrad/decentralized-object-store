@@ -29,13 +29,14 @@ container unless it says "host". Numbers marked "500 seeds" come from
 | `vfs.go` | the small file-system interface under the file disk; `osFS` |
 | `realenv.go` | wall clock with loop-posted timers (`realTimer`), `fileDisk` (section 10.7) |
 | `runtime.go` | `Runtime`: the real environment, the node loop, socket readers, connection handling, outbound requests, off-loop name lookup, panic handling (`Done`, `Err`), start/shutdown |
-| `service.go` | `Runtime` as `storage.Service` (every call posted to the loop; cancellation states of section 10.9), `Inspect` |
+| `service.go` | `Runtime` as `httpapi.Service` (every call posted to the loop; cancellation states of section 10.9), `Inspect` |
 
 ### internal/storage (added files)
 | File | What it is |
 |---|---|
-| `api.go` | object-service types (`Condition`, `ObjectInfo`, `PutRequest`, `BucketSpec`, `QuotaInfo`, `TagInfo`, `ACLInfo`, `MigrationInfo`, `MemberInfo`, `Health`, `Counter`), the `Service` interface, API sentinels `ErrNoSuchBucket`, `ErrBucketExists`, `ErrBusy`, `ErrMethod` on codes 160–163 |
-| `http.go` | the HTTP handler (routes below), the one status table, `Limits`, `Server` (start, address, shutdown) |
+| `api.go` | object-service types (`Condition`, `ObjectInfo`, `PutRequest`, `BucketSpec`, `QuotaInfo`, `TagInfo`, `ACLInfo`, `MigrationInfo`, `MemberInfo`, `Health`, `Counter`, `StatusRow`), API sentinels `ErrNoSuchBucket`, `ErrBucketExists`, `ErrBusy`, `ErrMethod` on codes 160–163 |
+| `httpapi/service.go` | the `Service` interface (package `internal/storage/httpapi`, see "HTTP package split") |
+| `httpapi/http.go` | the HTTP handler (routes below), the one status table, `Limits`, `Server` (start, address, shutdown) |
 
 No landed storage file was changed.
 
@@ -85,7 +86,7 @@ wipe-rejoin) — section 3.3. Not built: re-placing shards of a node that never 
 | outbound request (`roundTrip`) | loop (`realNet.Request`), `wg.Go` | reply, deadline, or runtime context (dial and conn are closed by `context.AfterFunc`) | posts the completion |
 | name lookup (`resolve`) | loop (`realNet.Send` to an uncached host name), `wg.Go`, at most one per name | lookup returns, `ResolveTimeout`, or runtime context | posts the address to the cache |
 | timer callbacks | Go runtime (`time.AfterFunc`) | fire once; all stopped after the loop exits | post a generation-checked closure (a stopped timer whose event is already queued never fires) |
-| HTTP server (`storage.Server`) | `Server.Start`, `wg.Go` | `Server.Shutdown` | calls `Runtime` service methods, which post to the loop |
+| HTTP server (`httpapi.Server`) | `Server.Start`, `wg.Go` | `Server.Shutdown` | calls `Runtime` service methods, which post to the loop |
 | signal context (`cmd/objnode`) | `signal.NotifyContext` | `stop()` | cancels `serve` |
 
 `Shutdown(ctx)`: mark closed, post `Node.Stop` (gossip `Leave`, merkle `Stop`, inventories dropped,
@@ -297,7 +298,7 @@ coordinator (same config as the main one, cannot fail); migration paths only rea
 persist fails mid-step (Retire, Promote, discard error returns).
 
 ### Intentionally ignored errors (`_ =`)
-- `internal/storage/http.go`: the JSON encoder and `ResponseWriter.Write` errors (the client is gone; the
+- `internal/storage/httpapi/http.go`: the JSON encoder and `ResponseWriter.Write` errors (the client is gone; the
   status is already sent).
 - `internal/node/runtime.go`: `net.Conn.Close` on refused, untracked, timed-out or finished connections;
   re-encoding the error frame for an oversized response (the error frame is small and cannot fail).
@@ -325,8 +326,8 @@ None (`grep panic( ` over the new code is empty); no allowlist line needed.
 5. **C4 corrections at landing.** (a) Metadata anti-entropy is one Merkle tree over the whole OCC
    document per node, not a manifest tree per bucket; (b) shard-inventory trees are per bucket per node and
    compared locally against the tree the node's manifests expect (`merkle.Tree` + `merkle.Compare`, not a
-   `merkle.Worker`); (c) the HTTP API is served by `storage.Server` inside the objnode process and calls
-   `node.Runtime` through `storage.Service`; (d) OCC push-pull still runs alongside the Merkle path.
+   `merkle.Worker`); (c) the HTTP API is served by `httpapi.Server` inside the objnode process and calls
+   `node.Runtime` through `httpapi.Service`; (d) OCC push-pull still runs alongside the Merkle path.
 6. **PLAN wording that turned out wrong or needs narrowing.** "Shards no manifest refers to are collected
    after a grace period" (7.2) is unsafe as written (section 3.4); the as-built rule is evidence-based
    with a long orphan grace. "Manifest tree per bucket" (7.4): see 5(a). The Chunk 0a cluster profile's
@@ -608,7 +609,7 @@ the fix, same-target seeds ended with both `moved` and different-target seeds le
 Tests: rows added to `TestHTTPObjectAPIAgainstTheModel`; `FuzzObjectAPI` sends either header with any
 value and fails if a PUT or DELETE carrying one was applied when an independent evaluation says it
 could not hold (the counterexample it found in 15 s on the old code, `If-Match: " "` applied
-unconditionally, is kept in `testdata/fuzz/FuzzObjectAPI`);
+unconditionally, is kept in `internal/storage/httpapi/testdata/fuzz/FuzzObjectAPI`);
 `TestPreconditionsOnTheNodeNeverDegradeToUnconditional`. API change: `storage.Condition` gains
 `IfMatchList bool` and `IfMatchAny []string` (the parsed strong tags).
 
@@ -820,7 +821,7 @@ All through `docker compose run --rm -T dev …` unless marked host.
 | `DST_SEEDS=500 go test ./internal/node -run DST -v` standalone (default base) | ok, 1,345 s; every DST held every seed |
 | two earlier 500-seed runs of the same | found the set-up and quota-audit issues fixed in `f2a1691` and `994c005` (each listed there) |
 | `DST_SEEDS=200 DST_SEED_BASE=7000` on the new DSTs | 7 late-flip set-up deadlines (fixed in `df394f4`), all else held |
-| `go test ./internal/storage -run '^$' -fuzz '^FuzzObjectAPI$' -fuzztime 20s` on the old code | found `If-Match: " "` applied unconditionally (corpus file committed) |
+| `go test ./internal/storage -run '^$' -fuzz '^FuzzObjectAPI$' -fuzztime 20s` on the old code (the target now lives in `./internal/storage/httpapi`) | found `If-Match: " "` applied unconditionally (corpus file committed) |
 | `MEASURE_RUNTIME=1 … TestMeasureLoopbackRuntime` | section 10.14 |
 | `agent_work/06-integration/cluster-smoke.sh` (host), once and twice concurrently | PASS, exit 0 each |
 | `agent_work/gates/gate.sh 06-integration` (host) on `97b9850` | **overall=pass, counts_for_landing=true** (summary below; `repair-runs/gate-summary.txt`) |
@@ -878,3 +879,42 @@ The harness's `evidence/` files were restored from a copy taken before the run.
 - **Persisting `recountDue`/`losers`.** Still in memory (section 6); the quota audit now repairs a
   dropped recount, and the `~gc/` marker for a loser is durable.
 - **`PLAN.md`, `STATE.md`, `README.md`, gate files, docs:** not touched (rules); requests in 10.12.
+
+## 11. HTTP package split
+
+`internal/node` became a determinism-lint root; the lint also checks every module package a root
+imports, so `internal/storage` is now linted and `http.go` (and `api.go`'s `context` import) failed it.
+A move, no behaviour change, no allowlist entry.
+
+| From | To | Why |
+|---|---|---|
+| `internal/storage/http.go` | `internal/storage/httpapi/http.go` (package `httpapi`) | `net/http`, `net`, `encoding/json`, `sync`, context deadlines, goroutines |
+| `internal/storage/http_test.go` (package `storage_test`) | `internal/storage/httpapi/http_test.go` (package `httpapi_test`) | tests the moved code; `FuzzObjectAPI` included |
+| `internal/storage/testdata/fuzz/FuzzObjectAPI/` | `internal/storage/httpapi/testdata/fuzz/FuzzObjectAPI/` | the corpus follows its target |
+| `Service` interface in `internal/storage/api.go` | `internal/storage/httpapi/service.go` | its methods take `context.Context`, not on the lint's import list |
+| `StatusRow` type in `http.go` | stays in `internal/storage/api.go` | a plain `{Err, Status}` struct; `internal/node.StatusRows` returns it |
+| `TestAPICodesAreInTheirBlockAndDistinct` in `http_test.go` | `internal/storage/api_test.go` | checks `storage.APICodeEntries`, which stays in `api.go` |
+
+Everything else in `api.go` (request/response types, API sentinels and codes) stays in `internal/storage`.
+`StatusTable`, `StatusOf`, `Limits`, the `Default*` HTTP limits, `MaxListLimit`, `HeaderVersion`,
+`HeaderContentSHA`, `NewHandler`, `NewServer` and `Server` are now `httpapi.*`. Importers updated:
+`internal/noderuntime/service.go` (`var _ httpapi.Service`), `internal/noderuntime/runtime_ops_test.go`,
+`cmd/objnode/main.go`. The status-table literal is now keyed (`{Err: …, Status: …}`) because `go vet`
+flags unkeyed literals of a type from another package; rows and order are unchanged. Error strings keep
+their `storage:` prefix. `agent_work/adversarial/` still uses the old `storage.*` names (not mine to edit).
+
+**Coverage (default seeds):** `internal/storage` 97.8%, `internal/storage/httpapi` 87.3% of statements.
+
+**Commands run (Docker unless marked host):**
+
+| Command | Result |
+|---|---|
+| `gofmt -l .` | empty |
+| `go vet ./...`, `go build ./...` | ok |
+| detlint over the `detlint_dirs` roots and their module imports, `-allow agent_work/gates/detlint-allow.txt` (same invocation as `g0_detlint`) | clean, 72 files in 11 packages |
+| `go test ./internal/storage/... ./internal/node/... ./internal/noderuntime/... ./cmd/...` | ok |
+| same with `-race` | ok |
+| `go test -run '^FuzzObjectAPI$' -v ./internal/storage/httpapi` | the committed corpus entry runs |
+| `go test -cover ./internal/storage ./internal/storage/httpapi` | 97.8%, 87.3% |
+| `agent_work/gates/canaries.sh '^partial-run$'` (host) | `canaries: 1 of 1 caught` |
+| `agent_work/06-integration/cluster-smoke.sh` (host) | `SMOKE: PASS`, exit 0 |
