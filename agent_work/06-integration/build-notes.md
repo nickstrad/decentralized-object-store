@@ -540,9 +540,9 @@ and finding 1 on the old code.
    written (bucket moved, quota, precondition); Retire (replaced source versions; copy intents not
    live); Discard (its copy intents); a lost-object declaration (path 2).
 2. *Orphan* (inventory): not expected, no evidence, unreferenced for `OrphanGrace` (1 h default; 10 min
-   in the DSTs). Before deleting, the holder writes a replicated record
-   `~orphan/<version>/<node>` listing the (stripe, index) it deletes; if that write fails, nothing is
-   deleted. If a manifest for that version is (or later becomes) live and some stripe has more than m
+   in the DSTs). Before deleting, the holder writes a replicated record per shard,
+   `~orphan/<version>/<stripe>.<index>/<node>` (one key per (version, node) before the review 2 fixes,
+   section 13); if that write fails, nothing is deleted. If a manifest for that version is (or later becomes) live and some stripe has more than m
    shards on orphan records, the lowest-ID live node tombstones that exact version (IfMatch its ETag),
    writes `~lost/<version>` on the object, marks the version dead and decrements usage; health
    reports `lost_objects`. With m or fewer gone, the holders rebuild them as for any missing shard.
@@ -968,3 +968,93 @@ empty strong list (`IfMatchList` true, no candidates), so the write gets 412. `*
 
 **Note.** The existing seed `"x", "@"` in `FuzzObjectAPI` has its fields misaligned, because each step
 needs four NUL-separated fields. That seed was left unchanged. The two new seeds use the correct layout.
+
+## 13. Review 2 fixes (REVIEW-2: FAIL, two new majors, four nits)
+
+Each item had its regression test committed first, failing on the code before the fix.
+
+**1. (MAJOR) Orphan records overwritten across ticks.** Test:
+`TestOrphanRecordsAccumulateAcrossMaintenanceTicks` (`internal/node/gc_test.go`) is the reviewer's case
+made deterministic: 4 nodes, k=2 m=2 (a shard of every stripe on every node), fixed 2 ms latency, a
+5-stripe object. Stripe 4 launches only after the first window's quorum. The test clogs the writer's
+link to holder `a` after `a` stores stripes 0–3, and drops the link to holder `y`. Stripe 4 reaches `a`
+1.5 maintenance periods later and never reaches `y`. The writer is then cut off past `OrphanGrace`, and
+the test asserts the arrival timing it depends on. On the old code `a`'s second record replaced its
+first, so every stripe showed 2 orphaned shards (not more than m), and the object stayed live while
+reads failed with `ErrUnavailable` (seen failing). `TestAWriteWhoseShardsWereCollectedAsOrphansIsRecordedLost`
+now runs 1, 2 and 6 stripes (6 > `DefaultWindow`), muting the writer only after every stripe has
+landed. Its symmetric 3-node layout still detected the loss on the old code, so it is coverage rather
+than a regression test. New DST invariant `checkLiveReadableOrLost` (`helpers_test.go`) runs at the end
+of the put/get, bit-rot, crash and partition DSTs: every key the metadata lists as live is read
+through a random node, and a failed read fails the run unless the cluster has a `~lost/<version>`
+record. `TestLiveReadableOrLostOracleCatchesAnUnreadableLiveKey` shows the check fails on a live key with
+2 of 3 shards rotted. Change (`inventory.go`): one record per collected shard, key
+`~orphan/<version>/<stripe>.<index>/<holder>`, with a value set by the key (the same encoding,
+holding one pair). Only that holder writes the key and every write of it is identical, so a later
+tick, a restart, a concurrent write or last-writer-wins can add entries but cannot erase one.
+`noteOrphan` is unchanged and still reads records in the old format. Cost: one metadata key per
+orphaned shard (orphans are the rare case of a writer away longer than `OrphanGrace`). The
+`orphan_records` counter now counts shards.
+
+**2. (MAJOR) `realNet.Request` called back twice.** Tests (`internal/noderuntime/request_once_test.go`):
+`TestRequestCallsBackExactlyOnceOnEveryPath` runs in a synctest bubble and counts callbacks for a zero
+and a negative timeout (to itself and to a peer), an oversized request to itself, no network, and a
+normal request to itself. `TestNetworkedRequestCallsBackExactlyOnce` runs on loopback and covers an
+oversized request to a peer and a peer that is not listening. Four rows called back twice on the old
+code. Change: the non-positive-timeout check and the oversized check (now for any destination, so
+`-race` slowness in encoding cannot turn it into a timeout) run before the request is registered or
+its timer armed. Each calls back once, from the loop. Every later path goes through `complete`.
+Audit: `Send` returns its error and has no callback. `serve` guards its reply (`replied`), `call`
+guards `done` (`once` plus the CAS state), and timers fire once per generation. After shutdown no
+callback runs at all, because the loop has stopped. That is the runtime's documented closed state.
+
+**3. Flip after a crash between its writes.** Test: `TestFlipAfterACrashBetweenItsWritesLeavesTheBucketWritable`
+(`internal/node/flip_test.go`, 9 nodes). A wrapped flip step's first attempt writes this saga's flip
+record and then a route to r2, as a losing concurrent migration would, and fails like a crash. The
+retry must complete the migration. The test checks that route and flip owner agree on r1 on every
+node, that puts through three nodes succeed and that the old object is readable. On the old code the
+saga was compensated with "routed to r2" (seen). Change (`migrate.go` Flip): when the flip record
+names this saga and target, set the route to the target and succeed, as Pointer already does.
+
+**4. Oracle content map.** Test: `TestAckOracleKeepsIdenticalPayloadsOnTwoKeysApart`. It writes equal
+payloads to k1 and k2, overwrites k2, then deletes k1 behind the oracle. The old oracle called k1's
+lost write "superseded". Change: `byContent` is keyed by `key + "\x00" + content`. A migration copy
+keeps its key, so copies are still linked.
+
+**5. `syncChain` retry.** Test: `TestSyncRetriedAfterAMidChainFailureSyncsEveryNewAncestor`
+(`syncchain_test.go`). It injects one fsync failure on `shards/b` while syncing `shards/b/00/v/0.0`
+under four new directories, then retries. On the old code the retry returned nil while `shards` was
+not durable in the data directory. Change: walk every ancestor up to the data directory, sync the
+parent of each one still marked new, and clear the mark only after that fsync succeeds.
+
+**6. Nits.** `track` refuses a connection when the runtime context is cancelled or the loop panicked
+(`TestNoConnectionIsTrackedAfterALoopPanic`, `...AfterTheRuntimeContextEnds`; both tracked it on the
+old code). The panic path cancels before it takes the lock to close tracked connections, so a
+connection is either closed by that sweep or refused. The negative-count config error now names
+`occ fanout` (validation table rows check the field names). Two stale sentences in sections 6 and
+7 were corrected, and section 10.3's orphan key was updated. The `fuzz-short.sh` nit is in
+`agent_work/gates/`, which is the orchestrator's to change.
+
+**Residual limit, restated.** A write is lost only if its writer is unreachable for longer than
+`OrphanGrace` (1 h by default) while other holders hold its shards without its manifest. In that
+case the holders record every shard they collect, one key per shard. Once the write's manifest is
+live anywhere and more than m shards of any stripe appear on those records, the lowest-ID live node
+tombstones that version and writes `~lost/<version>`. For objects of every size, the write is
+therefore either readable or declared lost on record, never live and unreadable. A stripe that is
+unreadable for another reason (for example, more than m shards rotted on disk) is not covered by this
+rule. The DST invariant would report it.
+
+### Commands run (Docker `dev` unless "host")
+- `gofmt -l .`: empty. `go vet ./...`: clean.
+- `go test -count=1 ./internal/node/... ./internal/noderuntime/... ./internal/storage/... ./cmd/...`:
+  ok (node 49.2 s, noderuntime 9.6 s, storage 3.1 s, httpapi 1.9 s, objnode 0.2 s, objsim 0.1 s).
+- `go test -race -count=3 ./internal/noderuntime/... ./internal/storage/... ./cmd/objnode/...`: ok
+  (25.4 s, 35.4 s, 7.0 s, 1.5 s). The first run failed only on the oversized-peer row (timeout
+  before too-large), which led to the any-destination size check in item 2.
+- `go test -count=1 ./internal/node -rapid.checks=2000 -run 'Prop'`: ok (96.5 s).
+- detlint over the gate's roots: `checked 72 files in 11 packages`, exit 0. paniccheck: exit 0.
+- `DST_SEEDS=100 go test -count=1 ./internal/node`: ok (253.0 s).
+- host `agent_work/06-integration/cluster-smoke.sh`: `SMOKE: PASS`.
+- host `agent_work/adversarial/06-integration/run-all.sh`: `SUMMARY held=662 broken=0 setup_errors=0
+  elapsed_seconds=390`. Its evidence files were restored with `git checkout`.
+- Not run: the 500-seed gate and the full gate (the orchestrator runs them).
