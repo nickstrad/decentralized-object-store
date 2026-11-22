@@ -209,6 +209,7 @@ func crashRun(res *crashResult) func(seed int64) *sim.Sim {
 		if err := h.checkShardsReferenced(true); err != nil {
 			s.Fail(err)
 		}
+		h.checkLiveReadableOrLost(s)
 		for _, n := range h.up() {
 			res.rebuilds += n.Stats().Rebuilds
 		}

@@ -149,6 +149,7 @@ func bitRotRun(res *bitRotResult) func(seed int64) *sim.Sim {
 		if err := h.checkShardsReferenced(false); err != nil {
 			s.Fail(err)
 		}
+		h.checkLiveReadableOrLost(s)
 		return s
 	}
 }

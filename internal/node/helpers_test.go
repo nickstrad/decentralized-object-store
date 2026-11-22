@@ -293,3 +293,47 @@ func (m *measure) report(t *testing.T) {
 }
 
 func occManifestKey(bucket, key string) string { return occ.ManifestKey(bucket, key) }
+
+func (h *harness) lostOnRecord(man *storage.Manifest) bool {
+	k := occ.TagKey(man.Bucket, man.Key, "~lost/"+man.Version.String())
+	for _, n := range h.up() {
+		if rd, err := n.OCC().Reader(); err == nil && rd.Record(k).Live() {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *harness) checkLiveReadableOrLost(s *sim.Sim) {
+	rd, err := h.up()[0].OCC().Reader()
+	if err != nil {
+		s.Fail(err)
+		return
+	}
+	pending := 0
+	for _, k := range rd.Keys() {
+		if len(k) == 0 || occ.Kind(k[0]) != occ.KindManifest || !rd.Record(k).Live() {
+			continue
+		}
+		val, _, err := rd.Get(k)
+		if err != nil {
+			continue
+		}
+		man, err := manifestOf(val)
+		if err != nil {
+			s.Fail(fmt.Errorf("live manifest %q: %w", k, err))
+			return
+		}
+		from := h.pick()
+		pending++
+		h.node(from).GetObject(man.Bucket, man.Key, func(_ storage.ObjectInfo, _ []byte, err error) {
+			pending--
+			if err != nil && !h.lostOnRecord(man) {
+				s.Fail(fmt.Errorf("%s/%s version %s is live in metadata, unreadable from %s and declared lost on no record: %w", man.Bucket, man.Key, man.Version, from, err))
+			}
+		})
+	}
+	if err := s.RunUntilConverged(s.Now().Add(30*time.Second), func() bool { return pending == 0 }); err != nil {
+		s.Fail(fmt.Errorf("%d reads of live keys never completed: %w", pending, err))
+	}
+}
