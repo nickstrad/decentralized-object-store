@@ -67,6 +67,8 @@ type world struct {
 	won, lost   int
 	retired     uint64
 	diskLosses  int
+	maxCtx      int
+	maxState    int
 }
 
 var lastWorld *world
@@ -259,6 +261,9 @@ func (w *world) docs() ([]*occ.Doc, error) {
 		}
 		st, err := occ.DecodeStateBlob(b)
 		if err != nil {
+			if slices.Contains(w.s.Disk(id).Damaged(), occ.StateBlob) {
+				continue
+			}
 			return nil, fmt.Errorf("node %s durable state: %w", id, err)
 		}
 		out = append(out, st.Doc)
@@ -409,6 +414,16 @@ func (w *world) finish(quiet env.Time, bound time.Duration) []*occ.Doc {
 		w.s.Fail(fmt.Errorf("the discard counters say %d (%d on lost disks), the hooks saw %d", total+w.retired, w.retired, hooked))
 	}
 	w.discards = total + w.retired
+	for _, k := range docs[0].Keys() {
+		if v, ok := docs[0].Record(k).Version(); ok {
+			w.maxCtx = max(w.maxCtx, v.Context().Len())
+		}
+	}
+	for _, id := range w.ids {
+		if b, ok := w.s.Disk(id).PeekDurable(occ.StateBlob); ok {
+			w.maxState = max(w.maxState, len(b))
+		}
+	}
 	w.tally = w.or.tally(docs)
 	return docs
 }
@@ -446,8 +461,8 @@ func multiRegionRun(seed int64) *sim.Sim {
 }
 
 func logWorld(t *testing.T, w *world) {
-	t.Logf("MEASURE acks=%d refused=%d discards=%d lost_versions=%d disk_losses=%d outcome=%v converged_in=%s events=%d won=%d discarded=%d overshoot=%d recount_rounds=%d",
-		w.acks, w.refused, w.discards, len(w.or.lost), w.diskLosses, w.tally, w.convergedIn, w.s.Steps(), w.won, w.lost, w.overshoot, w.rounds)
+	t.Logf("MEASURE acks=%d refused=%d discards=%d lost_versions=%d disk_losses=%d max_ctx=%d max_state=%d outcome=%v converged_in=%s events=%d won=%d discarded=%d overshoot=%d recount_rounds=%d",
+		w.acks, w.refused, w.discards, len(w.or.lost), w.diskLosses, w.maxCtx, w.maxState, w.tally, w.convergedIn, w.s.Steps(), w.won, w.lost, w.overshoot, w.rounds)
 }
 
 func TestMultiRegionConvergenceDST(t *testing.T) {

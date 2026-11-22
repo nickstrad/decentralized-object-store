@@ -1,6 +1,7 @@
 package occ_test
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math"
@@ -377,5 +378,35 @@ func TestRecountNoopRechecksCurrentVersion(t *testing.T) {
 	})
 	if err != nil || wrote || calls != 1 {
 		t.Fatalf("an already-right quota must be a no-op: %+v %v %v", got, wrote, err)
+	}
+}
+
+func stateBlob(payload []byte) []byte {
+	sum := sha256.Sum256(payload)
+	return append(append([]byte("OCS2"), sum[:]...), payload...)
+}
+
+func TestOpenStoreRejectsHostileState(t *testing.T) {
+	c := &fakeClock{now: 1_000_000}
+	cfg := storeConfig("a", 0, 1, c)
+	head := []byte{1, 0, 0}
+	rows := map[string][]byte{
+		"a tail over 64":      append(append(slices.Clone(head), 65), make([]byte, 65*40)...),
+		"a window over 256":   append(append(slices.Clone(head), 0, 0, 0x81, 0x02), make([]byte, 257*16)...),
+		"a truncated discard": append(slices.Clone(head), 1, 1, 'k', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+		"a truncated window":  append(slices.Clone(head), 0, 0, 1, 1, 2, 3),
+	}
+	for name, payload := range rows {
+		if _, err := occ.OpenStore(cfg, stateBlob(payload)); !errors.Is(err, occ.ErrMalformed) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	good := append(slices.Clone(head), 0, 0, 0)
+	good = append(good, occ.NewDoc().Encode()...)
+	if _, err := occ.OpenStore(cfg, stateBlob(good)); err != nil {
+		t.Fatalf("an empty state: %v", err)
+	}
+	if _, err := occ.OpenStore(occ.StoreConfig{Node: "a"}, stateBlob(good)); !errors.Is(err, env.ErrInvalidArgument) {
+		t.Fatalf("a store without clock and rand: %v", err)
 	}
 }
