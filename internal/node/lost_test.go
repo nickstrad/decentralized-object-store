@@ -43,7 +43,13 @@ func fixedNet() sim.NetConfig {
 
 func lossHarness(t *testing.T, nodes int, layout storage.Layout, quorum int) (*harness, *[]string) {
 	t.Helper()
+	return lossHarnessSink(t, nodes, layout, quorum, nil)
+}
+
+func lossHarnessSink(t *testing.T, nodes int, layout storage.Layout, quorum int, sink func(string, occ.Record, occ.Version)) (*harness, *[]string) {
+	t.Helper()
 	cfg := smallConfig()
+	cfg.CommitSink = sink
 	cfg.Layout = layout
 	cfg.AckQuorum = quorum
 	cfg.OrphanGrace = 30 * time.Second
@@ -533,5 +539,37 @@ func TestAHolderThatRecordedItHoldsNoShardRefusesItLater(t *testing.T) {
 	}
 	if h.node(a).Stats().AbsentRefused == 0 {
 		t.Fatal("the refusal was not counted")
+	}
+}
+
+func TestTheLossRecordIsCommittedBeforeTheManifestIsTombstoned(t *testing.T) {
+	layout := storage.Layout{K: 2, M: 2, StripeSize: 1024}
+	var order []string
+	lostKey := ""
+	h, logs := lossHarnessSink(t, 4, layout, 0, func(key string, _ occ.Record, v occ.Version) {
+		switch {
+		case key == occ.ManifestKey("g", "k") && v.Tombstone():
+			order = append(order, "tombstone")
+		case lostKey != "" && key == lostKey && !v.Tombstone():
+			order = append(order, "lost")
+		}
+	})
+	oi, data, man := putEverywhere(t, h, 700)
+	lostKey = occ.TagKey("g", "k", "~lost/"+oi.Version)
+	for _, id := range h.ids[:3] {
+		name, ok := holderOf(man, 0, id)
+		if !ok {
+			t.Fatalf("%s holds no shard", id)
+		}
+		if err := h.s.BitRot(id, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.s.RunFor(60 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	requireDeclaredLost(t, orphanRun{h: h, oi: oi, data: data, logs: logs})
+	if len(order) < 2 || order[0] != "lost" || !slices.Contains(order, "tombstone") {
+		t.Fatalf("commits of the declaration came in the order %v; the loss record must be first, so a crash between the two leaves no key deleted without a record", order)
 	}
 }
