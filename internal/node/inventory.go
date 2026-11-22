@@ -405,6 +405,15 @@ func (n *Node) declareLost(rd occ.Reader) {
 			continue
 		}
 		lk := occ.TagKey(r.man.Bucket, r.man.Key, tagLost+r.man.Version.String())
+		if lheld := rd.Record(lk); !lheld.Live() {
+			lv, err := n.occ.SetScalar(lk, []byte("unrecoverable"))
+			if err != nil {
+				n.logf("loss record %s/%s: %v", r.man.Bucket, r.man.Key, err)
+				continue
+			}
+			n.committed(lk, lheld, lv)
+			n.RecordMeta(lk)
+		}
 		held := rd.Record(r.key)
 		tv, err := n.occ.Delete(r.key, occ.IfMatch(r.etag))
 		if err != nil {
@@ -413,13 +422,6 @@ func (n *Node) declareLost(rd occ.Reader) {
 		}
 		n.committed(r.key, held, tv)
 		n.RecordMeta(r.key)
-		lheld := rd.Record(lk)
-		if lv, err := n.occ.SetScalar(lk, []byte("unrecoverable")); err != nil {
-			n.logf("loss record %s/%s: %v", r.man.Bucket, r.man.Key, err)
-		} else {
-			n.committed(lk, lheld, lv)
-			n.RecordMeta(lk)
-		}
 		n.markDead(r.man.Bucket, r.man.Version)
 		n.usage(r.man.Bucket, -r.man.Size, -1)
 		n.stats.LostDeclared++
