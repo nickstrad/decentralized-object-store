@@ -14,6 +14,10 @@ import (
 
 var canarySeeds = []int64{1, 2, 3}
 
+// TestCanarySkippedBranch plants the bug SetSkipBranch(true) (ignoring child 15
+// mismatches in Session) and proves that both the completeness check and the
+// three-node DST convergence scenario catch it (stalling with sim.ErrDeadline)
+// while passing cleanly without the bug.
 func TestCanarySkippedBranch(t *testing.T) {
 	local := map[string]merkle.Hash{}
 	remote := map[string]merkle.Hash{}
@@ -73,6 +77,9 @@ func canaryRun(seed int64) *sim.Sim {
 	return remember(w)
 }
 
+// TestMeasureDiffCost is an opt-in benchmark table (enabled via
+// MERKLE_MEASURE=1) that prints exact round trips, hash counts, bounds, leaf
+// load, and wire bytes across N = 1e3..1e5 and d = 1..100.
 func TestMeasureDiffCost(t *testing.T) {
 	if os.Getenv(measureEnv) == "" {
 		t.Skip("set " + measureEnv + "=1 to print the cost table")

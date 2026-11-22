@@ -16,6 +16,8 @@ func h32(b byte) Hash {
 	return h
 }
 
+// TestWireTable proves that every request and response message kind encodes to
+// its pinned golden wire bytes and round-trips identically through decode.
 func TestWireTable(t *testing.T) {
 	cases := []struct {
 		name string
@@ -82,6 +84,8 @@ func stripSpaces(s string) string {
 	return string(bytes.ReplaceAll([]byte(s), []byte(" "), nil))
 }
 
+// TestWireMalformed proves that truncated, over-limit, non-canonical, and
+// out-of-order wire requests and responses fail with ErrMalformed or ErrDepth.
 func TestWireMalformed(t *testing.T) {
 	zero := make([]byte, 32)
 	nonzero := bytes.Repeat([]byte{7}, 32)
@@ -158,6 +162,10 @@ func TestWireMalformed(t *testing.T) {
 	}
 }
 
+// FuzzMerkleWire proves that arbitrary wire bytes never panic in decodeRequest,
+// decodeResponse, Tree.Answer, or Session.Feed, that every accepted message
+// re-encodes identically, and that Answer output always decodes within
+// MaxReplyBytes.
 func FuzzMerkleWire(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0x04})

@@ -6,6 +6,15 @@ import (
 	"math/bits"
 )
 
+// Wire message type tags for the diff protocol:
+//   - msgRequest (0x01): depth, level, and either root hash (level 0) or
+//     strictly increasing paths plus an optional leaf resume key.
+//   - msgInner (0x02): non-empty child hashes for requested inner nodes,
+//     packed behind a 16-bit big-endian child bitmap per node.
+//   - msgLeaves (0x03): complete entry lists for one or more requested leaves.
+//   - msgEqual (0x04): single-byte reply meaning the peers' roots match.
+//   - msgCut (0x05): like msgLeaves, but the last leaf was cut at MaxReplyBytes
+//     and continues strictly after its final key.
 const (
 	msgRequest byte = 0x01
 	msgInner   byte = 0x02
@@ -14,6 +23,10 @@ const (
 	msgCut     byte = 0x05
 )
 
+// Wire size limits shared by Tree.Answer, Session, and the decoders:
+//   - MaxReplyBytes: hard byte ceiling on every reply Tree.Answer emits (1 MiB).
+//   - MaxRequestNodes: maximum nodes per request or reply, derived so a full
+//     inner reply (4-byte header + 514 bytes per node) never exceeds MaxReplyBytes.
 const (
 	MaxReplyBytes   = 1 << 20
 	MaxRequestNodes = (MaxReplyBytes - 4) / (2 + Fanout*32)
@@ -39,6 +52,7 @@ type response struct {
 	leaves  [][]Entry
 }
 
+// pathBytes returns the byte width holding level 4-bit nibbles (rounded up).
 func pathBytes(level int) int { return (level + 1) / 2 }
 
 func encodeRequest(r request) []byte {
@@ -53,6 +67,8 @@ func encodeRequest(r request) []byte {
 		binary.BigEndian.PutUint64(x[:], p)
 		b = append(b, x[:w]...)
 	}
+	// Only leaf-level requests that resume a cut leaf carry the suffix, keeping
+	// unresumed requests free of extra flag bytes.
 	if r.level != r.depth || !r.resume {
 		return b
 	}
@@ -60,6 +76,8 @@ func encodeRequest(r request) []byte {
 	return append(b, r.after...)
 }
 
+// appendKids packs one inner node's non-zero children into r's flat bitmap and
+// hash slices, using bit 15-i for child i.
 func appendKids(r *response, kids *[Fanout]Hash) {
 	var bitmap uint16
 	for i, h := range kids {
@@ -83,6 +101,8 @@ func encodeLeaf(b []byte, es []Entry) []byte {
 
 func uvarintLen(n int) int { return uvarintLen64(uint64(n)) }
 
+// uvarintLen64 computes the canonical unsigned varint byte length without
+// allocating.
 func uvarintLen64(v uint64) int {
 	l := 1
 	for ; v >= 0x80; v >>= 7 {
@@ -91,6 +111,7 @@ func uvarintLen64(v uint64) int {
 	return l
 }
 
+// entryBytes returns the exact wire size of one leaf entry.
 func entryBytes(e Entry) int { return uvarintLen(len(e.Key)) + len(e.Key) + len(e.Hash) }
 
 func encodeResponse(r response) []byte {
@@ -150,6 +171,8 @@ func (r *reader) take(n int) []byte {
 
 func (r *reader) uvarint() uint64 {
 	v, n := binary.Uvarint(r.b)
+	// Reject non-minimal (overlong) varints so every accepted message has a
+	// single canonical byte representation.
 	if n <= 0 || n != uvarintLen64(v) {
 		r.bad = true
 		return 0
@@ -168,6 +191,8 @@ func malformed(what string) error {
 	return fmt.Errorf("merkle: decode: %s: %w", what, ErrMalformed)
 }
 
+// decodeRequest parses and canonically validates a wire request, returning
+// ErrDepth for out-of-range depths or levels and ErrMalformed otherwise.
 func decodeRequest(b []byte) (request, error) {
 	r := reader{b: b}
 	if r.u8() != msgRequest || r.bad {
@@ -196,6 +221,8 @@ func decodeRequest(b []byte) (request, error) {
 		return request{}, malformed("request node count")
 	}
 	w := pathBytes(level)
+	// Non-leaf requests have no optional suffix, so their remaining length must
+	// match n*w exactly; leaf requests may append a resume key.
 	if uint64(len(r.b)) < n*uint64(w) || (level != depth && uint64(len(r.b)) != n*uint64(w)) {
 		return request{}, malformed("request path bytes")
 	}
@@ -204,6 +231,7 @@ func decodeRequest(b []byte) (request, error) {
 		var x [8]byte
 		copy(x[:], r.take(w))
 		p := binary.BigEndian.Uint64(x[:])
+		// For odd levels, the unused low nibble of the last path byte must be zero.
 		if p != prefix(p, level) {
 			return request{}, malformed("non-canonical path")
 		}
@@ -227,6 +255,9 @@ func decodeRequest(b []byte) (request, error) {
 	return req, nil
 }
 
+// decodeResponse parses and canonically validates a wire reply while keeping
+// total allocations bounded by 4*len(b) + 64 KiB. It returns ErrDepth for a
+// level above MaxDepth and ErrMalformed for any structural violation.
 func decodeResponse(b []byte) (response, error) {
 	r := reader{b: b}
 	kind := r.u8()
@@ -259,6 +290,8 @@ func decodeResponse(b []byte) (response, error) {
 	}
 	resp := response{kind: kind, level: level, more: more}
 	if kind == msgInner {
+		// Pre-check minimum byte width (2 bytes per bitmap) and size flat slices
+		// directly from the remaining input so empty nodes cannot amplify memory.
 		if uint64(len(r.b)) < 2*n {
 			return response{}, malformed("inner nodes truncated")
 		}
@@ -275,6 +308,8 @@ func decodeResponse(b []byte) (response, error) {
 			}
 			for i := 0; i < bits.OnesCount16(bitmap); i++ {
 				h := r.hash()
+				// Empty subtrees are omitted from the bitmap; a set bit carrying
+				// the zero hash would break canonical encoding.
 				if h.IsZero() {
 					return response{}, malformed("present child with the empty hash")
 				}
@@ -283,11 +318,14 @@ func decodeResponse(b []byte) (response, error) {
 			resp.bitmaps = append(resp.bitmaps, bitmap)
 		}
 	} else {
+		// Copy the leaf payload into one string so decoded Entry keys share a
+		// single backing buffer; Session clones keys it retains across replies.
 		keys := string(r.b)
 		base := len(r.b)
 		resp.leaves = make([][]Entry, 0, n)
 		for j := uint64(0); j < n; j++ {
 			m := r.uvarint()
+			// Each entry requires at least 33 bytes (1-byte length + 32-byte hash).
 			if r.bad || m > MaxLeafEntries || m > uint64(len(r.b))/33 {
 				return response{}, malformed("leaf entry count")
 			}

@@ -61,6 +61,8 @@ type refItem struct {
 	path [32]byte
 }
 
+// refRoot independently recomputes the domain-separated Merkle root directly
+// from a map of keys and hashes to serve as a reference oracle.
 func refRoot(depth int, m map[string]merkle.Hash) merkle.Hash {
 	var items []refItem
 	for _, e := range entriesOf(m) {
@@ -98,6 +100,7 @@ func refNode(level, depth int, items []refItem) merkle.Hash {
 	return sha256.Sum256(buf)
 }
 
+// refDiff computes the exact sorted differences between two key-to-hash maps.
 func refDiff(local, remote map[string]merkle.Hash) []merkle.Difference {
 	var out []merkle.Difference
 	for _, e := range entriesOf(local) {
@@ -133,22 +136,31 @@ func checkComplete(local, remote map[string]merkle.Hash, res merkle.Result) erro
 	return nil
 }
 
+// Bounds used to derive the exact leaf-reply ceiling and hostile round-trip
+// limit from MaxReplyBytes, MaxKeyLen, and MaxLeafEntries.
 const (
 	leafItemMax      = 2 + merkle.MaxKeyLen + 32 + 2
 	leafFrameMax     = 4
 	leafPackingBytes = merkle.MaxReplyBytes - leafItemMax - leafFrameMax - 2
 )
 
+// costBound returns the upper bound 1 + 16*d*depth + d*leafLoad on hashes
+// exchanged for d differing keys.
 func costBound(d, depth, leafLoad int) int {
 	return 1 + 16*d*depth + d*leafLoad
 }
 
+// continuationsPerLeaf returns the maximum number of cut continuations one leaf
+// can produce before hitting MaxLeafEntries (each accepted cut carries >= 990
+// entries, so floor(4096/990) = 4).
 func continuationsPerLeaf() int {
 	payload := merkle.MaxReplyBytes - 2*(2+merkle.MaxKeyLen+32) - leafFrameMax - 2
 	perReply := (payload + 2 + merkle.MaxKeyLen + 32 - 1) / (2 + merkle.MaxKeyLen + 32)
 	return merkle.MaxLeafEntries / perReply
 }
 
+// hostileTripBound returns the worst-case round trips Depth + 5*frontier a
+// Session can take against any responder.
 func hostileTripBound(depth, frontier int) int {
 	return depth + frontier*(1+continuationsPerLeaf())
 }
@@ -170,6 +182,8 @@ type diffShape struct {
 	leaves    int
 }
 
+// expectedShape computes the exact hash count, mismatched leaf count, and
+// encoded leaf byte volume directly from two maps without running the protocol.
 func expectedShape(depth int, local, remote map[string]merkle.Hash) diffShape {
 	diffs := refDiff(local, remote)
 	if len(diffs) == 0 {
@@ -217,6 +231,8 @@ type driven struct {
 	firstPaths int
 }
 
+// drive runs a Session against remote.Answer while recording every reply size
+// so tests can assert MaxReplyBytes and leaf-reply fullness.
 func drive(t fataler, local, remote *merkle.Tree, l merkle.Limits) driven {
 	t.Helper()
 	s := local.Diff(l)
@@ -249,6 +265,9 @@ func leafReplyBound(leafBytes int) int {
 	return max(1, (leafBytes+leafPackingBytes-1)/leafPackingBytes)
 }
 
+// checkShape asserts exact hash equality against expectedShape, MaxReplyBytes
+// compliance, exact round trips (1 if equal, else Depth + leaf replies),
+// single-reply packing when leaf data fits, and fullness of non-final leaf replies.
 func checkShape(t fataler, depth int, local, remote map[string]merkle.Hash, dr driven) {
 	t.Helper()
 	res := dr.res

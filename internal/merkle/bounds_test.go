@@ -15,6 +15,8 @@ func groundKeys(n, keyLen, leafNibbles int) []string {
 	return groundKeysFrom("ground", n, keyLen, leafNibbles)
 }
 
+// groundKeysFrom grinds n keys of length keyLen whose SHA-256 prefix is zero
+// across the first leafNibbles nibbles so they land in the same leaf.
 func groundKeysFrom(label string, n, keyLen, leafNibbles int) []string {
 	var out []string
 	for i := 0; len(out) < n; i++ {
@@ -51,6 +53,10 @@ func paddedKeys(n, keyLen int) map[string]merkle.Hash {
 	return m
 }
 
+// TestDiffBoundsPinned pins exact reply-size, round-trip, and hash-cost
+// boundary cases: cutting oversized single leaves (992 and MaxLeafEntries
+// maximal keys), exact packing up to MaxReplyBytes, one-leaf-per-reply
+// responders, and clustered leaves whose hash count depends on LeafLoad.
 func TestDiffBoundsPinned(t *testing.T) {
 	t.Run("C8 one leaf of 992 maximal keys is split under MaxReplyBytes", func(t *testing.T) {
 		remote := map[string]merkle.Hash{}
@@ -187,6 +193,9 @@ func TestDiffBoundsPinned(t *testing.T) {
 	})
 }
 
+// TestDiffRejectsCheapCuts proves that Session rejects a non-full cut leaf
+// reply and a leaf whose cut continuations exceed MaxLeafEntries with
+// ErrMalformed.
 func TestDiffRejectsCheapCuts(t *testing.T) {
 	t.Run("a cut reply that is not full is malformed", func(t *testing.T) {
 		remote := map[string]merkle.Hash{}
@@ -249,6 +258,9 @@ func TestDiffRejectsCheapCuts(t *testing.T) {
 	})
 }
 
+// TestDiffRejectsARepeatedPiece proves that Session fails with ErrMalformed if
+// a responder ignores the resume key and replays entries from the start of a
+// cut leaf.
 func TestDiffRejectsARepeatedPiece(t *testing.T) {
 	remote := map[string]merkle.Hash{}
 	for _, k := range groundKeys(1500, merkle.MaxKeyLen, 1) {
@@ -280,6 +292,8 @@ func TestDiffRejectsARepeatedPiece(t *testing.T) {
 	}
 }
 
+// firstLeafOnly rewrites a multi-leaf msgLeaves reply to return only its first
+// leaf, simulating a responder that answers one leaf per round trip.
 func firstLeafOnly(t *testing.T, resp []byte) []byte {
 	t.Helper()
 	if resp[0] != 0x03 || resp[2] < 1 {
@@ -318,6 +332,9 @@ func genLongPair(t *rapid.T) mapPair {
 	return mapPair{depth: depth, local: local, remote: remote}
 }
 
+// TestPropLongKeyDiffShape proves completeness, exact hash counts, exact
+// multi-reply leaf packing, and the cost bound on pairs with long keys that
+// trigger leaf batching and cut replies.
 func TestPropLongKeyDiffShape(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		p := genLongPair(t)

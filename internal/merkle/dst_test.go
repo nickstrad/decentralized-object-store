@@ -15,6 +15,14 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim/simtest"
 )
 
+// Simulation parameters and convergence/cost bounds enforced by the DST suite:
+//   - BitRotRepairBound: max time from first observed rot to clean repair.
+//   - BitRotConvergeBound: max convergence time after the last bit-rot phase.
+//   - RepairCopiesPerRot: upper multiplier on fetched chunk bytes per rotted byte.
+//   - CleanSettle, CleanWatch: post-write settle window and zero-fetch watch window.
+//   - MissedWriteBound, PartitionLength: heal convergence bound and isolation span.
+//   - LossPPM, LossConvergeBound: per-link drop rate and convergence bound under loss.
+//   - LyingConvergeBound, LoneLiarRunFor: convergence bound and soak span beside a liar.
 const (
 	dstChunks       = 48
 	dstMinChunk     = 64
@@ -183,6 +191,9 @@ func (w *world) scanRot() error {
 	}
 }
 
+// damaged filters sim.Disk.Damaged() to blobs whose written or durable bytes
+// actually fail their content hash, since two bit-rot flips to the same bit
+// restore the bytes while leaving the simulator's damage flag set until Sync.
 func (w *world) damaged(id env.NodeID) []string {
 	d := w.s.Disk(id)
 	var out []string
@@ -348,6 +359,10 @@ func bitRotRun(nemesis bool) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestBitRotRepairDST proves that silent bit-rot injected during live writes is
+// detected by scrubbing and repaired within BitRotRepairBound using chunk
+// traffic proportional to damage, and that zero chunk bytes move after writes
+// settle when no damage occurs.
 func TestBitRotRepairDST(t *testing.T) {
 	t.Run("rot during traffic is detected and repaired", func(t *testing.T) {
 		simtest.Sweep(t, func(t *testing.T, seed int64) {
@@ -441,6 +456,9 @@ func missedWriteRun(seed int64) *sim.Sim {
 	return remember(w)
 }
 
+// TestMissedWriteRepairDST proves that writes dropped while a replica is
+// isolated by a network partition are repaired by anti-entropy within
+// MissedWriteBound after the partition heals.
 func TestMissedWriteRepairDST(t *testing.T) {
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
 		s := simtest.RequireDeterministic(t, seed, missedWriteRun)
@@ -487,6 +505,9 @@ func lossRun(seed int64) *sim.Sim {
 	return remember(w)
 }
 
+// TestRepairUnderLossDST proves that under sustained 20% per-link packet loss,
+// failed diff rounds are abandoned and retried cleanly, round accounting stays
+// exact, and all replicas converge within LossConvergeBound.
 func TestRepairUnderLossDST(t *testing.T) {
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
 		s := simtest.RequireDeterministic(t, seed, lossRun)
@@ -576,6 +597,10 @@ func loneLiarRun(seed int64) *sim.Sim {
 	return remember(w)
 }
 
+// TestLyingPeerDST proves that a peer sending garbage, ErrDepth, fabricated
+// trees, and bad chunk bytes never plants invalid bytes on an honest disk,
+// never exceeds Depth+1 round trips when leaf data fits one reply, and never
+// prevents honest replicas from converging within LyingConvergeBound.
 func TestLyingPeerDST(t *testing.T) {
 	t.Run("honest replicas converge beside a liar and never store its bytes", func(t *testing.T) {
 		simtest.Sweep(t, func(t *testing.T, seed int64) {

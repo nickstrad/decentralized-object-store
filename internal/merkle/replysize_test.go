@@ -18,6 +18,8 @@ const (
 	leafItemMaxBytes   = 2 + MaxKeyLen + 32 + 2
 )
 
+// allocated returns the minimum TotalAlloc across three calls to f to filter
+// out one-off background runtime allocations.
 func allocated(f func()) uint64 {
 	best := ^uint64(0)
 	for i := 0; i < 3; i++ {
@@ -50,6 +52,10 @@ func groundLeaf(n, keyLen int) []Entry {
 	return out
 }
 
+// TestReplySizeBound proves that MaxRequestNodes caps the largest inner reply
+// within MaxReplyBytes, that a single leaf of 992 maximal keys is cut within
+// MaxReplyBytes, and that decodeResponse allocates proportionally to input size
+// even on hostile or all-empty replies.
 func TestReplySizeBound(t *testing.T) {
 	t.Run("the frontier is capped so the largest inner reply fits", func(t *testing.T) {
 		if got := (Limits{Frontier: 4096}).frontier(); got != MaxRequestNodes {
@@ -174,6 +180,10 @@ func genRequest(t *rapid.T, tr *Tree) request {
 	return req
 }
 
+// TestPropReplySizeBound proves that Tree.Answer emits a decodable reply of at
+// most MaxReplyBytes for every valid request across arbitrary trees and resume
+// keys, always answers at least one leaf, fills early-stopping replies, and
+// returns only entries strictly after the resume key.
 func TestPropReplySizeBound(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		tr := genReplyTree(t)
@@ -208,6 +218,9 @@ func TestPropReplySizeBound(t *testing.T) {
 	})
 }
 
+// TestPropDecodeAllocationBound proves that decodeResponse allocates at most
+// 4*len(b) + 64 KiB on arbitrary raw bytes, truncated empty-inner replies, and
+// truncated real replies.
 func TestPropDecodeAllocationBound(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		var b []byte

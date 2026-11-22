@@ -23,6 +23,8 @@ const (
 
 var errNoWorker = errors.New(errStoreClosed)
 
+// tagNet prefixes every outgoing message with a 1-byte protocol tag so one
+// simulated transport can multiplex Merkle diffs, chunk fetches, and writes.
 type tagNet struct {
 	inner env.Transport
 	tag   byte
@@ -43,6 +45,9 @@ type storeConfig struct {
 	wrapNet   func(env.Transport) env.Transport
 }
 
+// chunkStore is a content-addressed replicated chunk store hosted in internal/sim
+// for anti-entropy DST scenarios. Each chunk is stored at chunk/<hex(SHA-256)>
+// on env.Disk, and Valid checks that the key matches the bytes' SHA-256.
 type chunkStore struct {
 	e        env.Env
 	cfg      storeConfig
@@ -194,6 +199,9 @@ type liarConfig struct {
 	wellFed bool
 }
 
+// liar is an adversarial simulated peer that answers Merkle requests with
+// random garbage, ErrDepth, or fabricated trees and answers chunk fetches with
+// random invalid bytes.
 type liar struct {
 	e   env.Env
 	cfg liarConfig

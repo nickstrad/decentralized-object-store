@@ -8,14 +8,22 @@ import (
 	"pgregory.net/rapid"
 )
 
+// TestPropDiffComplete proves that Compare finds the exact set of differing and
+// one-sided keys with both hashes, zero missed and zero spurious, while
+// matching the exact hash and round-trip shape.
 func TestPropDiffComplete(t *testing.T) {
 	rapid.Check(t, propDiffComplete)
 }
 
+// TestPropDiffCost proves that every diff exchanges at most
+// 1 + 16*d*Depth + d*LeafLoad(remote) hashes and matches the exact honest
+// round-trip shape.
 func TestPropDiffCost(t *testing.T) {
 	rapid.Check(t, propDiffCost)
 }
 
+// TestPropRootIffEqual proves that two trees of the same depth have equal roots
+// if and only if they contain the exact same key-to-hash map.
 func TestPropRootIffEqual(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		p := genPair(t)
@@ -31,6 +39,9 @@ func TestPropRootIffEqual(t *testing.T) {
 	})
 }
 
+// TestPropIncrementalEqualsRebuild proves via a stateful model that arbitrary
+// sequences of Set, Delete, and Snapshot always match Build from scratch in
+// root, length, and LeafLoad while keeping earlier snapshots immutable.
 func TestPropIncrementalEqualsRebuild(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		depth := rapid.IntRange(merkle.MinDepth, 4).Draw(t, "depth")
@@ -79,6 +90,8 @@ func TestPropIncrementalEqualsRebuild(t *testing.T) {
 	})
 }
 
+// TestPropOrderIndependent proves that inserting or building the same entries
+// in any permutation produces the same root hash.
 func TestPropOrderIndependent(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		p := genPair(t)
@@ -101,6 +114,10 @@ func TestPropOrderIndependent(t *testing.T) {
 	})
 }
 
+// TestPropHostileRepliesEndTheSession proves that random bytes, answers from a
+// different tree at every step, or forged small cut replies always terminate
+// the Session within Depth + 5*Frontier round trips with nil, ErrMalformed, or
+// ErrDepth and at most Frontier*MaxLeafEntries differences.
 func TestPropHostileRepliesEndTheSession(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		p := genPair(t)
@@ -166,6 +183,8 @@ func TestPropHostileRepliesEndTheSession(t *testing.T) {
 	})
 }
 
+// FuzzMerkleDiff drives the completeness and exact-cost property through Go's
+// coverage-guided fuzzer.
 func FuzzMerkleDiff(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0})

@@ -9,6 +9,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/merkle"
 )
 
+// TestRootKnownVectors proves that Tree.Root matches pinned SHA-256 test
+// vectors and an independent reference implementation, including that an empty
+// key with a zero hash differs from an absent key.
 func TestRootKnownVectors(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -51,6 +54,9 @@ const (
 	vectorEmptyKey  = "0b16244ae8a9afe68737b66c8fc1d99c20810eb4151d3264a6b831b9881ebad2"
 )
 
+// TestInsertDeleteUpdate proves that incremental Set and Delete operations keep
+// Len, Get, and Root equal to the reference oracle and restore the empty root
+// once all keys are removed.
 func TestInsertDeleteUpdate(t *testing.T) {
 	tr, err := merkle.New(2)
 	if err != nil {
@@ -109,6 +115,9 @@ func TestInsertDeleteUpdate(t *testing.T) {
 	}
 }
 
+// TestEmptyAndSingle proves empty-tree zero roots, single-key diffs in Depth+1
+// round trips, and self-diffs in 1 round trip and 1 hash across every valid
+// depth from MinDepth to MaxDepth.
 func TestEmptyAndSingle(t *testing.T) {
 	for depth := merkle.MinDepth; depth <= merkle.MaxDepth; depth++ {
 		empty := treeOf(t, depth, nil)
@@ -140,6 +149,8 @@ func TestEmptyAndSingle(t *testing.T) {
 	}
 }
 
+// TestNewAndDepthFor proves that New and Build reject out-of-range depths with
+// ErrDepth and that DepthFor selects the smallest depth with 16^depth >= n.
 func TestNewAndDepthFor(t *testing.T) {
 	for _, d := range []int{merkle.MinDepth - 1, merkle.MaxDepth + 1, -5, 255} {
 		if _, err := merkle.New(d); !errors.Is(err, merkle.ErrDepth) {
@@ -160,6 +171,8 @@ func TestNewAndDepthFor(t *testing.T) {
 	}
 }
 
+// TestKeyLimits proves that Set and Build enforce MaxKeyLen and that Build
+// rejects duplicate keys with ErrKey.
 func TestKeyLimits(t *testing.T) {
 	tr := treeOf(t, 1, nil)
 	long := strings.Repeat("x", merkle.MaxKeyLen+1)
@@ -177,6 +190,8 @@ func TestKeyLimits(t *testing.T) {
 	}
 }
 
+// TestLeafFull proves that Set and Build enforce MaxLeafEntries with
+// ErrLeafFull while still allowing updates to an existing key in a full leaf.
 func TestLeafFull(t *testing.T) {
 	keys := keysInLeaf(t, 1, 0, merkle.MaxLeafEntries+1)
 	tr := treeOf(t, 1, nil)
@@ -202,6 +217,7 @@ func TestLeafFull(t *testing.T) {
 	}
 }
 
+// keysInLeaf grinds keys whose first depth SHA-256 nibbles match leaf.
 func keysInLeaf(t testing.TB, depth int, leaf byte, n int) []string {
 	t.Helper()
 	var out []string
@@ -221,6 +237,8 @@ func keysInLeaf(t testing.TB, depth int, leaf byte, n int) []string {
 	return out
 }
 
+// TestSnapshotIsolation proves that mutations to a Tree after Snapshot leave
+// the snapshot's root, length, and keys unchanged.
 func TestSnapshotIsolation(t *testing.T) {
 	tr := treeOf(t, 2, map[string]merkle.Hash{"a": sum("1"), "b": sum("2")})
 	snap := tr.Snapshot()
@@ -237,6 +255,8 @@ func TestSnapshotIsolation(t *testing.T) {
 	}
 }
 
+// TestKeysAndEntriesSorted proves that Keys and Entries return sorted slices
+// and that Build accepts unsorted input slices.
 func TestKeysAndEntriesSorted(t *testing.T) {
 	m := map[string]merkle.Hash{}
 	for i := 0; i < 200; i++ {
@@ -263,6 +283,7 @@ func TestKeysAndEntriesSorted(t *testing.T) {
 	}
 }
 
+// TestHashString proves SHA-256 hex formatting and IsZero on Hash values.
 func TestHashString(t *testing.T) {
 	h := sum("abc")
 	if h.String() != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" {

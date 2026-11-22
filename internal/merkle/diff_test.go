@@ -9,6 +9,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/merkle"
 )
 
+// TestDiffProtocolSteps proves the level-by-level wire exchange for a single
+// changed key (root check, one inner request per level, leaf fetch, stable
+// Request, ErrSession outside waiting state) and the 1-byte equal-root reply.
 func TestDiffProtocolSteps(t *testing.T) {
 	m := map[string]merkle.Hash{}
 	for i := 0; i < 40; i++ {
@@ -95,6 +98,8 @@ func TestDiffProtocolSteps(t *testing.T) {
 	})
 }
 
+// TestDiffLeafRepliesAreBatched proves that more than MaxReplyBytes of leaf
+// entries are split across multiple leaf replies without losing any difference.
 func TestDiffLeafRepliesAreBatched(t *testing.T) {
 	remote := map[string]merkle.Hash{}
 	for i := 0; i < 1600; i++ {
@@ -117,6 +122,9 @@ func TestDiffLeafRepliesAreBatched(t *testing.T) {
 	}
 }
 
+// TestDiffFrontierTruncates proves that a small frontier cap reports Truncated,
+// bounds visited nodes per round, never produces spurious differences, and
+// converges to equal roots over repeated repair rounds.
 func TestDiffFrontierTruncates(t *testing.T) {
 	remote := map[string]merkle.Hash{}
 	for i := 0; i < 300; i++ {
@@ -169,6 +177,9 @@ func TestDiffFrontierTruncates(t *testing.T) {
 	}
 }
 
+// TestDiffErrors proves error handling across mismatched depths, depth
+// overflows, malformed requests and replies, forged leaf keys, and sticky
+// Session.Fail.
 func TestDiffErrors(t *testing.T) {
 	two := treeOf(t, 2, map[string]merkle.Hash{"a": sum("1")})
 	three := treeOf(t, 3, map[string]merkle.Hash{"a": sum("1")})

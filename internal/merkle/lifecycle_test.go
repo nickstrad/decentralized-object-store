@@ -94,6 +94,9 @@ func stopRun(seed int64) *sim.Sim {
 	return out
 }
 
+// TestWorkerStop proves that Stop ends an in-flight round as Failed with
+// env.ErrClosed while keeping its completed diff cost, silences all ticks,
+// deadlines, and late replies while stopped, and allows Start to resume repair.
 func TestWorkerStop(t *testing.T) {
 	s := simtest.RequireDeterministic(t, 1, stopRun)
 	probe := probes[s]
@@ -132,6 +135,8 @@ func TestWorkerStop(t *testing.T) {
 	})
 }
 
+// TestWorkerStopBeforeStart proves that calling Stop on a never-started Worker
+// is a safe no-op that leaves Stats zeroed.
 func TestWorkerStopBeforeStart(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1})
 	var e env.Env
@@ -171,6 +176,8 @@ func (n swallowAfterFirst) Request(to env.NodeID, req []byte, timeout time.Durat
 	}
 }
 
+// TestRoundDeadlineKeepsCost proves that a round aborted by RoundDeadline
+// still records the RoundTrips, Hashes, and DiffBytes of its completed steps.
 func TestRoundDeadlineKeepsCost(t *testing.T) {
 	p := pairRun{
 		seedPeer: true,
@@ -217,6 +224,9 @@ func (truncatingPeer) OnRequest(_ env.NodeID, req []byte, reply env.Reply) {
 	reply(out, nil)
 }
 
+// TestTruncatedRoundIsNotInSync proves that a completed round whose frontier
+// overflowed is counted under Truncated and never increments InSync even when
+// the inspected leaf returns zero differences.
 func TestTruncatedRoundIsNotInSync(t *testing.T) {
 	p := pairRun{
 		peer: func(env.Env) env.Process { return truncatingPeer{} },
@@ -237,6 +247,8 @@ func TestTruncatedRoundIsNotInSync(t *testing.T) {
 	}
 }
 
+// TestCodeRange proves that all exported merkle wire status codes and
+// CodeEntries stay inside the reserved 112..127 block.
 func TestCodeRange(t *testing.T) {
 	for _, c := range []env.Code{merkle.CodeMalformed, merkle.CodeDepth} {
 		if c < merkleCodeLow || c > merkleCodeHigh {
@@ -270,6 +282,9 @@ func (r *stopOnRead) Read(string) ([]byte, error) {
 	return []byte("v"), nil
 }
 
+// TestWorkerStopFromInsideATick proves that calling Stop synchronously from
+// inside a tick's scrub prevents that tick from starting a round or re-arming
+// the timer.
 func TestWorkerStopFromInsideATick(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1})
 	var e env.Env

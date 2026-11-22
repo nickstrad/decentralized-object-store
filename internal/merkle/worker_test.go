@@ -19,6 +19,9 @@ const (
 	readFailCount = 3
 )
 
+// TestCodeEntries proves that every entry returned by CodeEntries sits at or
+// above env.CodeAppMin, round-trips through env.CodeTable, and unwraps to both
+// its sentinel and env.ErrRemote.
 func TestCodeEntries(t *testing.T) {
 	entries := merkle.CodeEntries()
 	tbl, err := env.NewCodeTable(entries...)
@@ -130,6 +133,9 @@ func firstWorker(t *testing.T, s *sim.Sim) *merkle.Worker {
 	return st.w
 }
 
+// TestErrorPeerVanishesMidDiff proves that when a peer crashes mid-diff the
+// round fails with a transport error without repairing anything, and the next
+// round after the peer restarts repairs all missing chunks.
 func TestErrorPeerVanishesMidDiff(t *testing.T) {
 	crashed := false
 	p := pairRun{
@@ -192,6 +198,9 @@ func (c crashAfterFirst) Request(to env.NodeID, req []byte, timeout time.Duratio
 	})
 }
 
+// TestErrorMalformedNode proves that garbage replies, zero-hash inner children,
+// and remote ErrMalformed errors fail the worker round with ErrMalformed, and
+// that malformed requests to OnRequest return CodeMalformed across the wire.
 func TestErrorMalformedNode(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -229,6 +238,9 @@ func TestErrorMalformedNode(t *testing.T) {
 	})
 }
 
+// TestErrorDepthOverflow proves that diffing peers of different depths surfaces
+// ErrDepth and env.ErrRemote when CodeEntries are registered, and only
+// env.ErrRemote with env.DefaultCodes.
 func TestErrorDepthOverflow(t *testing.T) {
 	deeper := func(w *world) merkle.Config {
 		c := w.workerConfig()
@@ -257,6 +269,8 @@ type staticPeers []env.NodeID
 
 func (p staticPeers) Peers() []env.NodeID { return p }
 
+// TestNewWorkerValidation proves NewWorker argument validation (nil interfaces,
+// out-of-range depths, negative settings) and basic Record/Forget behavior.
 func TestNewWorkerValidation(t *testing.T) {
 	s := sim.New(sim.Config{Seed: 1})
 	var e env.Env
@@ -339,6 +353,9 @@ func scrubRun(seed int64) *sim.Sim {
 	return remember(w)
 }
 
+// TestScrubRefillsAWipedDiskDST proves that periodic scrubbing drops wiped
+// blobs from the victim's tree, refills every chunk from healthy peers within
+// refillBound, and counts injected disk read errors.
 func TestScrubRefillsAWipedDiskDST(t *testing.T) {
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
 		s := simtest.RequireDeterministic(t, seed, scrubRun)
