@@ -12,9 +12,9 @@ One package, `internal/merkle`, no other package touched, no simulator change ne
 | File | What it holds |
 |---|---|
 | `tree.go` | `Hash`, `Sum`, `Entry`, `Tree` (persistent fanout-16 trie), `New`, `Build`, `DepthFor`, `Set`, `Delete`, `Get`, `Snapshot`, `Keys`, `Entries`, `LeafLoad`, `Root` |
-| `wire.go` | the diff-protocol messages, encode/decode, limits `MaxRequestNodes` (16,384), `MaxReplyBytes` (1 MiB) |
+| `wire.go` | the diff-protocol messages, encode/decode, limits `MaxRequestNodes` (2,040 since the repair round), `MaxReplyBytes` (1 MiB) |
 | `diff.go` | `Session` (the initiator's state machine), `Tree.Answer` (the responder, stateless), `Compare` (in-memory driver), `Limits`, `Difference`, `Cost`, `Result` |
-| `worker.go` | `Worker` (anti-entropy), `Membership`, `Repairer`, `Config`, `Stats` |
+| `worker.go` | `Worker` (anti-entropy, `Start`/`Stop`), `Membership`, `Repairer`, `Config`, `Stats` |
 | `errors.go` | sentinels and the wire code rows |
 
 The replicated chunk store used by the DST tests lives in `store_test.go` (package
@@ -57,16 +57,24 @@ whose path shares their prefix, sorted by key. `DepthFor(n)` = smallest depth wi
 - Round trip k (2..Depth): the initiator sends the paths of the level-(k−1) nodes whose
   hashes differed; the responder answers 16 child hashes per node.
 - Round trip Depth+1: the initiator sends the mismatched leaf paths; the responder answers
-  each leaf's entries. The initiator merges them with its own leaf and emits a
+  each leaf's entries, packed by exact encoded size up to `MaxReplyBytes`; leaves that do
+  not fit are asked again, and a leaf that does not fit is cut and resumed after its last
+  key (see "Repair round"). The initiator merges them with its own leaf and emits a
   `Difference{Key, Local, Remote, HasLocal, HasRemote}` per key that differs or exists on
   one side. Result sorted by key.
-- So **round trips = Depth+1 = the number of levels in the tree** (root through leaves).
-  PLAN's "round trips ≤ depth" counts levels; with `Depth` as the leaf level the property
-  test asserts `≤ Depth+1`. This is the one wording point a reviewer should check.
+- Round trips (restated in the repair round; exact statement and proof in "Repair round",
+  item 3): 1 when the roots are equal, otherwise exactly **Depth + L**, where L ≥ 1 is the
+  number of leaf-level replies. With an honest responder L = 1 whenever the mismatched
+  leaves' entries fit one reply, so the common case is Depth+1 = the number of tree levels
+  (root through leaves); PLAN's "round trips ≤ depth" counts levels.
 - Wire format (all big-endian, uvarints must be minimal):
   request `01 ‖ depth ‖ level ‖ (level 0: root[32] | uvarint n ≥ 1, n × ceil(level/2) path bytes, strictly increasing, odd level low nibble zero)`;
   inner reply `02 ‖ level ‖ uvarint n ‖ n × (u16 bitmap, bit 15−i = child i ‖ one 32-byte hash per set bit, never zero)`;
+  leaf request (level = depth) optionally ends `‖ uvarint keylen ≤ 1024 ‖ after` = resume the
+  first leaf strictly after key `after` (absent = from its start);
   leaf reply `03 ‖ level ‖ uvarint n ‖ n × (uvarint m ≤ 4096 ‖ m × (uvarint keylen ≤ 1024 ‖ key ‖ hash), keys strictly increasing)`;
+  cut leaf reply: the same with kind `05`, meaning the last leaf continues after its last key
+  (its last leaf must be non-empty);
   equal `04`. Every accepted message re-encodes to the same bytes (checked by `FuzzMerkleWire`).
 - Bounded work against a lying or changing peer:
   - every reply is validated before use: kind, echoed level, node count equal to the request
@@ -76,11 +84,13 @@ whose path shares their prefix, sorted by key. `DepthFor(n)` = smallest depth wi
     `Limits.Frontier` (default 1,024, at most `MaxRequestNodes`); extra mismatches are
     dropped and `Result.Truncated` is set. The worker repairs what it found; the next round
     continues (`TestDiffFrontierTruncates` repairs 300 keys with frontier 4 to equal roots);
-  - the responder stops adding leaves once the reply would pass `MaxReplyBytes`; unanswered
-    leaves are asked again. A reply must answer at least one leaf, so every round trip makes
-    progress;
-  - hence any session ends within `Depth + Frontier` round trips whatever the peer sends
-    (`TestPropHostileRepliesEndTheSession`), and the worker also has a round deadline.
+  - the responder packs a leaf reply up to `MaxReplyBytes` and cuts a leaf that does not
+    fit; the initiator accepts a cut reply only if it is longer than `MaxReplyBytes − 2,116`
+    bytes, only if the resumed leaf's keys are strictly after the resume key, and only while
+    the resumed leaf's pieces total ≤ `MaxLeafEntries`;
+  - hence any session ends within `Depth + 5·Frontier` round trips whatever the peer sends
+    (derivation in "Repair round", item 3; `TestPropHostileRepliesEndTheSession`), and the
+    worker also has a round deadline.
 - The responder holds no state between requests: a peer that vanishes leaves nothing behind.
 
 **Worker.** `NewWorker(env, Config, Membership, Repairer)`; `Start` scans every key the
@@ -116,7 +126,7 @@ uniformly in `[P/2, 3P/2)` from `env.Rand`):
 **Errors (PLAN 2.6).** Sentinels `ErrMalformed`, `ErrDepth` (2.6's rows) plus `ErrKey`,
 `ErrLeafFull`, `ErrRejected` (fetched bytes failed `Valid`), `ErrSession` (Feed when no
 request is outstanding). Peer failures surface as the transport's own errors wrapped with
-`%w`. Wire codes: `CodeMalformed = CodeAppMin+48`, `CodeDepth = CodeAppMin+49`, exported as
+`%w`. Wire codes: `CodeMalformed = CodeAppMin+48 = 112`, `CodeDepth = CodeAppMin+49 = 113`, in the merkle block 112–127 (`TestCodeRange`), exported as
 `CodeEntries()` for `env.NewCodeTable`. Chosen to sit beside gossip (+16..+19) and storage
 (+32..+35) on the other Wave B branches; Chunk 6 must register all three sets in one table.
 
@@ -134,27 +144,31 @@ request is outstanding). Peer failures surface as the transport's own errors wra
 | Key length and duplicate-key limits (`ErrKey`), leaf cap (`ErrLeafFull`) in `Set` and `Build` | `TestKeyLimits`, `TestLeafFull` |
 | A snapshot is unaffected by later writes | `TestSnapshotIsolation`, also checked inside `TestPropIncrementalEqualsRebuild` |
 | The protocol runs level by level, one node per request when one key differs, root request 35 bytes, equal → 1-byte reply | `TestDiffProtocolSteps` |
-| Leaf replies over 1 MiB are split and still complete | `TestDiffLeafRepliesAreBatched` |
+| Every reply `Answer` emits, of every kind, is ≤ `MaxReplyBytes`; leaf data over 1 MiB is split across replies (cutting a leaf where needed) and still complete | `TestReplySizeBound`, `TestPropReplySizeBound`, `TestDiffLeafRepliesAreBatched`, `TestDiffBoundsPinned` (C8), `FuzzMerkleWire` |
 | A frontier cap truncates, never reports a spurious difference, and repeated rounds converge | `TestDiffFrontierTruncates` |
 | Wire golden bytes; decode∘encode identity; malformed table (16 request rows, 20 reply rows) | `TestWireTable`, `TestWireMalformed` |
 | Completeness: exactly the differing/one-sided keys, with both hashes, zero missed, zero spurious | `TestPropDiffComplete`, `FuzzMerkleDiff` |
-| Cost: hashes ≤ 1 + 16·d·Depth + d·LeafLoad(remote); round trips ≤ Depth+1; equal trees 1 round trip | `TestPropDiffCost` (also asserted in `TestPropDiffComplete`) |
+| Cost, exact: hashes = 1 + Σ non-empty remote children of mismatched inner nodes + remote entries of mismatched leaves (hence ≤ 1 + 16·d·Depth + d·LeafLoad(remote)); round trips = 1 for equal trees, else Depth + L with L = 1 when the leaf data fits one reply and L ≤ ⌈S / 1,047,510⌉ always; every non-final leaf reply is full | `TestPropDiffCost`, `TestPropDiffComplete`, `TestPropLongKeyDiffShape` (via `checkShape`), `TestDiffBoundsPinned` (C12, C21, C31) |
+| `decodeResponse` allocates at most 4·len(b) + 64 KiB | `TestPropDecodeAllocationBound`, `TestReplySizeBound` |
+| Cut leaf replies that are not full, that repeat keys before the resume point, or that grow a leaf past `MaxLeafEntries` are `ErrMalformed` | `TestDiffRejectsCheapCuts`, `TestDiffRejectsARepeatedPiece`, `TestWireMalformed` |
 | Root equal ⇔ maps equal | `TestPropRootIffEqual` |
 | Incremental Set/Delete equals `Build` from the model, for root, Len and LeafLoad | `TestPropIncrementalEqualsRebuild` (rapid state machine) |
 | Insertion order does not change the root | `TestPropOrderIndependent` |
-| Hostile replies (random bytes, or answers from a different random tree at every step = a lying or mutating peer) end the session within Depth+Frontier round trips with nil, `ErrMalformed` or `ErrDepth` | `TestPropHostileRepliesEndTheSession`, `FuzzMerkleWire` |
+| Hostile replies (random bytes, or answers from a different random tree at every step = a lying or mutating peer) end the session within Depth + 5·Frontier round trips with nil, `ErrMalformed` or `ErrDepth` | `TestPropHostileRepliesEndTheSession`, `FuzzMerkleWire` |
 | Arbitrary bytes as request or reply never panic; errors are `ErrMalformed`/`ErrDepth`; `Answer` output always decodes | `FuzzMerkleWire` |
-| Rot injected during traffic is detected by re-hashing and every damaged blob is repaired within `BitRotRepairBound`; fetched bytes ≤ `RepairCopiesPerRot` × rotted bytes; with no damage zero chunk bytes move | `TestBitRotRepairDST` |
+| Rot injected during traffic is detected by re-hashing and every damaged blob is repaired within `BitRotRepairBound`; fetched bytes ≤ `RepairCopiesPerRot` × rotted bytes; with no damage zero chunk bytes move once the initial writes have settled (`CleanSettle` after the last write, watched for `CleanWatch`) | `TestBitRotRepairDST` |
 | Writes dropped while a node is isolated are repaired after heal within `MissedWriteBound` | `TestMissedWriteRepairDST` |
 | Under 20% loss on every link, rounds fail and are retried, every round ends (`Rounds = Completed + Failed + in flight`), replicas converge within `LossConvergeBound` | `TestRepairUnderLossDST` |
-| A lying peer (garbage, `ErrDepth`, well-formed fabricated trees, garbage chunk bytes) never puts invalid bytes on an honest disk (invariant every 50 events / every event), never stretches a round past Depth+1 round trips, and honest replicas still converge | `TestLyingPeerDST` |
+| A lying peer (garbage, `ErrDepth`, well-formed fabricated trees, garbage chunk bytes) never puts invalid bytes on an honest disk (invariant every 50 events / every event), never stretches a round past Depth+1 round trips (every peer's leaf data in these scenarios fits one reply, so L = 1), and honest replicas still converge | `TestLyingPeerDST` |
 | A wiped disk is noticed by the scrub and refilled; injected read errors are counted | `TestScrubRefillsAWipedDiskDST` |
 | Peer vanishes mid-diff: the round fails with the transport error (`ErrUnreachable`/`ErrTimeout`), nothing is repaired; after the peer restarts the next round repairs all 20 chunks | `TestErrorPeerVanishesMidDiff` |
 | Malformed node: garbage reply, zero-hash child, remote `ErrMalformed` → round fails with `ErrMalformed`; a malformed request is answered with `CodeMalformed` and arrives as `ErrMalformed`+`ErrRemote` | `TestErrorMalformedNode`, `TestDiffErrors` |
 | Depth overflow: request level > depth, depth > 16, `New`/`Build` out of range, peers of different depth (`ErrDepth` across the wire; only `ErrRemote` without the registered codes) | `TestErrorDepthOverflow`, `TestDiffErrors`, `TestNewAndDepthFor`, `TestWireMalformed` |
-| Every code row round-trips through `env.CodeTable` | `TestCodeEntries` |
+| Every code row round-trips through `env.CodeTable`; every merkle code lies in 112–127 | `TestCodeEntries`, `TestCodeRange` |
 | Worker config validation; `Record`/`Forget` | `TestNewWorkerValidation` |
-| Canary: skipping one mismatched branch fails the completeness check, and the replication scenario then never converges (seeds 1, 2, 3) | `TestCanarySkippedBranch` |
+| `Stop` ends the round in flight (Failed, `env.ErrClosed`, its cost kept); after it no tick, round, deadline or late reply changes anything; `Stop` from inside a tick or before `Start` is safe; `Start` after `Stop` resumes | `TestWorkerStop`, `TestWorkerStopFromInsideATick`, `TestWorkerStopBeforeStart` |
+| A round ended by its deadline keeps the cost of its completed round trips; a truncated round is never counted in sync; `Result.Truncated` is set when the frontier overflows | `TestRoundDeadlineKeepsCost`, `TestTruncatedRoundIsNotInSync`, `TestDiffFrontierTruncates` |
+| Canary: the scenario converges on seeds 1, 2, 3 without the bug; skipping one mismatched branch fails the completeness check and makes each seed stall with `sim.ErrDeadline` | `TestCanarySkippedBranch` |
 
 Every sentinel is produced and checked with `errors.Is`: `ErrMalformed`, `ErrDepth`
 (several), `ErrKey` (`TestKeyLimits`, `TestNewWorkerValidation`), `ErrLeafFull`
@@ -281,10 +295,9 @@ files are outside the panic gate.)
 
 ## Things not done, limits
 
-- Round trips are bounded by `Depth+1` levels, not `Depth` (see above), and only while the
-  mismatched leaves' entries fit in one 1 MiB reply and the mismatched nodes per level fit
-  the frontier (default 1,024). Beyond that: `Depth + Frontier` round trips, or a truncated
-  diff finished by later rounds.
+- Round trips are `Depth + L` (see "Repair round", item 3): `Depth+1` levels, not `Depth`,
+  when the mismatched leaves' entries fit one 1 MiB reply; mismatched nodes beyond the
+  frontier (default 1,024) are left to later rounds (`Truncated`).
 - The cost bound holds as `c·d·log N` only while leaf loads are O(1); keys ground against
   SHA-256 prefixes raise `LeafLoad` (bounded by 4,096) and the bound includes it.
 - Under concurrent writes on the responder a round may miss or report extra keys; repair is
@@ -296,5 +309,239 @@ files are outside the panic gate.)
 ## Requests to the orchestrator
 
 - Chunk 6 builds one `env.CodeTable` from gossip, storage, merkle (and occ/saga) rows; the
-  merkle rows are +48/+49. A shared registry of code ranges per package would prevent a clash.
+  merkle rows are 112/113 inside the merkle block 112–127 (`TestCodeRange`).
 - No detlint exemption and no simulator change request.
+
+## Repair round (2026-11-21, fresh Opus seat)
+
+Inputs: `REVIEW-1.md` (NITS: five NIT, two NOTE) and the independent report
+`agent_work/adversarial/03-merkle/ATTACKS.md` (74 checks: 70 HELD, 4 BROKEN: C8, C12, C21,
+C31). Commits: `dc11d83` (regression tests first; they did not compile against the old
+package), `eb14358` (fixes), `d11ccf9` (Stop inside a tick; cut-reply rejection tests),
+`2c3ae19` (wire format kept backward compatible), `6c03e34` (allocation-free varint
+check), then these notes. Every fix below was
+also checked by mutation: the fix was reverted in place and its test was run and seen to
+FAIL (InSync, deadline accounting, Stop ending the round, Stop inside a tick, `Truncated`,
+leaf cutting, `MaxRequestNodes`, decode allocation, the canary's planted unrelated
+failure, and the three cut-reply checks).
+
+### 1. `Worker.Stop` (review nit 1)
+
+- New `func (w *Worker) Stop()`. It stops the tick timer (now kept in `Worker.timer`),
+  ends a round in flight through the normal `finish` path, so the round is counted
+  `Failed` with `last = "merkle: round N: worker stopped: …" wrapping env.ErrClosed`, its
+  session's cost is accounted and its deadline timer stopped, and then bumps the
+  generation so every late reply, fetch callback or deadline of that round is a no-op.
+  `tick` re-checks `started` after the scrub and after starting a round, so a `Stop`
+  called synchronously from inside a Repairer or Transport call during a tick does not
+  start a round or re-arm. The repair fan-out loop stops issuing fetches if the round
+  died under it.
+- Defined behaviour: `Stop` before `Start` or twice is a no-op. `Start` after `Stop`
+  resumes: it rescans every key (`scrub(true)`) and re-arms; rounds continue with a new
+  generation. `OnRequest`, `Record` and `Forget` keep working on a stopped worker (the
+  responder is stateless over the tree; Chunk 6 decides whether a stopped bucket still
+  answers).
+- Tests: `TestWorkerStop` (Stop is called inside the worker's second diff request, so a
+  reply is in flight: the stats at stop show `Failed 1`, `InFlight false`,
+  `Rounds = Completed + Failed`, `RoundTrips = MaxRoundTrips = 1`, `ErrClosed`; from then
+  until `Start` at 4 s the whole `Stats` struct except `Answered` is unchanged and no diff
+  request is sent; after `Start` all 20 chunks are repaired), `TestWorkerStopFromInsideATick`
+  (failed before the tick fix: the stopped worker still started a round),
+  `TestWorkerStopBeforeStart`.
+
+### 2. One reply-size bound (review nit 2, BROKEN C8)
+
+The statement: **every reply `Tree.Answer` emits, of every kind, is at most
+`MaxReplyBytes` = 1,048,576 bytes**, for every tree the package can build and every
+request `decodeRequest` accepts.
+- Equal: 1 byte.
+- Inner: `2 + uvarint(n) + n·(2 + 32·children)` ≤ `4 + 514·n`. `MaxRequestNodes` is now
+  derived as `(MaxReplyBytes − 4) / 514` = **2,040** (was 16,384): a request naming more
+  nodes is `ErrMalformed`, and `Limits.frontier()` caps the initiator at 2,040, so the
+  largest inner reply is 1,048,564 bytes. `DefaultFrontier` stays 1,024.
+- Leaf: packed by exact encoded size (the old estimator charged 10-byte varints). Leaves
+  are added whole while they fit; the first leaf that does not fit is cut after as many
+  entries as fit, and the reply carries kind `05` instead of `03`. The initiator's next
+  leaf request names the cut leaf first and appends `uvarint len ‖ key` = "resume strictly
+  after this key"; the responder answers that leaf's entries after the key. A leaf whose
+  first entry does not fit is not started (it heads the next request). The first leaf
+  always gets at least one entry (one entry is at most 1,058 bytes), so every reply makes
+  progress. An honest reply that stops early (cut or fewer leaves than asked) is longer
+  than `MaxReplyBytes − 1,060` bytes.
+- So the protocol splits a leaf across replies; there is no larger hard bound. Chunk 6
+  can size its frame limit as `MaxReplyBytes` plus its own framing. The largest request
+  is `3 + 2 + 2,040·8 + 2 + 1,024` = 17,351 bytes (leaf level, deepest paths, maximal
+  resume key).
+- Wire compatibility: an unresumed leaf request and a complete leaf reply are
+  byte-identical to the previous format (a first version added flag bytes; `2c3ae19`
+  removed them after the harness's hand-encoded old-format requests were seen to be
+  rejected by it). Golden rows: "a leaf request resumes after a key", "a leaf request may
+  resume after the empty key", "a leaf reply that cuts its last leaf sets the more flag".
+- Decoder allocation: **`decodeResponse` allocates at most 4·len(b) + 64 KiB**. Inner
+  nodes decode into a flat `bitmaps []uint16` (2 bytes per node, each node costs ≥2 input
+  bytes) and a flat `hashes []Hash` (capacity = remaining bytes / 32); leaf keys are
+  substrings of one copy of the input (a remote-only key is cloned when it becomes a
+  `Difference`, and the resume key is cloned, so a session does not pin reply buffers);
+  each leaf's entry slice is sized by its count, which must be ≤ remaining bytes / 33; the
+  per-leaf slice headers are bounded by 2,040 leaves; varints are checked for minimal
+  encoding without allocating (`6c03e34`: the old check allocated once per varint, which
+  `-race` exposed as 83,856 bytes for 2,040 empty leaves). The reviewer's input (`02 00 8080 01`
+  + 32 KiB) is now rejected by the node count; 2,040 empty inner nodes (4,084 bytes) and
+  2,040 empty leaves are measured within the bound.
+- Tests: `TestReplySizeBound` (largest inner reply fits, 2,041 nodes rejected,
+  `frontier(4096) = 2040`, C8's 992 × 1,024-byte single leaf answered under the cap with a
+  full cut reply, the reviewer's allocation inputs), `TestPropReplySizeBound` (rapid:
+  arbitrary trees of depth 1–3 with up to 1,300 keys of 1–1,024 bytes, arbitrary valid
+  requests at every level including resumes: every reply ≤ `MaxReplyBytes`, decodes,
+  answers ≥ 1 leaf, a reply that stops early is full, resumed entries are after the key),
+  `TestPropDecodeAllocationBound` (rapid: raw bytes, cut inner replies of up to 2,042 empty
+  nodes, cut real replies; allocation measured with `runtime.MemStats.TotalAlloc`, minimum
+  of three runs), `TestDiffBoundsPinned` (C8 session: 2 leaf replies, 3 round trips, exact
+  result; a full 4,096 × 1,024-byte leaf: 5 leaf replies, exact), `FuzzMerkleWire` (Answer
+  output never over the cap).
+
+### 3. The cost bounds, restated exactly (BROKEN C12, C21, C31; review note 7)
+
+Notation: d = number of differing keys, F = number of leaves requested at the leaf level
+(≤ frontier), S = Σ over the requested leaves of their encoded size
+`uvarint(count) + Σ (uvarint(len key) + len key + 32)`.
+
+- **Hashes, exact**: `1 + Σ over mismatched inner nodes of their non-empty remote children
+  + Σ over mismatched leaves of their remote entries`. Hence `≤ 1 + 16·d·Depth +
+  d·LeafLoad(remote)`. PLAN's `16·d·depth` with depth counted as levels (`16·d·(Depth+1)`)
+  holds whenever `LeafLoad ≤ 15` (since `1 + d·LeafLoad ≤ 16·d` then), not in general:
+  C31's clustered leaf (46 keys in one depth-2 leaf, one changed hash) costs exactly
+  1 + 1 + 1 + 46 = 49 > 48. The tests now compute the exact count with an independent
+  oracle (`expectedShape`, from the two maps alone) and assert equality, not just the
+  bound.
+- **Round trips with an honest responder, exact**: 1 if the roots are equal, else
+  `Depth + L`, L = number of leaf replies (one round trip per inner level 0..Depth−1, all
+  mismatched nodes of a level in one request since the frontier ≤ `MaxRequestNodes`).
+  L = 1 exactly when `S + 2 + uvarint(F) ≤ MaxReplyBytes`. Always
+  `L ≤ ⌈S / 1,047,510⌉` (= `MaxReplyBytes − 1,066`), because every non-final leaf reply
+  is longer than `MaxReplyBytes − 1,060`, has at most 4 bytes of header, and each cut adds
+  at most 2 bytes of count header. The tests assert R = Depth + L, the fit case L = 1,
+  the ceiling, and fullness of every non-final leaf reply.
+  - C12 (984 keys of 1,024 bytes at depth 1): with exact sizing S + header = 1,041,091
+    bytes fits one reply, so it is now 2 round trips (was 3 under the old estimator); the
+    pinned test also finds by search the first key count whose leaf bytes pass one reply
+    and checks 2 trips below it and 3 at it.
+- **Round trips with any responder** (lying, changing, prefix-answering, cutting):
+  `≤ Depth + 5·F ≤ Depth + 5·Frontier`. Each leaf reply either completes at least one
+  requested leaf (at most F such replies) or is a cut reply naming one leaf; a cut reply
+  must be longer than `MaxReplyBytes − 2,116` bytes, so it carries ≥ 990 entries of that
+  leaf, and a leaf's pieces may total at most 4,096 entries, so at most 4 such replies
+  per leaf. A prefix-answering responder costs one round trip per leaf: C21 (two leaves at
+  depth 1, one leaf per reply) is exactly 3 = Depth + 2, pinned in
+  `TestDiffBoundsPinned`; the Worker sees the same. The old notes' "≤ Depth+1" for the
+  worker held only for responders that answer every leaf at once; that claim is
+  withdrawn in favour of the two statements above.
+- Tests: `checkShape` (in `helpers_test.go`) runs in `TestPropDiffComplete`,
+  `TestPropDiffCost` (through `runPair`, which also checks `Compare` against a driven
+  session) and the new `TestPropLongKeyDiffShape` (up to 1,400 keys of 16–1,024 bytes, so
+  multi-reply and cut leaves occur); `TestDiffBoundsPinned` pins C8, the full leaf, C12
+  (983, 984 and the boundary pair), C21 and C31 (45 keys → 48 hashes, 46 → 49, and the
+  `16·d·(Depth+1)` crossing exactly at 46); `TestPropHostileRepliesEndTheSession` asserts
+  `Depth + 5·Frontier` and gains a liar that turns honest leaf replies into small cut
+  replies; `TestDiffRejectsCheapCuts` and `TestDiffRejectsARepeatedPiece` pin the three
+  initiator checks.
+
+### 4. Review nits 3, 4, 5
+
+- Canary (nit 3): `TestCanarySkippedBranch` first runs `canaryRun` on seeds 1, 2, 3
+  without the bug and requires convergence and no error; with the bug each seed must stall
+  with `errors.Is(err, sim.ErrDeadline)` and no convergence time. Planting the reviewer's
+  `w.s.Fail(errors.New("unrelated"))` now fails the test.
+- Deadline stats (nit 4.1): the session is stored on the worker when the round starts;
+  `finish` accounts it once (and `step` accounts it before the repair phase), so a round
+  ended by its deadline, a transport error, a malformed reply or `Stop` keeps the cost of
+  its completed round trips. `TestRoundDeadlineKeepsCost` (deadline 200 ms, every request
+  after the first swallowed) sees `RoundTrips = MaxRoundTrips = 1`; it was 0 before.
+- InSync (nit 4.2): `InSync` counts only `!Truncated && no differences`.
+  `TestTruncatedRoundIsNotInSync` uses a scripted peer that overflows a frontier of 1 at
+  every inner level and answers an empty leaf.
+- Truncated observed (nit 5): `TestDiffFrontierTruncates` now requires some round to
+  report `Truncated` (with a difference in it); removing `s.truncated = true` fails it.
+
+### 5. No-damage check (review note 6)
+
+The "without damage no chunk bytes move" subtest now runs `cleanRun`: writes as before,
+run to `CleanSettle` (600 ms = 2 × the store's request timeout, so every replication
+request has been delivered or timed out) after the last write, record the bytes fetched
+so far, run `CleanWatch` = 10 s more, and require convergence and zero bytes fetched
+after the settle point. A fetch that races an in-flight replication (the reviewer's
+three-node case) can only happen before the settle point and is no longer counted. I did
+not construct the race itself (it was not observed on any seed, before or after), so this
+item has no failing-first test; it is a change of what the check measures.
+
+### Also
+
+- `TestCodeRange`: every code in `CodeEntries` and both constants lie in 112–127.
+
+### API changes
+
+- Added `Worker.Stop()`.
+- `MaxRequestNodes` 16,384 → 2,040 (a derived constant).
+- Wire: optional resume suffix on leaf requests; reply kind `05` (cut leaf reply). Old
+  messages are unchanged in bytes and meaning.
+- Nothing else exported changed. Unexported: `response.inner [][16]Hash` became
+  `bitmaps`/`hashes`; `response.more`; `request.resume`/`after`; `leafSize` replaced by
+  exact `entryBytes`/`uvarintLen`; `Worker.timer`, `Worker.session`.
+
+### Numbers that moved
+
+- `MaxRequestNodes` 16,384 → 2,040; largest inner reply ≈ 8.03 MiB → 1,048,564 bytes;
+  largest leaf reply ≈ 4.34 MB → ≤ 1,048,576 bytes.
+- Diff cost table (`MERKLE_MEASURE=1`, re-measured): found, round trips, hashes and leaf
+  load are identical in all nine rows; bytes sent and received are identical to the table
+  above (an unresumed leaf request and a complete leaf reply have the old bytes). A
+  first, flag-byte version of the format had moved every row by +1 sent and +1 received;
+  that version was replaced in `2c3ae19`.
+- C12: 984 × 1,024-byte keys at depth 1 now take 2 round trips (was 3).
+- DST maxima over 500 seeds from base 987654321 (`DST_SEEDS=500 … -v`, 394 s): unchanged:
+  rot repair 4.98 s, rot converge 2.81 s, missed write 2.70 s, loss 41.97 s, refill
+  2.80 s, fetched ÷ rotted 0.99 total, worst seed 1.12. The no-damage subtest now runs
+  `cleanRun` and saw zero bytes fetched after the settle point on every seed.
+- Wall time (dev container, droplet shared with two other gate runs): default
+  `go test ./internal/merkle` 20–31 s (was 11–12 s; the new pinned tests build 1–4 MB
+  leaves and the long-key property builds up to 1,400 × 1 KiB keys per check); rapid at
+  2,000 checks 123 s; `-race` 88 s; 500-seed sweep 394 s; each fuzz target 30 s, pass.
+- Coverage 96.8% → 97.6%.
+- Harness `run-all.sh` SUMMARY: `held=70 broken=4` → `held=72 broken=2` (see below).
+
+### Uncovered branches after the repair (97.6%)
+
+As before, plus/minus: `Compare`'s Feed error break; the `r.bad` guard after a leaf entry;
+`tick`'s opening `!started` guard (the timer is stopped by `Stop`, so a tick never runs on
+a stopped worker; the guard stays for a runtime whose timer callback may already be
+running when `Stop` is called); `scrub` failing in `tick`; `tree.Set` failing after a
+scrub or a repair; an empty peer list; the `MaxRepairs` cap; the two new `!live(g)`
+checks in the repair fan-out (a round dying while its fetches are being issued or
+before a fetch callback; reachable only through a synchronous Repairer that stops the
+worker or a deadline during the fan-out); the "already fixed while the fetch was in
+flight" shortcut; `Repairer.Put` failing. The round-deadline path and stale callbacks
+after a deadline are now covered (`TestRoundDeadlineKeepsCost`, `TestWorkerStop`), as is
+`Result.Truncated` in the worker (`TestTruncatedRoundIsNotInSync`).
+
+### Commands run for the repair round (through `docker compose run --rm -T dev`)
+
+- `gofmt -l .` → empty; `go vet ./...`, `go build ./...` → clean;
+  `go test -count=1 -cover ./...` → all ok (merkle 97.4% at `2c3ae19`, 97.6% at `6c03e34`).
+- `go test -count=1 ./internal/merkle -run Prop -rapid.checks=2000 -rapid.seed=12345` → ok, 123 s.
+- `go test -count=1 -race ./internal/merkle` → FAILED at `2c3ae19` (the allocation bound,
+  fixed in `6c03e34`), then ok at `6c03e34`, 88 s.
+- `-fuzz '^FuzzMerkleWire$'` and `-fuzz '^FuzzMerkleDiff$'`, 30 s each → pass.
+- `DST_SEEDS=500 DST_SEED_BASE=987654321 go test -count=1 -v ./internal/merkle -run DST` → ok, 394 s.
+- Mutation checks as listed at the top of this section.
+- The gate and the harness: below.
+
+### Chose not to do
+
+- Requiring every early-stopping leaf reply to be full (which would tighten the any-peer
+  bound to roughly Depth + F + 4F with fewer prefix replies): it would make a responder
+  that answers one leaf per reply (the harness's C21 peer, and a reasonable
+  memory-limited implementation) fail every round instead of converging. The stated
+  any-peer bound covers it.
+- A larger single hard bound (one leaf of 4,096 × 1,024-byte keys ≈ 4.34 MB in one
+  reply): splitting keeps one 1 MiB figure for Chunk 6.
+- The harness is unchanged; its two remaining BROKEN checks pin the old bounds (below).
