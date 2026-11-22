@@ -36,15 +36,14 @@ arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.
 | 3 | Merkle anti-entropy (internal/merkle) | LANDED 2a86f4c; chapter 4; review NITS → repair → PASS; harness 72 held, 2 restated (cost bounds; PLAN 2.2/7.4 updated) |
 | 4 | Optimistic concurrency control for metadata, last-writer-wins (internal/occ) | LANDED 9acc7ea; chapter 5; review FAIL → LWW rework → FAIL → round 2 → Astra arbitration NITS closed; harness 60 held, 1 expects exactly one record per loss |
 | 5 | Saga engine and bucket migration (internal/saga) | LANDED 4892ab9; chapter 6; review FAIL → repair → NITS closed; harness 125 held |
-| 6 | Integration: node, real runtime, HTTP object API, cmd/objnode | Built (gate green); Neon REVIEW-1 FAIL (1 blocker: a pre-flip write lost by migration retire; 8 majors); Astra harness committed (284 held, 0 broken). The one Opus repair round `06-integration-repair1` is RUNNING (brief agent_work/06-integration/objstore-p2-06-integration-repair1.md; it also moves the real runtime to `internal/noderuntime`). AFTER it exits: commit gates, rebase; ORCHESTRATOR gate changes on the chunk branch (add `internal/node` to the detlint roots and floor_pkgs, `internal/storage`, `internal/noderuntime` to floor_pkgs, `internal/noderuntime` and `cmd/objnode` to the race count=3 list, a host-side cluster-smoke step in gate.sh; re-run the fast canaries; these go into the re-review brief); rerun the harness + RESULTS.md; Neon re-review; second FAIL → Astra arbitration |
+| 6 | Integration: node (`internal/node`), real runtime (`internal/noderuntime`), HTTP object API (`internal/storage/httpapi`), cmd/objnode | Built; REVIEW-1 FAIL (1 blocker, 8 majors) → repair → REVIEW-2 FAIL (all 11 fixed; 2 new majors, 4 nits) → fix round → Astra ARBITRATION-1 FAIL (the six fixed; ONE major left: an acknowledged write can end live and unreadable after orphan collection plus an unwritten shard). Opus round `06-integration-fix3` RUNNING (brief agent_work/06-integration/objstore-p2-06-integration-fix3.md). AFTER it exits 0: full gate on the clean tree (`agent_work/gates/gate.sh 06-integration`, about 70 min, includes host-side G7), rerun the harness and update RESULTS.md, then an Astra CONFIRM pass writing ARBITRATION-2.md (soften the brief; land.sh takes the newest ARBITRATION file). Then prose (chapter 07-object-store-and-sync-engine, comments, cmd/objnode help.txt, Chunk 5 chapter update with real-component evidence), landing docs (C4: planned relationships become as-built; knowledge; INDEX; manifest), final gate, land. Harness: 662 held, 0 broken. Gate tooling changes for this chunk are ON THE CHUNK BRANCH (G7 cluster check required by land.sh; `internal/node` in the lint roots; floors and race list; fuzz retry + `fuzz-stall` canary) and were judged sound in REVIEW-2 and ARBITRATION-1; landing them triggers the full canary workflow |
 | 7 | E2E suite, nemesis cycles, fuzz hardening | not started (needs 6) |
 | 8 | Publishing finish: the assembled book (assembly and polish only) | not started |
 
 ## In progress
 
-- Chunk 6 build (one Opus run; a large chunk — expect hours). When it exits 0: commit its
-  gates dir, rebase on main if main moved, then the per-chunk pipeline below. Its brief
-  binds: wire-code blocks; last-writer-wins handling in the node (discard counter on the
+- Chunk 6: see the board row for the exact next step. Its build brief
+  bound: wire-code blocks; last-writer-wins handling in the node (discard counter on the
   health surface, quota recount on discard, the loser's shards collected and never the
   winner's); tombstones through anti-entropy; the saga failure matrix on real components;
   PLAN 2.5 concurrency rules; three canaries; a `cluster` compose smoke script.
