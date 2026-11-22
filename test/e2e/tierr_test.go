@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -51,6 +52,9 @@ func TestE1MultiRegionPutGetR(t *testing.T) {
 	}
 	logMeasure(t, "e1r/put_latencies_small", small)
 	logMeasure(t, "e1r/put_latencies_3MiB", big)
+	slices.Sort(res.getLatencies)
+	n := len(res.getLatencies)
+	logMeasure(t, "e1r/get_latency_p50_p90_max", fmt.Sprintf("%v %v %v", res.getLatencies[n/2], res.getLatencies[n*9/10], res.getLatencies[n-1]))
 }
 
 func TestE2PartitionAndHealR(t *testing.T) {
@@ -287,11 +291,17 @@ func cleanClientError(err error) bool {
 	return errors.Is(err, env.ErrUnreachable)
 }
 
-func TestE9ShutdownUnderLoadR(t *testing.T) {
-	requireTierR(t)
-	c := newRealCluster(t, 9, defaultRealOptions())
+type e9Result struct {
+	shutdown, restart          time.Duration
+	ok, refused                int
+	inflightOK, inflightFailed int
+	readAfterRestart           int
+}
+
+func scenarioE9(c *realCluster, sig syscall.Signal) (e9Result, error) {
+	var res e9Result
 	if err := createBucket(c, realBounds, storage.BucketSpec{Name: "e9"}); err != nil {
-		t.Fatal(err)
+		return res, err
 	}
 	target := c.Nodes()[5]
 	var mu sync.Mutex
@@ -328,53 +338,56 @@ func TestE9ShutdownUnderLoadR(t *testing.T) {
 	time.Sleep(2 * time.Second)
 	p := c.proc(target)
 	sent := time.Now()
-	if err := p.signal(syscall.SIGTERM); err != nil {
-		t.Fatal(err)
+	if err := p.signal(sig); err != nil {
+		close(stop)
+		wg.Wait()
+		return res, err
 	}
 	select {
 	case <-p.exited:
 	case <-time.After(20 * time.Second):
-		t.Fatalf("%s still running 20 s after SIGTERM", target.ID)
+		close(stop)
+		wg.Wait()
+		return res, failf("%s still running 20 s after %v", target.ID, sig)
 	}
-	shutdown := time.Since(sent)
+	res.shutdown = time.Since(sent)
 	close(stop)
 	wg.Wait()
 	if code := p.state.ExitCode(); code != 0 {
-		t.Fatalf("%s exited %d after SIGTERM under load", target.ID, code)
+		return res, failf("%s exited %d after %v under load", target.ID, code, sig)
 	}
 	log := c.logOf(target)
 	if !strings.Contains(log, "goroutines left at exit: 0") {
 		i := strings.LastIndex(log, "goroutines left at exit")
-		t.Fatalf("%s did not report zero goroutines at exit: %q", target.ID, log[max(0, i):])
+		return res, failf("%s did not report zero goroutines at exit: %q", target.ID, log[max(0, i):])
 	}
-	ok, refused, inflightOK, inflightFailed := 0, 0, 0, 0
 	at := sent.Sub(c.t0)
 	for _, k := range calls {
 		if !cleanClientError(k.Err) {
-			t.Fatalf("%s %s during shutdown failed uncleanly: %v", k.Op, k.Key, k.Err)
+			return res, failf("%s %s during shutdown failed uncleanly: %v", k.Op, k.Key, k.Err)
 		}
 		inflight := k.Began <= at && k.Ended >= at
 		switch {
 		case k.Err == nil && inflight:
-			inflightOK++
+			res.inflightOK++
 		case inflight:
-			inflightFailed++
+			res.inflightFailed++
 		}
 		if k.Err == nil {
-			ok++
+			res.ok++
 		} else {
-			refused++
+			res.refused++
 		}
 	}
 	if err := c.ledger.Wrong(); err != nil {
-		t.Fatal(err)
+		return res, err
 	}
 	if err := c.Restart(target); err != nil {
-		t.Fatal(err)
+		return res, err
 	}
-	restart, err := c.Await("restarted node rejoins", realBounds.converge, c.Converged)
-	if err != nil {
-		t.Fatal(err)
+	var err error
+	if res.restart, err = c.Await("restarted node rejoins", realBounds.converge, c.Converged); err != nil {
+		return res, err
 	}
 	var gets []*Call
 	acked := c.ledger.Acked()
@@ -382,23 +395,41 @@ func TestE9ShutdownUnderLoadR(t *testing.T) {
 		gets = append(gets, c.Get(target, "e9", k.Key))
 	}
 	if err := waitAll(c, gets...); err != nil {
-		t.Fatal(err)
+		return res, err
 	}
 	for i, g := range gets {
 		if sha256.Sum256(g.Data) != acked[i].Sum {
-			t.Fatalf("acknowledged %s reads other bytes after the restart", g.Key)
+			return res, failf("acknowledged %s reads other bytes after the restart", g.Key)
 		}
 	}
-	if err := c.ledger.Wrong(); err != nil {
+	res.readAfterRestart = len(gets)
+	return res, c.ledger.Wrong()
+}
+
+func TestE9ShutdownUnderLoadR(t *testing.T) {
+	requireTierR(t)
+	c := newRealCluster(t, 9, defaultRealOptions())
+	res, err := scenarioE9(c, syscall.SIGTERM)
+	if err != nil {
 		t.Fatal(err)
 	}
-	logMeasure(t, "e9r/shutdown_under_load", shutdown)
-	logMeasure(t, "e9r/in_flight_at_sigterm_finished", inflightOK)
-	logMeasure(t, "e9r/in_flight_at_sigterm_failed_cleanly", inflightFailed)
-	logMeasure(t, "e9r/requests_ok", ok)
-	logMeasure(t, "e9r/requests_refused_cleanly", refused)
-	logMeasure(t, "e9r/acked_read_after_restart", len(gets))
-	logMeasure(t, "e9r/restart_to_converged", restart)
+	logMeasure(t, "e9r/shutdown_under_load", res.shutdown)
+	logMeasure(t, "e9r/in_flight_at_sigterm_finished", res.inflightOK)
+	logMeasure(t, "e9r/in_flight_at_sigterm_failed_cleanly", res.inflightFailed)
+	logMeasure(t, "e9r/requests_ok", res.ok)
+	logMeasure(t, "e9r/requests_refused_cleanly", res.refused)
+	logMeasure(t, "e9r/acked_read_after_restart", res.readAfterRestart)
+	logMeasure(t, "e9r/restart_to_converged", res.restart)
+}
+
+func TestCanaryE9AKilledNodeFailsTheCleanShutdownChecks(t *testing.T) {
+	requireTierR(t)
+	c := newRealCluster(t, 90, defaultRealOptions())
+	_, err := scenarioE9(c, syscall.SIGKILL)
+	if err == nil || !strings.Contains(err.Error(), "exited -1") {
+		t.Fatalf("E9 with SIGKILL instead of SIGTERM: %v, want the exit-status check to fail", err)
+	}
+	t.Logf("caught: %v", err)
 }
 
 type hygieneRecord struct {

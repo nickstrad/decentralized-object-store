@@ -99,6 +99,7 @@ type e1Params struct {
 type e1Result struct {
 	objects, reads, stripes int
 	putTime, getTime        time.Duration
+	getLatencies            []time.Duration
 }
 
 func scenarioE1(c Cluster, b bounds, p e1Params) (e1Result, error) {
@@ -157,6 +158,7 @@ func scenarioE1(c Cluster, b bounds, p e1Params) (e1Result, error) {
 					return res, failf("get %s via %s: version %s, %d bytes; wrote version %s, %d bytes", k.Key, g.At.ID, short(g.Info.ETag), len(g.Data), short(k.Info.ETag), k.Size)
 				}
 				res.getTime = max(res.getTime, g.Ended-g.Began)
+				res.getLatencies = append(res.getLatencies, g.Ended-g.Began)
 				res.reads++
 			}
 		}
