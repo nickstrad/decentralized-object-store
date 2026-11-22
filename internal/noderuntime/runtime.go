@@ -568,7 +568,7 @@ func (t *realNet) Request(to env.NodeID, req []byte, timeout time.Duration, cb f
 		})
 		return
 	}
-	if to == rt.cfg.ID && len(req) > node.MaxFrame {
+	if len(req) > node.MaxFrame {
 		rt.afterFunc(0, func() {
 			cb(nil, fmt.Errorf("node: request of %d bytes over %d: %w", len(req), node.MaxFrame, env.ErrTooLarge))
 		})
