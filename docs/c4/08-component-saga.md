@@ -141,7 +141,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 7 | Recovery | Environment interfaces | Lists and reads logs, truncates a torn tail, deletes an empty log; retry timer for an unreadable log (Disk, Clock, Rand) |
 | 8 | Orchestrator | Environment interfaces | Appends and syncs records; step timeout and backoff timers; jitter (Disk, Clock, Rand) |
 | 9 | Step interfaces | Storage engine | Allocate target, copy shards, delete source (target design) |
-| 10 | Step interfaces | Merkle anti-entropy | Verify Merkle root (target design) |
+| 10 | Step interfaces | Merkle anti-entropy | Verify Merkle root (target design; the merkle package is built, and the step is bound to it in Chunk 6) |
 | 11 | Step interfaces | CRDT metadata | Flip routing pointer (LWW-Register) (target design) |
 | 12 | Orchestrator | Recovery | Checks each record against the same state machine before writing it, and takes its next action from it |
 | 13 | Model cluster | Step interfaces | Implements `MigrationOps` over the model stores (`sagasim.Ops`) |

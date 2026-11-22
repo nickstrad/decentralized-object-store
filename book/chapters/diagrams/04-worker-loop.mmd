@@ -1,0 +1,9 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph TD
+  TICK[Jittered tick] --> SCRUB[Scrub disk batch and re-hash]
+  SCRUB --> DIFF[Snapshot diff with random peer]
+  DIFF --> FILTER[Filter remote diffs via Valid]
+  FILTER --> FETCH[Fetch up to MaxRepairs chunks]
+  FETCH --> VERIFY[Sum data passes Valid?]
+  VERIFY -->|yes| PUT[Put chunk and update tree]
+  VERIFY -->|no| REJ[ErrRejected, drop bytes]

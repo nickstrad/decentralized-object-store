@@ -1,0 +1,15 @@
+HELD C18 sim-clean: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 4s
+HELD C18 sim-rot: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 1.357081592s
+HELD C19 sim-partition: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 4.421262303s
+HELD C20 sim-loss: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 53.602941719s
+HELD C22 sim-wipe: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 2.815342027s
+HELD C22 sim-read-error: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 4s
+HELD C29 sim-tree-record: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 1.333294593s
+HELD C29 sim-restart: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 0s
+HELD C21 sim-invalid-fetch: 8 fabricated-data peers produce ErrRejected and zero puts, then valid fetches recover
+HELD C30 sim-deadline-late-callback: callbacks delayed beyond 2s deadline cannot write and later rounds recover exactly once
+HELD C30 sim-put-failure-cap: MaxRepairs=3 defers excess work, Put failures surface and all 37 chunks recover
+BROKEN C21 sim-prefix-reply-tight-bound: seed=731903 2 replicas depth=1; remote holds prefix-0 and prefix-1 and answers one requested leaf at a time: Worker.MaxRoundTrips=3 > Depth+1=2; valid data converged
+HELD C23 sim-peer-vanishes: 3 seeds crash responder on level 1, fail without repair, then restart and recover all 37 chunks
+HELD C26 registered-codes: all code rows round-trip wrapped sentinels with ErrRemote
+HELD C27 worker-config-hooks: seven invalid configurations reject, repeated Start is harmless and Record/Forget match inventory

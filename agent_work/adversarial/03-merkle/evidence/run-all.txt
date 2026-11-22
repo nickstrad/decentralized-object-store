@@ -1,0 +1,75 @@
+HELD C1 reference-roots: independent recursive encoding agrees at all 16 depths including binary and empty keys
+HELD C13 structure-boundaries: 128 structured maps distinguish empty, absent, boundary shifts and inner-sized zero keys
+HELD C2 model-updates: 3000 mixed updates, same-value writes and deletions match a map
+HELD C14 rebuild-sequence: 500 transitions agree with bottom-up Build in root, length and leaf load
+HELD C15 permutations: 36 shuffled incremental constructions have identical roots
+HELD C3 empty-single-equal: all depths have zero empty roots, Depth+1 single-key trips and one-hash self-diffs
+HELD C4 depth-boundaries: invalid depths rejected and nine DepthFor boundaries match
+HELD C5 key-and-duplicate-limits: 1024-byte key accepted; 1025-byte and duplicate keys rejected atomically
+HELD C6 snapshot-and-returned-slices: writes in either snapshot and edits to returned entry/key slices remain isolated
+HELD C11 diff-oracle: 400 directional diffs match an independent map union with every hash and presence bit
+HELD C12 cost-grid: 18 size/divergence pairs through N=100000 satisfy the published leaf-load hash bound
+HELD C6 mutate-during-diff: initiator mutations between every request leave the original snapshot diff intact
+HELD C9 small-frontier-convergence: caps 1, 3 and 7 truncate truthfully and repeated repairs converge
+HELD C5 leaf-cap: 4096-entry leaf permits updates/replacement and rejects entry 4097 atomically
+HELD C8 single-leaf-reply-size: single legal leaf stays within MaxReplyBytes
+HELD C8 multi-leaf-batching: 4000 long keys complete exactly in 7 trips with each reply <=1 MiB
+HELD C12 batched-round-trip-bound: batched replies obey Depth+1
+BROKEN C31 clustered-hash-cost: seed=731903 N=46 depth=DepthFor(46)=2 d=1 same-leaf keys: hashes=49 > plan 16*d*(Depth+1)=48; leaf-load bound holds
+HELD C7 protocol-state: four ordered levels, stable repeated requests, 35+1 equal bytes and ErrSession guards
+HELD C10 malformed-wire: 13 truncated, noncanonical, unordered and wrong-kind messages rejected
+HELD C17 random-wire: 20000 deterministic byte strings produce no panic or unexpected error class
+HELD C25 depth-wire: depth zero, overflow, excessive level and peer depth mismatch reject with ErrDepth
+HELD C16 changing-responder: 200 changing-peer sessions terminate within Depth+Frontier without changing the initiator
+HELD C16 one-leaf-per-reply: well-formed prefix replies finish in 17 trips (Depth+Frontier bound)
+HELD C24 leaf-path-validation: a sorted validly encoded key in the wrong leaf is rejected
+HELD C18 sim-clean: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 4s
+HELD C18 sim-rot: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 1.357081592s
+HELD C19 sim-partition: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 4.421262303s
+HELD C20 sim-loss: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 53.602941719s
+HELD C22 sim-wipe: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 2.815342027s
+HELD C22 sim-read-error: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 4s
+HELD C29 sim-tree-record: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 1.333294593s
+HELD C29 sim-restart: 8 seeds 731903..731910, 37 chunks and 3 replicas converge with accounting intact; max elapsed 0s
+HELD C21 sim-invalid-fetch: 8 fabricated-data peers produce ErrRejected and zero puts, then valid fetches recover
+HELD C30 sim-deadline-late-callback: callbacks delayed beyond 2s deadline cannot write and later rounds recover exactly once
+HELD C30 sim-put-failure-cap: MaxRepairs=3 defers excess work, Put failures surface and all 37 chunks recover
+BROKEN C21 sim-prefix-reply-tight-bound: seed=731903 2 replicas depth=1; remote holds prefix-0 and prefix-1 and answers one requested leaf at a time: Worker.MaxRoundTrips=3 > Depth+1=2; valid data converged
+HELD C23 sim-peer-vanishes: 3 seeds crash responder on level 1, fail without repair, then restart and recover all 37 chunks
+HELD C26 registered-codes: all code rows round-trip wrapped sentinels with ErrRemote
+HELD C27 worker-config-hooks: seven invalid configurations reject, repeated Start is harmless and Record/Forget match inventory
+HELD C1 regression-TestRootKnownVectors: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C2 regression-TestInsertDeleteUpdate: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C2 regression-TestKeysAndEntriesSorted: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C2 regression-TestHashString: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C3 regression-TestEmptyAndSingle: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C4 regression-TestNewAndDepthFor: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C5 regression-TestKeyLimits: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C5 regression-TestLeafFull: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C6 regression-TestSnapshotIsolation: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C7 regression-TestDiffProtocolSteps: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C8 regression-TestDiffLeafRepliesAreBatched: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C9 regression-TestDiffFrontierTruncates: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C10 regression-TestWireTable: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C10 regression-TestWireMalformed: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C11 regression-TestPropDiffComplete: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C12 regression-TestPropDiffCost: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C13 regression-TestPropRootIffEqual: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C14 regression-TestPropIncrementalEqualsRebuild: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C15 regression-TestPropOrderIndependent: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C16 regression-TestPropHostileRepliesEndTheSession: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C17 regression-FuzzMerkleWire: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C17 regression-FuzzMerkleDiff: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C18 regression-TestBitRotRepairDST: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C19 regression-TestMissedWriteRepairDST: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C20 regression-TestRepairUnderLossDST: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C21 regression-TestLyingPeerDST: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C22 regression-TestScrubRefillsAWipedDiskDST: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C23 regression-TestErrorPeerVanishesMidDiff: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C24 regression-TestErrorMalformedNode: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C24 regression-TestDiffErrors: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C25 regression-TestErrorDepthOverflow: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C26 regression-TestCodeEntries: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C27 regression-TestNewWorkerValidation: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+HELD C28 regression-TestCanarySkippedBranch: existing test passed with DST base 731903, 12 seeds and 250 rapid checks where applicable
+SUMMARY held=72 broken=2 setup_errors=0 elapsed_seconds=44

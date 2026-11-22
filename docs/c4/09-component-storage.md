@@ -138,7 +138,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 9 | Local chunk store | Environment interfaces | built | Write then sync, verified read, list, delete (Disk) |
 | 10 | Put and get paths | Object manifest | built | PUT fills in and returns the manifest; GET takes each shard's node and checksum from it. Target: storing the manifest; tombstone manifest on delete |
 | 11 | Object manifest | CRDT metadata | target | Value of the key's LWW-Register |
-| 12 | Merkle anti-entropy | Local chunk store | target | Repairs rotted or missing shards (Repairer) |
+| 12 | Merkle anti-entropy | Local chunk store | target | Repairs rotted or missing shards (Repairer). The merkle package is built over its own `Repairer` interface and a test chunk store; the chunk store is bound to it in Chunk 6 |
 | 13 | Object striping | Shard file format | built | Wraps each shard in a header on encode; checks header and checksum on decode |
 | 14 | Put and get paths | Shard request protocol | built | Encodes requests to peers; decodes requests it serves |
 | 15 | Shard request protocol | Shard file format | built | Names the shard by its canonical blob name |

@@ -15,9 +15,10 @@ is `pgregory.net/rapid`, restricted to test files and checked by a gate.
 ## Current status
 
 The foundation tooling, deterministic simulator, SWIM gossip membership,
-Reed-Solomon erasure coding with the local chunk store, and the Saga engine with
-bucket migration are built, along with chapters 1, 2, 3, and 6 of the book. Each
-remaining building block lands in its own chunk together with a book chapter.
+Reed-Solomon erasure coding with the local chunk store, Merkle-tree
+anti-entropy, and the Saga engine with bucket migration are built, along with
+chapters 1, 2, 3, 4, and 6 of the book. Each remaining building block lands in
+its own chunk together with a book chapter.
 
 | Building block | Status | Scope |
 | --- | --- | --- |
@@ -25,8 +26,8 @@ remaining building block lands in its own chunk together with a book chapter.
 | Deterministic simulator | Built | Environment interfaces (`internal/env`), single-threaded discrete-event simulator (`internal/sim`), sweep harness (`internal/sim/simtest`), and `cmd/objsim` |
 | SWIM gossip membership | Built | Direct and indirect probing, suspicion with incarnation refutation, piggybacked gossip, clean leave, bounded tombstones, and push-pull partition-heal sync (`internal/gossip`) |
 | Reed-Solomon erasure coding | Built | GF(2^8) Cauchy codec (`internal/erasure`, 4+2 default), checksummed chunk store, striping, manifests, region-aware placement, and striped PUT/GET node (`internal/storage`) |
-| Merkle-tree anti-entropy | Planned | Tree diffing and background repair |
-| OCC metadata | Planned | ETags, conditional writes, version vectors to detect concurrency, and last-writer-wins with every discarded write counted and logged |
+| Merkle-tree anti-entropy | Built | Persistent fanout-16 SHA-256 trie, level-by-level diff protocol with 1 MiB bounded replies and stateless responder, and periodic scrub-and-repair worker (`internal/merkle`) |
+| OCC metadata | Planned (next) | ETags, conditional writes, version vectors to detect concurrency, and last-writer-wins with every discarded write counted and logged |
 | Sagas | Built | Compensating saga engine, checksummed log, crash recovery, and five-step bucket migration (`internal/saga`), plus model cluster and failure-point matrix runner (`internal/saga/sagasim`) |
 | Integration, E2E, and book | Planned | Full-cluster integration, end-to-end suite, and finished book |
 
@@ -103,6 +104,8 @@ the owning gate to go red for the right reason.
   Chapter 2, [SWIM Gossip Membership](book/chapters/02-swim-gossip.md),
   Chapter 3,
   [Reed-Solomon Erasure Coding](book/chapters/03-reed-solomon-erasure-coding.md),
+  Chapter 4,
+  [Merkle-Tree Anti-Entropy](book/chapters/04-merkle-anti-entropy.md),
   and Chapter 6, [Sagas](book/chapters/06-sagas.md).
 - **C4 diagrams:** [docs/c4/README.md](docs/c4/README.md) holds the C4
   architecture diagrams. They show the target design until each part is built.
