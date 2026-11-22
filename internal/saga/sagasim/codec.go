@@ -139,6 +139,10 @@ func readObjs(r *reader) []KV {
 	for i := 0; i < n && r.err == nil; i++ {
 		k := r.str("object key", MaxKey)
 		v := r.bytes("object value", MaxValue)
+		if len(out) > 0 && out[len(out)-1].Key >= k {
+			r.fail("object keys not strictly ascending")
+			break
+		}
 		out = append(out, KV{Key: k, Val: v})
 	}
 	return out

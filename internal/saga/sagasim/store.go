@@ -221,7 +221,7 @@ func (s *Store) load() {
 		s.st = storeState{}
 		for _, sd := range s.seeds {
 			if sd.Loc == s.e.ID {
-				s.st.put(&bucketState{Name: sd.Name, Status: statusLive, Objs: slices.Clone(sd.Objs)})
+				s.st.put(&bucketState{Name: sd.Name, Status: statusLive, Objs: sortedObjs(sd.Objs)})
 			}
 			s.st.Ptrs = append(s.st.Ptrs, pointerState{Bucket: sd.Name, Loc: string(sd.Loc)})
 		}
@@ -240,6 +240,20 @@ func (s *Store) load() {
 		}
 		s.st, s.loaded = st, true
 	}
+}
+
+func sortedObjs(objs []KV) []KV {
+	out := slices.Clone(objs)
+	slices.SortStableFunc(out, func(a, b KV) int { return strings.Compare(a.Key, b.Key) })
+	keep := out[:0]
+	for _, kv := range out {
+		if n := len(keep); n > 0 && keep[n-1].Key == kv.Key {
+			keep[n-1] = kv
+			continue
+		}
+		keep = append(keep, kv)
+	}
+	return keep
 }
 
 func (s *Store) retryLoad() {

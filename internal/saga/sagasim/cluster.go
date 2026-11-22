@@ -85,7 +85,7 @@ func (c *countingStep) Do(call saga.Call, done func([]byte, error)) {
 func objects(n int) []KV {
 	out := make([]KV, n)
 	for i := range out {
-		out[i] = KV{Key: fmt.Sprintf("o%03d", i), Val: []byte(strconv.Itoa(i * 7919))}
+		out[i] = KV{Key: fmt.Sprintf("o%04d", i), Val: []byte(strconv.Itoa(i * 7919))}
 	}
 	return out
 }

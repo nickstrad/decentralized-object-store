@@ -52,6 +52,7 @@ func threeStores() []sim.NodeSpec {
 
 func NemesisRun(p NemesisParams, res *NemesisReport) func(seed int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
+		res := res
 		if res == nil {
 			res = &NemesisReport{}
 		}
@@ -162,6 +163,7 @@ type DuelReport struct {
 
 func DuelRun(p DuelParams, res *DuelReport) func(seed int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
+		res := res
 		if res == nil {
 			res = &DuelReport{}
 		}
