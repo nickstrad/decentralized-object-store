@@ -307,7 +307,7 @@ func absentKey(bucket string, id storage.ShardID, holder env.NodeID) string {
 }
 
 func (n *Node) noteAbsent(name string) {
-	parts := strings.Split(strings.TrimPrefix(name, tagAbsent), "/")
+	parts := strings.SplitN(strings.TrimPrefix(name, tagAbsent), "/", 3)
 	if len(parts) != 3 || parts[2] == "" {
 		return
 	}
@@ -550,7 +550,12 @@ func (n *Node) serveStorage(from env.NodeID, body []byte, reply env.Reply) {
 	var sum [32]byte
 	if derr == nil && op == storage.OpPutShard {
 		sum = storage.BlobChecksum(blob)
-		if rd, err := n.occ.Reader(); err == nil && n.statedAbsent(rd, id) {
+		rd, err := n.occ.Reader()
+		if err != nil {
+			reply(nil, fmt.Errorf("node %s: put shard %s from %s: %w", n.e.ID, id.BlobName(), from, err))
+			return
+		}
+		if n.statedAbsent(rd, id) {
 			n.stats.AbsentRefused++
 			reply(nil, fmt.Errorf("node %s: put shard %s from %s: this holder recorded that it holds none: %w", n.e.ID, id.BlobName(), from, ErrFenced))
 			return
