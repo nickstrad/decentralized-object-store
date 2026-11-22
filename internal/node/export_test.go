@@ -14,15 +14,6 @@ func SetCanaryIgnoreTombstones(v bool) { canaryIgnoreTombstones = v }
 // CollectRecord re-exports collectRecord for black-box tests.
 type CollectRecord = collectRecord
 
-// ManifestOfRecord decodes an objectRecord blob and returns its Manifest.
-func ManifestOfRecord(b []byte) (*storage.Manifest, error) {
-	r, err := decodeObject(b)
-	if err != nil {
-		return nil, err
-	}
-	return r.Manifest, nil
-}
-
 // DecodeRecordsForTest runs all four record decoders on b and returns their
 // errors for malformed-input tests.
 func DecodeRecordsForTest(b []byte) []error {
@@ -62,15 +53,6 @@ const (
 // ClaimForTest invokes migrator.Claim directly for unit tests.
 func (n *Node) ClaimForTest(c saga.Call, in saga.MigrationInput, done func(error)) {
 	n.mig.Claim(c, in, done)
-}
-
-// ManifestOfStaged decodes a stagedRecord blob and returns its inner Manifest.
-func ManifestOfStaged(b []byte) (*storage.Manifest, error) {
-	st, err := decodeStaged(b)
-	if err != nil {
-		return nil, err
-	}
-	return ManifestOfRecord(st.Object)
 }
 
 // EncodePointerViewForTest encodes a pointerView with zero digest for tests.

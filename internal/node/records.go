@@ -228,3 +228,19 @@ func stageKey(bucket, object, saga string) string {
 }
 
 func systemName(name string) bool { return strings.HasPrefix(name, sysPrefix) }
+
+func ManifestOfRecord(b []byte) (*storage.Manifest, error) {
+	r, err := decodeObject(b)
+	if err != nil {
+		return nil, err
+	}
+	return r.Manifest, nil
+}
+
+func ManifestOfStaged(b []byte) (*storage.Manifest, error) {
+	st, err := decodeStaged(b)
+	if err != nil {
+		return nil, err
+	}
+	return ManifestOfRecord(st.Object)
+}

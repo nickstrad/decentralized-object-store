@@ -729,6 +729,10 @@ func kindName(k occ.Kind) string {
 // count, the recent discard tail, lost-object count, and diagnostic counters.
 func (n *Node) Health() storage.Health {
 	h := storage.Health{Node: string(n.e.ID), Region: string(n.e.Region), Ready: n.Ready(), LiveMembers: n.gossip.LiveCount()}
+	if n.Ready() {
+		d, r := n.occ.Digest(), n.meta.Tree().Root()
+		h.MetaDigest, h.MetaRoot = hex.EncodeToString(d[:]), hex.EncodeToString(r[:])
+	}
 	h.Discards = n.occ.LWWDiscards()
 	for _, d := range n.occ.DiscardTail() {
 		h.RecentDiscards = append(h.RecentDiscards, storage.DiscardInfo{Key: readableKey(d.Key), Winner: d.Winner.ID().String(), Loser: d.Loser.ID().String()})
