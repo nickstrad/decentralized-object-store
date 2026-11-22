@@ -1,0 +1,243 @@
+ Container objstore-dev-run-7c3f9bbe653e Creating 
+ Container objstore-dev-run-7c3f9bbe653e Created 
+BROKEN C12 duplicate-lost-replies: seed=6101 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6101 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6101 41 discard callbacks, health total=41, log lines=41
+HELD C4,C25 quota-overshoot-recount: seed=6101 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6101 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6101 scenario completed
+HELD C8,C11 get-during-repair: seed=6101 size=3077 repaired=4 shards bytes=1795; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6101 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6101 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6101 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6101 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6101 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6102 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6102 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6102 30 discard callbacks, health total=30, log lines=30
+HELD C4,C25 quota-overshoot-recount: seed=6102 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6102 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6102 scenario completed
+HELD C8,C11 get-during-repair: seed=6102 size=0 repaired=0 shards bytes=0; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6102 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6102 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6102 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6102 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6102 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6103 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6103 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6103 31 discard callbacks, health total=31, log lines=31
+HELD C4,C25 quota-overshoot-recount: seed=6103 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6103 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6103 scenario completed
+HELD C8,C11 get-during-repair: seed=6103 size=1 repaired=1 shards bytes=65; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6103 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6103 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6103 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6103 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6103 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6104 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6104 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6104 40 discard callbacks, health total=40, log lines=40
+HELD C4,C25 quota-overshoot-recount: seed=6104 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6104 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6104 scenario completed
+HELD C8,C11 get-during-repair: seed=6104 size=1023 repaired=1 shards bytes=576; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6104 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6104 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6104 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6104 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6104 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6105 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6105 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6105 40 discard callbacks, health total=40, log lines=40
+HELD C4,C25 quota-overshoot-recount: seed=6105 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6105 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6105 scenario completed
+HELD C8,C11 get-during-repair: seed=6105 size=1024 repaired=1 shards bytes=576; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6105 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6105 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6105 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6105 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6105 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6106 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6106 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6106 33 discard callbacks, health total=33, log lines=33
+HELD C4,C25 quota-overshoot-recount: seed=6106 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6106 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6106 scenario completed
+HELD C8,C11 get-during-repair: seed=6106 size=1025 repaired=2 shards bytes=641; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6106 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6106 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6106 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6106 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6106 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6107 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6107 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6107 37 discard callbacks, health total=37, log lines=37
+HELD C4,C25 quota-overshoot-recount: seed=6107 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6107 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6107 scenario completed
+HELD C8,C11 get-during-repair: seed=6107 size=3077 repaired=4 shards bytes=1795; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6107 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6107 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6107 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6107 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6107 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6108 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6108 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6108 57 discard callbacks, health total=57, log lines=57
+HELD C4,C25 quota-overshoot-recount: seed=6108 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6108 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6108 scenario completed
+HELD C8,C11 get-during-repair: seed=6108 size=0 repaired=0 shards bytes=0; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6108 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6108 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6108 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6108 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6108 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6109 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6109 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6109 26 discard callbacks, health total=26, log lines=26
+HELD C4,C25 quota-overshoot-recount: seed=6109 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6109 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6109 scenario completed
+HELD C8,C11 get-during-repair: seed=6109 size=1 repaired=1 shards bytes=65; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6109 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6109 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6109 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6109 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6109 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6110 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6110 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6110 37 discard callbacks, health total=37, log lines=37
+HELD C4,C25 quota-overshoot-recount: seed=6110 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6110 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6110 scenario completed
+HELD C8,C11 get-during-repair: seed=6110 size=1023 repaired=1 shards bytes=576; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6110 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6110 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6110 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6110 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6110 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6111 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6111 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6111 33 discard callbacks, health total=33, log lines=33
+HELD C4,C25 quota-overshoot-recount: seed=6111 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6111 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6111 scenario completed
+HELD C8,C11 get-during-repair: seed=6111 size=1024 repaired=1 shards bytes=576; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6111 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6111 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6111 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6111 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6111 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6112 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6112 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6112 26 discard callbacks, health total=26, log lines=26
+HELD C4,C25 quota-overshoot-recount: seed=6112 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6112 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6112 scenario completed
+HELD C8,C11 get-during-repair: seed=6112 size=1025 repaired=2 shards bytes=641; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6112 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6112 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6112 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6112 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6112 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6113 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6113 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6113 14 discard callbacks, health total=14, log lines=14
+HELD C4,C25 quota-overshoot-recount: seed=6113 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6113 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6113 scenario completed
+HELD C8,C11 get-during-repair: seed=6113 size=3077 repaired=4 shards bytes=1795; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6113 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6113 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6113 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6113 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6113 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6114 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6114 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6114 34 discard callbacks, health total=34, log lines=34
+HELD C4,C25 quota-overshoot-recount: seed=6114 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6114 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6114 scenario completed
+HELD C8,C11 get-during-repair: seed=6114 size=0 repaired=0 shards bytes=0; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6114 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6114 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6114 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6114 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6114 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6115 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6115 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6115 9 discard callbacks, health total=9, log lines=9
+HELD C4,C25 quota-overshoot-recount: seed=6115 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6115 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6115 scenario completed
+HELD C8,C11 get-during-repair: seed=6115 size=1 repaired=1 shards bytes=65; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6115 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6115 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6115 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6115 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6115 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6116 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6116 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6116 28 discard callbacks, health total=28, log lines=28
+HELD C4,C25 quota-overshoot-recount: seed=6116 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6116 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6116 scenario completed
+HELD C8,C11 get-during-repair: seed=6116 size=1023 repaired=1 shards bytes=576; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6116 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6116 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6116 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6116 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6116 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6117 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6117 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6117 20 discard callbacks, health total=20, log lines=20
+HELD C4,C25 quota-overshoot-recount: seed=6117 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6117 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6117 scenario completed
+HELD C8,C11 get-during-repair: seed=6117 size=1024 repaired=1 shards bytes=576; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6117 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6117 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6117 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6117 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6117 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6118 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6118 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6118 22 discard callbacks, health total=22, log lines=22
+HELD C4,C25 quota-overshoot-recount: seed=6118 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6118 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6118 scenario completed
+HELD C8,C11 get-during-repair: seed=6118 size=1025 repaired=2 shards bytes=641; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6118 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6118 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6118 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6118 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6118 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6119 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6119 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6119 46 discard callbacks, health total=46, log lines=46
+HELD C4,C25 quota-overshoot-recount: seed=6119 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6119 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6119 scenario completed
+HELD C8,C11 get-during-repair: seed=6119 size=3077 repaired=4 shards bytes=1795; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6119 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6119 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6119 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6119 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6119 scenario completed
+BROKEN C12 duplicate-lost-replies: seed=6120 only 2 keys acknowledged
+HELD C2,C3 partition-single-winner: seed=6120 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6120 46 discard callbacks, health total=46, log lines=46
+HELD C4,C25 quota-overshoot-recount: seed=6120 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6120 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6120 scenario completed
+HELD C8,C11 get-during-repair: seed=6120 size=0 repaired=0 shards bytes=0; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6120 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6120 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6120 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6120 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6120 scenario completed
+
