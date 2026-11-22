@@ -9,9 +9,9 @@ HELD C15 persist-rollback: failed merge and delete left state, clock, hook and t
 HELD C16,C17 quota-retry-recount: stale callback retried on fresh usage, identical recount did not write and invalid updates were rejected
 HELD C19,C20,C22 decode-corpus: 20000 random/mutated byte strings and every valid-document prefix rejected correctly or round-tripped canonically
 HELD C23 typed-roundtrips: empty, slash, NUL and Unicode bucket names retained distinct keys and exact recounts
-BROKEN C23 recount-overflow: seed=4701 two objects of sizes MaxUint64 and 1 recount as bytes=0 objects=2 without error
+HELD C23 recount-overflow: unrepresentable total was rejected or saturated
 HELD C24 wire-code-table: all assigned codes are unique, in range, skip 131 and preserve errors.Is
-BROKEN C17 recount-stale-noop: seed=4701 initial quota=5; recount hook writes quota=7 then returns 5; calls=1 final bytes=7 without retry
+HELD C17 recount-stale-noop: recount rechecked unchanged-result precondition after intervening update
 HELD C3,C7 single-replica-model: 5000 mixed put/delete/CAS operations matched independent present/live/value/etag state
 HELD C6,C8 saturating-count-and-dot-rotation: maximum dot counter rotated epoch and maximum discard count saturated while retaining the callback/tail
 HELD C4,C18 encoding-copy-isolation: encoded bytes, value slices, key lists and cloned docs could be mutated without changing source state

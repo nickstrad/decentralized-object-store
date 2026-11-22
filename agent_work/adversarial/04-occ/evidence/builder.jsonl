@@ -3,89 +3,89 @@
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST","Output":"=== RUN   TestMultiRegionConvergenceDST\n"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4701"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4701","Output":"=== RUN   TestMultiRegionConvergenceDST/seed=4701\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4701","Output":"    dst_test.go:328: MEASURE acks=99 refused=30 discards=71 lost_versions=37 outcome=map[current:8 discarded:27 superseded:64] converged_in=1.53795003s events=931 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4701","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4701 (0.05s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4701","Output":"    dst_test.go:464: MEASURE acks=92 refused=29 discards=90 lost_versions=34 disk_losses=3 max_ctx=8 max_state=4640 outcome=map[current:8 discarded:27 superseded:57] converged_in=1.602055822s events=943 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4701","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4701 (0.08s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4701"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4702"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4702","Output":"=== RUN   TestMultiRegionConvergenceDST/seed=4702\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4702","Output":"    dst_test.go:328: MEASURE acks=106 refused=18 discards=85 lost_versions=43 outcome=map[current:8 discarded:30 superseded:68] converged_in=1.320189918s events=938 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4702","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4702 (0.05s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4702","Output":"    dst_test.go:464: MEASURE acks=98 refused=21 discards=70 lost_versions=25 disk_losses=3 max_ctx=11 max_state=5164 outcome=map[current:8 discarded:20 lost-with-disk:1 superseded:69] converged_in=1.238557304s events=962 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4702","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4702 (0.10s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4702"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4703"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4703","Output":"=== RUN   TestMultiRegionConvergenceDST/seed=4703\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4703","Output":"    dst_test.go:328: MEASURE acks=114 refused=25 discards=75 lost_versions=39 outcome=map[current:8 discarded:32 superseded:74] converged_in=2.836253923s events=1067 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4703","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4703 (0.08s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4703","Output":"    dst_test.go:464: MEASURE acks=105 refused=24 discards=107 lost_versions=40 disk_losses=3 max_ctx=8 max_state=4770 outcome=map[current:8 discarded:30 lost-with-disk:2 superseded:65] converged_in=2.358419032s events=1043 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4703","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4703 (0.10s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4703"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4704"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4704","Output":"=== RUN   TestMultiRegionConvergenceDST/seed=4704\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4704","Output":"    dst_test.go:328: MEASURE acks=106 refused=23 discards=71 lost_versions=38 outcome=map[current:8 discarded:32 superseded:66] converged_in=1.737103904s events=985 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4704","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4704 (0.07s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4704","Output":"    dst_test.go:464: MEASURE acks=106 refused=22 discards=104 lost_versions=41 disk_losses=3 max_ctx=8 max_state=5076 outcome=map[current:8 discarded:32 lost-with-disk:1 superseded:65] converged_in=2.193663295s events=1024 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4704","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4704 (0.09s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4704"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4705"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4705","Output":"=== RUN   TestMultiRegionConvergenceDST/seed=4705\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4705","Output":"    dst_test.go:328: MEASURE acks=100 refused=26 discards=74 lost_versions=37 outcome=map[current:8 discarded:25 superseded:67] converged_in=3.107840076s events=1048 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4705","Output":"    dst_test.go:464: MEASURE acks=102 refused=27 discards=106 lost_versions=40 disk_losses=3 max_ctx=8 max_state=4020 outcome=map[current:8 discarded:26 lost-with-disk:3 superseded:65] converged_in=2.969255374s events=1040 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4705","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4705 (0.09s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4705"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4706"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4706","Output":"=== RUN   TestMultiRegionConvergenceDST/seed=4706\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4706","Output":"    dst_test.go:328: MEASURE acks=100 refused=22 discards=73 lost_versions=39 outcome=map[current:8 discarded:25 superseded:67] converged_in=869.555878ms events=967 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4706","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4706 (0.06s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4706","Output":"    dst_test.go:464: MEASURE acks=96 refused=23 discards=70 lost_versions=30 disk_losses=3 max_ctx=8 max_state=3527 outcome=map[current:8 discarded:27 lost-with-disk:2 superseded:59] converged_in=1.102993186s events=929 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4706","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4706 (0.07s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4706"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4707"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4707","Output":"=== RUN   TestMultiRegionConvergenceDST/seed=4707\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4707","Output":"    dst_test.go:328: MEASURE acks=97 refused=27 discards=75 lost_versions=35 outcome=map[current:8 discarded:27 superseded:62] converged_in=2.831120545s events=1011 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4707","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4707 (0.06s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4707","Output":"    dst_test.go:464: MEASURE acks=98 refused=24 discards=94 lost_versions=36 disk_losses=3 max_ctx=11 max_state=4308 outcome=map[current:8 discarded:25 lost-with-disk:2 superseded:63] converged_in=2.401280106s events=997 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4707","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4707 (0.08s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4707"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4708"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4708","Output":"=== RUN   TestMultiRegionConvergenceDST/seed=4708\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4708","Output":"    dst_test.go:328: MEASURE acks=109 refused=19 discards=80 lost_versions=36 outcome=map[current:7 discarded:29 superseded:73] converged_in=2.758094299s events=1005 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4708","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4708 (0.07s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4708","Output":"    dst_test.go:464: MEASURE acks=105 refused=17 discards=100 lost_versions=36 disk_losses=3 max_ctx=9 max_state=4437 outcome=map[current:7 discarded:23 lost-with-disk:1 superseded:74] converged_in=3.293015868s events=1045 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4708","Output":"--- PASS: TestMultiRegionConvergenceDST/seed=4708 (0.10s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST/seed=4708"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST","Output":"--- PASS: TestMultiRegionConvergenceDST (0.53s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST","Output":"--- PASS: TestMultiRegionConvergenceDST (0.72s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMultiRegionConvergenceDST"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST","Output":"=== RUN   TestOfflineRegionDST\n"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4701"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4701","Output":"=== RUN   TestOfflineRegionDST/seed=4701\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4701","Output":"    dst_test.go:328: MEASURE acks=154 refused=50 discards=49 lost_versions=27 outcome=map[current:4 discarded:23 superseded:127] converged_in=774.164583ms events=2301 won=3 discarded=7 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4701","Output":"--- PASS: TestOfflineRegionDST/seed=4701 (0.07s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4701","Output":"    dst_test.go:464: MEASURE acks=153 refused=51 discards=66 lost_versions=29 disk_losses=0 max_ctx=11 max_state=4556 outcome=map[current:4 discarded:25 superseded:124] converged_in=760.063547ms events=2284 won=3 discarded=7 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4701","Output":"--- PASS: TestOfflineRegionDST/seed=4701 (0.11s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4701"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4702"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4702","Output":"=== RUN   TestOfflineRegionDST/seed=4702\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4702","Output":"    dst_test.go:328: MEASURE acks=146 refused=58 discards=54 lost_versions=30 outcome=map[current:4 discarded:24 superseded:118] converged_in=846.297856ms events=2260 won=1 discarded=12 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4702","Output":"--- PASS: TestOfflineRegionDST/seed=4702 (0.09s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4702","Output":"    dst_test.go:464: MEASURE acks=149 refused=55 discards=83 lost_versions=32 disk_losses=0 max_ctx=11 max_state=6466 outcome=map[current:4 discarded:29 superseded:116] converged_in=977.601976ms events=2259 won=1 discarded=9 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4702","Output":"--- PASS: TestOfflineRegionDST/seed=4702 (0.14s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4702"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4703"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4703","Output":"=== RUN   TestOfflineRegionDST/seed=4703\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4703","Output":"    dst_test.go:328: MEASURE acks=156 refused=48 discards=53 lost_versions=30 outcome=map[current:4 discarded:28 superseded:124] converged_in=402.198623ms events=2297 won=1 discarded=10 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4703","Output":"--- PASS: TestOfflineRegionDST/seed=4703 (0.11s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4703","Output":"    dst_test.go:464: MEASURE acks=153 refused=51 discards=68 lost_versions=30 disk_losses=0 max_ctx=10 max_state=5141 outcome=map[current:4 discarded:27 superseded:122] converged_in=426.719531ms events=2313 won=1 discarded=8 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4703","Output":"--- PASS: TestOfflineRegionDST/seed=4703 (0.12s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4703"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4704"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4704","Output":"=== RUN   TestOfflineRegionDST/seed=4704\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4704","Output":"    dst_test.go:328: MEASURE acks=155 refused=49 discards=53 lost_versions=31 outcome=map[current:4 discarded:29 superseded:122] converged_in=844.843604ms events=2305 won=1 discarded=9 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4704","Output":"--- PASS: TestOfflineRegionDST/seed=4704 (0.08s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4704","Output":"    dst_test.go:464: MEASURE acks=155 refused=49 discards=72 lost_versions=29 disk_losses=0 max_ctx=12 max_state=5062 outcome=map[current:4 discarded:25 superseded:126] converged_in=678.101278ms events=2306 won=1 discarded=6 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4704","Output":"--- PASS: TestOfflineRegionDST/seed=4704 (0.14s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4704"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4705"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4705","Output":"=== RUN   TestOfflineRegionDST/seed=4705\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4705","Output":"    dst_test.go:328: MEASURE acks=154 refused=50 discards=41 lost_versions=20 outcome=map[current:4 discarded:18 superseded:132] converged_in=837.592278ms events=2339 won=1 discarded=6 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4705","Output":"--- PASS: TestOfflineRegionDST/seed=4705 (0.08s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4705","Output":"    dst_test.go:464: MEASURE acks=154 refused=50 discards=58 lost_versions=19 disk_losses=0 max_ctx=10 max_state=5117 outcome=map[current:4 discarded:17 superseded:133] converged_in=891.900267ms events=2364 won=1 discarded=5 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4705","Output":"--- PASS: TestOfflineRegionDST/seed=4705 (0.12s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4705"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4706"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4706","Output":"=== RUN   TestOfflineRegionDST/seed=4706\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4706","Output":"    dst_test.go:328: MEASURE acks=143 refused=61 discards=56 lost_versions=32 outcome=map[current:4 discarded:26 superseded:113] converged_in=940.978345ms events=2330 won=1 discarded=7 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4706","Output":"--- PASS: TestOfflineRegionDST/seed=4706 (0.08s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4706","Output":"    dst_test.go:464: MEASURE acks=143 refused=61 discards=69 lost_versions=29 disk_losses=0 max_ctx=10 max_state=5194 outcome=map[current:4 discarded:24 superseded:115] converged_in=714.633495ms events=2277 won=1 discarded=9 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4706","Output":"--- PASS: TestOfflineRegionDST/seed=4706 (0.11s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4706"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4707"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4707","Output":"=== RUN   TestOfflineRegionDST/seed=4707\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4707","Output":"    dst_test.go:328: MEASURE acks=155 refused=49 discards=51 lost_versions=26 outcome=map[current:4 discarded:23 superseded:128] converged_in=763.949951ms events=2328 won=1 discarded=6 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4707","Output":"--- PASS: TestOfflineRegionDST/seed=4707 (0.07s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4707","Output":"    dst_test.go:464: MEASURE acks=155 refused=49 discards=61 lost_versions=24 disk_losses=0 max_ctx=10 max_state=4544 outcome=map[current:4 discarded:20 superseded:131] converged_in=936.840303ms events=2343 won=1 discarded=4 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4707","Output":"--- PASS: TestOfflineRegionDST/seed=4707 (0.10s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4707"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4708"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4708","Output":"=== RUN   TestOfflineRegionDST/seed=4708\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4708","Output":"    dst_test.go:328: MEASURE acks=144 refused=60 discards=35 lost_versions=16 outcome=map[current:4 discarded:16 superseded:124] converged_in=499.977713ms events=2368 won=3 discarded=3 overshoot=0 recount_rounds=0\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4708","Output":"--- PASS: TestOfflineRegionDST/seed=4708 (0.07s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4708","Output":"    dst_test.go:464: MEASURE acks=143 refused=61 discards=59 lost_versions=20 disk_losses=0 max_ctx=8 max_state=3790 outcome=map[current:4 discarded:17 superseded:122] converged_in=996.310552ms events=2368 won=3 discarded=3 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4708","Output":"--- PASS: TestOfflineRegionDST/seed=4708 (0.11s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST/seed=4708"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST","Output":"--- PASS: TestOfflineRegionDST (0.64s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST","Output":"--- PASS: TestOfflineRegionDST (0.95s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOfflineRegionDST"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestConditionalWriteRaceDST"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestConditionalWriteRaceDST","Output":"=== RUN   TestConditionalWriteRaceDST\n"}
@@ -167,55 +167,55 @@
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST","Output":"=== RUN   TestQuotaOvershootUnderPartitionDST\n"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4701"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4701","Output":"=== RUN   TestQuotaOvershootUnderPartitionDST/seed=4701\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4701","Output":"    dst_test.go:328: MEASURE acks=0 refused=0 discards=12 lost_versions=10 outcome=map[] converged_in=507.785251ms events=553 won=0 discarded=0 overshoot=1600 recount_rounds=2\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4701","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST/seed=4701 (0.03s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4701","Output":"    dst_test.go:464: MEASURE acks=0 refused=0 discards=21 lost_versions=11 disk_losses=0 max_ctx=3 max_state=2658 outcome=map[] converged_in=384.937114ms events=557 won=0 discarded=0 overshoot=1700 recount_rounds=2\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4701","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST/seed=4701 (0.02s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4701"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4702"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4702","Output":"=== RUN   TestQuotaOvershootUnderPartitionDST/seed=4702\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4702","Output":"    dst_test.go:328: MEASURE acks=0 refused=0 discards=12 lost_versions=9 outcome=map[] converged_in=309.645234ms events=553 won=0 discarded=0 overshoot=1600 recount_rounds=2\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4702","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST/seed=4702 (0.01s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4702","Output":"    dst_test.go:464: MEASURE acks=0 refused=0 discards=16 lost_versions=8 disk_losses=0 max_ctx=4 max_state=2236 outcome=map[] converged_in=753.148143ms events=564 won=0 discarded=0 overshoot=1500 recount_rounds=2\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4702","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST/seed=4702 (0.02s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4702"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4703"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4703","Output":"=== RUN   TestQuotaOvershootUnderPartitionDST/seed=4703\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4703","Output":"    dst_test.go:328: MEASURE acks=0 refused=0 discards=11 lost_versions=7 outcome=map[] converged_in=636.82198ms events=547 won=0 discarded=0 overshoot=1300 recount_rounds=2\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4703","Output":"    dst_test.go:464: MEASURE acks=0 refused=0 discards=16 lost_versions=7 disk_losses=0 max_ctx=3 max_state=2106 outcome=map[] converged_in=362.631792ms events=542 won=0 discarded=0 overshoot=1300 recount_rounds=2\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4703","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST/seed=4703 (0.02s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4703"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4704"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4704","Output":"=== RUN   TestQuotaOvershootUnderPartitionDST/seed=4704\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4704","Output":"    dst_test.go:328: MEASURE acks=0 refused=0 discards=4 lost_versions=2 outcome=map[] converged_in=553.557318ms events=521 won=0 discarded=0 overshoot=1000 recount_rounds=2\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4704","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST/seed=4704 (0.02s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4704","Output":"    dst_test.go:464: MEASURE acks=0 refused=0 discards=6 lost_versions=2 disk_losses=0 max_ctx=2 max_state=1700 outcome=map[] converged_in=550.176255ms events=522 won=0 discarded=0 overshoot=1000 recount_rounds=2\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4704","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST/seed=4704 (0.01s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4704"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4705"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4705","Output":"=== RUN   TestQuotaOvershootUnderPartitionDST/seed=4705\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4705","Output":"    dst_test.go:328: MEASURE acks=0 refused=0 discards=12 lost_versions=10 outcome=map[] converged_in=501.958284ms events=566 won=0 discarded=0 overshoot=1700 recount_rounds=2\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4705","Output":"    dst_test.go:464: MEASURE acks=0 refused=0 discards=19 lost_versions=11 disk_losses=0 max_ctx=4 max_state=2801 outcome=map[] converged_in=385.458351ms events=555 won=0 discarded=0 overshoot=1700 recount_rounds=2\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4705","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST/seed=4705 (0.02s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4705"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4706"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4706","Output":"=== RUN   TestQuotaOvershootUnderPartitionDST/seed=4706\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4706","Output":"    dst_test.go:328: MEASURE acks=0 refused=0 discards=10 lost_versions=8 outcome=map[] converged_in=756.260443ms events=588 won=0 discarded=0 overshoot=1500 recount_rounds=2\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4706","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST/seed=4706 (0.03s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4706","Output":"    dst_test.go:464: MEASURE acks=0 refused=0 discards=18 lost_versions=9 disk_losses=0 max_ctx=4 max_state=2702 outcome=map[] converged_in=871.139454ms events=575 won=0 discarded=0 overshoot=1600 recount_rounds=2\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4706","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST/seed=4706 (0.02s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4706"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4707"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4707","Output":"=== RUN   TestQuotaOvershootUnderPartitionDST/seed=4707\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4707","Output":"    dst_test.go:328: MEASURE acks=0 refused=0 discards=11 lost_versions=9 outcome=map[] converged_in=681.239143ms events=562 won=0 discarded=0 overshoot=1700 recount_rounds=2\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4707","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST/seed=4707 (0.02s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4707","Output":"    dst_test.go:464: MEASURE acks=0 refused=0 discards=17 lost_versions=8 disk_losses=0 max_ctx=3 max_state=2454 outcome=map[] converged_in=784.0077ms events=550 won=0 discarded=0 overshoot=1600 recount_rounds=2\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4707","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST/seed=4707 (0.03s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4707"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4708"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4708","Output":"=== RUN   TestQuotaOvershootUnderPartitionDST/seed=4708\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4708","Output":"    dst_test.go:328: MEASURE acks=0 refused=0 discards=10 lost_versions=8 outcome=map[] converged_in=444.489842ms events=527 won=0 discarded=0 overshoot=1500 recount_rounds=2\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4708","Output":"    dst_test.go:464: MEASURE acks=0 refused=0 discards=18 lost_versions=8 disk_losses=0 max_ctx=2 max_state=2364 outcome=map[] converged_in=430.911304ms events=552 won=0 discarded=0 overshoot=1500 recount_rounds=2\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4708","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST/seed=4708 (0.02s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST/seed=4708"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST","Output":"--- PASS: TestQuotaOvershootUnderPartitionDST (0.17s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaOvershootUnderPartitionDST"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryDiscardNotRecorded"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryDiscardNotRecorded","Output":"=== RUN   TestCanaryDiscardNotRecorded\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryDiscardNotRecorded","Output":"    dst_test.go:741: canary: the convergence DST failed on 3 of 3 seeds with unrecorded discards\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryDiscardNotRecorded","Output":"--- PASS: TestCanaryDiscardNotRecorded (0.01s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryDiscardNotRecorded","Output":"    dst_test.go:877: canary: the convergence DST failed on 3 of 3 seeds with unrecorded discards\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryDiscardNotRecorded","Output":"--- PASS: TestCanaryDiscardNotRecorded (0.02s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryDiscardNotRecorded"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryMergePrefersLocal"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryMergePrefersLocal","Output":"=== RUN   TestCanaryMergePrefersLocal\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryMergePrefersLocal","Output":"    dst_test.go:760: canary: the convergence DST failed on 3 of 3 seeds with a local-preferring merge\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryMergePrefersLocal","Output":"--- PASS: TestCanaryMergePrefersLocal (0.15s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryMergePrefersLocal","Output":"    dst_test.go:896: canary: the convergence DST failed on 3 of 3 seeds with a local-preferring merge\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryMergePrefersLocal","Output":"--- PASS: TestCanaryMergePrefersLocal (0.37s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryMergePrefersLocal"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanonicalEncoding"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanonicalEncoding","Output":"=== RUN   TestCanonicalEncoding\n"}
@@ -315,7 +315,7 @@
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDecodeMalformedTable"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestReviewerHostileInputIsRejectedEarly"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestReviewerHostileInputIsRejectedEarly","Output":"=== RUN   TestReviewerHostileInputIsRejectedEarly\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestReviewerHostileInputIsRejectedEarly","Output":"--- PASS: TestReviewerHostileInputIsRejectedEarly (0.01s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestReviewerHostileInputIsRejectedEarly","Output":"--- PASS: TestReviewerHostileInputIsRejectedEarly (0.00s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestReviewerHostileInputIsRejectedEarly"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork","Output":"=== RUN   TestHostileMessagesBoundedWork\n"}
@@ -323,19 +323,19 @@
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork/many_keys","Output":"=== RUN   TestHostileMessagesBoundedWork/many_keys\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork/many_keys","Output":"    encoding_test.go:327: MEASURE many keys scale 1/8: 2097088 bytes, decode work 3894587, merge work 199722\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork/many_keys","Output":"    encoding_test.go:327: MEASURE many keys scale 1/1: 16777138 bytes, decode work 31157537, merge work 1597822\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork/many_keys","Output":"--- PASS: TestHostileMessagesBoundedWork/many_keys (33.70s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork/many_keys","Output":"--- PASS: TestHostileMessagesBoundedWork/many_keys (25.89s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork/many_keys"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork/big_contexts"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork/big_contexts","Output":"=== RUN   TestHostileMessagesBoundedWork/big_contexts\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork/big_contexts","Output":"    encoding_test.go:327: MEASURE big contexts scale 1/8: 2096937 bytes, decode work 3145422, merge work 1397920\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork/big_contexts","Output":"    encoding_test.go:327: MEASURE big contexts scale 1/1: 16776993 bytes, decode work 25165506, merge work 11184624\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork/big_contexts","Output":"--- PASS: TestHostileMessagesBoundedWork/big_contexts (2.79s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork/big_contexts","Output":"--- PASS: TestHostileMessagesBoundedWork/big_contexts (2.02s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork/big_contexts"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork","Output":"--- PASS: TestHostileMessagesBoundedWork (36.49s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork","Output":"--- PASS: TestHostileMessagesBoundedWork (27.90s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHostileMessagesBoundedWork"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMergeIsTotalOnDecodedStates"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMergeIsTotalOnDecodedStates","Output":"=== RUN   TestMergeIsTotalOnDecodedStates\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMergeIsTotalOnDecodedStates","Output":"--- PASS: TestMergeIsTotalOnDecodedStates (0.02s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMergeIsTotalOnDecodedStates","Output":"--- PASS: TestMergeIsTotalOnDecodedStates (0.01s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestMergeIsTotalOnDecodedStates"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHLCRules"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestHLCRules","Output":"=== RUN   TestHLCRules\n"}
@@ -387,9 +387,155 @@
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestLWWSkewPicksTheHigherClock"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropHLCMonotonic"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropHLCMonotonic","Output":"=== RUN   TestPropHLCMonotonic\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropHLCMonotonic","Output":"    hlc_test.go:138: [rapid] OK, passed 200 tests (15.650859ms)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropHLCMonotonic","Output":"    hlc_test.go:138: [rapid] OK, passed 200 tests (21.94552ms)\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropHLCMonotonic","Output":"--- PASS: TestPropHLCMonotonic (0.02s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropHLCMonotonic"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST","Output":"=== RUN   TestWriterLostAfterDeliveryDST\n"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4701"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4701","Output":"=== RUN   TestWriterLostAfterDeliveryDST/seed=4701\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4701","Output":"    dst_test.go:464: MEASURE acks=119 refused=27 discards=70 lost_versions=36 disk_losses=6 max_ctx=9 max_state=6773 outcome=map[current:8 discarded:32 superseded:79] converged_in=479.192009ms events=700 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4701","Output":"--- PASS: TestWriterLostAfterDeliveryDST/seed=4701 (0.14s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4701"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4702"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4702","Output":"=== RUN   TestWriterLostAfterDeliveryDST/seed=4702\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4702","Output":"    dst_test.go:464: MEASURE acks=134 refused=16 discards=86 lost_versions=47 disk_losses=6 max_ctx=11 max_state=7702 outcome=map[current:8 discarded:32 superseded:94] converged_in=666.185472ms events=752 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4702","Output":"--- PASS: TestWriterLostAfterDeliveryDST/seed=4702 (0.13s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4702"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4703"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4703","Output":"=== RUN   TestWriterLostAfterDeliveryDST/seed=4703\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4703","Output":"    dst_test.go:464: MEASURE acks=111 refused=22 discards=76 lost_versions=42 disk_losses=6 max_ctx=9 max_state=5900 outcome=map[current:6 discarded:34 superseded:71] converged_in=355.366694ms events=668 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4703","Output":"--- PASS: TestWriterLostAfterDeliveryDST/seed=4703 (0.09s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4703"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4704"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4704","Output":"=== RUN   TestWriterLostAfterDeliveryDST/seed=4704\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4704","Output":"    dst_test.go:464: MEASURE acks=129 refused=17 discards=83 lost_versions=40 disk_losses=6 max_ctx=8 max_state=6991 outcome=map[current:8 discarded:37 superseded:84] converged_in=472.128727ms events=735 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4704","Output":"--- PASS: TestWriterLostAfterDeliveryDST/seed=4704 (0.13s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4704"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4705"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4705","Output":"=== RUN   TestWriterLostAfterDeliveryDST/seed=4705\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4705","Output":"    dst_test.go:464: MEASURE acks=116 refused=21 discards=88 lost_versions=46 disk_losses=6 max_ctx=9 max_state=7270 outcome=map[current:8 discarded:37 superseded:71] converged_in=520.495528ms events=686 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4705","Output":"--- PASS: TestWriterLostAfterDeliveryDST/seed=4705 (0.12s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4705"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4706"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4706","Output":"=== RUN   TestWriterLostAfterDeliveryDST/seed=4706\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4706","Output":"    dst_test.go:464: MEASURE acks=130 refused=24 discards=88 lost_versions=41 disk_losses=6 max_ctx=11 max_state=7947 outcome=map[current:8 discarded:37 superseded:85] converged_in=1.485714941s events=751 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4706","Output":"--- PASS: TestWriterLostAfterDeliveryDST/seed=4706 (0.14s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4706"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4707"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4707","Output":"=== RUN   TestWriterLostAfterDeliveryDST/seed=4707\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4707","Output":"    dst_test.go:464: MEASURE acks=121 refused=17 discards=84 lost_versions=41 disk_losses=6 max_ctx=12 max_state=9063 outcome=map[current:7 discarded:35 superseded:79] converged_in=1.26458042s events=704 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4707","Output":"--- PASS: TestWriterLostAfterDeliveryDST/seed=4707 (0.12s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4707"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4708"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4708","Output":"=== RUN   TestWriterLostAfterDeliveryDST/seed=4708\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4708","Output":"    dst_test.go:464: MEASURE acks=121 refused=26 discards=86 lost_versions=43 disk_losses=6 max_ctx=8 max_state=7430 outcome=map[current:7 discarded:38 superseded:76] converged_in=1.814763303s events=741 won=0 discarded=0 overshoot=0 recount_rounds=0\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4708","Output":"--- PASS: TestWriterLostAfterDeliveryDST/seed=4708 (0.13s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST/seed=4708"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST","Output":"--- PASS: TestWriterLostAfterDeliveryDST (0.99s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWriterLostAfterDeliveryDST"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilentDST"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilentDST","Output":"=== RUN   TestCanaryIncomingLoserSilentDST\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilentDST","Output":"    lww2_dst_test.go:98: canary: the writer-loss DST failed on 3 of 3 seeds with incoming losers rejected silently\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilentDST","Output":"--- PASS: TestCanaryIncomingLoserSilentDST (0.02s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilentDST"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost","Output":"=== RUN   TestIncomingLoserRecordedWhenWriterIsLost\n"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost/crash_for_good"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost/crash_for_good","Output":"=== RUN   TestIncomingLoserRecordedWhenWriterIsLost/crash_for_good\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost/crash_for_good","Output":"--- PASS: TestIncomingLoserRecordedWhenWriterIsLost/crash_for_good (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost/crash_for_good"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost/wipe_and_rejoin"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost/wipe_and_rejoin","Output":"=== RUN   TestIncomingLoserRecordedWhenWriterIsLost/wipe_and_rejoin\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost/wipe_and_rejoin","Output":"--- PASS: TestIncomingLoserRecordedWhenWriterIsLost/wipe_and_rejoin (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost/wipe_and_rejoin"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost/state_blob_rot"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost/state_blob_rot","Output":"=== RUN   TestIncomingLoserRecordedWhenWriterIsLost/state_blob_rot\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost/state_blob_rot","Output":"--- PASS: TestIncomingLoserRecordedWhenWriterIsLost/state_blob_rot (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost/state_blob_rot"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost","Output":"--- PASS: TestIncomingLoserRecordedWhenWriterIsLost (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingLoserRecordedWhenWriterIsLost"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent","Output":"=== RUN   TestCanaryIncomingLoserSilent\n"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent/crash_for_good"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent/crash_for_good","Output":"=== RUN   TestCanaryIncomingLoserSilent/crash_for_good\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent/crash_for_good","Output":"--- PASS: TestCanaryIncomingLoserSilent/crash_for_good (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent/crash_for_good"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent/wipe_and_rejoin"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent/wipe_and_rejoin","Output":"=== RUN   TestCanaryIncomingLoserSilent/wipe_and_rejoin\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent/wipe_and_rejoin","Output":"--- PASS: TestCanaryIncomingLoserSilent/wipe_and_rejoin (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent/wipe_and_rejoin"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent/state_blob_rot"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent/state_blob_rot","Output":"=== RUN   TestCanaryIncomingLoserSilent/state_blob_rot\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent/state_blob_rot","Output":"--- PASS: TestCanaryIncomingLoserSilent/state_blob_rot (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent/state_blob_rot"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent","Output":"--- PASS: TestCanaryIncomingLoserSilent (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCanaryIncomingLoserSilent"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss","Output":"=== RUN   TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss\n"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss/a_holder_that_survives_voids_the_allowance"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss/a_holder_that_survives_voids_the_allowance","Output":"=== RUN   TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss/a_holder_that_survives_voids_the_allowance\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss/a_holder_that_survives_voids_the_allowance","Output":"--- PASS: TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss/a_holder_that_survives_voids_the_allowance (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss/a_holder_that_survives_voids_the_allowance"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss","Output":"--- PASS: TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNodeReplaysOutboxAfterRestart"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNodeReplaysOutboxAfterRestart","Output":"=== RUN   TestNodeReplaysOutboxAfterRestart\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNodeReplaysOutboxAfterRestart","Output":"--- PASS: TestNodeReplaysOutboxAfterRestart (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNodeReplaysOutboxAfterRestart"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropClassificationMatchesOracle"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropClassificationMatchesOracle","Output":"=== RUN   TestPropClassificationMatchesOracle\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropClassificationMatchesOracle","Output":"    lww2_prop_test.go:125: [rapid] OK, passed 200 tests (324.156533ms)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropClassificationMatchesOracle","Output":"--- PASS: TestPropClassificationMatchesOracle (0.32s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropClassificationMatchesOracle"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardGapNeverClaimed"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardGapNeverClaimed","Output":"=== RUN   TestDiscardGapNeverClaimed\n"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardGapNeverClaimed/next2_written_by_a"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardGapNeverClaimed/next2_written_by_a","Output":"=== RUN   TestDiscardGapNeverClaimed/next2_written_by_a\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardGapNeverClaimed/next2_written_by_a","Output":"--- PASS: TestDiscardGapNeverClaimed/next2_written_by_a (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardGapNeverClaimed/next2_written_by_a"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardGapNeverClaimed/next2_written_by_b"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardGapNeverClaimed/next2_written_by_b","Output":"=== RUN   TestDiscardGapNeverClaimed/next2_written_by_b\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardGapNeverClaimed/next2_written_by_b","Output":"--- PASS: TestDiscardGapNeverClaimed/next2_written_by_b (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardGapNeverClaimed/next2_written_by_b"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardGapNeverClaimed","Output":"--- PASS: TestDiscardGapNeverClaimed (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardGapNeverClaimed"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDotsAreNeverReused"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDotsAreNeverReused","Output":"=== RUN   TestDotsAreNeverReused\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDotsAreNeverReused","Output":"--- PASS: TestDotsAreNeverReused (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDotsAreNeverReused"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingConcurrentLoserIsRecorded"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingConcurrentLoserIsRecorded","Output":"=== RUN   TestIncomingConcurrentLoserIsRecorded\n"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingConcurrentLoserIsRecorded/old_news_records_nothing"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingConcurrentLoserIsRecorded/old_news_records_nothing","Output":"=== RUN   TestIncomingConcurrentLoserIsRecorded/old_news_records_nothing\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingConcurrentLoserIsRecorded/old_news_records_nothing","Output":"--- PASS: TestIncomingConcurrentLoserIsRecorded/old_news_records_nothing (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingConcurrentLoserIsRecorded/old_news_records_nothing"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingConcurrentLoserIsRecorded/a_failed_persist_leaves_no_trace_and_the_retry_records_once"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingConcurrentLoserIsRecorded/a_failed_persist_leaves_no_trace_and_the_retry_records_once","Output":"=== RUN   TestIncomingConcurrentLoserIsRecorded/a_failed_persist_leaves_no_trace_and_the_retry_records_once\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingConcurrentLoserIsRecorded/a_failed_persist_leaves_no_trace_and_the_retry_records_once","Output":"--- PASS: TestIncomingConcurrentLoserIsRecorded/a_failed_persist_leaves_no_trace_and_the_retry_records_once (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingConcurrentLoserIsRecorded/a_failed_persist_leaves_no_trace_and_the_retry_records_once"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingConcurrentLoserIsRecorded","Output":"--- PASS: TestIncomingConcurrentLoserIsRecorded (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestIncomingConcurrentLoserIsRecorded"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardDedupIsBounded"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardDedupIsBounded","Output":"=== RUN   TestDiscardDedupIsBounded\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardDedupIsBounded","Output":"--- PASS: TestDiscardDedupIsBounded (0.05s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardDedupIsBounded"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardRecordSurvivesCrashBeforePublish"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardRecordSurvivesCrashBeforePublish","Output":"=== RUN   TestDiscardRecordSurvivesCrashBeforePublish\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardRecordSurvivesCrashBeforePublish","Output":"--- PASS: TestDiscardRecordSurvivesCrashBeforePublish (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDiscardRecordSurvivesCrashBeforePublish"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestRecountObjectsNeverWraps"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestRecountObjectsNeverWraps","Output":"=== RUN   TestRecountObjectsNeverWraps\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestRecountObjectsNeverWraps","Output":"--- PASS: TestRecountObjectsNeverWraps (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestRecountObjectsNeverWraps"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestRecountNoopRechecksCurrentVersion"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestRecountNoopRechecksCurrentVersion","Output":"=== RUN   TestRecountNoopRechecksCurrentVersion\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestRecountNoopRechecksCurrentVersion","Output":"--- PASS: TestRecountNoopRechecksCurrentVersion (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestRecountNoopRechecksCurrentVersion"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOpenStoreRejectsHostileState"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOpenStoreRejectsHostileState","Output":"=== RUN   TestOpenStoreRejectsHostileState\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOpenStoreRejectsHostileState","Output":"--- PASS: TestOpenStoreRejectsHostileState (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestOpenStoreRejectsHostileState"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestTypedMetadataDocument"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestTypedMetadataDocument","Output":"=== RUN   TestTypedMetadataDocument\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestTypedMetadataDocument","Output":"--- PASS: TestTypedMetadataDocument (0.00s)\n"}
@@ -440,7 +586,7 @@
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNodePersistsAndReloadsItsEpoch"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWipedNodeTakesAFreshEpoch"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWipedNodeTakesAFreshEpoch","Output":"=== RUN   TestWipedNodeTakesAFreshEpoch\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWipedNodeTakesAFreshEpoch","Output":"    node_test.go:168: the wiped node reuses its old actor\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWipedNodeTakesAFreshEpoch","Output":"    node_test.go:171: the wiped node reuses its old actor\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWipedNodeTakesAFreshEpoch","Output":"--- PASS: TestWipedNodeTakesAFreshEpoch (0.00s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestWipedNodeTakesAFreshEpoch"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCorruptStateTakesAFreshEpoch"}
@@ -497,7 +643,7 @@
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNodeFailedPersistLeavesNoTrace/sync_fails_during_inbound_push_carrying_a_discard","Output":"=== RUN   TestNodeFailedPersistLeavesNoTrace/sync_fails_during_inbound_push_carrying_a_discard\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNodeFailedPersistLeavesNoTrace/sync_fails_during_inbound_push_carrying_a_discard","Output":"--- PASS: TestNodeFailedPersistLeavesNoTrace/sync_fails_during_inbound_push_carrying_a_discard (0.00s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNodeFailedPersistLeavesNoTrace/sync_fails_during_inbound_push_carrying_a_discard"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNodeFailedPersistLeavesNoTrace","Output":"--- PASS: TestNodeFailedPersistLeavesNoTrace (0.01s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNodeFailedPersistLeavesNoTrace","Output":"--- PASS: TestNodeFailedPersistLeavesNoTrace (0.00s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNodeFailedPersistLeavesNoTrace"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPeerChoiceIgnoresMembershipOrder"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPeerChoiceIgnoresMembershipOrder","Output":"=== RUN   TestPeerChoiceIgnoresMembershipOrder\n"}
@@ -505,33 +651,33 @@
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPeerChoiceIgnoresMembershipOrder"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropEveryLossRecorded"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropEveryLossRecorded","Output":"=== RUN   TestPropEveryLossRecorded\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropEveryLossRecorded","Output":"    prop_test.go:192: [rapid] OK, passed 200 tests (85.129432ms)\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropEveryLossRecorded","Output":"--- PASS: TestPropEveryLossRecorded (0.09s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropEveryLossRecorded","Output":"    prop_test.go:230: [rapid] OK, passed 200 tests (101.433843ms)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropEveryLossRecorded","Output":"--- PASS: TestPropEveryLossRecorded (0.10s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropEveryLossRecorded"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropCheckAndSetModel"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropCheckAndSetModel","Output":"=== RUN   TestPropCheckAndSetModel\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropCheckAndSetModel","Output":"    prop_test.go:218: [rapid] OK, passed 200 tests (32.919443ms)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropCheckAndSetModel","Output":"    prop_test.go:256: [rapid] OK, passed 200 tests (31.266463ms)\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropCheckAndSetModel","Output":"--- PASS: TestPropCheckAndSetModel (0.03s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropCheckAndSetModel"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropMergeLaws"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropMergeLaws","Output":"=== RUN   TestPropMergeLaws\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropMergeLaws","Output":"    prop_test.go:359: [rapid] OK, passed 200 tests (26.760336ms)\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropMergeLaws","Output":"--- PASS: TestPropMergeLaws (0.03s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropMergeLaws","Output":"    prop_test.go:397: [rapid] OK, passed 200 tests (34.879561ms)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropMergeLaws","Output":"--- PASS: TestPropMergeLaws (0.04s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropMergeLaws"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropConvergence"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropConvergence","Output":"=== RUN   TestPropConvergence\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropConvergence","Output":"    prop_test.go:368: [rapid] OK, passed 200 tests (71.171339ms)\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropConvergence","Output":"--- PASS: TestPropConvergence (0.07s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropConvergence","Output":"    prop_test.go:406: [rapid] OK, passed 200 tests (82.032049ms)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropConvergence","Output":"--- PASS: TestPropConvergence (0.08s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropConvergence"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropCausalWriteAlwaysWins"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropCausalWriteAlwaysWins","Output":"=== RUN   TestPropCausalWriteAlwaysWins\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropCausalWriteAlwaysWins","Output":"    prop_test.go:435: [rapid] OK, passed 200 tests (31.614555ms)\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropCausalWriteAlwaysWins","Output":"--- PASS: TestPropCausalWriteAlwaysWins (0.03s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropCausalWriteAlwaysWins","Output":"    prop_test.go:473: [rapid] OK, passed 200 tests (67.132212ms)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropCausalWriteAlwaysWins","Output":"--- PASS: TestPropCausalWriteAlwaysWins (0.07s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropCausalWriteAlwaysWins"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropNoDiscardWithoutConcurrency"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropNoDiscardWithoutConcurrency","Output":"=== RUN   TestPropNoDiscardWithoutConcurrency\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropNoDiscardWithoutConcurrency","Output":"    prop_test.go:488: [rapid] OK, passed 200 tests (67.162964ms)\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropNoDiscardWithoutConcurrency","Output":"--- PASS: TestPropNoDiscardWithoutConcurrency (0.07s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropNoDiscardWithoutConcurrency","Output":"    prop_test.go:526: [rapid] OK, passed 200 tests (100.399574ms)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropNoDiscardWithoutConcurrency","Output":"--- PASS: TestPropNoDiscardWithoutConcurrency (0.10s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropNoDiscardWithoutConcurrency"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaCheckAndSet"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaCheckAndSet","Output":"=== RUN   TestQuotaCheckAndSet\n"}
@@ -575,7 +721,7 @@
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaCheckAndSet"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropQuotaNoStaleApply"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropQuotaNoStaleApply","Output":"=== RUN   TestPropQuotaNoStaleApply\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropQuotaNoStaleApply","Output":"    quota_test.go:135: [rapid] OK, passed 200 tests (21.401288ms)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropQuotaNoStaleApply","Output":"    quota_test.go:135: [rapid] OK, passed 200 tests (19.600053ms)\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropQuotaNoStaleApply","Output":"--- PASS: TestPropQuotaNoStaleApply (0.02s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropQuotaNoStaleApply"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestQuotaRecount"}
@@ -774,9 +920,9 @@
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestLWWDiscardCountedAndLogged/the_counter_saturates"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestLWWDiscardCountedAndLogged/the_in-memory_tail_is_bounded"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestLWWDiscardCountedAndLogged/the_in-memory_tail_is_bounded","Output":"=== RUN   TestLWWDiscardCountedAndLogged/the_in-memory_tail_is_bounded\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestLWWDiscardCountedAndLogged/the_in-memory_tail_is_bounded","Output":"--- PASS: TestLWWDiscardCountedAndLogged/the_in-memory_tail_is_bounded (0.00s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestLWWDiscardCountedAndLogged/the_in-memory_tail_is_bounded","Output":"--- PASS: TestLWWDiscardCountedAndLogged/the_in-memory_tail_is_bounded (0.01s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestLWWDiscardCountedAndLogged/the_in-memory_tail_is_bounded"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestLWWDiscardCountedAndLogged","Output":"--- PASS: TestLWWDiscardCountedAndLogged (0.00s)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestLWWDiscardCountedAndLogged","Output":"--- PASS: TestLWWDiscardCountedAndLogged (0.01s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestLWWDiscardCountedAndLogged"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCausalOverwriteIsNotADiscard"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestCausalOverwriteIsNotADiscard","Output":"=== RUN   TestCausalOverwriteIsNotADiscard\n"}
@@ -786,10 +932,6 @@
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestEpochRotatesAtCounterOverflow","Output":"=== RUN   TestEpochRotatesAtCounterOverflow\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestEpochRotatesAtCounterOverflow","Output":"--- PASS: TestEpochRotatesAtCounterOverflow (0.00s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestEpochRotatesAtCounterOverflow"}
-{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDotsAreNeverReused"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDotsAreNeverReused","Output":"=== RUN   TestDotsAreNeverReused\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDotsAreNeverReused","Output":"--- PASS: TestDotsAreNeverReused (0.00s)\n"}
-{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestDotsAreNeverReused"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNewStoreValidates"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNewStoreValidates","Output":"=== RUN   TestNewStoreValidates\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestNewStoreValidates","Output":"--- PASS: TestNewStoreValidates (0.00s)\n"}
@@ -844,6 +986,10 @@
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestFailedPersistLeavesNoTrace/merge_with_a_discard_and_a_far-future_stamp","Output":"=== RUN   TestFailedPersistLeavesNoTrace/merge_with_a_discard_and_a_far-future_stamp\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestFailedPersistLeavesNoTrace/merge_with_a_discard_and_a_far-future_stamp","Output":"--- PASS: TestFailedPersistLeavesNoTrace/merge_with_a_discard_and_a_far-future_stamp (0.00s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestFailedPersistLeavesNoTrace/merge_with_a_discard_and_a_far-future_stamp"}
+{"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestFailedPersistLeavesNoTrace/merge_rejecting_a_concurrent_incoming_loser"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestFailedPersistLeavesNoTrace/merge_rejecting_a_concurrent_incoming_loser","Output":"=== RUN   TestFailedPersistLeavesNoTrace/merge_rejecting_a_concurrent_incoming_loser\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestFailedPersistLeavesNoTrace/merge_rejecting_a_concurrent_incoming_loser","Output":"--- PASS: TestFailedPersistLeavesNoTrace/merge_rejecting_a_concurrent_incoming_loser (0.00s)\n"}
+{"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestFailedPersistLeavesNoTrace/merge_rejecting_a_concurrent_incoming_loser"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestFailedPersistLeavesNoTrace/a_write_that_rotates_the_epoch"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestFailedPersistLeavesNoTrace/a_write_that_rotates_the_epoch","Output":"=== RUN   TestFailedPersistLeavesNoTrace/a_write_that_rotates_the_epoch\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestFailedPersistLeavesNoTrace/a_write_that_rotates_the_epoch","Output":"--- PASS: TestFailedPersistLeavesNoTrace/a_write_that_rotates_the_epoch (0.00s)\n"}
@@ -908,7 +1054,7 @@
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestVersionVectorBasics"}
 {"Action":"run","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropVersionVectorPartialOrder"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropVersionVectorPartialOrder","Output":"=== RUN   TestPropVersionVectorPartialOrder\n"}
-{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropVersionVectorPartialOrder","Output":"    vv_test.go:106: [rapid] OK, passed 200 tests (2.9058ms)\n"}
+{"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropVersionVectorPartialOrder","Output":"    vv_test.go:106: [rapid] OK, passed 200 tests (3.856474ms)\n"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropVersionVectorPartialOrder","Output":"--- PASS: TestPropVersionVectorPartialOrder (0.00s)\n"}
 {"Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Test":"TestPropVersionVectorPartialOrder"}
 {"Action":"output","Package":"github.com/nickstrad/decentralized-object-store/internal/occ","Output":"PASS\n"}

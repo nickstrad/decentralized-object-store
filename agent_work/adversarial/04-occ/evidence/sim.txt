@@ -1,8 +1,8 @@
 HELD C28 peer-permutation-digests: 10 seeds with reversed and duplicated membership lists produced identical event and state digests
 HELD C25 read-errors-and-bitrot: two transient reads kept node unready then restored acknowledged state; bit-rot produced a fresh epoch
-HELD C9,C12,C29,C30 partition-loss-oracle: 40 seeds x 100 operations converged; 3419 acknowledgements and 1054 unique logged losses, with exact counter/log/hook equality
+HELD C9,C12,C29,C30 partition-loss-oracle: 40 seeds x 100 operations converged; 3413 acknowledgements and 1178 unique logged losses, with exact counter/log/hook equality
 HELD C31 same-node-wire-race: two wire clients with one ETag produced one success and one precondition error
-HELD C6,C9,C31 partition-two-writer: 10 seeds accepted both partition-side CAS writes and recorded exactly one losing version per seed
+BROKEN C6,C9,C31 partition-two-writer: seed=4701 seed=4702 missing/excess discard
 HELD C8,C25,C26 crash-wipe-epochs: 20 crash/restart/wipe cycles retained crash state, changed wiped epochs and logged concurrent losses
-HELD C32,C17 quota-partition-measurement: 40 accepted allocations total 1000 bytes at limit 250: overshoot 750 exactly (writers-1)*limit; 5 discard events; recount settled
+HELD C32,C17 quota-partition-measurement: 40 accepted allocations total 1000 bytes at limit 250: overshoot 750 exactly (writers-1)*limit; 7 discard events; recount settled
 HELD C27 malformed-node-wire: six malformed request/datagram pairs rejected without document mutation
