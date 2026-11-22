@@ -14,6 +14,13 @@
       "title": "Reed-Solomon Erasure Coding",
       "file": "chapters/03-reed-solomon-erasure-coding.md",
       "status": "published"
+    },
+    {
+      "n": 6,
+      "slug": "sagas",
+      "title": "Sagas",
+      "file": "chapters/06-sagas.md",
+      "status": "published"
     }
   ],
   "front_matter": []
