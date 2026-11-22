@@ -1,0 +1,574 @@
+package node
+
+import (
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/decentralized-object-store/internal/gossip"
+	"github.com/nickstrad/decentralized-object-store/internal/merkle"
+	"github.com/nickstrad/decentralized-object-store/internal/occ"
+	"github.com/nickstrad/decentralized-object-store/internal/saga"
+	"github.com/nickstrad/decentralized-object-store/internal/storage"
+)
+
+const (
+	DefaultOCCPeriod      = 3 * time.Second
+	DefaultMetaPeriod     = time.Second
+	DefaultMetaDepth      = 3
+	DefaultMaintainPeriod = 500 * time.Millisecond
+	DefaultScrubBatch     = 64
+	DefaultGCGrace        = 10 * time.Minute
+	DefaultRecountSettle  = 3 * time.Second
+	DefaultMaxObjectSize  = 32 << 20
+	DefaultRPCTimeout     = time.Second
+	MaxObjectSizeLimit    = 1 << 30
+	MaxRebuilds           = 8
+	QuotaAttempts         = 5
+	CollectedLogLen       = 4096
+)
+
+type Config struct {
+	Seeds          []env.NodeID
+	Layout         storage.Layout
+	AckQuorum      int
+	RequestTimeout time.Duration
+	Gossip         gossip.Config
+	OCCPeriod      time.Duration
+	MetaPeriod     time.Duration
+	MetaDepth      int
+	MaintainPeriod time.Duration
+	ScrubBatch     int
+	GCGrace        time.Duration
+	RecountSettle  time.Duration
+	MaxObjectSize  int64
+	RPCTimeout     time.Duration
+	SagaPolicy     saga.Policy
+	WrapMigration  func(saga.Definition) saga.Definition
+	ConfigureSaga  func(*saga.Config)
+	Log            func(string)
+	DiscardSink    func(key string, winner, loser occ.Version)
+}
+
+func (c Config) WithDefaults() Config {
+	if c.Layout == (storage.Layout{}) {
+		c.Layout = storage.DefaultLayout()
+	}
+	if c.RequestTimeout == 0 {
+		c.RequestTimeout = storage.DefaultRequestTimeout
+	}
+	if c.OCCPeriod == 0 {
+		c.OCCPeriod = DefaultOCCPeriod
+	}
+	if c.MetaPeriod == 0 {
+		c.MetaPeriod = DefaultMetaPeriod
+	}
+	if c.MetaDepth == 0 {
+		c.MetaDepth = DefaultMetaDepth
+	}
+	if c.MaintainPeriod == 0 {
+		c.MaintainPeriod = DefaultMaintainPeriod
+	}
+	if c.ScrubBatch == 0 {
+		c.ScrubBatch = DefaultScrubBatch
+	}
+	if c.GCGrace == 0 {
+		c.GCGrace = DefaultGCGrace
+	}
+	if c.RecountSettle == 0 {
+		c.RecountSettle = DefaultRecountSettle
+	}
+	if c.MaxObjectSize == 0 {
+		c.MaxObjectSize = DefaultMaxObjectSize
+	}
+	if c.RPCTimeout == 0 {
+		c.RPCTimeout = DefaultRPCTimeout
+	}
+	if c.SagaPolicy == (saga.Policy{}) {
+		c.SagaPolicy = saga.DefaultPolicy()
+	}
+	return c
+}
+
+func (c Config) Validate() error {
+	c = c.WithDefaults()
+	if err := c.Layout.Validate(); err != nil {
+		return fmt.Errorf("node: config: layout: %w: %w", err, ErrConfig)
+	}
+	if ShardRequestSize(c.Layout) > MaxFrame {
+		return fmt.Errorf("node: config: shard request of %d bytes over the %d-byte frame: %w", ShardRequestSize(c.Layout), MaxFrame, ErrConfig)
+	}
+	for _, d := range []time.Duration{c.RequestTimeout, c.OCCPeriod, c.MetaPeriod, c.MaintainPeriod, c.GCGrace, c.RecountSettle, c.RPCTimeout} {
+		if d < 0 {
+			return fmt.Errorf("node: config: negative duration %v: %w", d, ErrConfig)
+		}
+	}
+	if c.MetaDepth < merkle.MinDepth || c.MetaDepth > merkle.MaxDepth {
+		return fmt.Errorf("node: config: merkle depth %d: %w", c.MetaDepth, ErrConfig)
+	}
+	if c.ScrubBatch < 0 {
+		return fmt.Errorf("node: config: scrub batch %d: %w", c.ScrubBatch, ErrConfig)
+	}
+	if c.MaxObjectSize < 0 || c.MaxObjectSize > MaxObjectSizeLimit {
+		return fmt.Errorf("node: config: max object size %d outside [0, %d]: %w", c.MaxObjectSize, MaxObjectSizeLimit, ErrConfig)
+	}
+	if c.AckQuorum != 0 && (c.AckQuorum < c.Layout.K || c.AckQuorum > c.Layout.K+c.Layout.M) {
+		return fmt.Errorf("node: config: ack quorum %d: %w", c.AckQuorum, ErrConfig)
+	}
+	if err := c.SagaPolicy.Validate(); err != nil {
+		return fmt.Errorf("node: config: saga policy: %w: %w", err, ErrConfig)
+	}
+	g := c.Gossip
+	g.Seeds = c.Seeds
+	if err := g.WithDefaults().Validate(); err != nil {
+		return fmt.Errorf("node: config: gossip: %w: %w", err, ErrConfig)
+	}
+	return nil
+}
+
+func ShardRequestSize(l storage.Layout) int {
+	shard := (l.StripeSize + l.K - 1) / max(l.K, 1)
+	return 1 + 1 + 10 + 512 + storage.HeaderSize + shard
+}
+
+type Stats struct {
+	Malformed       uint64
+	Stopped         uint64
+	Puts            uint64
+	PutFailures     uint64
+	Gets            uint64
+	GetFailures     uint64
+	Deletes         uint64
+	Discards        uint64
+	DiscardedObject uint64
+	QuotaDiscards   uint64
+	Recounts        uint64
+	RecountWrites   uint64
+	RecountErrors   uint64
+	UsageErrors     uint64
+	MetaStale       uint64
+	MetaMerged      uint64
+	Scrubbed        uint64
+	ScrubCorrupt    uint64
+	Rebuilds        uint64
+	RebuildFailures uint64
+	RebuiltBytes    uint64
+	Collected       uint64
+	CollectedLoser  uint64
+	Purged          uint64
+	InventoryStart  uint64
+	InventoryStop   uint64
+	SagasEnded      uint64
+	MemberDeaths    uint64
+}
+
+type collectRecord struct {
+	Bucket  string
+	Version storage.VersionID
+	At      env.Time
+	Loser   bool
+}
+
+type Node struct {
+	e      env.Env
+	cfg    Config
+	net    chanNet
+	view   *gossipView
+	gossip *gossip.Node
+	store  *storage.Node
+	scoped map[env.Region]*storage.Node
+	occ    *occ.Node
+	meta   *merkle.Worker
+	engine *saga.Engine
+	mig    *migrator
+
+	started     bool
+	stopped     bool
+	maintTimer  env.Timer
+	inv         map[string]*inventory
+	orphanSince map[string]env.Time
+	losers      map[storage.VersionID]bool
+	recountDue  map[string]env.Time
+	rebuilding  int
+	cache       map[occ.ETag]objectRecord
+	collected   []collectRecord
+	stats       Stats
+}
+
+type failed struct{ err error }
+
+func (f *failed) Start()                                        {}
+func (f *failed) OnDatagram(env.NodeID, []byte)                 {}
+func (f *failed) OnRequest(_ env.NodeID, _ []byte, r env.Reply) { r(nil, f.err) }
+func (f *failed) EncodeState() []byte                           { return []byte(f.err.Error()) }
+func (f *failed) Err() error                                    { return f.err }
+
+func NewFactory(cfg Config) func(env.Env) env.Process {
+	return func(e env.Env) env.Process {
+		n, err := New(e, cfg)
+		if err != nil {
+			return &failed{err: err}
+		}
+		return n
+	}
+}
+
+func New(e env.Env, cfg Config) (*Node, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	if e.Clock == nil || e.Net == nil || e.Disk == nil || e.Rand == nil || e.ID == "" {
+		return nil, fmt.Errorf("node: new %q: incomplete environment: %w", e.ID, ErrConfig)
+	}
+	cfg = cfg.WithDefaults()
+	n := &Node{
+		e: e, cfg: cfg, net: chanNet{net: e.Net, ch: chNode},
+		scoped: map[env.Region]*storage.Node{}, inv: map[string]*inventory{},
+		orphanSince: map[string]env.Time{}, losers: map[storage.VersionID]bool{},
+		recountDue: map[string]env.Time{}, cache: map[occ.ETag]objectRecord{},
+	}
+	n.view = &gossipView{self: e.ID}
+	gcfg := cfg.Gossip
+	gcfg.Seeds = cfg.Seeds
+	g, err := gossip.New(e.WithNet(chanNet{net: e.Net, ch: chGossip}), gcfg)
+	if err != nil {
+		return nil, fmt.Errorf("node: new %s: gossip: %w", e.ID, err)
+	}
+	n.gossip = g
+	n.view.g = g
+	g.Subscribe(n.onMember)
+	st, err := storage.NewNode(e.WithNet(chanNet{net: e.Net, ch: chStorage}), storage.Config{
+		Layout: cfg.Layout, Members: n.view, AckQuorum: cfg.AckQuorum, RequestTimeout: cfg.RequestTimeout,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("node: new %s: storage: %w", e.ID, err)
+	}
+	n.store = st
+	n.occ = occ.NewNode(e.WithNet(chanNet{net: e.Net, ch: chOCC}), occ.Config{
+		Membership: n.view, Period: cfg.OCCPeriod, Log: cfg.Log, OnDiscard: n.onDiscard,
+	})
+	w, err := merkle.NewWorker(e.WithNet(chanNet{net: e.Net, ch: chMeta}), merkle.Config{
+		Depth: cfg.MetaDepth, Period: cfg.MetaPeriod, ScrubBatch: cfg.ScrubBatch,
+	}, n.view, &metaRepairer{n: n})
+	if err != nil {
+		return nil, fmt.Errorf("node: new %s: merkle: %w", e.ID, err)
+	}
+	n.meta = w
+	n.mig = newMigrator(n)
+	def := saga.Migration(n.mig)
+	if cfg.WrapMigration != nil {
+		def = cfg.WrapMigration(def)
+	}
+	scfg := saga.Config{Policy: cfg.SagaPolicy, OnEnd: n.onSagaEnd}
+	if cfg.ConfigureSaga != nil {
+		cfg.ConfigureSaga(&scfg)
+	}
+	eng, err := saga.New(e, scfg, def)
+	if err != nil {
+		return nil, fmt.Errorf("node: new %s: saga: %w", e.ID, err)
+	}
+	n.engine = eng
+	return n, nil
+}
+
+func (n *Node) ID() env.NodeID             { return n.e.ID }
+func (n *Node) Region() env.Region         { return n.e.Region }
+func (n *Node) Gossip() *gossip.Node       { return n.gossip }
+func (n *Node) OCC() *occ.Node             { return n.occ }
+func (n *Node) Storage() *storage.Node     { return n.store }
+func (n *Node) Meta() *merkle.Worker       { return n.meta }
+func (n *Node) Engine() *saga.Engine       { return n.engine }
+func (n *Node) Stats() Stats               { return n.stats }
+func (n *Node) Ready() bool                { return n.started && !n.stopped }
+func (n *Node) Stopped() bool              { return n.stopped }
+func (n *Node) Collected() []collectRecord { return append([]collectRecord(nil), n.collected...) }
+func (n *Node) Inventories() int           { return len(n.inv) }
+func (n *Node) later(fn func())            { n.e.Clock.AfterFunc(0, fn) }
+func (n *Node) logf(f string, a ...any) {
+	if n.cfg.Log != nil {
+		n.cfg.Log(fmt.Sprintf("node %s: ", n.e.ID) + fmt.Sprintf(f, a...))
+	}
+}
+
+func (n *Node) Start() {
+	n.occ.Start()
+	n.gossip.Start()
+	n.ensureStarted()
+	n.maintTimer = n.e.Clock.AfterFunc(n.cfg.MaintainPeriod, n.maintain)
+}
+
+func (n *Node) ensureStarted() {
+	if n.started || n.stopped || !n.occ.Ready() {
+		return
+	}
+	if err := n.meta.Start(); err != nil {
+		n.logf("metadata anti-entropy start: %v", err)
+		return
+	}
+	n.started = true
+	if err := n.engine.Recover(); err != nil {
+		n.logf("saga recovery: %v", err)
+	}
+}
+
+func (n *Node) Stop() {
+	if n.stopped {
+		return
+	}
+	n.stopped = true
+	if err := n.gossip.Leave(); err != nil {
+		n.logf("leave: %v", err)
+	}
+	n.meta.Stop()
+	for _, b := range sortedKeys(n.inv) {
+		delete(n.inv, b)
+		n.stats.InventoryStop++
+	}
+	if n.maintTimer != nil {
+		n.maintTimer.Stop()
+	}
+}
+
+func (n *Node) RunningWorkers() int {
+	c := len(n.inv)
+	if n.started && !n.stopped {
+		c++
+	}
+	return c
+}
+
+func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
+	if n.stopped {
+		n.stats.Stopped++
+		return
+	}
+	if len(msg) == 0 {
+		n.stats.Malformed++
+		return
+	}
+	body := msg[1:]
+	switch msg[0] {
+	case chGossip:
+		n.gossip.OnDatagram(from, body)
+	case chOCC:
+		n.occ.OnDatagram(from, body)
+	case chStorage:
+		n.store.OnDatagram(from, body)
+	default:
+		n.stats.Malformed++
+	}
+}
+
+func (n *Node) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
+	if n.stopped {
+		n.stats.Stopped++
+		reply(nil, fmt.Errorf("node %s: request from %s: %w", n.e.ID, from, ErrStopped))
+		return
+	}
+	if len(req) == 0 {
+		n.stats.Malformed++
+		reply(nil, fmt.Errorf("node %s: empty request from %s: %w", n.e.ID, from, ErrMalformed))
+		return
+	}
+	body := req[1:]
+	switch req[0] {
+	case chGossip:
+		n.gossip.OnRequest(from, body, reply)
+	case chStorage:
+		n.serveStorage(from, body, reply)
+	case chOCC:
+		n.occ.OnRequest(from, body, reply)
+	case chMeta:
+		n.meta.OnRequest(from, body, reply)
+	case chNode:
+		n.serveNode(from, body, reply)
+	default:
+		n.stats.Malformed++
+		reply(nil, fmt.Errorf("node %s: channel %d from %s: %w", n.e.ID, req[0], from, ErrMalformed))
+	}
+}
+
+func (n *Node) EncodeState() []byte {
+	var w wbuf
+	w.bytes(n.gossip.EncodeState())
+	w.bytes(n.store.EncodeState())
+	w.bytes(n.occ.EncodeState())
+	w.bytes(n.meta.EncodeState())
+	w.bytes(n.engine.EncodeState())
+	s := n.stats
+	for _, v := range []uint64{s.Malformed, s.Stopped, s.Puts, s.PutFailures, s.Gets, s.GetFailures, s.Deletes,
+		s.Discards, s.DiscardedObject, s.QuotaDiscards, s.Recounts, s.RecountWrites, s.RecountErrors, s.UsageErrors,
+		s.MetaStale, s.MetaMerged, s.Scrubbed, s.ScrubCorrupt, s.Rebuilds, s.RebuildFailures, s.RebuiltBytes,
+		s.Collected, s.CollectedLoser, s.Purged, s.InventoryStart, s.InventoryStop, s.SagasEnded, s.MemberDeaths} {
+		w.uvarint(v)
+	}
+	if n.started {
+		w.byte(1)
+	} else {
+		w.byte(0)
+	}
+	return w.b
+}
+
+func (n *Node) onMember(ev gossip.Event) {
+	if ev.Kind == gossip.EventDied || ev.Kind == gossip.EventLeft {
+		n.stats.MemberDeaths++
+	}
+}
+
+func (n *Node) onSagaEnd(st saga.Status) {
+	n.stats.SagasEnded++
+	n.logf("saga %s ended %v", st.ID, st.State)
+}
+
+func (n *Node) reader() (occ.Reader, error) {
+	if n.stopped {
+		return occ.Reader{}, fmt.Errorf("node %s: %w", n.e.ID, ErrStopped)
+	}
+	if !n.started {
+		return occ.Reader{}, fmt.Errorf("node %s: %w", n.e.ID, ErrNotReady)
+	}
+	return n.occ.Reader()
+}
+
+func (n *Node) scope(region string) *storage.Node {
+	if region == "" {
+		return n.store
+	}
+	r := env.Region(region)
+	if s, ok := n.scoped[r]; ok {
+		return s
+	}
+	s, err := storage.NewNode(n.e.WithNet(chanNet{net: n.e.Net, ch: chStorage}), storage.Config{
+		Layout: n.cfg.Layout, Members: regionView{v: n.view, region: r}, AckQuorum: n.cfg.AckQuorum, RequestTimeout: n.cfg.RequestTimeout,
+	})
+	if err != nil {
+		return n.store
+	}
+	n.scoped[r] = s
+	return s
+}
+
+func (n *Node) maintain() {
+	if n.stopped {
+		return
+	}
+	n.maintTimer = n.e.Clock.AfterFunc(n.cfg.MaintainPeriod, n.maintain)
+	n.ensureStarted()
+	if !n.started {
+		return
+	}
+	rd, err := n.occ.Reader()
+	if err != nil {
+		return
+	}
+	n.runRecounts()
+	n.runInventories(rd)
+}
+
+func (n *Node) onDiscard(key string, winner, loser occ.Version) {
+	n.stats.Discards++
+	if n.cfg.DiscardSink != nil {
+		n.cfg.DiscardSink(key, winner, loser)
+	}
+	n.later(func() { n.handleDiscard(key, loser) })
+}
+
+func (n *Node) handleDiscard(key string, loser occ.Version) {
+	kind, parts, err := occ.ParseKey(key)
+	if err != nil {
+		return
+	}
+	switch kind {
+	case occ.KindQuota:
+		n.stats.QuotaDiscards++
+		if !canaryNoDiscardRecount {
+			n.recountDue[parts[0]] = n.e.Clock.Now().Add(n.cfg.RecountSettle)
+		}
+	case occ.KindManifest:
+		if loser.Tombstone() {
+			return
+		}
+		rec, err := decodeObject(loser.Value())
+		if err != nil {
+			return
+		}
+		n.stats.DiscardedObject++
+		n.losers[rec.Manifest.Version] = true
+	}
+}
+
+func (n *Node) runRecounts() {
+	now := n.e.Clock.Now()
+	for _, b := range sortedKeys(n.recountDue) {
+		if n.recountDue[b] > now {
+			continue
+		}
+		delete(n.recountDue, b)
+		n.stats.Recounts++
+		_, wrote, err := n.occ.RecountQuota(occ.QuotaKey(b), QuotaAttempts, n.recount)
+		if err != nil {
+			n.stats.RecountErrors++
+			n.recountDue[b] = now.Add(n.cfg.RecountSettle)
+			continue
+		}
+		if wrote {
+			n.stats.RecountWrites++
+		}
+	}
+}
+
+func (n *Node) recount(key string) (occ.Usage, error) {
+	kind, parts, err := occ.ParseKey(key)
+	if err != nil || kind != occ.KindQuota {
+		return occ.Usage{}, fmt.Errorf("node: recount %q: %w", key, ErrMalformed)
+	}
+	rd, err := n.occ.Reader()
+	if err != nil {
+		return occ.Usage{}, err
+	}
+	var u occ.Usage
+	for _, o := range n.liveObjects(rd, parts[0]) {
+		u.Bytes += uint64(o.rec.Manifest.Size)
+		u.Objects++
+	}
+	return u, nil
+}
+
+func (n *Node) usage(bucket string, dBytes, dObjects int64) {
+	if dBytes == 0 && dObjects == 0 {
+		return
+	}
+	if _, err := n.occ.UpdateQuota(occ.QuotaKey(bucket), QuotaAttempts, occ.AddUsage(dBytes, dObjects, occ.Usage{})); err != nil {
+		n.stats.UsageErrors++
+		n.recountDue[bucket] = n.e.Clock.Now().Add(n.cfg.RecountSettle)
+	}
+}
+
+func (n *Node) RecordMeta(key string) {
+	rd, err := n.occ.Reader()
+	if err != nil {
+		return
+	}
+	if b, err := encodeRecord(rd, key); err == nil {
+		if err := n.meta.Record(key, merkle.Sum(b)); err != nil {
+			n.logf("record %q: %v", key, err)
+		}
+	}
+}
+
+func encodeRecord(rd occ.Reader, key string) ([]byte, error) {
+	rec := rd.Record(key)
+	v, ok := rec.Version()
+	if !ok {
+		return nil, fmt.Errorf("node: record %q: %w", key, env.ErrNotFound)
+	}
+	d := occ.NewDoc()
+	d.MergeVersion(key, v)
+	return d.Encode(), nil
+}
+
+func isNotFound(err error) bool {
+	return errors.Is(err, occ.ErrNotFound) || errors.Is(err, env.ErrNotFound) || errors.Is(err, storage.ErrNotFound)
+}
