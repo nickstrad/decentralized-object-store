@@ -1,5 +1,8 @@
 # Chunk 6 build notes — integration: the object store and sync engine
 
+**Repair round:** sections 1–9 describe the first build, corrected in place where the repair changed
+a fact; section 10 is the repair round (each finding, its test, what changed, numbers, requests).
+
 Seat: Opus builder. Branch `chunk/06-integration`. Everything below was run in the `dev`
 container unless it says "host". Numbers marked "500 seeds" come from
 `DST_SEEDS=500 go test ./internal/node -run DST -v` (section 9); others from the default seeds.
@@ -9,18 +12,24 @@ container unless it says "host". Numbers marked "500 seeds" come from
 ### internal/node (new)
 | File | What it is |
 |---|---|
-| `codes.go` | node sentinels (`ErrNotReady`, `ErrStale`, `ErrUnsettled`, `ErrFenced`, `ErrMalformed`, `ErrUnknownSaga`, `ErrFrame`, `ErrStopped`, `ErrNoMigration`, `ErrConfig`, `ErrStaleRequest`) on codes 176–186; `AllCodeEntries` / `CodeTable` join gossip, storage, merkle, occ, saga, the object API and node into one `env.CodeTable` |
+| `codes.go` | node sentinels (`ErrNotReady`, `ErrStale`, `ErrUnsettled`, `ErrFenced`, `ErrMalformed`, `ErrUnknownSaga`, `ErrFrame`, `ErrStopped`, `ErrNoMigration`, `ErrConfig`) on codes 176–185 (`ErrStaleRequest`, 186, removed in the repair); `AllCodeEntries` / `CodeTable` join gossip, storage, merkle, occ, saga, the object API and node into one `env.CodeTable` |
 | `mux.go` | the channel byte that multiplexes one transport between gossip (1), storage shard RPCs (2), OCC (3), metadata Merkle diffs (4) and node RPCs (5); `gossipView` and `regionView`, the adapters from gossip's view to `storage.Membership`, `merkle.Membership`, `occ.Membership` |
 | `node.go` | `Config` (defaults, `Validate`), `Node` (an `env.Process`): construction and wiring, start/stop, inbound dispatch, `EncodeState`, discard handling, quota recount, GC markers, `ShardRequestSize` |
 | `objects.go` | the object/bucket API on the single-threaded node: create bucket, put/get/head/delete/list objects, tags, ACL, quota, migration start/status, members, health; precondition translation; quota pre-check |
-| `records.go` | the node's metadata encodings: object record (content type + storage manifest), bucket record (initial region, quota limits), staged record (migration copy), sorted set (migration registrations); reserved system names (`~bucket`, `~live`, `~reg`, `~retired`, `~claim/<region>`, `~stage/<saga>`, `~gc/<version>`) |
-| `meta.go` | `metaRepairer`, the `merkle.Repairer` over every OCC key (metadata anti-entropy); node RPCs (meta fetch, pointer read, purge); the two DST canary switches |
-| `inventory.go` | per-bucket shard inventory: scrub, expected-vs-actual Merkle comparison, rebuild from k shards, evidence-based garbage collection, inbound shard-RPC hook, purge |
-| `migrate.go` | `migrator`, the real `saga.MigrationOps` |
-| `frame.go` | TCP frame codec (length, version, kind, request id, sender, body / code, message) and the UDP datagram header; `MaxFrame`, `MaxDatagram` |
-| `realenv.go` | wall clock with loop-posted timers (`realTimer`), `fileDisk` |
-| `runtime.go` | `Runtime`: the real environment, the node loop, socket readers, connection handling, outbound requests, start/shutdown |
-| `service.go` | `Runtime` as `storage.Service` (every call posted to the loop, waited with the caller's context), `StatusRows` |
+| `records.go` | the node's metadata encodings: object record (content type + storage manifest), bucket record (initial region, quota limits), staged record (migration copy); reserved system names (`~bucket`, `~live`, `~reg/<saga>`, `~retired`, `~flip`, `~claim/<region>`, `~stage/<saga>`, `~cv/<saga>/<version>`, `~gc/<version>`, `~orphan/<version>/<node>`, object-level `~lost/<version>`) |
+| `meta.go` | `metaRepairer`, the `merkle.Repairer` over every OCC key (metadata anti-entropy); node RPCs (meta fetch, pointer view, purge of a version list); the two DST canary switches |
+| `inventory.go` | per-bucket shard inventory: scrub, expected-vs-actual Merkle comparison, rebuild from k shards, the collection rule of section 10.3 (dead versions, recorded orphans, lost-object declaration), inbound shard-RPC hook (shard deletes refused), purge |
+| `migrate.go` | `migrator`, the real `saga.MigrationOps` (section 10.2 for the repaired protocol) |
+| `status.go` | `StatusRows`, the node's rows of the HTTP status table |
+
+### internal/noderuntime (new in the repair; these files were in internal/node)
+| File | What it is |
+|---|---|
+| `frame.go` | TCP frame codec (length, version, kind, request id, sender, body / code, message) and the UDP datagram header; `MaxFrame` (= `node.MaxFrame`), `MaxDatagram` |
+| `vfs.go` | the small file-system interface under the file disk; `osFS` |
+| `realenv.go` | wall clock with loop-posted timers (`realTimer`), `fileDisk` (section 10.7) |
+| `runtime.go` | `Runtime`: the real environment, the node loop, socket readers, connection handling, outbound requests, off-loop name lookup, panic handling (`Done`, `Err`), start/shutdown |
+| `service.go` | `Runtime` as `storage.Service` (every call posted to the loop; cancellation states of section 10.9), `Inspect` |
 
 ### internal/storage (added files)
 | File | What it is |
@@ -74,6 +83,7 @@ wipe-rejoin) — section 3.3. Not built: re-placing shards of a node that never 
 | TCP acceptor (`accept`) | `Start`, `wg.Go` | listener closed | spawns connection goroutines |
 | connection handler (`serve`) | acceptor, `wg.Go`, at most `MaxConns` (semaphore; excess refused and counted) | after one request/response, deadline `IOTimeout`, `ServeTimeout`, or Shutdown closing all tracked connections | posts the request; waits on a 1-slot reply channel |
 | outbound request (`roundTrip`) | loop (`realNet.Request`), `wg.Go` | reply, deadline, or runtime context (dial and conn are closed by `context.AfterFunc`) | posts the completion |
+| name lookup (`resolve`) | loop (`realNet.Send` to an uncached host name), `wg.Go`, at most one per name | lookup returns, `ResolveTimeout`, or runtime context | posts the address to the cache |
 | timer callbacks | Go runtime (`time.AfterFunc`) | fire once; all stopped after the loop exits | post a generation-checked closure (a stopped timer whose event is already queued never fires) |
 | HTTP server (`storage.Server`) | `Server.Start`, `wg.Go` | `Server.Shutdown` | calls `Runtime` service methods, which post to the loop |
 | signal context (`cmd/objnode`) | `signal.NotifyContext` | `stop()` | cancels `serve` |
@@ -81,6 +91,7 @@ wipe-rejoin) — section 3.3. Not built: re-placing shards of a node that never 
 `Shutdown(ctx)`: mark closed, post `Node.Stop` (gossip `Leave`, merkle `Stop`, inventories dropped,
 maintenance timer stopped) and wait for it within ctx, cancel the runtime context, close UDP, TCP and
 every tracked connection, `wg.Wait()` unconditionally (every goroutine is cancellable), stop all timers.
+A panic on the loop does the cancel and the closes itself and closes `Done()` (section 10.8).
 The second `Close` waits for the first and returns nil; any call after close returns `env.ErrClosed`.
 No protocol state is under a lock: the mutex guards only lifecycle state and the connection set.
 
@@ -120,7 +131,8 @@ actual trees are both empty is stopped (bucket migrated away). Cost: expected tr
 manifests every tick (decoded manifests are cached by record ETag).
 
 ### 3.4 Shard garbage collection: evidence, not absence
-A shard whose version no live or staged manifest references is collected after `GCGrace` only if there
+**Superseded by section 10.3 (the collection rule as repaired: every deletion path and its evidence).**
+The first build's text follows. A shard whose version no live or staged manifest references is collected after `GCGrace` only if there
 is evidence its version is dead: a replicated marker `~gc/<version>` in the bucket's metadata, or the
 node recorded the version as an LWW loser. Markers are written by the node that overwrites or deletes an
 object (for the replaced version), by every node that records a manifest-key discard (for the loser),
@@ -145,6 +157,9 @@ counters (`discards_seen`, `discarded_objects`, `quota_discards`, `recounts`, `r
 No read ever returns two versions (one OCC key per object; no 300, no conflict listing).
 
 ### 3.6 Migration on real components
+**Repaired in section 10.2 (pointer view agreement, copy intents, purge of a named list of dead
+versions, retire after every live peer holds the swap) and 10.5 (per-saga registrations, flip
+owner).** The table below is the first build, corrected where the repair changed it.
 Location = region. Buckets created with `?region=` are routed (`occ.RouteKey`) and their shards are placed
 only in that region; unrouted buckets spread across regions and cannot migrate (`ErrNoMigration`, 400).
 Writes are accepted only when route == live (`~live`); a bucket is not writable between flip and promote.
@@ -152,11 +167,11 @@ Every op runs on the coordinator (no relays other than shard RPCs):
 
 | Step | Op | Real implementation |
 |---|---|---|
-| 0 allocate | Claim / Unclaim | claim `~claim/<to>` (refused `ErrBusy` if another saga holds it), add saga ID to `~reg` / remove both; route must be `From` (else permanent) |
+| 0 allocate | Claim / Unclaim | claim `~claim/<to>` (refused `ErrBusy` if another saga holds it), register `~reg/<saga>` / remove both; route must be `From` (else permanent) |
 | 1 copy | Copy / Discard | for each live object: skip if this saga's staged entry has the current source ETag, else GET from source shards, PUT re-encoded into the target region (new version), write staged record `~stage/<saga>`; drop staged entries of deleted objects; return the target root. Naturally idempotent, no cache: step 4's catch-up is a second real copy. Discard: fence the saga (in memory), wait for its in-flight copy to drain, tombstone its staged entries, purge the target region (keep = live and other sagas' staged versions) |
 | 2 verify | Root | Merkle root (`merkle.Build`) over (object key, SHA-256 of content hash ‖ size): target = this saga's staged entries; source = live manifests; chosen from the saga input, not from the gossip view |
-| 3 flip | Flip | `SetRoute(bucket, to)` (LWW by HLC, not the model's (begin, saga) stamp) |
-| 4 delete-source | Pointer, Seal, Copy, Root, Retire, Promote | Pointer: every live peer's route must reply and agree, and only after the node's membership view has been stable for `ViewSettle` with at least one peer; Seal: `~live` = "" once this saga is the only registrant (`retired=true` if `~retired` names it); Retire: swap each live manifest for its staged copy `IfMatch` the source ETag, tombstone staged entries, purge the source region, write `~retired`, deregister; Promote: `~live` = to, release the claim |
+| 3 flip | Flip | route must be `From`; write `~flip` (saga ID and target), then `SetRoute(bucket, to)` (both LWW by HLC) |
+| 4 delete-source | Pointer, Seal, Copy, Root, Retire, Promote | Pointer: every live peer must reply with the same pointer view (route, flip owner, bucket manifest digest) as the coordinator, after a `ViewSettle` stable view; another flip owner is "superseded"; Seal: `~live` = "" once no other `~reg/*` is live (`retired=true` if `~retired` names it); Retire: swap each live manifest for its staged copy `IfMatch` the source ETag and mark the replaced version dead, mark non-live intents dead, wait for every live peer's pointer view to match, purge the bucket's dead versions, drop intents, write `~retired`, deregister; Promote: `~live` = to, release the claim |
 
 Idempotency keys: claim, registration, discard, seal, retire and promote key on `c.Key.Saga` only; Copy
 has no cache. Fencing: a discarded saga's copy stops before its next staged write and Discard waits for
@@ -172,7 +187,9 @@ re-create a purged shard → re-check. A permanently lost coordinator leaves its
 NodeID = advertised `host:port`; UDP and TCP share the port. One TCP connection per request (no pooling).
 A failure after the request is written is reported as `ErrTimeout` (outcome unknown); a dial failure
 as `ErrUnreachable`. Requests to self are delivered through the loop (errors round-trip the code table
-like remote ones). `MaxFrame` = 16 MiB (= `sim.DefaultMaxMessage`), checked against `merkle.MaxReplyBytes`
+like remote ones). **Disk durability is section 10.7** (temp fsync before rename, ancestor fsync,
+short writes, crash model); the sentence below about the first build's disk is wrong and kept only
+for the record. `MaxFrame` = 16 MiB (= `sim.DefaultMaxMessage`), checked against `merkle.MaxReplyBytes`
 + header and the largest default shard request; `Config.Validate` refuses a layout whose shard request
 would not fit. The file disk writes through `<data>/.tmp/` + rename (visible, not durable), `Sync` fsyncs
 the file and its directory (a deletion is made durable by the directory fsync); a crash therefore loses
@@ -252,7 +269,17 @@ stripe. The six-node profile from Chunk 0a passed flags objnode never had (`-gos
 - Pointer reads require every live peer (in the coordinator's view) to agree: a peer that is up but
   unreachable keeps delete-source retrying until it is declared dead or heals.
 - One TCP connection per request; no connection pooling.
-- `ErrStaleRequest` is registered but no code path returns it yet (reserved for request deduplication).
+- (Repair) `ErrStaleRequest` removed. Strays: a write a non-live peer acknowledged before the flip may
+  live in the old region after a migration (readable; moved by the next migration). Disk I/O runs on
+  the node loop (`env.Disk` is synchronous). A shard collected as an orphan whose write later appears
+  is declared lost with a record (10.3). Tombstones, GC markers, intents' tombstones, orphan and loss
+  records are kept forever: one record per deleted key, per dead version, per copy, per orphan
+  collection; every metadata write re-encodes and fsyncs the whole document, so write cost grows
+  with that history (the CPU profile of the new DSTs is dominated by it, section 10.14).
+- (Repair, from REVIEW-1 finding 11) Pending recounts (`n.recountDue`) and recorded losers (`n.losers`) are in memory; a node that
+  crashes after recording a discard and before its recount drops that recount, and forgets which
+  versions it saw lose (other nodes normally record the same discard; the `~gc/` marker it wrote for
+  the loser is durable).
 
 ### Uncovered branches (internal/node at 86.1% at the gate)
 Disk I/O failures other than "not found" in `occ` persist paths reached through the node; UDP write
@@ -273,6 +300,7 @@ persist fails mid-step (Retire, Promote, discard error returns).
 None (`grep panic( ` over the new code is empty); no allowlist line needed.
 
 ## 7. Requests to the orchestrator
+**Superseded by section 10.12.** The first build's list follows.
 
 1. **Matrix sweep shape (deviation, needs a ruling).** `TestClusterMigrationFailurePointsDST` runs every
    one of the 78 cells on the base seed and then spreads the sweep's seeds across the cells (seed i goes

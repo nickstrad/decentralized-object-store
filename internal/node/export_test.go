@@ -70,6 +70,8 @@ func (n *Node) CopyForTest(c saga.Call, in saga.MigrationInput, done func([]byte
 
 func SetCanaryNoQuotaAudit(v bool) { canaryNoQuotaAudit = v }
 
-func (n *Node) PointerForTest(c saga.Call, bucket string, done func(string, error)) { n.mig.Pointer(c, bucket, done) }
+func (n *Node) PointerForTest(c saga.Call, bucket string, done func(string, error)) {
+	n.mig.Pointer(c, bucket, done)
+}
 
 func FlipKeyForTest(bucket string) string { return bucketKey(bucket, tagFlip) }
