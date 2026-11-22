@@ -181,6 +181,8 @@ type Stats struct {
 	MemberDeaths    uint64
 	GCMarkers       uint64
 	OrphanRecords   uint64
+	AbsentRecords   uint64
+	AbsentRefused   uint64
 	LostDeclared    uint64
 	PurgeRefused    uint64
 	QuotaAudits     uint64
@@ -211,7 +213,7 @@ type Node struct {
 	stopped     bool
 	maintTimer  env.Timer
 	inv         map[string]*inventory
-	orphaned    map[storage.VersionID]map[[2]int]bool
+	absent      map[storage.VersionID]map[[2]int]map[env.NodeID]bool
 	liveRefs    []liveRef
 	losers      map[storage.VersionID]bool
 	purged      map[storage.VersionID]bool
@@ -253,7 +255,7 @@ func New(e env.Env, cfg Config) (*Node, error) {
 	n := &Node{
 		e: e, cfg: cfg, net: chanNet{net: e.Net, ch: chNode},
 		scoped: map[env.Region]*storage.Node{}, inv: map[string]*inventory{},
-		orphaned: map[storage.VersionID]map[[2]int]bool{}, losers: map[storage.VersionID]bool{}, purged: map[storage.VersionID]bool{},
+		absent: map[storage.VersionID]map[[2]int]map[env.NodeID]bool{}, losers: map[storage.VersionID]bool{}, purged: map[storage.VersionID]bool{},
 		recountDue: map[string]env.Time{}, audits: map[string]quotaAudit{}, cache: map[occ.ETag]objectRecord{},
 	}
 	n.view = &gossipView{self: e.ID}
@@ -434,7 +436,7 @@ func (n *Node) EncodeState() []byte {
 		s.Discards, s.DiscardedObject, s.QuotaDiscards, s.Recounts, s.RecountWrites, s.RecountErrors, s.UsageErrors,
 		s.MetaStale, s.MetaMerged, s.Scrubbed, s.ScrubCorrupt, s.Rebuilds, s.RebuildFailures, s.RebuiltBytes,
 		s.Collected, s.CollectedLoser, s.Purged, s.InventoryStart, s.InventoryStop, s.SagasEnded, s.MemberDeaths, s.GCMarkers,
-		s.OrphanRecords, s.LostDeclared, s.PurgeRefused, s.QuotaAudits} {
+		s.OrphanRecords, s.LostDeclared, s.PurgeRefused, s.QuotaAudits, s.AbsentRecords, s.AbsentRefused} {
 		w.uvarint(v)
 	}
 	if n.started {

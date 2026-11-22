@@ -43,7 +43,7 @@ type liveRef struct {
 
 func (n *Node) expectedAll(rd occ.Reader) map[string]map[string]expectedShard {
 	out := map[string]map[string]expectedShard{}
-	n.orphaned = map[storage.VersionID]map[[2]int]bool{}
+	n.absent = map[storage.VersionID]map[[2]int]map[env.NodeID]bool{}
 	n.liveRefs = n.liveRefs[:0]
 	used := map[occ.ETag]objectRecord{}
 	add := func(bucket string, m *storage.Manifest) {
@@ -77,8 +77,10 @@ func (n *Node) expectedAll(rd occ.Reader) map[string]map[string]expectedShard {
 			if err != nil {
 				continue
 			}
-			if strings.HasPrefix(parts[2], tagOrphan) {
-				n.noteOrphan(rd, k, parts[2])
+			if strings.HasPrefix(parts[2], tagAbsent) {
+				if rd.Record(k).Live() {
+					n.noteAbsent(parts[2])
+				}
 				continue
 			}
 			if !strings.HasPrefix(parts[2], tagStage) {
@@ -217,7 +219,7 @@ func (n *Node) checkInventory(rd occ.Reader, inv *inventory, exp map[string]expe
 	for _, d := range res.Diffs {
 		if d.HasLocal && (!d.HasRemote || d.Local != d.Remote) {
 			v := exp[d.Key].man.Version
-			if !inv.rebuilding[d.Key] && n.rebuilding < MaxRebuilds && !n.purged[v] && !n.dead(rd, d.Key) {
+			if !inv.rebuilding[d.Key] && n.rebuilding < MaxRebuilds && !n.purged[v] && !n.dead(rd, d.Key) && !n.statedAbsent(rd, exp[d.Key].man.ShardID(exp[d.Key].stripe, exp[d.Key].idx)) {
 				n.rebuild(inv, d.Key, exp[d.Key])
 			}
 		}
@@ -300,58 +302,88 @@ func orphanValue(id storage.ShardID) []byte {
 	return w.b
 }
 
-func (n *Node) noteOrphan(rd occ.Reader, key, name string) {
-	rest := strings.TrimPrefix(name, tagOrphan)
-	i := strings.IndexByte(rest, '/')
-	if i <= 0 {
-		return
-	}
-	v, err := strconv.ParseUint(rest[:i], 16, 64)
-	if err != nil {
-		return
-	}
-	val, _, err := rd.Get(key)
-	if err != nil {
-		return
-	}
-	r := rbuf{b: val}
-	if r.byte() != recordVersion {
-		return
-	}
-	cnt := r.uvarint()
-	if cnt > uint64(len(val)) {
-		return
-	}
-	set := n.orphaned[storage.VersionID(v)]
-	if set == nil {
-		set = map[[2]int]bool{}
-		n.orphaned[storage.VersionID(v)] = set
-	}
-	for range cnt {
-		st, idx := r.uvarint(), r.uvarint()
-		if r.err != nil {
-			return
-		}
-		set[[2]int{int(st), int(idx)}] = true
-	}
+func absentKey(bucket string, id storage.ShardID, holder env.NodeID) string {
+	return bucketKey(bucket, tagAbsent+id.Version.String()+"/"+strconv.FormatUint(uint64(id.Stripe), 10)+"."+strconv.FormatUint(uint64(id.Index), 10)+"/"+string(holder))
 }
 
-func lostByOrphans(man *storage.Manifest, gone map[[2]int]bool) bool {
-	if len(gone) == 0 {
-		return false
+func (n *Node) noteAbsent(name string) {
+	parts := strings.Split(strings.TrimPrefix(name, tagAbsent), "/")
+	if len(parts) != 3 || parts[2] == "" {
+		return
+	}
+	v, err := strconv.ParseUint(parts[0], 16, 64)
+	if err != nil {
+		return
+	}
+	st, idx, ok := strings.Cut(parts[1], ".")
+	if !ok {
+		return
+	}
+	s, err1 := strconv.ParseUint(st, 10, 32)
+	i, err2 := strconv.ParseUint(idx, 10, 32)
+	if err1 != nil || err2 != nil {
+		return
+	}
+	byShard := n.absent[storage.VersionID(v)]
+	if byShard == nil {
+		byShard = map[[2]int]map[env.NodeID]bool{}
+		n.absent[storage.VersionID(v)] = byShard
+	}
+	key := [2]int{int(s), int(i)}
+	if byShard[key] == nil {
+		byShard[key] = map[env.NodeID]bool{}
+	}
+	byShard[key][env.NodeID(parts[2])] = true
+}
+
+func (n *Node) statedAbsent(rd occ.Reader, id storage.ShardID) bool {
+	return rd.Record(absentKey(id.Bucket, id, n.e.ID)).Live()
+}
+
+func (n *Node) liveVersion(rd occ.Reader, man *storage.Manifest) bool {
+	rec, _, err := n.object(rd, occ.ManifestKey(man.Bucket, man.Key))
+	return err == nil && rec.Manifest.Version == man.Version
+}
+
+func (n *Node) stateAbsent(man *storage.Manifest, stripe, idx int, verifiable int) {
+	id := man.ShardID(stripe, idx)
+	rd, err := n.occ.Reader()
+	if err != nil {
+		return
+	}
+	if n.purged[man.Version] || n.dead(rd, id.BlobName()) || !n.liveVersion(rd, man) || n.statedAbsent(rd, id) {
+		return
+	}
+	if b, err := n.store.Store().GetBlob(id); err == nil && storage.BlobChecksum(b) == man.Stripes[stripe].Shards[idx].Checksum {
+		return
+	}
+	k := absentKey(man.Bucket, id, n.e.ID)
+	if _, err := n.occ.SetScalar(k, orphanValue(id)); err != nil {
+		n.logf("absence record %s: %v", k, err)
+		return
+	}
+	n.RecordMeta(k)
+	n.stats.AbsentRecords++
+	n.logf("shard %s: every holder of stripe %d answered and %d of %d shards verify, need %d; recorded that this holder holds none and will store none", id.BlobName(), stripe, verifiable, len(man.Stripes[stripe].Shards), man.Layout.K)
+}
+
+func (n *Node) unrecoverableStripe(man *storage.Manifest) (int, int, bool) {
+	byShard := n.absent[man.Version]
+	if len(byShard) == 0 {
+		return 0, 0, false
 	}
 	for s := range man.Stripes {
 		c := 0
-		for i := range man.Stripes[s].Shards {
-			if gone[[2]int{s, i}] {
+		for i, ref := range man.Stripes[s].Shards {
+			if byShard[[2]int{s, i}][ref.Node] {
 				c++
 			}
 		}
 		if c > man.Layout.M {
-			return true
+			return s, c, true
 		}
 	}
-	return false
+	return 0, 0, false
 }
 
 func (n *Node) designated() bool {
@@ -364,28 +396,34 @@ func (n *Node) designated() bool {
 }
 
 func (n *Node) declareLost(rd occ.Reader) {
-	if len(n.orphaned) == 0 || !n.designated() {
+	if len(n.absent) == 0 || !n.designated() {
 		return
 	}
 	for _, r := range n.liveRefs {
-		if !lostByOrphans(r.man, n.orphaned[r.man.Version]) {
+		stripe, gone, ok := n.unrecoverableStripe(r.man)
+		if !ok {
 			continue
 		}
 		lk := occ.TagKey(r.man.Bucket, r.man.Key, tagLost+r.man.Version.String())
-		if _, err := n.occ.Delete(r.key, occ.IfMatch(r.etag)); err != nil {
+		held := rd.Record(r.key)
+		tv, err := n.occ.Delete(r.key, occ.IfMatch(r.etag))
+		if err != nil {
 			n.logf("declare %s/%s lost: %v", r.man.Bucket, r.man.Key, err)
 			continue
 		}
+		n.committed(r.key, held, tv)
 		n.RecordMeta(r.key)
-		if _, err := n.occ.SetScalar(lk, []byte("orphan-collected")); err != nil {
+		lheld := rd.Record(lk)
+		if lv, err := n.occ.SetScalar(lk, []byte("unrecoverable")); err != nil {
 			n.logf("loss record %s/%s: %v", r.man.Bucket, r.man.Key, err)
 		} else {
+			n.committed(lk, lheld, lv)
 			n.RecordMeta(lk)
 		}
 		n.markDead(r.man.Bucket, r.man.Version)
 		n.usage(r.man.Bucket, -r.man.Size, -1)
 		n.stats.LostDeclared++
-		n.logf("object %s/%s version %s lost: more than %d shards of a stripe were collected as orphans", r.man.Bucket, r.man.Key, r.man.Version, r.man.Layout.M)
+		n.logf("object %s/%s version %s lost: the holders of %d of the %d shards of stripe %d recorded that they hold none, fewer than k=%d remain", r.man.Bucket, r.man.Key, r.man.Version, gone, len(r.man.Stripes[stripe].Shards), stripe, r.man.Layout.K)
 	}
 }
 
@@ -425,6 +463,13 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 		want[j] = ref.Checksum
 	}
 	pending := 0
+	answered := make([]bool, total)
+	answered[es.idx] = true
+	heard := func(j int, err error) {
+		if err == nil || isNotFound(err) || isCorrupt(err) {
+			answered[j] = true
+		}
+	}
 	finish := func() {
 		delete(inv.rebuilding, name)
 		n.rebuilding--
@@ -435,6 +480,18 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 		data, _, err := storage.DecodeStripe(codec, man.Version, stripe, man.Layout.StripeLen(man.Size, es.stripe), blobs, want)
 		if err != nil {
 			n.stats.RebuildFailures++
+			verifiable := 0
+			for j, b := range blobs {
+				if b == nil {
+					continue
+				}
+				if _, _, derr := storage.DecodeShard(b); derr == nil && storage.BlobChecksum(b) == want[j] {
+					verifiable++
+				}
+			}
+			if verifiable < man.Layout.K && !slices.Contains(answered, false) {
+				n.stateAbsent(man, es.stripe, es.idx, verifiable)
+			}
 			return
 		}
 		enc, err := storage.EncodeStripe(codec, man.Version, stripe, data)
@@ -459,9 +516,11 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 		}
 		id := man.ShardID(es.stripe, j)
 		if ref.Node == n.e.ID {
-			if b, err := n.store.Store().GetBlob(id); err == nil {
+			b, err := n.store.Store().GetBlob(id)
+			if err == nil {
 				blobs[j] = b
 			}
+			heard(j, err)
 			continue
 		}
 		pending++
@@ -469,6 +528,7 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 			if err == nil {
 				blobs[j] = resp
 			}
+			heard(j, err)
 			pending--
 			if pending == 0 {
 				finish()
@@ -490,6 +550,11 @@ func (n *Node) serveStorage(from env.NodeID, body []byte, reply env.Reply) {
 	var sum [32]byte
 	if derr == nil && op == storage.OpPutShard {
 		sum = storage.BlobChecksum(blob)
+		if rd, err := n.occ.Reader(); err == nil && n.statedAbsent(rd, id) {
+			n.stats.AbsentRefused++
+			reply(nil, fmt.Errorf("node %s: put shard %s from %s: this holder recorded that it holds none: %w", n.e.ID, id.BlobName(), from, ErrFenced))
+			return
+		}
 	}
 	n.store.OnRequest(from, body, func(resp []byte, err error) {
 		if err == nil && derr == nil {

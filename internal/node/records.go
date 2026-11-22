@@ -24,6 +24,7 @@ const (
 	tagIntent     = "~cv/"
 	tagOrphan     = "~orphan/"
 	tagLost       = "~lost/"
+	tagAbsent     = "~absent/"
 	maxField      = 1 << 16
 )
 

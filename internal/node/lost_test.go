@@ -2,12 +2,14 @@ package node_test
 
 import (
 	"bytes"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/decentralized-object-store/internal/node"
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
@@ -483,4 +485,53 @@ func TestOneRottedStripeWithinMIsRepairedNotDeclaredLost(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireReadableNotLost(t, orphanRun{h: h, oi: oi, data: data, logs: logs})
+}
+
+func TestAHolderThatRecordedItHoldsNoShardRefusesItLater(t *testing.T) {
+	h, _ := lossHarness(t, 4, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)
+	_, _, man := putEverywhere(t, h, 700)
+	a := h.ids[0]
+	name, ok := holderOf(man, 0, a)
+	if !ok {
+		t.Fatalf("%s holds no shard", a)
+	}
+	sid, err := storage.ParseBlobName(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good, ok := h.s.Disk(a).Peek(name)
+	if !ok {
+		t.Fatal("no shard on disk")
+	}
+	for _, id := range h.ids[:3] {
+		n, ok := holderOf(man, 0, id)
+		if !ok {
+			t.Fatalf("%s holds no shard", id)
+		}
+		if err := h.s.BitRot(id, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stated := func() bool {
+		rd, err := h.node(a).OCC().Reader()
+		return err == nil && rd.Record(node.AbsentKeyForTest(sid, a)).Live()
+	}
+	if err := h.s.RunUntilConverged(h.s.Now().Add(60*time.Second), stated); err != nil {
+		t.Fatalf("%s never recorded that it holds no shard: %v", a, err)
+	}
+	var got error
+	replied := false
+	h.node(a).OnRequest(h.ids[3], append([]byte{2}, storage.EncodeShardRequest(storage.OpPutShard, sid, good)...), func(_ []byte, err error) { got, replied = err, true })
+	if err := h.s.RunUntilConverged(h.s.Now().Add(time.Second), func() bool { return replied }); err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(got, node.ErrFenced) {
+		t.Fatalf("a late shard for a holder that recorded it holds none was answered %v, want ErrFenced", got)
+	}
+	if b, ok := h.s.Disk(a).Peek(name); ok && bytes.Equal(b, good) {
+		t.Fatal("the refused shard is on disk")
+	}
+	if h.node(a).Stats().AbsentRefused == 0 {
+		t.Fatal("the refusal was not counted")
+	}
 }

@@ -706,6 +706,7 @@ func (n *Node) Health() storage.Health {
 		{Name: "meta_rounds", Value: ms.Rounds}, {Name: "meta_repaired", Value: ms.Repaired},
 		{Name: "malformed", Value: s.Malformed}, {Name: "member_deaths", Value: s.MemberDeaths},
 		{Name: "lost_objects", Value: lost}, {Name: "orphan_records", Value: s.OrphanRecords},
+		{Name: "absent_records", Value: s.AbsentRecords}, {Name: "absent_refused", Value: s.AbsentRefused},
 		{Name: "purged_shards", Value: s.Purged}, {Name: "purge_refused", Value: s.PurgeRefused},
 	} {
 		h.Counters = append(h.Counters, c)

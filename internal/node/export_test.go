@@ -1,6 +1,7 @@
 package node
 
 import (
+	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/saga"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
@@ -75,3 +76,7 @@ func (n *Node) PointerForTest(c saga.Call, bucket string, done func(string, erro
 }
 
 func FlipKeyForTest(bucket string) string { return bucketKey(bucket, tagFlip) }
+
+func AbsentKeyForTest(id storage.ShardID, holder env.NodeID) string {
+	return absentKey(id.Bucket, id, holder)
+}
