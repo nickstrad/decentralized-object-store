@@ -9,6 +9,8 @@
 | Erasure coding (`internal/erasure`) | built | 2, 5 |
 | Storage engine (`internal/storage`): shard format, chunk store, striping, manifest, placement, shard request protocol, put and get paths | built | 2, 3, 9 |
 | HTTP object API (`internal/storage`) | target design | 2, 9 |
+| Saga engine (`internal/saga`): orchestrator, log, recovery, retry policy, bucket-migration workflow, step interfaces; model cluster (`internal/saga/sagasim`) | built | 2, 3, 8 |
+| Migration steps on the real storage, Merkle and metadata components | target design | 2, 6, 7, 8 |
 | Everything else | target design | 1–9 |
 
 These diagrams describe the architecture that [PLAN.md](../../PLAN.md) defines. As each
@@ -25,7 +27,7 @@ part lands, its diagrams are checked against the code and updated in the same la
 | 5 | Component | [05-component-erasure.md](05-component-erasure.md) | `internal/erasure`: GF(2^8) arithmetic, matrix inversion, Cauchy coding matrix, Encode, Reconstruct, Verify |
 | 6 | Component | [06-component-merkle.md](06-component-merkle.md) | `internal/merkle`: tree builder, diff protocol, anti-entropy worker, Repairer interface |
 | 7 | Component | [07-component-crdt.md](07-component-crdt.md) | `internal/crdt`: four CRDT types, hybrid logical clock, canonical encoding, metadata document, replicator |
-| 8 | Component | [08-component-saga.md](08-component-saga.md) | `internal/saga`: orchestrator, log, recovery, bucket-migration workflow, step interfaces |
+| 8 | Component | [08-component-saga.md](08-component-saga.md) | `internal/saga`: orchestrator, log, recovery, bucket-migration workflow, step interfaces, model cluster |
 | 9 | Component | [09-component-storage.md](09-component-storage.md) | `internal/storage`: shard format, chunk store, striping, manifest, placement, shard request protocol, put and get paths |
 
 The Container level has two views of the same containers, because one picture of all
@@ -49,14 +51,14 @@ relationships does not stay readable.
 
 ## Validation
 
-Checked on 2026-11-21:
+Checked on 2026-11-22:
 
 | Check | Tool | Result |
 | --- | --- | --- |
 | `model.json` decodes | `decodeArchitecture` from `c4-sdk@0.1.0` (`c4-sdk/core`) | `ok: true`, 0 errors, 0 warnings |
 | Every diagram builds a scene | `buildScene` from `c4-sdk/core`, all 9 diagrams | 9 of 9 succeed |
-| Mermaid blocks parse | `mermaid.parse`, Mermaid 11, all 9 blocks and all 27 sources | all parse |
-| Terminal embeds are current and fit | `render.py --check` with `DRAW_VISUAL_MAX_WIDTH=80` | 27 embeds pass |
+| Mermaid blocks parse | `mermaid.parse`, Mermaid 11, all 9 blocks and all 28 sources | all parse |
+| Terminal embeds are current and fit | `render.py --check` with `DRAW_VISUAL_MAX_WIDTH=80` | 28 embeds pass |
 
 To repeat the checks after a change:
 
