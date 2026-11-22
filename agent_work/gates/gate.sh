@@ -249,7 +249,7 @@ g0_selfcontained() {
 }
 
 # ---- G1 unit + coverage floor
-floor_pkgs='internal/sim internal/gossip internal/erasure internal/storage internal/merkle internal/occ internal/saga internal/node internal/noderuntime'
+floor_pkgs='internal/sim internal/gossip internal/erasure internal/storage internal/merkle internal/occ internal/saga internal/node internal/noderuntime internal/storage/httpapi'
 g1_unit() {
   local rc=0 p line pct
   go test -count=1 -timeout 30m -cover ./... > "$bin/cover.txt" 2>&1 || rc=1
@@ -287,7 +287,7 @@ g3_fuzz() { FUZZ_SECONDS=$fuzz_seconds agent_work/gates/fuzz-short.sh; }
 g4_race() {
   local rc=0 p
   go test -count=1 -timeout 45m -race ./... || rc=1
-  for p in internal/node internal/noderuntime internal/storage cmd/objnode test/e2e; do
+  for p in internal/node internal/noderuntime internal/storage cmd/objnode test/e2e; do # internal/storage/... includes httpapi
     [ -d "$p" ] || continue
     go test -timeout 45m -race -count=3 "./$p/..." || rc=1
   done
