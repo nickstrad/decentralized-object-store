@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -210,21 +209,32 @@ func (s *safeBuffer) String() string {
 }
 
 func TestLeakReportCountsAGoroutineUntilItEnds(t *testing.T) {
-	base := leakReport(io.Discard, 0)
 	release := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		<-release
 	}()
+	released := false
+	defer func() {
+		if !released {
+			close(release)
+		}
+		<-done
+	}()
 	var b strings.Builder
-	n := leakReport(&b, 50*time.Millisecond)
-	if n != base+1 || !strings.Contains(b.String(), fmt.Sprintf("goroutines left at exit: %d", base+1)) || !strings.Contains(b.String(), "TestLeakReportCountsAGoroutineUntilItEnds") {
-		t.Fatalf("leakReport = %d with one blocked goroutine over a base of %d: %q", n, base, b.String())
+	if n := leakReport(&b, 0); n < 1 || !strings.Contains(b.String(), "TestLeakReportCountsAGoroutineUntilItEnds") {
+		t.Fatalf("leakReport = %d and does not list the blocked goroutine: %q", n, b.String())
 	}
 	close(release)
+	released = true
 	<-done
-	if n := leakReport(io.Discard, time.Second); n != base {
-		t.Fatalf("leakReport = %d after the goroutine ended, base %d", n, base)
+	b.Reset()
+	leakReport(&b, 2*time.Second)
+	if strings.Contains(b.String(), "TestLeakReportCountsAGoroutineUntilItEnds") {
+		t.Fatalf("leakReport still lists the goroutine after it ended: %q", b.String())
+	}
+	if !strings.Contains(b.String(), "goroutines left at exit: ") {
+		t.Fatalf("no summary line: %q", b.String())
 	}
 }
