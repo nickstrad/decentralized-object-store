@@ -54,9 +54,19 @@ in `internal/node/helpers_test.go` and `internal/node/oracle_test.go`.
    The notes state that a holder that never returns keeps the key live and unreadable
    (the owner's rule requires an unreachable holder to block the decision); judge whether
    the "Residual limit" paragraph says exactly what the code does — no stronger. The
-   notes also name one path as not closed (a wiped holder plus a writer request still in
-   flight across the wipe): judge whether it is stated accurately and whether it is
-   acceptable as a stated residual or is a MAJOR.
+   notes also name one path as not closed (a holder whose disk is wiped after it wrote
+   an absence record, plus a shard write from the writer held in the network across the
+   wipe; "Residual limit", cases (a) and (b)). An earlier run of this brief built that
+   scenario for case (a): it is now
+   `TestAStaleShardWriteToAWipedHolderOfADeclaredLostVersionIsCollected`, which shows the
+   late shard lands on a version already dead on record and is collected, with the key
+   still lost on record everywhere. A closure that refused shard writes on a node
+   started with empty metadata was built and withdrawn because it refused the first
+   writes of every new cluster. Judge whether cases (a) and (b) are stated exactly, and
+   whether what remains is acceptable as a stated residual (it needs a disk loss on a
+   holder of a stripe already below k AND a request that outlives the holder's restart,
+   which the real TCP runtime cannot deliver) or is a MAJOR; if a MAJOR, say what
+   closure you would accept that does not delay writes on a new cluster.
 4. Did the fix introduce a new BLOCKER or MAJOR elsewhere (wrong behaviour, a determinism
    leak in `internal/node` — no goroutines, locks, wall clock or map-order dependence —
    a weakened or removed test, an edit to the frozen packages `internal/env`,
@@ -83,4 +93,8 @@ service, third-party system or security tooling is involved. Use plain testing
 vocabulary in everything you write — check, scenario, fault, malformed input,
 counterexample. Write the output file EARLY (a placeholder verdict line, then the
 answers as you fill them) so an interrupted run still leaves a usable record; make sure
-the first line is your real verdict before you stop.
+the first line is your real verdict before you stop. An earlier run of this brief was
+stopped by the provider's content filter after about four minutes, with only the
+placeholder written: keep every line you write, including test names, failure messages
+and shell commands, in the plain testing vocabulary above, and write each answer into
+the output file as soon as you have it.
