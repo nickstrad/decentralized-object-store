@@ -251,19 +251,19 @@ HELD C31 http-model-object-bare: seed=0 PUT /b/k header=If-Match value="garbage"
 HELD C31 http-model-object-unclosed: seed=0 PUT /b/k header=If-Match value="\"abc" status=400, mutation matches model
 HELD C31 http-model-object-quotes: seed=0 PUT /b/k header=If-Match value="\"\"\"\"" status=400, mutation matches model
 HELD C31 http-model-object-unknown: seed=0 PUT /b/k header=If-Match value="\"unknown\"" status=412, mutation matches model
-HELD C31 http-model-object-weak: seed=0 PUT /b/k header=If-Match value="W/\"9baa1d7e34788bfda6be32151938031e5944104b39ced1bff831cb18a2f00d73\"" status=412, mutation matches model
+HELD C31 http-model-object-weak: seed=0 PUT /b/k header=If-Match value="W/\"948e01c3617e5fcf460e94870155531eb1b0213b836a5886f197ae03147e84ed\"" status=412, mutation matches model
 HELD C31 http-model-object-star: seed=0 PUT /b/k header=If-Match value="*" status=200, mutation matches model
-HELD C31 http-model-object-match: seed=0 PUT /b/k header=If-Match value="\"d3eb9f9ba2481e581d4be0cfcd6ce7d4f856d357d61e09ded11885f844858721\"" status=200, mutation matches model
-HELD C31 http-model-object-list-match: seed=0 PUT /b/k header=If-Match value="\"unknown\", \"233cf817fd2cc51b7b740cbbeab970a8f785f2494174373f1b7ebeb6c8e1c844\"" status=200, mutation matches model
-HELD C31 http-model-object-quoted-comma-list: seed=0 PUT /b/k header=If-Match value="\"a,b\", \"619ee981af6572a0c477f587942d85c838bff7ac81444f907015fe83261f3cb4\"" status=200, mutation matches model
+HELD C31 http-model-object-match: seed=0 PUT /b/k header=If-Match value="\"24934135fe284d26db3b4a8a2efeeb0535cb6b92582aa51c0725c79f182e62e4\"" status=200, mutation matches model
+HELD C31 http-model-object-list-match: seed=0 PUT /b/k header=If-Match value="\"unknown\", \"0147bf9f9c1c5a632432577f16ff955a34c00bc3649dc4eaf95967a624245c39\"" status=200, mutation matches model
+HELD C31 http-model-object-quoted-comma-list: seed=0 PUT /b/k header=If-Match value="\"a,b\", \"000c8bae7602533e96ce77d23ca6ad2131f7417e2b054d6c49d9eb5a2bab082b\"" status=200, mutation matches model
 HELD C31 http-model-object-list-no-match: seed=0 PUT /b/k header=If-Match value="\"a\", \"b\"" status=412, mutation matches model
-HELD C31 http-model-object-list-weak: seed=0 PUT /b/k header=If-Match value="\"unknown\", W/\"629b1ff932b30cf6fc78ef902f2e689e4b13c04dbde1ace6bae49765253c3796\"" status=412, mutation matches model
-HELD C31 http-model-object-empty-elements: seed=0 PUT /b/k header=If-Match value=", , \"49a46a90def1f3963255a6b1dc8ada8f072a388c8f0fdf7097dea1eb36c326cf\"," status=200, mutation matches model
-HELD C31 http-model-object-star-list: seed=0 PUT /b/k header=If-Match value="*, \"305700569f3c4aaf9cb12e8868d48cbe1f422407341a98c366bb1e569e5c8d5e\"" status=400, mutation matches model
+HELD C31 http-model-object-list-weak: seed=0 PUT /b/k header=If-Match value="\"unknown\", W/\"b40d6484a2354e43ea8b54f1035f7624dbd9103b5cf3e1aaf17ad5c73920a0b3\"" status=412, mutation matches model
+HELD C31 http-model-object-empty-elements: seed=0 PUT /b/k header=If-Match value=", , \"6b14c5b871826e705fbe570ff2b49a248075fa97f28b2aad8acc162d635284e9\"," status=200, mutation matches model
+HELD C31 http-model-object-star-list: seed=0 PUT /b/k header=If-Match value="*, \"f6f9a02278614745894c363559b31d0e6d70e51a2688c357c88127fd4a03eb97\"" status=400, mutation matches model
 HELD C31 http-model-object-none-star: seed=0 PUT /b/k header=If-None-Match value="*" status=412, mutation matches model
 HELD C31 http-model-object-none-empty: seed=0 PUT /b/k header=If-None-Match value="" status=400, mutation matches model
 HELD C31 http-model-object-none-space: seed=0 PUT /b/k header=If-None-Match value=" \t " status=400, mutation matches model
-HELD C31 http-model-object-none-weak: seed=0 PUT /b/k header=If-None-Match value="W/\"f29bb99edf5b0f474faa54a628614200502da6ccb5d257dc9673eb0f136ed837\"" status=400, mutation matches model
+HELD C31 http-model-object-none-weak: seed=0 PUT /b/k header=If-None-Match value="W/\"faf6b77e041fa91088ed824b43af9718d0ecae07ac1257e2fa10143a22906b59\"" status=400, mutation matches model
 HELD C31 http-model-object-none-list: seed=0 PUT /b/k header=If-None-Match value="\"a\", \"b\"" status=400, mutation matches model
 HELD C31 http-model-delete-empty: seed=0 DELETE /b/k header=If-Match value="" status=412, mutation matches model
 HELD C31 http-model-delete-space: seed=0 DELETE /b/k header=If-Match value=" \t " status=412, mutation matches model
@@ -272,19 +272,19 @@ HELD C31 http-model-delete-bare: seed=0 DELETE /b/k header=If-Match value="garba
 HELD C31 http-model-delete-unclosed: seed=0 DELETE /b/k header=If-Match value="\"abc" status=400, mutation matches model
 HELD C31 http-model-delete-quotes: seed=0 DELETE /b/k header=If-Match value="\"\"\"\"" status=400, mutation matches model
 HELD C31 http-model-delete-unknown: seed=0 DELETE /b/k header=If-Match value="\"unknown\"" status=412, mutation matches model
-HELD C31 http-model-delete-weak: seed=0 DELETE /b/k header=If-Match value="W/\"dd59950fac2754a8bbf343a53f403fd037b37a3122339d9ece39742d617fed14\"" status=412, mutation matches model
+HELD C31 http-model-delete-weak: seed=0 DELETE /b/k header=If-Match value="W/\"32be7a463f2c238701dcb70aa5a7eacdfcb45faf706523e754642ee4e7a16466\"" status=412, mutation matches model
 HELD C31 http-model-delete-star: seed=0 DELETE /b/k header=If-Match value="*" status=204, mutation matches model
-HELD C31 http-model-delete-match: seed=0 DELETE /b/k header=If-Match value="\"96ec65e796de910b932253b36f9d569c3625b375e50519264a0f19e4e17c7808\"" status=204, mutation matches model
-HELD C31 http-model-delete-list-match: seed=0 DELETE /b/k header=If-Match value="\"unknown\", \"2f7d965bee91948b3bc8138e6a6a2f49626d7e9291d11b8b453a1daf8856ff36\"" status=204, mutation matches model
-HELD C31 http-model-delete-quoted-comma-list: seed=0 DELETE /b/k header=If-Match value="\"a,b\", \"9e1dd273e02e188cf09d9b1321428133f79b5659ae72f203d28a25c0a6ac4530\"" status=204, mutation matches model
+HELD C31 http-model-delete-match: seed=0 DELETE /b/k header=If-Match value="\"fa490cbfc61dc862babf2f9ec3a46820b056251aef035f5ac9a82439b25166aa\"" status=204, mutation matches model
+HELD C31 http-model-delete-list-match: seed=0 DELETE /b/k header=If-Match value="\"unknown\", \"b44d322820ac0fdb696e079b0797f9fef1ec88ccc9c8acfbc776b96bffa8c804\"" status=204, mutation matches model
+HELD C31 http-model-delete-quoted-comma-list: seed=0 DELETE /b/k header=If-Match value="\"a,b\", \"ae3a610c8507fced9801ec4cb86b69fbc7c21a66196513d5cc483d9d59f95201\"" status=204, mutation matches model
 HELD C31 http-model-delete-list-no-match: seed=0 DELETE /b/k header=If-Match value="\"a\", \"b\"" status=412, mutation matches model
-HELD C31 http-model-delete-list-weak: seed=0 DELETE /b/k header=If-Match value="\"unknown\", W/\"a921294d779551cff37044d14669011714f9d88b966994d68dbcdc3f417ef6d6\"" status=412, mutation matches model
-HELD C31 http-model-delete-empty-elements: seed=0 DELETE /b/k header=If-Match value=", , \"3ebc6b923fb520892fabdc12bba4e2203f7b266c786775588235dcd27c5a28ac\"," status=204, mutation matches model
-HELD C31 http-model-delete-star-list: seed=0 DELETE /b/k header=If-Match value="*, \"8d733ec7e2bd46a8d4437458e806b013bd9461dacb89bb8b91963f77f4288faa\"" status=400, mutation matches model
+HELD C31 http-model-delete-list-weak: seed=0 DELETE /b/k header=If-Match value="\"unknown\", W/\"cc6c0ea0dd1bd6856f0358580153cb8a9e9d7ffd572e5dac0eefd4fdc3323d01\"" status=412, mutation matches model
+HELD C31 http-model-delete-empty-elements: seed=0 DELETE /b/k header=If-Match value=", , \"fd2d1c249b03c31b5fca9997fae57c996a5394f3449cf80eeaae9b030ea247d1\"," status=204, mutation matches model
+HELD C31 http-model-delete-star-list: seed=0 DELETE /b/k header=If-Match value="*, \"c176a4b60109e329d6bdcdcb05daefd31a89758e1dd016f80cc6b73cb57324e5\"" status=400, mutation matches model
 HELD C31 http-model-delete-none-star: seed=0 DELETE /b/k header=If-None-Match value="*" status=412, mutation matches model
 HELD C31 http-model-delete-none-empty: seed=0 DELETE /b/k header=If-None-Match value="" status=400, mutation matches model
 HELD C31 http-model-delete-none-space: seed=0 DELETE /b/k header=If-None-Match value=" \t " status=400, mutation matches model
-HELD C31 http-model-delete-none-weak: seed=0 DELETE /b/k header=If-None-Match value="W/\"4f7f1b1d690d9401bfa3c72a36b11536f485bd27ae96268499a42019d68d85d6\"" status=400, mutation matches model
+HELD C31 http-model-delete-none-weak: seed=0 DELETE /b/k header=If-None-Match value="W/\"1c6e2942a162bde72f9159fceaa9a09b99d45fde2bfd1a658b7b9ca4d967b8e6\"" status=400, mutation matches model
 HELD C31 http-model-delete-none-list: seed=0 DELETE /b/k header=If-None-Match value="\"a\", \"b\"" status=400, mutation matches model
 HELD C31 http-model-tag-empty: seed=0 PUT /b/k?tag=t header=If-Match value="" status=412, mutation matches model
 HELD C31 http-model-tag-space: seed=0 PUT /b/k?tag=t header=If-Match value=" \t " status=412, mutation matches model
@@ -293,19 +293,19 @@ HELD C31 http-model-tag-bare: seed=0 PUT /b/k?tag=t header=If-Match value="garba
 HELD C31 http-model-tag-unclosed: seed=0 PUT /b/k?tag=t header=If-Match value="\"abc" status=400, mutation matches model
 HELD C31 http-model-tag-quotes: seed=0 PUT /b/k?tag=t header=If-Match value="\"\"\"\"" status=400, mutation matches model
 HELD C31 http-model-tag-unknown: seed=0 PUT /b/k?tag=t header=If-Match value="\"unknown\"" status=412, mutation matches model
-HELD C31 http-model-tag-weak: seed=0 PUT /b/k?tag=t header=If-Match value="W/\"48ee9a7fa6c5da479c8e68d5620224bc32c9d6680935a86df591cca5df18db71\"" status=412, mutation matches model
+HELD C31 http-model-tag-weak: seed=0 PUT /b/k?tag=t header=If-Match value="W/\"58ad11761d4eb473cadbff1c855fb6140a13480dd5507eabbed2efa580b87465\"" status=412, mutation matches model
 HELD C31 http-model-tag-star: seed=0 PUT /b/k?tag=t header=If-Match value="*" status=200, mutation matches model
-HELD C31 http-model-tag-match: seed=0 PUT /b/k?tag=t header=If-Match value="\"3f82cecf8dda037a0af0319e564e8111d32f87c800f25233a73ecf2c92ca4fc5\"" status=200, mutation matches model
-HELD C31 http-model-tag-list-match: seed=0 PUT /b/k?tag=t header=If-Match value="\"unknown\", \"59b32488f71090ebba62a68161db165ff72900bae15e5f0ef823034a3d016b82\"" status=200, mutation matches model
-HELD C31 http-model-tag-quoted-comma-list: seed=0 PUT /b/k?tag=t header=If-Match value="\"a,b\", \"7cfe20bea149e0bfe922be1c6d64c9d70a00106e3a10244f8289372f5ba46528\"" status=200, mutation matches model
+HELD C31 http-model-tag-match: seed=0 PUT /b/k?tag=t header=If-Match value="\"6575116ce47a01ed083c2a912f5c4fa8a654d003c45ef419d75359c152128a70\"" status=200, mutation matches model
+HELD C31 http-model-tag-list-match: seed=0 PUT /b/k?tag=t header=If-Match value="\"unknown\", \"9b1f37985d959655547f01ae2d44ef9385627044784dcdfbc23b50bbcc962868\"" status=200, mutation matches model
+HELD C31 http-model-tag-quoted-comma-list: seed=0 PUT /b/k?tag=t header=If-Match value="\"a,b\", \"8b915e481b013996c9b3143e0f545da4255623ff38abffc2ab7a43897a3068d9\"" status=200, mutation matches model
 HELD C31 http-model-tag-list-no-match: seed=0 PUT /b/k?tag=t header=If-Match value="\"a\", \"b\"" status=412, mutation matches model
-HELD C31 http-model-tag-list-weak: seed=0 PUT /b/k?tag=t header=If-Match value="\"unknown\", W/\"53d213e7e9c044c2ce2eb46e8d5a151d5d76a60102a93588580daba21d846d27\"" status=412, mutation matches model
-HELD C31 http-model-tag-empty-elements: seed=0 PUT /b/k?tag=t header=If-Match value=", , \"648f402b3c271679ee64d9aea2c2a0a961c1cf345bf5dc88c8250811f185076c\"," status=200, mutation matches model
-HELD C31 http-model-tag-star-list: seed=0 PUT /b/k?tag=t header=If-Match value="*, \"86129f23e6b713ddccc862c70ebf7b1917490d6d69a34956b5fa6b73c721707a\"" status=400, mutation matches model
+HELD C31 http-model-tag-list-weak: seed=0 PUT /b/k?tag=t header=If-Match value="\"unknown\", W/\"cc17c8534d9c5472b55c9b8d378625e4a060eb42056ac8585bc5ba6b6153bb79\"" status=412, mutation matches model
+HELD C31 http-model-tag-empty-elements: seed=0 PUT /b/k?tag=t header=If-Match value=", , \"8e4783c2bc8195da6a923dcc5b6c29321e8ac34a47730d2e4f11cec568b55247\"," status=200, mutation matches model
+HELD C31 http-model-tag-star-list: seed=0 PUT /b/k?tag=t header=If-Match value="*, \"0938acd13f7e7460e115b882cedbddf1f9623e9740e49e84673965eb9505569f\"" status=400, mutation matches model
 HELD C31 http-model-tag-none-star: seed=0 PUT /b/k?tag=t header=If-None-Match value="*" status=412, mutation matches model
 HELD C31 http-model-tag-none-empty: seed=0 PUT /b/k?tag=t header=If-None-Match value="" status=400, mutation matches model
 HELD C31 http-model-tag-none-space: seed=0 PUT /b/k?tag=t header=If-None-Match value=" \t " status=400, mutation matches model
-HELD C31 http-model-tag-none-weak: seed=0 PUT /b/k?tag=t header=If-None-Match value="W/\"a6c3221be977ab421180253e385c8883cad8f103b10935d57c30f866f9290cf3\"" status=400, mutation matches model
+HELD C31 http-model-tag-none-weak: seed=0 PUT /b/k?tag=t header=If-None-Match value="W/\"75b42021777afe97cb12c13e76f31a189d1ffeba12ef2e40df6699e6b2f5b611\"" status=400, mutation matches model
 HELD C31 http-model-tag-none-list: seed=0 PUT /b/k?tag=t header=If-None-Match value="\"a\", \"b\"" status=400, mutation matches model
 HELD C31 http-model-acl-empty: seed=0 PUT /b?acl=p header=If-Match value="" status=412, mutation matches model
 HELD C31 http-model-acl-space: seed=0 PUT /b?acl=p header=If-Match value=" \t " status=412, mutation matches model
@@ -314,19 +314,19 @@ HELD C31 http-model-acl-bare: seed=0 PUT /b?acl=p header=If-Match value="garbage
 HELD C31 http-model-acl-unclosed: seed=0 PUT /b?acl=p header=If-Match value="\"abc" status=400, mutation matches model
 HELD C31 http-model-acl-quotes: seed=0 PUT /b?acl=p header=If-Match value="\"\"\"\"" status=400, mutation matches model
 HELD C31 http-model-acl-unknown: seed=0 PUT /b?acl=p header=If-Match value="\"unknown\"" status=412, mutation matches model
-HELD C31 http-model-acl-weak: seed=0 PUT /b?acl=p header=If-Match value="W/\"acf2917d00d80df8339c9524e24c58700a0beb8e55f11db99bd09b2ce2f49997\"" status=412, mutation matches model
+HELD C31 http-model-acl-weak: seed=0 PUT /b?acl=p header=If-Match value="W/\"8e5be4a48f969b72384097be2e00eda2b46877a2b18d0ce4bc075b659a644f51\"" status=412, mutation matches model
 HELD C31 http-model-acl-star: seed=0 PUT /b?acl=p header=If-Match value="*" status=200, mutation matches model
-HELD C31 http-model-acl-match: seed=0 PUT /b?acl=p header=If-Match value="\"a4b677f74ccee99a98eb95f2c9a581d4ada4b1b290b2632425d9d63b84e950a3\"" status=200, mutation matches model
-HELD C31 http-model-acl-list-match: seed=0 PUT /b?acl=p header=If-Match value="\"unknown\", \"a09aaf68675529a8b306a4962e43a3286df5a9d4d842811baea3e0744296e82f\"" status=200, mutation matches model
-HELD C31 http-model-acl-quoted-comma-list: seed=0 PUT /b?acl=p header=If-Match value="\"a,b\", \"a2fe1503b260b40dac79598e63a70bfdaad0cdb37c2156553881cf4f0c39864a\"" status=200, mutation matches model
+HELD C31 http-model-acl-match: seed=0 PUT /b?acl=p header=If-Match value="\"536e26be1d6ab7cef8d57f6019b1f1e506f2092d5d13a668a40d75c6dd6f8a63\"" status=200, mutation matches model
+HELD C31 http-model-acl-list-match: seed=0 PUT /b?acl=p header=If-Match value="\"unknown\", \"766c8568252ccd88e2de4d14f16a4db2797a84e3eddf39eaeeacdfd3067b345b\"" status=200, mutation matches model
+HELD C31 http-model-acl-quoted-comma-list: seed=0 PUT /b?acl=p header=If-Match value="\"a,b\", \"51b69c47e7008c3f257990f67db238d511b60fbe423ccf0bdf0e240575859532\"" status=200, mutation matches model
 HELD C31 http-model-acl-list-no-match: seed=0 PUT /b?acl=p header=If-Match value="\"a\", \"b\"" status=412, mutation matches model
-HELD C31 http-model-acl-list-weak: seed=0 PUT /b?acl=p header=If-Match value="\"unknown\", W/\"a3107fb225f2cd0ae5281af0e1abbdb9f89833a14b009ae666096ec923a7d958\"" status=412, mutation matches model
-HELD C31 http-model-acl-empty-elements: seed=0 PUT /b?acl=p header=If-Match value=", , \"3faf47b06e65daa1e94a9d24c964e2b6a8d00a0f3c9778f8e07d2b34a2910ae7\"," status=200, mutation matches model
-HELD C31 http-model-acl-star-list: seed=0 PUT /b?acl=p header=If-Match value="*, \"213381b35ac4d979470474ec3fe8a05d1db0e9a97baa6dfa9c686c3549c0fcf8\"" status=400, mutation matches model
+HELD C31 http-model-acl-list-weak: seed=0 PUT /b?acl=p header=If-Match value="\"unknown\", W/\"1dc64ac02673dc121a2e8e530fd9925706de02eb5aa7a71bc439c7cf9a47b87c\"" status=412, mutation matches model
+HELD C31 http-model-acl-empty-elements: seed=0 PUT /b?acl=p header=If-Match value=", , \"543a1e608ff6d16fc8be6c00009ace7a528a4f24f0313a1fc99050645437ce65\"," status=200, mutation matches model
+HELD C31 http-model-acl-star-list: seed=0 PUT /b?acl=p header=If-Match value="*, \"ce19814b9255b0255c046cea208c8967e55eb68ba1d6c3f9da37e345ddd8f506\"" status=400, mutation matches model
 HELD C31 http-model-acl-none-star: seed=0 PUT /b?acl=p header=If-None-Match value="*" status=412, mutation matches model
 HELD C31 http-model-acl-none-empty: seed=0 PUT /b?acl=p header=If-None-Match value="" status=400, mutation matches model
 HELD C31 http-model-acl-none-space: seed=0 PUT /b?acl=p header=If-None-Match value=" \t " status=400, mutation matches model
-HELD C31 http-model-acl-none-weak: seed=0 PUT /b?acl=p header=If-None-Match value="W/\"e0540fe3de2fafbd91dd5dd9b76d4ef1112835ad499d839c8e9a3ae241884c83\"" status=400, mutation matches model
+HELD C31 http-model-acl-none-weak: seed=0 PUT /b?acl=p header=If-None-Match value="W/\"646ade1b3f72c54c0f5eb904fc423e7eaf8ae1aee908e6b53df6f7f53ffee422\"" status=400, mutation matches model
 HELD C31 http-model-acl-none-list: seed=0 PUT /b?acl=p header=If-None-Match value="\"a\", \"b\"" status=400, mutation matches model
 HELD C23,C22 loop-panic-closes-sockets: seed=0 Inspect panic terminated loop and listener before Close
 HELD C21,C22 shutdown-active-migration: seed=0 shutdown while running step held; Done closed, listener closed, service refuses calls
@@ -660,4 +660,4 @@ HELD C32 supplemental-TestIndependentDiskCrashBoundaries: passed; DST seeds 7401
 HELD C32 supplemental-TestFileDiskCrashLeavesOldOrNewBytes: passed; DST seeds 7401..7420, disk exhaustive operation boundaries; evidence/repair.jsonl
 HELD C29 supplemental-TestMigrationHoldsAWriteAcknowledgedJustBeforeTheFlipDST: passed; DST seeds 7401..7420, disk exhaustive operation boundaries; evidence/repair.jsonl
 HELD C33 supplemental-TestMigrationLateWriteOfAnIsolatedPeerStaysReadableDST: passed; DST seeds 7401..7420, disk exhaustive operation boundaries; evidence/repair.jsonl
-SUMMARY held=662 broken=0 setup_errors=0 elapsed_seconds=377
+SUMMARY held=662 broken=0 setup_errors=0 elapsed_seconds=404
