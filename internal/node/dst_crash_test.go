@@ -158,6 +158,10 @@ func crashRun(res *crashResult) func(seed int64) *sim.Sim {
 			return s
 		}
 		res.converge = s.Now().Sub(heal)
+		if err := s.RunUntilConverged(s.Now().Add(30*time.Second), func() bool { return h.metaConverged() && h.quotaAgrees(crBucket) }); err != nil {
+			s.Fail(fmt.Errorf("usage never matched a recount of the manifests after the heal: %w", err))
+			return s
+		}
 		if err := h.deletedEverywhere(deleted); err != nil {
 			s.Fail(err)
 			res.resurrected = true

@@ -98,6 +98,10 @@ func putGetRun(res *putGetResult) func(seed int64) *sim.Sim {
 			return s
 		}
 		res.converge = s.Now().Sub(heal)
+		if err := s.RunUntilConverged(s.Now().Add(30*time.Second), func() bool { return h.metaConverged() && h.quotaAgrees("pg") }); err != nil {
+			s.Fail(fmt.Errorf("usage never matched a recount of the manifests after the heal: %w", err))
+			return s
+		}
 		end := s.Now()
 		for i, o := range objs {
 			if !o.ok {
