@@ -14,3 +14,5 @@ func ManifestOfRecord(b []byte) (*storage.Manifest, error) {
 	}
 	return r.Manifest, nil
 }
+
+func SetCanaryUntrackedGoroutine(release chan struct{}) { canaryUntrackedGoroutine = release }
