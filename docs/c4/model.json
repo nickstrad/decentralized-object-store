@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "objstore",
   "title": "Decentralized Object Store & Sync Engine — target architecture, as built where landed",
-  "revision": "as-built-simulator-2026-11-21",
+  "revision": "as-built-erasure-2026-11-21",
   "defaultDiagramId": "context",
   "model": {
     "elements": [
@@ -162,9 +162,9 @@
         "parentId": "store",
         "containerType": "application",
         "name": "Storage engine (internal/storage)",
-        "description": "Local chunk store, shard placement, object put and get paths.",
+        "description": "Shard format, local chunk store, striping, manifest, shard placement, and the node that runs the put and get paths and serves shard requests.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -180,7 +180,7 @@
         "name": "Erasure coding (internal/erasure)",
         "description": "GF(2^8) arithmetic and the Reed-Solomon encoder and decoder.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -394,9 +394,9 @@
         "kind": "component",
         "parentId": "c-erasure",
         "name": "GF(2^8) arithmetic",
-        "description": "Field GF(2^8), polynomial 0x11D, generator 2, exp/log tables.",
+        "description": "Field GF(2^8), polynomial 0x11D, generator 2; exp/log tables and a full 256-by-256 multiplication table; MulAddSlice for whole shards.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -409,9 +409,9 @@
         "kind": "component",
         "parentId": "c-erasure",
         "name": "Matrix inversion",
-        "description": "Matrix inversion over GF(2^8).",
+        "description": "Gauss-Jordan matrix inversion over GF(2^8) (Matrix.Invert); a singular matrix is ErrSingular.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -426,7 +426,7 @@
         "name": "Systematic Cauchy coding matrix",
         "description": "Coding matrix [I | C] with C a Cauchy matrix; k + m at most 256.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -439,9 +439,9 @@
         "kind": "component",
         "parentId": "c-erasure",
         "name": "Encode",
-        "description": "Encodes a stripe into k data and m parity shards.",
+        "description": "Codec.Encode: computes the m parity shards from the k data shards. Split cuts a stripe into the k data shards first.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -454,9 +454,9 @@
         "kind": "component",
         "parentId": "c-erasure",
         "name": "Reconstruct",
-        "description": "Rebuilds a stripe from any k shards; more than m losses returns ErrTooFewShards.",
+        "description": "Codec.Reconstruct and ReconstructData: rebuild missing shards from the first k present ones; more than m losses returns ErrTooFewShards. Join puts the data shards back together.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -469,11 +469,13 @@
         "kind": "component",
         "parentId": "c-erasure",
         "name": "Verify",
-        "description": "The Verify operation of the erasure package.",
+        "description": "Codec.Verify: recomputes the parity and reports the first mismatch (ErrParityMismatch). It finds an inconsistent stripe; it does not locate the bad shard.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
-        "plannedNotes": [],
+        "plannedNotes": [
+          "No product code calls Verify yet. The storage engine finds damaged shards by checksum and passes them to Reconstruct as missing."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -741,9 +743,9 @@
         "kind": "component",
         "parentId": "c-storage",
         "name": "Shard file format",
-        "description": "64-byte header plus payload, with per-shard SHA-256.",
+        "description": "64-byte header plus payload. The SHA-256 in the header covers the other header fields and the payload. Canonical blob names.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -756,9 +758,9 @@
         "kind": "component",
         "parentId": "c-storage",
         "name": "Local chunk store",
-        "description": "Chunk store over env.Disk: atomic write, verified read, list, delete.",
+        "description": "Chunk store over env.Disk: write then sync, verified read, list, delete. A returned Put or Delete is durable.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -771,9 +773,9 @@
         "kind": "component",
         "parentId": "c-storage",
         "name": "Object striping",
-        "description": "Fixed-size stripes of 1 MiB of data so multi-MB objects stream.",
+        "description": "Fixed-size stripes (1 MiB of data by default) so multi-MB objects are coded stripe by stripe. Encodes a stripe into shard blobs; verifies shard blobs and decodes a stripe.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -786,9 +788,9 @@
         "kind": "component",
         "parentId": "c-storage",
         "name": "Object manifest",
-        "description": "Per object version: size, content SHA-256, k, m, stripe count, per-shard checksums, node chosen for each shard.",
+        "description": "Per object version: size, content SHA-256, layout (k, m, stripe size), and for each shard of each stripe the node chosen and the blob checksum. Canonical binary encoding.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -801,9 +803,9 @@
         "kind": "component",
         "parentId": "c-storage",
         "name": "Placement",
-        "description": "Region-aware placement by rendezvous hashing over a Membership interface.",
+        "description": "Region-aware placement by rendezvous hashing over a Membership interface declared in this package. Place for a new stripe; Replace for repair.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -815,13 +817,31 @@
         "id": "t-paths",
         "kind": "component",
         "parentId": "c-storage",
-        "name": "Object put and get paths",
-        "description": "PUT succeeds at k+1 durable shard acknowledgements plus a local manifest; GET reads any k verified shards; delete writes a tombstone manifest.",
+        "name": "Object put and get paths (Node)",
+        "description": "storage.Node. PUT succeeds when every stripe has k+1 durable shard acknowledgements and returns the manifest; GET reads any k verified shards per stripe. The same node serves shard put, get and delete requests from its chunk store.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "Default k=4, m=2 and the k+1 write threshold are PLAN.md OQ-15."
+          "Default k=4, m=2 and the k+1 write threshold are PLAN.md OQ-15.",
+          "Not built yet: storing the manifest, and delete as a tombstone manifest. They come with the object API (Chunk 6)."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "t-proto",
+        "kind": "component",
+        "parentId": "c-storage",
+        "name": "Shard request protocol",
+        "description": "Request format between nodes: an op byte (put, get or delete shard), the shard's blob name, and for put the shard blob. Errors return as wire codes 96 to 100.",
+        "technology": "Go",
+        "status": "existing",
+        "tags": [],
+        "plannedNotes": [
+          "Added by the build; PLAN.md does not name it."
         ],
         "docIds": [],
         "sourceIds": [
@@ -836,7 +856,7 @@
         "name": "Environment interfaces (internal/env)",
         "description": "The same package as element c-env, shown as a neighbour in the component views of other packages. The four interfaces protocol code sees: Clock, Rand, Transport, Disk; shared sentinels.",
         "technology": "Go interfaces",
-        "status": "planned",
+        "status": "existing",
         "tags": [
           "external",
           "neighbour"
@@ -853,9 +873,9 @@
         "parentId": "store",
         "containerType": "application",
         "name": "Storage engine (internal/storage)",
-        "description": "The same package as element c-storage, shown as a neighbour in the component views of other packages. Local chunk store, shard placement, object put and get paths.",
+        "description": "The same package as element c-storage, shown as a neighbour in the component views of other packages. Shard format, local chunk store, striping, manifest, shard placement, and the node that runs the put and get paths and serves shard requests.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [
           "external",
           "neighbour"
@@ -971,7 +991,7 @@
         "name": "Erasure coding (internal/erasure)",
         "description": "The same package as element c-erasure, shown as a neighbour in the component views of other packages. GF(2^8) arithmetic and the Reed-Solomon encoder and decoder.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [
           "external",
           "neighbour"
@@ -1161,8 +1181,8 @@
         "id": "k-storage-erasure",
         "sourceId": "c-storage",
         "targetId": "c-erasure",
-        "label": "Encode, Reconstruct, Verify per stripe",
-        "status": "planned",
+        "label": "Encode and Reconstruct per stripe",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1409,7 +1429,7 @@
         "sourceId": "c-storage",
         "targetId": "c-env",
         "label": "Acts only through Clock, Rand, Transport, Disk",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1616,8 +1636,8 @@
         "id": "e-r1",
         "sourceId": "n-storage",
         "targetId": "e-encode",
-        "label": "Encodes each stripe into k data and m parity shards",
-        "status": "planned",
+        "label": "Splits each stripe into k data shards and encodes m parity shards",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1629,21 +1649,8 @@
         "id": "e-r2",
         "sourceId": "n-storage",
         "targetId": "e-reconstruct",
-        "label": "Rebuilds a stripe from any k verified shards",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "e-r3",
-        "sourceId": "n-storage",
-        "targetId": "e-verify",
-        "label": "Calls Verify",
-        "status": "planned",
+        "label": "Rebuilds the data shards of a stripe from any k verified shards (ReconstructData)",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1656,7 +1663,7 @@
         "sourceId": "e-encode",
         "targetId": "e-cauchy",
         "label": "Uses the coding matrix [I | C]",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1668,8 +1675,8 @@
         "id": "e-r5",
         "sourceId": "e-reconstruct",
         "targetId": "e-cauchy",
-        "label": "Takes the rows of the surviving shards",
-        "status": "planned",
+        "label": "Takes the rows of the first k present shards; re-encodes missing parity",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1682,7 +1689,7 @@
         "sourceId": "e-reconstruct",
         "targetId": "e-matrix",
         "label": "Inverts the k-by-k submatrix",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1694,8 +1701,8 @@
         "id": "e-r7",
         "sourceId": "e-verify",
         "targetId": "e-cauchy",
-        "label": "Uses the coding matrix",
-        "status": "planned",
+        "label": "Recomputes each parity shard from the coding matrix",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1707,8 +1714,8 @@
         "id": "e-r8",
         "sourceId": "e-cauchy",
         "targetId": "e-gf",
-        "label": "Field arithmetic",
-        "status": "planned",
+        "label": "Field arithmetic: each Cauchy entry is an inverse",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1721,7 +1728,46 @@
         "sourceId": "e-matrix",
         "targetId": "e-gf",
         "label": "Field arithmetic",
-        "status": "planned",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "e-r10",
+        "sourceId": "e-encode",
+        "targetId": "e-gf",
+        "label": "Multiplies data shards by matrix coefficients (MulAddSlice)",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "e-r11",
+        "sourceId": "e-reconstruct",
+        "targetId": "e-gf",
+        "label": "Multiplies present shards by inverse-matrix coefficients (MulAddSlice)",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "e-r12",
+        "sourceId": "e-verify",
+        "targetId": "e-gf",
+        "label": "Multiplies data shards by matrix coefficients (MulAddSlice)",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2162,8 +2208,8 @@
         "id": "t-r2",
         "sourceId": "t-paths",
         "targetId": "t-stripe",
-        "label": "Cuts objects into 1 MiB stripes",
-        "status": "planned",
+        "label": "Cuts objects into stripes; encodes and decodes each stripe",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2175,8 +2221,8 @@
         "id": "t-r3",
         "sourceId": "t-stripe",
         "targetId": "n-erasure",
-        "label": "Encode and Reconstruct per stripe",
-        "status": "planned",
+        "label": "Split, Encode, ReconstructData and Join per stripe",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2188,8 +2234,8 @@
         "id": "t-r4",
         "sourceId": "t-paths",
         "targetId": "t-place",
-        "label": "Chooses a node for each shard",
-        "status": "planned",
+        "label": "Chooses a node for each shard of a stripe",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2203,7 +2249,9 @@
         "targetId": "n-gossip",
         "label": "Rendezvous hashing over Membership; at most m shards of a stripe per region",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "Placement is built over the Membership interface with a static member list. Gossip supplies the live view when it lands."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2214,8 +2262,8 @@
         "id": "t-r6",
         "sourceId": "t-paths",
         "targetId": "t-chunk",
-        "label": "Stores and reads local shards",
-        "status": "planned",
+        "label": "Serves shard put, get and delete requests from the local store",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2227,9 +2275,9 @@
         "id": "t-r7",
         "sourceId": "t-paths",
         "targetId": "n-env",
-        "label": "Sends shards to peers and fetches shards from peers",
-        "technology": "Transport",
-        "status": "planned",
+        "label": "Sends shards to peers and fetches shards from peers (Transport); zero-delay callbacks and retry backoff (Clock); version IDs (Rand)",
+        "technology": "Transport, Clock, Rand",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2240,8 +2288,8 @@
         "id": "t-r8",
         "sourceId": "t-chunk",
         "targetId": "t-format",
-        "label": "Header plus payload; SHA-256 verified on every read",
-        "status": "planned",
+        "label": "Header plus payload; SHA-256 verified on every write and read",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2253,9 +2301,9 @@
         "id": "t-r9",
         "sourceId": "t-chunk",
         "targetId": "n-env",
-        "label": "Atomic write, verified read, list, delete",
+        "label": "Write then sync, verified read, list, delete",
         "technology": "Disk",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2266,9 +2314,11 @@
         "id": "t-r10",
         "sourceId": "t-paths",
         "targetId": "t-manifest",
-        "label": "Writes the manifest; tombstone manifest on delete",
-        "status": "planned",
-        "plannedNotes": [],
+        "label": "PUT fills in and returns the manifest; GET takes each shard's node and checksum from it",
+        "status": "existing",
+        "plannedNotes": [
+          "Not built yet: storing the manifest, and the tombstone manifest on delete (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2294,6 +2344,45 @@
         "targetId": "t-chunk",
         "label": "Repairs rotted or missing shards (Repairer)",
         "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r13",
+        "sourceId": "t-stripe",
+        "targetId": "t-format",
+        "label": "Wraps each shard in a header on encode; checks header and checksum on decode",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r14",
+        "sourceId": "t-paths",
+        "targetId": "t-proto",
+        "label": "Encodes requests to peers; decodes requests it serves",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r15",
+        "sourceId": "t-proto",
+        "targetId": "t-format",
+        "label": "Names the shard by its canonical blob name",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2425,11 +2514,11 @@
       "id": "container",
       "kind": "container",
       "scopeId": "store",
-      "status": "planned",
+      "status": "mixed",
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, domain view — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "title": "Container, domain view — as built for erasure coding and the storage engine; the rest is the target design",
       "nodes": [
         {
           "elementId": "api-client"
@@ -2590,7 +2679,7 @@
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, runtime and environment view — as built for the simulator and the environment interfaces; the rest is the target design",
+      "title": "Container, runtime and environment view — as built for the simulator, the environment interfaces and the storage engine; the rest is the target design",
       "nodes": [
         {
           "elementId": "operator"
@@ -2758,7 +2847,7 @@
       "id": "component-gossip",
       "kind": "component",
       "scopeId": "c-gossip",
-      "status": "planned",
+      "status": "mixed",
       "parent": {
         "diagramId": "container"
       },
@@ -2918,11 +3007,11 @@
       "id": "component-erasure",
       "kind": "component",
       "scopeId": "c-erasure",
-      "status": "planned",
+      "status": "existing",
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, erasure — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "title": "Component, erasure — as built",
       "nodes": [
         {
           "elementId": "n-storage",
@@ -2965,9 +3054,6 @@
           "relationshipId": "e-r2"
         },
         {
-          "relationshipId": "e-r3"
-        },
-        {
           "relationshipId": "e-r4"
         },
         {
@@ -2984,6 +3070,15 @@
         },
         {
           "relationshipId": "e-r9"
+        },
+        {
+          "relationshipId": "e-r10"
+        },
+        {
+          "relationshipId": "e-r11"
+        },
+        {
+          "relationshipId": "e-r12"
         }
       ],
       "legend": {
@@ -3045,7 +3140,7 @@
       "id": "component-merkle",
       "kind": "component",
       "scopeId": "c-merkle",
-      "status": "planned",
+      "status": "mixed",
       "parent": {
         "diagramId": "container"
       },
@@ -3187,7 +3282,7 @@
       "id": "component-crdt",
       "kind": "component",
       "scopeId": "c-crdt",
-      "status": "planned",
+      "status": "mixed",
       "parent": {
         "diagramId": "container"
       },
@@ -3380,7 +3475,7 @@
       "id": "component-saga",
       "kind": "component",
       "scopeId": "c-saga",
-      "status": "planned",
+      "status": "mixed",
       "parent": {
         "diagramId": "container"
       },
@@ -3558,11 +3653,11 @@
       "id": "component-storage",
       "kind": "component",
       "scopeId": "c-storage",
-      "status": "planned",
+      "status": "mixed",
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, storage — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "title": "Component, storage — as built for the chunk store, striping, manifest, placement and the node; the object API and the links to gossip, CRDT and Merkle are the target design",
       "nodes": [
         {
           "elementId": "n-api",
@@ -3591,6 +3686,9 @@
         },
         {
           "elementId": "t-format"
+        },
+        {
+          "elementId": "t-proto"
         },
         {
           "elementId": "n-erasure",
@@ -3695,6 +3793,15 @@
         },
         {
           "relationshipId": "t-r12"
+        },
+        {
+          "relationshipId": "t-r13"
+        },
+        {
+          "relationshipId": "t-r14"
+        },
+        {
+          "relationshipId": "t-r15"
         }
       ],
       "legend": {
@@ -3703,7 +3810,7 @@
           {
             "id": "box",
             "label": "Component",
-            "description": "A part of the package that PLAN.md names",
+            "description": "A part of the package that PLAN.md names, or one the build added",
             "swatch": {
               "shape": "box",
               "tone": "default",

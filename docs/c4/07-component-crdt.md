@@ -2,6 +2,8 @@
 
 **TARGET architecture — designed 2026-11-21, awaiting Nick's buy-in.**
 
+Of the neighbours drawn here, the Storage engine and `internal/env` are built; this package and its relationships are the target design.
+
 Model: diagram `component-crdt` in [model.json](model.json). Source: PLAN.md sections 3, 4.2 (Chunk 4), 7.2, 7.5.
 
 ```mermaid

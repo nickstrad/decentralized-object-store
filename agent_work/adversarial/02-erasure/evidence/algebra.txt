@@ -1,0 +1,9 @@
+HELD C1,C2,C3 field-oracle: 65536 products/divisions, 256 inverses and 2048 signed exponents match polynomial oracle
+HELD C3 field-laws-slices: 20000 triples plus unequal-length multiply-add buffers agree
+HELD C4 matrix-hostile-copy: row swaps, two-sided inverses, ownership and malformed matrices checked
+HELD C5,C7 differential-encode: 1320 encodings and 220 matrices exactly match independent Cauchy implementation
+HELD C6,C9,C10 exhaustive-loss-sets: 1922 masks including all over-budget masks checked against independent decoder
+HELD C6,C8,C9 field-limit: 48 random exact-m-loss patterns across six n=256 layouts; ordinary invalid boundaries rejected
+HELD C9,C11 sizes-and-hostile-shards: boundary and 3-MiB payloads recover; four APIs reject hostile shapes without panic
+HELD C6,C9,C10 random-loss-differential: 300 independently seeded midrange layouts and partial loss sets match augmented-elimination oracle
+HELD C11 codec-sentinels: parity mismatch, unequal lengths, invalid Join sizes and counts return package sentinels

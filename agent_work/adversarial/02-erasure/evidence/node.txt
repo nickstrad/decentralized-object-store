@@ -1,0 +1,11 @@
+HELD C21 node-clean-boundaries: 480 GETs from all 20 nodes over eight sizes and three windows; exact bytes, k requests, durable manifests
+HELD C22,C24,C27,C28 node-fault-rot: 72 GETs across 12 seeds and two/three damaged shards per stripe satisfy recovery/error boundary and retry bounds
+HELD C22,C24,C27,C28 node-fault-wipe: 72 GETs across 12 seeds and two/three damaged shards per stripe satisfy recovery/error boundary and retry bounds
+HELD C22,C24,C27,C28 node-fault-read-once: 72 GETs across 12 seeds and two/three damaged shards per stripe satisfy recovery/error boundary and retry bounds
+HELD C22,C24,C27,C28 node-fault-read-persistent: 72 GETs across 12 seeds and two/three damaged shards per stripe satisfy recovery/error boundary and retry bounds
+HELD C23 quorum-and-slow-holder: one paused/crashed holder succeeds before timeout; two fail with one callback
+HELD C25 content-hash-and-forged-manifest: empty/nonempty wrong hashes and all rechecksummed forged shards rejected by end-to-end content hash
+HELD C27,C28 region-loss-and-wipes: 20 schedules across ten seeds recover exact bytes after complete region disk wipe or partition
+HELD C30 multimb-memory: 8MiB+17 bytes round-trip; total allocations=120176568 bytes below 1GiB diagnostic ceiling (whole-object GET is documented)
+BROKEN C30 window-pending-stripes: seed=220211 Window=1, k=4,m=2,stripe=4,pause n005: pending stripes at PUT ack=[2 8 64] for 2/8/64 stripes; smallest reproduction is 5 bytes, seed=220211
+HELD C27 scheduled-fault-replay: ten concurrent GETs amid 34 scheduled rotations replay exactly: events=43844640c8683c7c5293142aceb9748c416bb28089a766f283722880b1659c23

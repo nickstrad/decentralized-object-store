@@ -1,0 +1,43 @@
+HELD C1,C2,C3 field-oracle: 65536 products/divisions, 256 inverses and 2048 signed exponents match polynomial oracle
+HELD C3 field-laws-slices: 20000 triples plus unequal-length multiply-add buffers agree
+HELD C4 matrix-hostile-copy: row swaps, two-sided inverses, ownership and malformed matrices checked
+HELD C5,C7 differential-encode: 1320 encodings and 220 matrices exactly match independent Cauchy implementation
+HELD C6,C9,C10 exhaustive-loss-sets: 1922 masks including all over-budget masks checked against independent decoder
+HELD C6,C8,C9 field-limit: 48 random exact-m-loss patterns across six n=256 layouts; ordinary invalid boundaries rejected
+HELD C9,C11 sizes-and-hostile-shards: boundary and 3-MiB payloads recover; four APIs reject hostile shapes without panic
+HELD C6,C9,C10 random-loss-differential: 300 independently seeded midrange layouts and partial loss sets match augmented-elimination oracle
+HELD C11 codec-sentinels: parity mismatch, unequal lengths, invalid Join sizes and counts return package sentinels
+HELD C12,C13,C14 shard-flip: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-truncate: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-extend: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-index: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-stripe: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-version: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-forge: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-code: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C12,C13,C14 shard-length: one/two damaged shards recovered and reported; three rejected, including self-consistent headers
+HELD C14 shard-parser-mutations: every bit-position byte flip and truncation rejected; 10000 random inputs are total and canonical
+HELD C15,C16 store-model: 1000 modeled operations, all keys and durable bytes checked after each step, then crash
+HELD C15 store-identity-and-isolation: 60 version/bucket namespaces isolated, misnamed writes rejected, wipe exposes joined not-found
+HELD C20 manifest-canonical: six shapes round-trip; every truncation, trailing byte and nonminimal bucket varint rejected
+HELD C20 manifest-hostile-numbers: 20000 magic-prefixed random manifests with oversized varints processed without panic
+HELD C26 wire-and-object-errors: all five sentinels survive direct/wrapped/joined code mapping and ObjectError; all request ops round-trip
+HELD C17 region-cap-adversarial: 4000 placements across eight balanced/skewed region layouts meet independent feasible cap and order invariance
+HELD C18 placement-load: 3000 stripes on 7/7/6 nodes: min=812 max=1043 within published [700,1100]
+HELD C19 replace-churn: 1000 holder removals replace exactly one slot; additions and nonholder changes retain every slot
+HELD C17,C19 replace-cap-shrink: 1000 transitions from two to three regions move exactly two necessary shards
+HELD C17 placement-invalid: empty/short/duplicate/empty-ID memberships and invalid counts rejected; nil membership known review finding skipped
+HELD C19 place-churn-sets: up to 1500 raw Place deletions across three region shapes move only the necessary holder set at unchanged cap
+HELD C21 node-clean-boundaries: 480 GETs from all 20 nodes over eight sizes and three windows; exact bytes, k requests, durable manifests
+HELD C22,C24,C27,C28 node-fault-rot: 72 GETs across 12 seeds and two/three damaged shards per stripe satisfy recovery/error boundary and retry bounds
+HELD C22,C24,C27,C28 node-fault-wipe: 72 GETs across 12 seeds and two/three damaged shards per stripe satisfy recovery/error boundary and retry bounds
+HELD C22,C24,C27,C28 node-fault-read-once: 72 GETs across 12 seeds and two/three damaged shards per stripe satisfy recovery/error boundary and retry bounds
+HELD C22,C24,C27,C28 node-fault-read-persistent: 72 GETs across 12 seeds and two/three damaged shards per stripe satisfy recovery/error boundary and retry bounds
+HELD C23 quorum-and-slow-holder: one paused/crashed holder succeeds before timeout; two fail with one callback
+HELD C25 content-hash-and-forged-manifest: empty/nonempty wrong hashes and all rechecksummed forged shards rejected by end-to-end content hash
+HELD C27,C28 region-loss-and-wipes: 20 schedules across ten seeds recover exact bytes after complete region disk wipe or partition
+HELD C30 multimb-memory: 8MiB+17 bytes round-trip; total allocations=120176568 bytes below 1GiB diagnostic ceiling (whole-object GET is documented)
+BROKEN C30 window-pending-stripes: seed=220211 Window=1, k=4,m=2,stripe=4,pause n005: pending stripes at PUT ack=[2 8 64] for 2/8/64 stripes; smallest reproduction is 5 bytes, seed=220211
+HELD C27 scheduled-fault-replay: ten concurrent GETs amid 34 scheduled rotations replay exactly: events=43844640c8683c7c5293142aceb9748c416bb28089a766f283722880b1659c23
+HELD C29 checksum-canaries: Both existing test-only checksum-disabled canaries execute and detect their planted faults.
+SUMMARY held=41 broken=1 setup_errors=0 elapsed_seconds=23

@@ -1,0 +1,6 @@
+HELD C17 region-cap-adversarial: 4000 placements across eight balanced/skewed region layouts meet independent feasible cap and order invariance
+HELD C18 placement-load: 3000 stripes on 7/7/6 nodes: min=812 max=1043 within published [700,1100]
+HELD C19 replace-churn: 1000 holder removals replace exactly one slot; additions and nonholder changes retain every slot
+HELD C17,C19 replace-cap-shrink: 1000 transitions from two to three regions move exactly two necessary shards
+HELD C17 placement-invalid: empty/short/duplicate/empty-ID memberships and invalid counts rejected; nil membership known review finding skipped
+HELD C19 place-churn-sets: up to 1500 raw Place deletions across three region shapes move only the necessary holder set at unchanged cap

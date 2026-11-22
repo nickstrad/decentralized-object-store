@@ -1,6 +1,6 @@
 # C4 Level 2 — Container, domain view
 
-**TARGET architecture — designed 2026-11-21, awaiting Nick's buy-in.**
+**Partly as built.** Erasure coding (`internal/erasure`) and the Storage engine (`internal/storage`: shard format, chunk store, striping, manifest, placement, put and get paths) exist, and relationship 8 matches the code. The Object API, the other containers and the other relationships are the target design.
 
 Model: diagram `container` in [model.json](model.json). Source: PLAN.md sections 3, 4.2, 7.2, 7.4, 7.5, 7.8.
 Containers are Go packages inside one `objnode` process. The runtime and environment
@@ -130,7 +130,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 5 | Object API | CRDT metadata | Tags, ACL, quota, metadata; metadata sync endpoint |
 | 6 | Object API | Saga engine | Migration start and status |
 | 7 | Object API | Gossip membership | Membership and health |
-| 8 | Storage engine | Erasure coding | Encode, Reconstruct, Verify per stripe |
+| 8 | Storage engine | Erasure coding | Encode and Reconstruct per stripe |
 | 9 | Storage engine | Gossip membership | Places shards by rendezvous hashing over the Membership view |
 | 10 | Storage engine | CRDT metadata | Stores each object manifest as an LWW-Register value |
 | 11 | Merkle anti-entropy | Storage engine | Diffs manifest and shard-inventory trees; repairs through the Repairer interface |
