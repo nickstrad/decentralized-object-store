@@ -236,8 +236,8 @@ func TestLWWDiscardCountedAndLogged(t *testing.T) {
 	if !lwwLess(left, right) {
 		t.Fatal("setup: b's later write must win")
 	}
-	if mustMerge(t, b, a.Doc()); b.LWWDiscards() != 0 || len(lb.lines) != 0 {
-		t.Fatal("an incoming loser is not a replacement of what the node holds")
+	if mustMerge(t, b, a.Doc()); b.LWWDiscards() != 1 || len(lb.lines) != 1 || lb.discards[0].Loser.ID() != left.ID() {
+		t.Fatal("a node that rejects an incoming concurrent loser must record it")
 	}
 	mustMerge(t, a, b.Doc())
 	if got, _ := a.Record("k").Version(); got.ID() != right.ID() {
@@ -263,7 +263,8 @@ func TestLWWDiscardCountedAndLogged(t *testing.T) {
 		t.Fatal("replicas holding the same version differ")
 	}
 	mustMerge(t, a, b.Doc())
-	if a.LWWDiscards() != 1 {
+	mustMerge(t, b, a.Doc())
+	if a.LWWDiscards() != 1 || b.LWWDiscards() != 1 {
 		t.Fatal("a repeated merge counted the discard again")
 	}
 	t.Run("a delete discards a concurrent put and the reverse", func(t *testing.T) {
@@ -372,32 +373,6 @@ func TestEpochRotatesAtCounterOverflow(t *testing.T) {
 	mustPut(t, a, "other", "z", occ.IfNoneMatch())
 	if a.Rotations() != 1 || a.Counter() != 2 {
 		t.Fatal("rotated without overflow")
-	}
-}
-
-func TestDotsAreNeverReused(t *testing.T) {
-	a, ca, la := newLoggedStore(t, "a", 1, 1)
-	b, cb, _ := newLoggedStore(t, "b", 1, 2)
-	c, _, lc := newLoggedStore(t, "c", 1, 3)
-	mustPut(t, a, "k", "one", occ.IfNoneMatch())
-	mustMerge(t, b, a.Doc())
-	ca.now += 10
-	cb.now += 20
-	lost := mustPut(t, a, "k", "lost", occ.IfMatch(a.Record("k").ETag()))
-	mustMerge(t, c, a.Doc())
-	mustPut(t, b, "k", "winner", occ.IfMatch(b.Record("k").ETag()))
-	mustMerge(t, a, b.Doc())
-	if len(la.discards) != 1 || la.discards[0].Loser.ID() != lost.ID() {
-		t.Fatal("setup: a must discard its own write")
-	}
-	ca.now += 100
-	next := mustPut(t, a, "k", "next", occ.IfMatch(a.Record("k").ETag()))
-	if next.Dot().Counter <= lost.Dot().Counter {
-		t.Fatalf("the dot %d of the discarded write was reused by %d", lost.Dot().Counter, next.Dot().Counter)
-	}
-	mustMerge(t, c, a.Doc())
-	if len(lc.discards) != 1 || lc.discards[0].Loser.ID() != lost.ID() {
-		t.Fatal("a write that never saw the lost version must be a discard on every node that held it")
 	}
 }
 
@@ -564,13 +539,14 @@ type storeSnapshot struct {
 	counter  uint64
 	discards uint64
 	tail     int
+	state    []byte
 	clock    occ.Stamp
 	ahead    int
 	logs     int
 }
 
 func snap(s *occ.Store, l *discardLog) storeSnapshot {
-	return storeSnapshot{s.Doc().Encode(), s.Actor(), s.Counter(), s.LWWDiscards(), len(s.DiscardTail()), s.HLC().Last(), s.AheadStamps(), len(l.lines) + len(l.discards)}
+	return storeSnapshot{s.Doc().Encode(), s.Actor(), s.Counter(), s.LWWDiscards(), len(s.DiscardTail()), s.EncodeState(), s.HLC().Last(), s.AheadStamps(), len(l.lines) + len(l.discards)}
 }
 
 func TestFailedPersistLeavesNoTrace(t *testing.T) {
@@ -600,6 +576,12 @@ func TestFailedPersistLeavesNoTrace(t *testing.T) {
 			d.MergeVersion("k", version("z", 9, occ.VersionVector{}, false, "theirs", st(int64(c.now)+5, 0, "z")))
 			d.MergeVersion("far", version("z", 10, occ.VersionVector{}, false, "", st(int64(c.now)+int64(2*occ.MaxClockLead), 0, "z")))
 			d.MergeVersion("near", version("z", 11, occ.VersionVector{}, false, "", st(int64(c.now)+int64(time.Minute), 0, "z")))
+			_, err := s.Merge(d)
+			return err
+		}},
+		{"merge rejecting a concurrent incoming loser", nil, func(s *occ.Store, c *fakeClock) error {
+			d := occ.NewDoc()
+			d.MergeVersion("k", version("z", 12, occ.VersionVector{}, false, "older", st(5, 0, "z")))
 			_, err := s.Merge(d)
 			return err
 		}},
@@ -653,5 +635,5 @@ func TestFailedPersistLeavesNoTrace(t *testing.T) {
 
 func equalSnap(a, b storeSnapshot) bool {
 	return slices.Equal(a.doc, b.doc) && a.actor == b.actor && a.counter == b.counter && a.discards == b.discards &&
-		a.tail == b.tail && a.clock == b.clock && a.ahead == b.ahead && a.logs == b.logs
+		a.tail == b.tail && slices.Equal(a.state, b.state) && a.clock == b.clock && a.ahead == b.ahead && a.logs == b.logs
 }

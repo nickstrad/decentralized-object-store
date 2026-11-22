@@ -53,6 +53,19 @@ func checkLaws(a, b, c *occ.Doc) error {
 type replica struct {
 	s     *occ.Store
 	clock *fakeClock
+	name  string
+	cfg   occ.StoreConfig
+}
+
+func (r *replica) wipe(t *rapid.T, gen uint64) {
+	cfg := r.cfg
+	cfg.Epoch = 0
+	cfg.Rand = rand.New(rand.NewPCG(gen, 99))
+	s, err := occ.NewStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.s = s
 }
 
 func newReplicas(t *rapid.T, n int, or *oracle, maxSkew int64) []replica {
@@ -67,7 +80,7 @@ func newReplicas(t *rapid.T, n int, or *oracle, maxSkew int64) []replica {
 		if err != nil {
 			t.Fatal(err)
 		}
-		out[i] = replica{s: s, clock: c}
+		out[i] = replica{s: s, clock: c, name: string(cfg.Node), cfg: cfg}
 	}
 	return out
 }
@@ -127,9 +140,12 @@ func propEveryLossRecorded(t *rapid.T) {
 	or := newOracle()
 	reps := newReplicas(t, rapid.IntRange(2, 4).Draw(t, "replicas"), or, 5_000)
 	history := map[string][]occ.ETag{}
+	var retired uint64
+	losses := uint64(0)
 	for range rapid.IntRange(1, 80).Draw(t, "steps") {
-		r := reps[rapid.IntRange(0, len(reps)-1).Draw(t, "replica")]
-		switch rapid.IntRange(0, 9).Draw(t, "action") {
+		ri := rapid.IntRange(0, len(reps)-1).Draw(t, "replica")
+		r := &reps[ri]
+		switch rapid.IntRange(0, 11).Draw(t, "action") {
 		case 0, 1, 2, 3, 4, 5:
 			key := rapid.SampledFrom(propKeys).Draw(t, "key")
 			del := rapid.IntRange(0, 4).Draw(t, "del") == 0
@@ -156,17 +172,39 @@ func propEveryLossRecorded(t *rapid.T) {
 			or.record(key, v, rec)
 		case 6, 7, 8:
 			j := rapid.IntRange(0, len(reps)-1).Draw(t, "from")
-			if _, err := r.s.Merge(reps[j].s.Doc()); err != nil {
+			src := reps[j].s.Doc()
+			or.reach(r.name, src)
+			if _, err := r.s.Merge(src); err != nil {
 				t.Fatal(err)
 			}
-		default:
+		case 9:
 			r.clock.now += env.Time(rapid.Int64Range(-100, 1_000).Draw(t, "tick"))
+		case 10:
+			or.diskLost(r.name, r.s.Doc())
+			retired += r.s.LWWDiscards()
+			losses++
+			r.wipe(t, losses)
+		default:
+			if len(reps) <= 2 {
+				continue
+			}
+			or.diskLost(r.name, r.s.Doc())
+			retired += r.s.LWWDiscards()
+			reps = append(reps[:ri], reps[ri+1:]...)
 		}
 		if err := or.check(docsOf(reps), false); err != nil {
 			t.Fatal(err)
 		}
 	}
+	for i := range reps {
+		or.reach(reps[i].name, reps[i].s.Doc())
+	}
 	exchangeAll(t, reps)
+	for i := range reps {
+		for j := range reps {
+			or.reach(reps[i].name, reps[j].s.Doc())
+		}
+	}
 	final := reps[0].s.Doc()
 	var total uint64
 	for _, r := range reps {
@@ -183,8 +221,8 @@ func propEveryLossRecorded(t *rapid.T) {
 	if err := or.check(docsOf(reps), true); err != nil {
 		t.Fatal(err)
 	}
-	if total != uint64(or.logged) {
-		t.Fatalf("the counters say %d discards, the logs hold %d", total, or.logged)
+	if total+retired != uint64(or.logged) {
+		t.Fatalf("the counters say %d discards (%d on lost disks), the hooks saw %d", total+retired, retired, or.logged)
 	}
 }
 

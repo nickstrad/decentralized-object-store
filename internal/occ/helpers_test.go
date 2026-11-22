@@ -120,10 +120,23 @@ type oracle struct {
 	seenAny map[occ.VersionID]bool
 	lost    map[occ.VersionID]bool
 	logged  int
+	gen     map[string]int
+	holders map[occ.VersionID]map[string]bool
+	died    map[occ.VersionID]map[string]bool
 }
 
 func newOracle() *oracle {
-	return &oracle{seen: map[occ.VersionID]map[occ.VersionID]bool{}, seenAny: map[occ.VersionID]bool{}, lost: map[occ.VersionID]bool{}}
+	return &oracle{seen: map[occ.VersionID]map[occ.VersionID]bool{}, seenAny: map[occ.VersionID]bool{}, lost: map[occ.VersionID]bool{},
+		gen: map[string]int{}, holders: map[occ.VersionID]map[string]bool{}, died: map[occ.VersionID]map[string]bool{}}
+}
+
+func (o *oracle) incarnation(node string) string { return fmt.Sprintf("%s#%d", node, o.gen[node]) }
+
+func mark(m map[occ.VersionID]map[string]bool, id occ.VersionID, who string) {
+	if m[id] == nil {
+		m[id] = map[string]bool{}
+	}
+	m[id][who] = true
 }
 
 func (o *oracle) record(key string, v occ.Version, held occ.Record) {
@@ -139,6 +152,41 @@ func (o *oracle) record(key string, v occ.Version, held occ.Record) {
 	}
 	o.seen[v.ID()] = s
 	o.acks = append(o.acks, ack{key: key, v: v})
+	mark(o.holders, v.ID(), o.incarnation(string(v.Dot().Actor.Node)))
+}
+
+func (o *oracle) reach(node string, d *occ.Doc) {
+	who := o.incarnation(node)
+	for _, k := range d.Keys() {
+		if v, ok := d.Record(k).Version(); ok {
+			mark(o.holders, v.ID(), who)
+		}
+	}
+}
+
+func (o *oracle) diskLost(node string, d *occ.Doc) {
+	who := o.incarnation(node)
+	if d != nil {
+		for _, k := range d.Keys() {
+			if v, ok := d.Record(k).Version(); ok {
+				mark(o.died, v.ID(), who)
+			}
+		}
+	}
+	o.gen[node]++
+}
+
+func (o *oracle) lostWithDisk(id occ.VersionID) bool {
+	hs := o.holders[id]
+	if len(hs) == 0 {
+		return false
+	}
+	for who := range hs {
+		if !o.died[id][who] {
+			return false
+		}
+	}
+	return true
 }
 
 func (o *oracle) discard(_ string, _, loser occ.Version) {
@@ -162,6 +210,8 @@ func (o *oracle) explain(a ack, docs []*occ.Doc, everywhere bool) (string, bool)
 		return "superseded", true
 	case o.lost[a.v.ID()]:
 		return "discarded", true
+	case o.lostWithDisk(a.v.ID()):
+		return "lost-with-disk", true
 	}
 	return "", false
 }

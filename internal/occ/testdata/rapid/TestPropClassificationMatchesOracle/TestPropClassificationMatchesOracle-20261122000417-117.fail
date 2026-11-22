@@ -1,0 +1,72 @@
+# 2026/11/22 00:04:17.676262 [TestPropClassificationMatchesOracle] [rapid] draw replicas: 2
+# 2026/11/22 00:04:17.676291 [TestPropClassificationMatchesOracle] [rapid] draw skew: 0
+# 2026/11/22 00:04:17.676297 [TestPropClassificationMatchesOracle] [rapid] draw skew: 0
+# 2026/11/22 00:04:17.676302 [TestPropClassificationMatchesOracle] [rapid] draw steps: 4
+# 2026/11/22 00:04:17.676304 [TestPropClassificationMatchesOracle] [rapid] draw replica: 0
+# 2026/11/22 00:04:17.676309 [TestPropClassificationMatchesOracle] [rapid] draw action: 0
+# 2026/11/22 00:04:17.676312 [TestPropClassificationMatchesOracle] [rapid] draw key: "a"
+# 2026/11/22 00:04:17.676329 [TestPropClassificationMatchesOracle] [rapid] draw replica: 0
+# 2026/11/22 00:04:17.676330 [TestPropClassificationMatchesOracle] [rapid] draw action: 0
+# 2026/11/22 00:04:17.676336 [TestPropClassificationMatchesOracle] [rapid] draw key: "a"
+# 2026/11/22 00:04:17.676337 [TestPropClassificationMatchesOracle] [rapid] draw blind: false
+# 2026/11/22 00:04:17.676339 [TestPropClassificationMatchesOracle] [rapid] draw del: 0
+# 2026/11/22 00:04:17.676346 [TestPropClassificationMatchesOracle] [rapid] draw replica: 1
+# 2026/11/22 00:04:17.676348 [TestPropClassificationMatchesOracle] [rapid] draw action: 0
+# 2026/11/22 00:04:17.676349 [TestPropClassificationMatchesOracle] [rapid] draw key: "a"
+# 2026/11/22 00:04:17.676355 [TestPropClassificationMatchesOracle] [rapid] draw replica: 0
+# 2026/11/22 00:04:17.676357 [TestPropClassificationMatchesOracle] [rapid] draw action: 4
+# 2026/11/22 00:04:17.676358 [TestPropClassificationMatchesOracle] [rapid] draw from: 1
+# 2026/11/22 00:04:17.676364 [TestPropClassificationMatchesOracle] [rapid] draw one key: false
+# 2026/11/22 00:04:17.676374 [TestPropClassificationMatchesOracle] merge on r0: the oracle expects 1 discard records, the product made 0
+# 
+v0.4.8#4944034372637451755
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x38e38e38e38e4
+0x3
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x1
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x6b74f03291620
+0x4
+0x0
+0x0
+0x1
+0x0

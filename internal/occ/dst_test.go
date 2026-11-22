@@ -28,6 +28,7 @@ const (
 	dropPPM         = 20_000
 	duplicatePPM    = 50_000
 	canarySeeds     = 3
+	diskLosses      = 3
 
 	ConvergeBound     = 15 * time.Second
 	offlineFor        = 60 * time.Second
@@ -64,6 +65,8 @@ type world struct {
 	overshoot   int64
 	rounds      int
 	won, lost   int
+	retired     uint64
+	diskLosses  int
 }
 
 var lastWorld *world
@@ -74,10 +77,53 @@ func newWorld(s *sim.Sim) *world {
 	return w
 }
 
+type tracked struct {
+	*occ.Node
+	w  *world
+	id env.NodeID
+}
+
+func (t *tracked) Unwrap() *occ.Node { return t.Node }
+
+func (t *tracked) observe(kind byte, b []byte) {
+	if len(b) == 0 || b[0] != kind || !t.Node.Ready() {
+		return
+	}
+	if d, err := occ.Decode(b[1:]); err == nil {
+		t.w.or.reach(string(t.id), d)
+	}
+}
+
+func (t *tracked) OnDatagram(from env.NodeID, msg []byte) {
+	t.Node.OnDatagram(from, msg)
+	t.observe(occ.MsgDelta, msg)
+}
+
+func (t *tracked) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
+	t.Node.OnRequest(from, req, reply)
+	t.observe(occ.MsgPush, req)
+}
+
+type trackedNet struct {
+	env.Transport
+	t *tracked
+}
+
+func (n trackedNet) Request(to env.NodeID, req []byte, timeout time.Duration, cb func([]byte, error)) {
+	n.Transport.Request(to, req, timeout, func(reply []byte, err error) {
+		cb(reply, err)
+		if err == nil {
+			n.t.observe(occ.ReplyState, reply)
+		}
+	})
+}
+
 func (w *world) factory(ids []env.NodeID) sim.Factory {
 	return func(e env.Env) env.Process {
 		id := e.ID
-		return occ.NewNode(e, occ.Config{
+		t := &tracked{w: w, id: id}
+		e.Net = trackedNet{Transport: e.Net, t: t}
+		t.Node = occ.NewNode(e, occ.Config{
 			Membership: occ.StaticMembership(ids),
 			OnDiscard: func(key string, winner, loser occ.Version) {
 				w.or.discard(key, winner, loser)
@@ -87,6 +133,71 @@ func (w *world) factory(ids []env.NodeID) sim.Factory {
 				}
 			},
 		})
+		return t
+	}
+}
+
+func (w *world) stateOf(id env.NodeID) (*occ.Doc, uint64) {
+	if n := occNode(w.s, id); n != nil && n.Ready() && w.s.Status(id).Up {
+		return n.Doc(), n.LWWDiscards()
+	}
+	b, ok := w.s.Disk(id).PeekDurable(occ.StateBlob)
+	if !ok {
+		return nil, 0
+	}
+	st, err := occ.DecodeStateBlob(b)
+	if err != nil {
+		return nil, 0
+	}
+	return st.Doc, st.Discards
+}
+
+const (
+	lossWipeRejoin = iota
+	lossStateRot
+	lossCrashForGood
+	lossKinds
+)
+
+func (w *world) loseDisk(id env.NodeID, kind int) {
+	doc, discards := w.stateOf(id)
+	w.or.diskLost(string(id), doc)
+	w.retired += discards
+	w.diskLosses++
+	var err error
+	switch kind {
+	case lossWipeRejoin:
+		err = w.s.WipeRejoin(id)
+	case lossStateRot:
+		if w.s.Status(id).Up {
+			err = w.s.Crash(id)
+		}
+		if err == nil && w.s.BitRot(id, occ.StateBlob) != nil {
+			err = w.s.WipeDisk(id)
+		}
+		if err == nil {
+			err = w.s.Restart(id)
+		}
+	default:
+		if w.s.Status(id).Up {
+			err = w.s.Crash(id)
+		}
+		if err == nil {
+			err = w.s.WipeDisk(id)
+		}
+	}
+	if err != nil {
+		w.s.Fail(fmt.Errorf("disk loss on %s: %w", id, err))
+	}
+}
+
+func (w *world) scheduleDiskLosses(from, until env.Time, n int) {
+	r := sim.NewStream(w.s.Seed(), "occ-test/disk-loss")
+	for i := range n {
+		at := from.Add(time.Duration(r.Int64N(int64(until.Sub(from)))))
+		id := w.ids[r.IntN(len(w.ids))]
+		kind := i % lossKinds
+		w.s.At(at, "occ-test/disk-loss", func() { w.loseDisk(id, kind) })
 	}
 }
 
@@ -280,18 +391,24 @@ func (w *world) finish(quiet env.Time, bound time.Duration) []*occ.Doc {
 			}
 		}
 	}
+	diskOnly := map[string]bool{}
 	for _, a := range w.or.acks {
-		if !docs[0].Record(a.key).Present() {
+		if w.or.lostWithDisk(a.v.ID()) {
+			diskOnly[a.key] = true
+		}
+	}
+	for _, a := range w.or.acks {
+		if !docs[0].Record(a.key).Present() && !diskOnly[a.key] {
 			w.s.Fail(fmt.Errorf("acknowledged key %q has no version after convergence", a.key))
 		}
 	}
 	if err := w.or.check(docs, true); err != nil {
 		w.s.Fail(fmt.Errorf("after convergence: %w", err))
 	}
-	if total != uint64(hooked) || hooked != w.or.logged {
-		w.s.Fail(fmt.Errorf("the discard counters say %d, the hooks saw %d", total, hooked))
+	if total+w.retired != uint64(hooked) || hooked != w.or.logged {
+		w.s.Fail(fmt.Errorf("the discard counters say %d (%d on lost disks), the hooks saw %d", total+w.retired, w.retired, hooked))
 	}
-	w.discards = total
+	w.discards = total + w.retired
 	w.tally = w.or.tally(docs)
 	return docs
 }
@@ -317,16 +434,20 @@ func multiRegionRun(seed int64) *sim.Sim {
 		s.Fail(err)
 		return s
 	}
+	w.scheduleDiskLosses(chaosStart, nem.QuietAt().Add(-time.Second), diskLosses)
 	if err := s.RunUntil(nem.QuietAt()); err != nil {
 		return s
 	}
 	w.finish(nem.QuietAt(), ConvergeBound)
+	if w.diskLosses != diskLosses {
+		s.Fail(fmt.Errorf("%d of %d disk losses ran", w.diskLosses, diskLosses))
+	}
 	return s
 }
 
 func logWorld(t *testing.T, w *world) {
-	t.Logf("MEASURE acks=%d refused=%d discards=%d lost_versions=%d outcome=%v converged_in=%s events=%d won=%d discarded=%d overshoot=%d recount_rounds=%d",
-		w.acks, w.refused, w.discards, len(w.or.lost), w.tally, w.convergedIn, w.s.Steps(), w.won, w.lost, w.overshoot, w.rounds)
+	t.Logf("MEASURE acks=%d refused=%d discards=%d lost_versions=%d disk_losses=%d outcome=%v converged_in=%s events=%d won=%d discarded=%d overshoot=%d recount_rounds=%d",
+		w.acks, w.refused, w.discards, len(w.or.lost), w.diskLosses, w.tally, w.convergedIn, w.s.Steps(), w.won, w.lost, w.overshoot, w.rounds)
 }
 
 func TestMultiRegionConvergenceDST(t *testing.T) {

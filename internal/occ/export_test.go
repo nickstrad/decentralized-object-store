@@ -6,6 +6,12 @@ func SetCanaryUnrecordedDiscard(on bool) func() {
 	return func() { canaryUnrecordedDiscard = old }
 }
 
+func SetCanaryIncomingLoserSilent(on bool) func() {
+	old := canaryIncomingLoserSilent
+	canaryIncomingLoserSilent = on
+	return func() { canaryIncomingLoserSilent = old }
+}
+
 func SetCanaryMergePrefersLocal(on bool) func() {
 	old := canaryMergePrefersLocal
 	canaryMergePrefersLocal = on
@@ -45,11 +51,12 @@ func EncodeOpRequest(code byte, key string, p Precondition, value []byte) []byte
 func DecodeResult(b []byte) (Result, error) { return decodeResult(b) }
 
 const (
-	MsgDigest = msgDigest
-	MsgPush   = msgPush
-	MsgOp     = msgOp
-	MsgDelta  = msgDelta
-	OpGet     = opGet
-	OpPut     = opPut
-	OpDelete  = opDelete
+	MsgDigest  = msgDigest
+	MsgPush    = msgPush
+	MsgOp      = msgOp
+	MsgDelta   = msgDelta
+	ReplyState = replyState
+	OpGet      = opGet
+	OpPut      = opPut
+	OpDelete   = opDelete
 )

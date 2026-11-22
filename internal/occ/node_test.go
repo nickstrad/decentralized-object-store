@@ -24,6 +24,9 @@ func occNode(s *sim.Sim, id env.NodeID) *occ.Node {
 	if p == nil {
 		return nil
 	}
+	if u, ok := p.(interface{ Unwrap() *occ.Node }); ok {
+		return u.Unwrap()
+	}
 	n, _ := p.(*occ.Node)
 	return n
 }

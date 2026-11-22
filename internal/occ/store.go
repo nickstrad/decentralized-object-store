@@ -12,9 +12,19 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
-const DiscardTailLen = 64
+const (
+	DiscardTailLen  = 64
+	DiscardDedupLen = 256
+)
 
-var canaryUnrecordedDiscard bool
+var (
+	canaryUnrecordedDiscard   bool
+	canaryIncomingLoserSilent bool
+)
+
+func OpenStore(cfg StoreConfig, state []byte) (*Store, error) {
+	return nil, ErrMalformed
+}
 
 type StoreConfig struct {
 	Node      env.NodeID

@@ -14,6 +14,7 @@ var (
 	ErrClockExhausted     = errors.New("occ: hybrid logical clock exhausted")
 	ErrClockAhead         = errors.New("occ: remote stamp too far ahead of the local clock")
 	ErrNotReady           = errors.New("occ: replica state not loaded")
+	ErrUsageOverflow      = errors.New("occ: usage total does not fit in 64 bits")
 )
 
 const (
@@ -27,6 +28,7 @@ const (
 	CodeClockExhausted     env.Code = 133
 	CodeClockAhead         env.Code = 134
 	CodeNotReady           env.Code = 135
+	CodeUsageOverflow      env.Code = 136
 )
 
 func CodeEntries() []env.CodeEntry {
@@ -38,6 +40,7 @@ func CodeEntries() []env.CodeEntry {
 		{Code: CodeClockExhausted, Err: ErrClockExhausted},
 		{Code: CodeClockAhead, Err: ErrClockAhead},
 		{Code: CodeNotReady, Err: ErrNotReady},
+		{Code: CodeUsageOverflow, Err: ErrUsageOverflow},
 	}
 }
 
