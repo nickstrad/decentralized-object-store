@@ -13,9 +13,9 @@ last-writer-wins on the hybrid logical clock, every discard counted and logged
 folded into PLAN 9.1, 7.5 and Chunk 4); Docker is the one environment; the book is the
 learning artifact; C4 diagrams are kept current).
 
-Status: PHASE 2 (BUILD) RUNNING since 2026-11-21. LANDED: Step 0, 0a, 0b and ALL FIVE
-protocol chunks (1–5); book chapters 1–6 are live. IN FLIGHT: Chunk 6 (integration), arbitration fix finished by
-Fable; Astra confirm NITS closed; Neon second-eyes FAIL (four majors) fixed by Fable; focused Neon confirm and prose running. Then Chunks 7 and 8 in sequence.
+Status: PHASE 2 (BUILD) RUNNING since 2026-11-21. LANDED: Step 0, 0a, 0b, all five protocol
+chunks (1–5) and Chunk 6 (integration, f64aa11); book chapters 1–7 are live. IN FLIGHT: Chunk 7
+(end-to-end suite and hardening), Opus build. Then Chunk 8 (publishing finish).
 
 Seats (this project only): Fable orchestrates, gates and lands; Opus writes
 product Go (logic only, no comments), fresh agent and worktree per chunk, at
@@ -39,23 +39,17 @@ second-eyes review-plus-probing pass (see the Chunk 6 row for the landing rule).
 | 3 | Merkle anti-entropy (internal/merkle) | LANDED 2a86f4c; chapter 4; review NITS → repair → PASS; harness 72 held, 2 restated (cost bounds; PLAN 2.2/7.4 updated) |
 | 4 | Optimistic concurrency control for metadata, last-writer-wins (internal/occ) | LANDED 9acc7ea; chapter 5; review FAIL → LWW rework → FAIL → round 2 → Astra arbitration NITS closed; harness 60 held, 1 expects exactly one record per loss |
 | 5 | Saga engine and bucket migration (internal/saga) | LANDED 4892ab9; chapter 6; review FAIL → repair → NITS closed; harness 125 held |
-| 6 | Integration: node (`internal/node`), real runtime (`internal/noderuntime`), HTTP object API (`internal/storage/httpapi`), cmd/objnode | Built; REVIEW-1 FAIL (1 blocker, 8 majors) → repair → REVIEW-2 FAIL (all 11 fixed; 2 new majors, 4 nits) → fix round → Astra ARBITRATION-1 FAIL (the six fixed; ONE major left: an acknowledged write can end live and unreadable after orphan collection plus an unwritten shard). RULING (Nick, 2026-11-22, /root/briefs/objstore-chunk6-fable-finish-ruling-2026-11-22.md, THIS fix round only): Fable finishes the fix as builder; pipeline is full gate → Astra confirm pass → Neon prose → land; NO Neon review or re-review this round; if the confirm pass finds a defect Fable repairs it and one more confirm pass runs; never Opus again for this task. DONE under it: Opus `fix3` was stopped mid-run; Fable verified its work (absence records: a holder records, bindingly, that it holds no verifiable shard only after every other holder of the stripe answered and fewer than k verify; loss is declared only on more than m such records for one stripe) and added three changes with tests (branch tip 614c439; account: build-notes.md section 14). The first confirm run (`06-integration-confirm`) was stopped by Astra's provider filter with no verdict (ARBITRATION-2.md placeholder removed); its one finished scenario (wiped holder plus a held shard write) is now a test and the residual is stated in section 14; a write-refusal closure was built and withdrawn (it refused the first writes of new clusters). CONFIRM PASS DONE: Astra ARBITRATION-2.md verdict NITS — the major is closed; its one required notes correction is made (b0efdd4, `NITS CLOSED` line appended). AMENDING RULING (Nick, 2026-11-22 ~07:38 CT, /root/briefs/objstore-neon-second-eyes-ruling-2026-11-22.md): Fable stays builder, but the landing now needs TWO independent passes over the fix — Astra's confirm (done) AND a Neon second-eyes pass (independent code review plus its own probing; it must NOT see ARBITRATION-2.md). LANDING RULE for Chunk 6: gate green + Astra NITS closed + NEON-SECOND-EYES.md with no open blocker or major. A Neon blocker or major: Fable fixes it, the gate reruns, ONE focused confirm on the fix (Astra or Neon), no full new cycle unless the findings demand it; nits ride with the landing. SECOND-EYES DONE: NEON-SECOND-EYES.md verdict FAIL — four majors (false absence record on a local disk read error; a finishing rebuild ignoring its holder's absence record; the loss oracle failing migrated versions; an untested safeguard) and two nits; all six accepted and FIXED by Fable on the chunk branch (tests-first commits ending 29b0c12; account: build-notes.md section 15; Neon's 20 scenarios are now `internal/node/secondeyes_*_test.go`, originals under `agent_work/adversarial/06-integration/neon-second-eyes/`). RUNNING: (1) the ONE focused confirm, fresh Neon, run `06-integration-neon2confirm` (`/root/runs/objstore-p2-06-integration-neon2confirm.{log,pid,exit}`; brief /root/briefs/objstore-p2-06-integration-neon2confirm.md) in the isolated worktree `/root/Software/decentralized-object-store-work/06-integration-neon2eyes` (branch `review/06-integration-neon2eyes`, reset to the chunk tip); it writes `agent_work/06-integration/NEON-CONFIRM.md` THERE — copy it to the chunk worktree and commit; then remove that worktree and branch. PASS/NITS → continue to landing; FAIL → Fable fixes, and per the ruling the findings decide whether more than one further confirm is needed. (2) in the chunk worktree: Neon code comments (`06-integration-prose-comments`) and a small chapter revision (`06-integration-prose-chapter-rev`); the chapter draft, the sagas-chapter update and the landing docs (C4 redraw, docs/knowledge/chunk-06-integration.md, INDEX, manifest — drafted by a subagent, to be checked and to gain section 15 facts and the NEON record rows) sit UNCOMMITTED in the chunk worktree. No gate is running: the build-stage gate was stopped when the code changed (G0–G3 had passed on the old tree). NEXT: commit prose by path (trailer `Prose-By: Gemini 4 Neon`) and the four landing-doc commits; rerun the harness (`agent_work/adversarial/06-integration/run-all.sh`) and update RESULTS.md; status prose (README + docs/index.md); rebase on main; `GATE_STAGE=final` gate + prose-check + G7 cluster smoke; land only with gate green AND NEON-CONFIRM clean. Then prose (chapter 07-object-store-and-sync-engine, comments, cmd/objnode help.txt, Chunk 5 chapter update with real-component evidence), landing docs (C4: planned relationships become as-built; knowledge; INDEX; manifest), final gate, land. Harness: 662 held, 0 broken. Gate tooling changes for this chunk are ON THE CHUNK BRANCH (G7 cluster check required by land.sh; `internal/node` in the lint roots; floors and race list; fuzz retry + `fuzz-stall` canary) and were judged sound in REVIEW-2 and ARBITRATION-1; landing them triggers the full canary workflow |
-| 7 | E2E suite, nemesis cycles, fuzz hardening | not started (needs 6) |
+| 6 | Integration: node (`internal/node`), real runtime (`internal/noderuntime`), HTTP object API (`internal/storage/httpapi`), cmd/objnode | LANDED f64aa11; chapter 7; REVIEW-1 FAIL → repair → REVIEW-2 FAIL → fix → ARBITRATION-1 FAIL (one major) → fix finished by Fable (owner ruling) → ARBITRATION-2 NITS closed → owner-ordered Neon second-eyes pass FAIL (four majors, two nits) → fixed by Fable → focused Neon confirm NITS closed (its one nit was fixed AFTER the confirm; covered by tests and the final gate only); harness 662 held, 0 broken; final gate G0–G7 green at 500 seeds. Records: agent_work/06-integration/ (build-notes sections 14 and 15, NEON-SECOND-EYES.md, NEON-CONFIRM.md) |
+| 7 | E2E suite, nemesis cycles, fuzz hardening (`test/e2e`, tier S on the simulator and tier R with real `objnode` processes) | Opus BUILD RUNNING in worktree 07-e2e (run `07-e2e-build`, `/root/runs/objstore-p2-07-e2e-build.{log,pid,exit}`; brief /root/briefs/objstore-p2-07-e2e-build.md, copied to agent_work/07-e2e/). One builder for the whole chunk. NEXT when it exits 0: commit `agent_work/07-e2e/gates/`, rebase, apply its gate-change requests (test/e2e in G1–G5, tier R as a gate step) with a canary each, then Neon review (`mkstage.py 07-e2e review base=main n=1`; probe Neon first) and Astra harness in parallel (PLAN 4.2 Chunk 7 adversarial list; soften the brief). If it exits nonzero or dies: read the log tail, re-dispatch ONCE with the failure context |
 | 8 | Publishing finish: the assembled book (assembly and polish only) | not started |
 
 ## In progress
 
-- Chunk 6: see the board row for the exact next step. Its build brief
-  bound: wire-code blocks; last-writer-wins handling in the node (discard counter on the
-  health surface, quota recount on discard, the loser's shards collected and never the
-  winner's); tombstones through anti-entropy; the saga failure matrix on real components;
-  PLAN 2.5 concurrency rules; three canaries; a `cluster` compose smoke script.
-- Chunk 6 landing extras beyond the usual: Chunk 5's chapter (book/chapters/06-sagas.md)
-  is updated by Neon with the real-component evidence; the C4 relationships still marked
-  planned become as-built (or are corrected to what was built); chapter
-  `07-object-store-and-sync-engine`; the builder's gate-change requests (cluster smoke in
-  the gate, coverage floors for new packages) are the orchestrator's to apply, with a
-  canary each.
+- Chunk 7: see the board row. Its chapter is `08-end-to-end-and-hardening`. Chunk 6 left it:
+  docs/knowledge/chunk-06-integration.md (what to reuse, the loss-declaration rule and its
+  stated residuals), the 78-cell × 500-seed migration matrix on real components (not yet run
+  anywhere), and a possible distinct HTTP status for a lost object (a PLAN table change, not
+  made).
 
 ## Per-chunk pipeline (as run for chunks 1–5; worked examples in each agent_work/<slug>/)
 
@@ -124,15 +118,15 @@ second-eyes review-plus-probing pass (see the Chunk 6 row for the landing rule).
   /root/runs/objstore-p2-*. Progress log: /root/runs/objstore-phase2-progress.txt.
   Done marker (only at completion or cutoff): /root/runs/objstore-phase2-done.txt.
 - Worktrees: /root/Software/decentralized-object-store-work/NN-<slug>, branch
-  chunk/NN-<slug>. Live: 06-integration. Branches of landed chunks are kept.
+  chunk/NN-<slug>. Live: 07-e2e. Branches of landed chunks are kept.
 - Gate stages: `agent_work/gates/gate.sh <chunk>` (build stage, on a chunk branch, before
   prose) and `GATE_STAGE=final ...` (after prose, and the only form that runs on main).
 - Site: https://nickstrad.github.io/decentralized-object-store/ — built by
   .github/scripts/build_site.py through .github/workflows/pages.yml on every push to
-  main; the book index lists chapters 1–6.
+  main; the book index lists chapters 1–7.
 - C4 set: docs/c4/ (c4-sdk bundle model.json, nine diagram files; 07 is
-  07-component-occ.md). Every protocol package is drawn as built; relationships between
-  packages and to the object API and node runtime stay planned until Chunk 6 lands.
+  07-component-occ.md). Every protocol package is drawn as built; redrawn as built at the Chunk 6 landing (a node core implements every package's
+  interfaces; no protocol package calls another).
 - Neon routes: direct (google/gemini-4-neon via opencode) is primary;
   OpenRouter fallback is out of credits until 2026-12-01. Probe with
   agent_work/orch/seat-probe.sh before each chunk's first Neon stage. Neon (opencode) cannot

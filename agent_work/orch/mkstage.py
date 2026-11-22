@@ -25,7 +25,10 @@ C = {
     papers="Garcia-Molina and Salem (1987), Sagas; Gray on compensating transactions; Helland, Life Beyond Distributed Transactions; write-ups on idempotency keys and durable workflow engines"),
  "06-integration": dict(num=6, pkg="internal/node internal/storage cmd/objnode", pkgs="`internal/node`, the HTTP object API in `internal/storage`, and `cmd/objnode`", plan="Chunk 6", name="integration: the object store and sync engine",
     chap="07-object-store-and-sync-engine", title="The Object Store and Sync Engine", c4="docs/c4/02-container.md, docs/c4/03-container-runtime.md and every component diagram's planned relationships",
-    papers="DeCandia et al., Dynamo (the leaderless design this project follows in shape); Lakshman and Malik, Cassandra; the S3 conditional-requests documentation and RFC 9110; Kleppmann on the lost-update cost of last-writer-wins; the FoundationDB and TigerBeetle write-ups on running one protocol core under a simulator and a real runtime")
+    papers="DeCandia et al., Dynamo (the leaderless design this project follows in shape); Lakshman and Malik, Cassandra; the S3 conditional-requests documentation and RFC 9110; Kleppmann on the lost-update cost of last-writer-wins; the FoundationDB and TigerBeetle write-ups on running one protocol core under a simulator and a real runtime"),
+ "07-e2e": dict(num=7, pkg="test/e2e internal/node internal/noderuntime", pkgs="`test/e2e`, with the fixes it forced in `internal/node` and `internal/noderuntime`", plan="Chunk 7", name="the end-to-end suite, nemesis cycles and fuzz hardening",
+    chap="08-end-to-end-and-hardening", title="End-to-End Tests and Hardening", c4="docs/c4/03-container-runtime.md (the test harness elements) and any relationship a product fix changed",
+    papers="Kingsbury's Jepsen analyses (nemesis schedules, what a passing run does and does not show); the FoundationDB simulation-testing talk and paper; TigerBeetle's VOPR write-ups; Yuan et al., Simple Testing Can Prevent Most Critical Failures; the Go fuzzing documentation")
 }
 T = {}
 T["review"] = """# Brief — {plan} REVIEW {n}: {name}
