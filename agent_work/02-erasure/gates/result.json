@@ -1,16 +1,16 @@
 {
   "chunk": "02-erasure",
-  "sha": "6cb7dc9db3a5056dc2153cce6cd61fabc9bf8957",
-  "stage": "build",
-  "comment_baseline": "a184b38b159ae4d8fcc3bd4f83401e4630ef30fd",
-  "started": "2026-11-21T23:10:05Z",
-  "finished": "2026-11-21T23:21:05Z",
+  "sha": "554c7ee7d6d5dd3f4fac8d77321d146486699ae8",
+  "stage": "final",
+  "comment_baseline": "none",
+  "started": "2026-11-21T23:56:23Z",
+  "finished": "2026-11-22T00:07:24Z",
   "go_version": "go version go1.26.11 linux/amd64",
-  "image_id": "sha256:8dde8ea7fc3bac2832bbf7bd5dcbc5340dcf512db568b080631fe96160eacc55",
+  "image_id": "sha256:08e14e195c04249d1e693d3ac4a1b6502f0765a0151de33b22df35a070cb812d",
   "in_container": true,
   "partial": false,
   "dirty_tree": false,
-  "seed_from_sha": 119536936137637,
+  "seed_from_sha": 93787034998485,
   "fuzz_seconds": 30,
   "overall": "pass",
   "counts_for_landing": true,
@@ -19,7 +19,7 @@
       "gate": "G0",
       "check": "tools",
       "status": "pass",
-      "seconds": 3,
+      "seconds": 2,
       "note": ""
     },
     {
@@ -47,7 +47,7 @@
       "gate": "G0",
       "check": "detlint",
       "status": "pass",
-      "seconds": 2,
+      "seconds": 3,
       "note": ""
     },
     {
@@ -69,7 +69,7 @@
       "check": "comments",
       "status": "pass",
       "seconds": 0,
-      "note": "comments compared with baseline a184b38b159ae4d8fcc3bd4f83401e4630ef30fd"
+      "note": "stage=final, comment rule is checked by prose-check.sh"
     },
     {
       "gate": "G0",
@@ -82,36 +82,36 @@
       "gate": "G1",
       "check": "unit",
       "status": "pass",
-      "seconds": 12,
+      "seconds": 13,
       "note": ""
     },
     {
       "gate": "G2",
       "check": "property",
       "status": "pass",
-      "seconds": 133,
-      "note": "rapid seed 119536936137637, 2000 checks, 3 packages"
+      "seconds": 95,
+      "note": "rapid seed 93787034998485, 2000 checks, 3 packages"
     },
     {
       "gate": "G3",
       "check": "fuzz",
       "status": "pass",
-      "seconds": 135,
+      "seconds": 144,
       "note": "4 fuzz targets, 30s each"
     },
     {
       "gate": "G4",
       "check": "race",
       "status": "pass",
-      "seconds": 116,
+      "seconds": 120,
       "note": ""
     },
     {
       "gate": "G5",
       "check": "dst",
       "status": "pass",
-      "seconds": 249,
-      "note": "500 seeds from base 119536936137637"
+      "seconds": 274,
+      "note": "500 seeds from base 93787034998485"
     },
     {
       "gate": "G6",
