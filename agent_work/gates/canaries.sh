@@ -7,10 +7,13 @@
 # Usage: agent_work/gates/canaries.sh [name-regexp]
 #   On the host it re-executes itself inside the dev container.
 #   CANARY_FAST=1 runs only the canaries that need gates G0 and G6 (a few minutes in
-#   all): the ones a push can break by changing the PRODUCT tree under the plants. The
+#   all): the cheap G0/G6 canaries, which a push can break by changing the product tree
+#   under their plants (the G1–G5 canaries depend on the product tree too and wait for
+#   the full run). The
 #   full set contains several complete gate runs and takes hours on the grown tree; CI
 #   runs it from its own workflow when the tester changes, weekly, and on demand.
-#   Writes agent_work/0a-foundation/gates/canaries.json. Exit 0 when every canary is caught.
+#   A full unfiltered run writes agent_work/0a-foundation/gates/canaries.json. Exit 0
+#   when every canary is caught.
 set -u
 here=$(cd "$(dirname "$0")" && pwd -P)
 root=$(cd "$here/../.." && pwd -P)
@@ -198,7 +201,7 @@ EOT
 # One uncovered statement per existing line of the package (never fewer than 8), so the
 # planted function drags coverage under the floor however large the real package has grown.
 plant_coverage() {
-  local n; n=$(cat internal/sim/*.go 2>/dev/null | wc -l)
+  local n; n=$( (cat internal/sim/*.go 2>/dev/null || true) | wc -l )
   base_pkg
   [ "$n" -ge 8 ] || n=8
   { printf '\nfunc Untested(x int) int {\n'; for _ in $(seq "$n"); do printf '\tx++\n'; done; printf '\treturn x\n}\n'; } >> internal/sim/zz_canary.go
@@ -324,7 +327,7 @@ canary go-work          G0 deps            'go.work present'              "a go.
 canary nested-module    G0 deps            'go.mod outside the root'      "a nested module with its own requirement"                 G0 plant_nestedmod
 canary assembly         G0 deps            'assembly, C or object files'  "an assembly file reading the CPU timestamp counter"       G0 plant_asm
 canary panic            G0 panics          ' panic: '                     "a panic missing from the allowlist"                       G0 plant_panic
-canary panic-shadow     G0 panics          ' panic: '                     "a build-excluded func named panic hiding a real panic"    G0 plant_shadow
+canary panic-shadow     G0 panics          'panic-shadow'                   "a build-excluded func named panic hiding a real panic"    G0 plant_shadow
 canary stale-allow      G0 panics          'stale-allow'                  "an allowlist entry that matches no panic"                 G0 plant_stale
 canary comment          G0 comments        ' comment: '                   "a comment in pre-prose Go"                                G0 plant_comment
 canary fake-directive   G0 comments        ' comment: '                   "prose written as a //go: directive"                       G0 plant_fakedir
