@@ -45,6 +45,14 @@ func (v Version) ID() VersionID          { return v.id }
 func (v Version) ETag() ETag             { return ETag(v.id) }
 func (v Version) Clock() VersionVector   { return v.ctx.Join(NewVersionVector(Entry(v.dot))) }
 
+func (v Version) clockAt(a Actor) uint64 {
+	c := v.ctx.Get(a)
+	if v.dot.Actor == a {
+		c = max(c, v.dot.Counter)
+	}
+	return c
+}
+
 func (v Version) Compare(w Version) int {
 	if c := v.stamp.Compare(w.stamp); c != 0 {
 		return c

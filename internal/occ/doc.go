@@ -70,16 +70,23 @@ func (d *Doc) set(key string, r Record) {
 }
 
 func (d *Doc) MergeVersion(key string, v Version) bool {
-	return d.mergeVersion(key, v, nil)
+	return d.mergeVersion(key, v, nil, nil)
 }
 
-func (d *Doc) mergeVersion(key string, v Version, replace func(key string, held, next Record)) bool {
+type replaceFunc func(key string, held, next Record)
+
+type rejectFunc func(key string, held, incoming Version)
+
+func (d *Doc) mergeVersion(key string, v Version, replace replaceFunc, reject rejectFunc) bool {
 	cur := d.Record(key)
 	next := cur.Merge(NewRecord(v))
 	if canaryMergePrefersLocal && cur.ok {
 		next = cur
 	}
 	if next.Equal(cur) {
+		if reject != nil && cur.ok {
+			reject(key, cur.v, v)
+		}
 		return false
 	}
 	if replace != nil {
@@ -90,13 +97,13 @@ func (d *Doc) mergeVersion(key string, v Version, replace func(key string, held,
 }
 
 func (d *Doc) Merge(o *Doc) bool {
-	return d.merge(o, nil)
+	return d.merge(o, nil, nil)
 }
 
-func (d *Doc) merge(o *Doc, replace func(key string, held, next Record)) bool {
+func (d *Doc) merge(o *Doc, replace replaceFunc, reject rejectFunc) bool {
 	changed := false
 	for _, k := range o.sortedKeys() {
-		if d.mergeVersion(k, o.records[k], replace) {
+		if d.mergeVersion(k, o.records[k], replace, reject) {
 			changed = true
 		}
 	}

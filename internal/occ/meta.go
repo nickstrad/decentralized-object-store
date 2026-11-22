@@ -3,6 +3,7 @@ package occ
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
@@ -224,6 +225,9 @@ func (r Reader) RecountObjects(bucket string) (Usage, error) {
 		m, err := DecodeObjectMeta(rec.v.value)
 		if err != nil {
 			return Usage{}, fmt.Errorf("occ: recount %s: %w", bucket, err)
+		}
+		if u.Objects == math.MaxUint64 || m.Size > math.MaxUint64-u.Bytes {
+			return Usage{}, fmt.Errorf("occ: recount %s: %d objects %d bytes plus %d bytes: %w", bucket, u.Objects, u.Bytes, m.Size, ErrUsageOverflow)
 		}
 		u.Objects++
 		u.Bytes += m.Size

@@ -76,7 +76,7 @@ func TestCanonicalEncoding(t *testing.T) {
 	d := goldenDoc()
 	enc := d.Encode()
 	golden(t, "doc-v2.golden", enc)
-	golden(t, "state-v2.golden", occ.EncodeStateBlob(0x1111, 5, 2, enc))
+	golden(t, "state-v3.golden", occ.EncodeStateBlob(0x1111, 5, 2, enc))
 	golden(t, "op-v1.golden", occ.EncodeOpRequest(occ.OpPut, "obj/y", occ.IfMatch(d.Record("obj/y").ETag()), []byte("v")))
 	if value(d.Record("obj/y")) != "left" || d.Len() != 4 {
 		t.Fatal("the golden document holds the wrong winner")

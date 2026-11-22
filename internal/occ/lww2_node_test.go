@@ -145,7 +145,6 @@ func TestCanaryIncomingLoserSilent(t *testing.T) {
 			}
 		})
 	}
-	t.Logf("canary: the convergence DST failed on %d of %d seeds with incoming losers rejected silently", canaryDST(t), canarySeeds)
 }
 
 func TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss(t *testing.T) {

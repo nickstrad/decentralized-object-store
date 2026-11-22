@@ -37,7 +37,7 @@ func DecodeStateBlob(b []byte) (State, error) {
 }
 
 func EncodeStateBlob(epoch, counter, discards uint64, doc []byte) []byte {
-	return encodeState(epoch, counter, discards, doc)
+	return encodeState(persisted{epoch: epoch, counter: counter, discards: discards}, doc)
 }
 
 func DecodeWork(b []byte) (*Doc, int, error) { return decodeDoc(b) }

@@ -13,18 +13,15 @@ import (
 )
 
 const (
-	DiscardTailLen  = 64
-	DiscardDedupLen = 256
+	DiscardTailLen   = 64
+	DiscardDedupLen  = 256
+	DiscardOutboxLen = 1024
 )
 
 var (
 	canaryUnrecordedDiscard   bool
 	canaryIncomingLoserSilent bool
 )
-
-func OpenStore(cfg StoreConfig, state []byte) (*Store, error) {
-	return nil, ErrMalformed
-}
 
 type StoreConfig struct {
 	Node      env.NodeID
@@ -54,6 +51,19 @@ func (d Discard) String() string {
 		" winner_stamp=" + d.Winner.stamp.String()
 }
 
+type lossID [16]byte
+
+func lossOf(key string, loser VersionID) lossID {
+	var e encoder
+	e.raw([]byte("occ/loss/v1"))
+	e.str(key)
+	e.raw(loser[:])
+	sum := sha256.Sum256(e.b)
+	var id lossID
+	copy(id[:], sum[:])
+	return id
+}
+
 type Store struct {
 	Reader
 	actor     Actor
@@ -64,7 +74,8 @@ type Store struct {
 	ahead     int
 	discards  uint64
 	tail      []Discard
-	head      int
+	outbox    []Discard
+	seen      []lossID
 	work      int
 	persist   func([]byte) error
 	log       func(string)
@@ -72,16 +83,21 @@ type Store struct {
 }
 
 type undo struct {
-	actor     Actor
-	counter   uint64
-	rotations int
-	ahead     int
-	discards  uint64
-	clock     hlcState
-	keys      []string
-	prev      []Record
-	pending   []Discard
-	changed   bool
+	actor      Actor
+	counter    uint64
+	rotations  int
+	ahead      int
+	discards   uint64
+	clock      hlcState
+	keys       []string
+	prev       []Record
+	pending    []Discard
+	changed    bool
+	docChanged bool
+	saved      bool
+	tail       []Discard
+	outbox     []Discard
+	seen       []lossID
 }
 
 func NewStore(cfg StoreConfig) (*Store, error) {
@@ -114,6 +130,33 @@ func newStore(cfg StoreConfig) *Store {
 	return s
 }
 
+func OpenStore(cfg StoreConfig, state []byte) (*Store, error) {
+	if cfg.Node == "" || cfg.Clock == nil || cfg.Rand == nil {
+		return nil, fmt.Errorf("occ: open store: node, clock and rand are required: %w", env.ErrInvalidArgument)
+	}
+	st, err := decodeState(state)
+	if err != nil {
+		return nil, fmt.Errorf("occ: open store %s: %w", cfg.Node, err)
+	}
+	s := openStore(cfg, st)
+	s.replay()
+	return s, nil
+}
+
+func openStore(cfg StoreConfig, st persisted) *Store {
+	cfg.Epoch, cfg.Counter, cfg.Discards, cfg.Doc = st.epoch, st.counter, st.discards, st.doc
+	s := newStore(cfg)
+	s.tail, s.outbox, s.seen = st.tail, st.outbox, st.seen
+	return s
+}
+
+func (s *Store) replay() {
+	if len(s.outbox) > 0 {
+		s.emit(s.outbox)
+		s.drain()
+	}
+}
+
 func (s *Store) freshEpoch() uint64 {
 	for {
 		e := s.rand.Uint64()
@@ -133,7 +176,7 @@ func (s *Store) DiscardTail() []Discard {
 	if len(s.tail) == 0 {
 		return nil
 	}
-	return append(slices.Clone(s.tail[s.head:]), s.tail[:s.head]...)
+	return slices.Clone(s.tail)
 }
 
 func (s *Store) observe(o *Doc) {
@@ -168,7 +211,10 @@ func (s *Store) end(u *undo, err error) error {
 		s.rollback(u)
 		return err
 	}
-	s.publish(u.pending)
+	if len(u.pending) > 0 {
+		s.emit(u.pending)
+		s.drain()
+	}
 	return nil
 }
 
@@ -177,17 +223,23 @@ func (s *Store) rollback(u *undo) {
 		s.doc.set(u.keys[i], u.prev[i])
 	}
 	s.actor, s.counter, s.rotations, s.ahead, s.discards = u.actor, u.counter, u.rotations, u.ahead, u.discards
+	if u.saved {
+		s.tail, s.outbox, s.seen = u.tail, u.outbox, u.seen
+	}
 	s.hlc.restore(u.clock)
 }
 
-func (s *Store) publish(pending []Discard) {
-	for _, d := range pending {
-		if len(s.tail) < DiscardTailLen {
-			s.tail = append(s.tail, d)
-		} else {
-			s.tail[s.head] = d
-			s.head = (s.head + 1) % DiscardTailLen
-		}
+func (s *Store) save(u *undo) {
+	if u.saved {
+		return
+	}
+	u.saved = true
+	u.tail, u.outbox, u.seen = s.tail, s.outbox, s.seen
+	s.tail, s.outbox, s.seen = slices.Clone(s.tail), slices.Clone(s.outbox), slices.Clone(s.seen)
+}
+
+func (s *Store) emit(ds []Discard) {
+	for _, d := range ds {
 		if s.log != nil {
 			s.log(d.String())
 		}
@@ -197,16 +249,68 @@ func (s *Store) publish(pending []Discard) {
 	}
 }
 
-func (s *Store) classify(u *undo, key string, winner, loser Version) {
-	causal, ops := winner.supersedes(loser)
-	s.work += ops
-	if causal || canaryUnrecordedDiscard {
+func (s *Store) drain() {
+	kept := s.outbox
+	s.outbox = nil
+	if s.persist == nil || len(kept) == 0 {
 		return
 	}
+	if s.persist(s.EncodeState()) != nil {
+		s.outbox = kept[max(0, len(kept)-DiscardOutboxLen):]
+	}
+}
+
+func bounded[T any](xs []T, x T, n int) []T {
+	if len(xs) >= n {
+		xs = append(xs[:0], xs[len(xs)-n+1:]...)
+	}
+	return append(xs, x)
+}
+
+func (s *Store) record(u *undo, key string, winner, loser Version) {
+	id := lossOf(key, loser.id)
+	if slices.Contains(s.seen, id) {
+		return
+	}
+	s.save(u)
 	if s.discards < math.MaxUint64 {
 		s.discards++
 	}
-	u.pending = append(u.pending, Discard{Key: key, Winner: winner, Loser: loser})
+	d := Discard{Key: key, Winner: winner, Loser: loser}
+	s.seen = bounded(s.seen, id, DiscardDedupLen)
+	s.tail = bounded(s.tail, d, DiscardTailLen)
+	s.outbox = append(s.outbox, d)
+	u.pending = append(u.pending, d)
+	u.changed = true
+}
+
+func (s *Store) replaced(u *undo, key string, winner, loser Version) {
+	causal, ops := winner.supersedes(loser)
+	s.work += ops
+	if causal {
+		return
+	}
+	if loser.clockAt(s.actor) > winner.clockAt(s.actor) {
+		s.actor.Epoch = s.freshEpoch()
+		s.counter = 0
+		s.rotations++
+	}
+	if canaryUnrecordedDiscard {
+		return
+	}
+	s.record(u, key, winner, loser)
+}
+
+func (s *Store) rejected(u *undo, key string, held, incoming Version) {
+	if held.id == incoming.id {
+		return
+	}
+	below, ops := held.supersedes(incoming)
+	s.work += ops
+	if below || canaryUnrecordedDiscard || canaryIncomingLoserSilent {
+		return
+	}
+	s.record(u, key, held, incoming)
 }
 
 func (s *Store) Put(key string, value []byte, p Precondition) (Version, error) {
@@ -277,29 +381,64 @@ func (s *Store) successor(held Record, tomb bool, value []byte) (Version, error)
 func (s *Store) Merge(o *Doc) (bool, error) {
 	u := s.begin()
 	s.observe(o)
-	u.changed = s.doc.merge(o, func(key string, held, next Record) {
+	u.docChanged = s.doc.merge(o, func(key string, held, next Record) {
 		s.touch(u, key)
 		if held.ok {
-			s.classify(u, key, next.v, held.v)
+			s.replaced(u, key, next.v, held.v)
 		}
+	}, func(key string, held, incoming Version) {
+		s.rejected(u, key, held, incoming)
 	})
+	u.changed = u.changed || u.docChanged
 	if err := s.end(u, nil); err != nil {
 		return false, fmt.Errorf("occ: merge: %w", err)
 	}
-	return u.changed, nil
+	return u.docChanged, nil
 }
 
-var stateMagic = []byte("OCCS")
+var stateMagic = []byte("OCS2")
+
+const minDiscardSize = 2*minRecordSize - 1
 
 func (s *Store) EncodeState() []byte {
-	return encodeState(s.actor.Epoch, s.counter, s.discards, s.doc.Encode())
+	return encodeState(persisted{epoch: s.actor.Epoch, counter: s.counter, discards: s.discards, tail: s.tail, outbox: s.outbox, seen: s.seen}, s.doc.Encode())
 }
 
-func encodeState(epoch, counter, discards uint64, doc []byte) []byte {
+func (e *encoder) discards(ds []Discard) {
+	e.uvarint(uint64(len(ds)))
+	for _, d := range ds {
+		e.str(d.Key)
+		e.version(d.Winner)
+		e.version(d.Loser)
+	}
+}
+
+func (d *decoder) discards(limit int) []Discard {
+	n := d.count(minDiscardSize)
+	if d.err == nil && n > limit {
+		d.fail("discard list length")
+	}
+	var out []Discard
+	for i := 0; i < n && d.err == nil; i++ {
+		x := Discard{Key: d.str(), Winner: d.version(), Loser: d.version()}
+		if d.err == nil {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+func encodeState(st persisted, doc []byte) []byte {
 	var p encoder
-	p.uvarint(epoch)
-	p.uvarint(counter)
-	p.uvarint(discards)
+	p.uvarint(st.epoch)
+	p.uvarint(st.counter)
+	p.uvarint(st.discards)
+	p.discards(st.tail)
+	p.discards(st.outbox)
+	p.uvarint(uint64(len(st.seen)))
+	for _, id := range st.seen {
+		p.raw(id[:])
+	}
 	p.raw(doc)
 	sum := sha256.Sum256(p.b)
 	out := append(slices.Clone(stateMagic), sum[:]...)
@@ -310,6 +449,9 @@ type persisted struct {
 	epoch    uint64
 	counter  uint64
 	discards uint64
+	tail     []Discard
+	outbox   []Discard
+	seen     []lossID
 	doc      *Doc
 }
 
@@ -325,6 +467,18 @@ func decodeState(b []byte) (persisted, error) {
 	st := persisted{epoch: d.uvarint(), counter: d.uvarint(), discards: d.uvarint()}
 	if d.err == nil && st.epoch == 0 {
 		d.fail("epoch")
+	}
+	st.tail = d.discards(DiscardTailLen)
+	st.outbox = d.discards(math.MaxInt)
+	n := d.count(len(lossID{}))
+	if d.err == nil && n > DiscardDedupLen {
+		d.fail("loss window length")
+	}
+	for i := 0; i < n && d.err == nil; i++ {
+		var id lossID
+		copy(id[:], payload[d.off:])
+		d.off += len(id)
+		st.seen = append(st.seen, id)
 	}
 	if d.err != nil {
 		return persisted{}, d.err

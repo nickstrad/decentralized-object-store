@@ -30,20 +30,22 @@ func (c *classReplica) open(t *rapid.T, epoch uint64) {
 	c.s = s
 }
 
+var classKeys = []string{"a", "b"}
+
 func lossKey(key string, id occ.VersionID) string { return key + "\x00" + id.String() }
 
 func propClassificationMatchesOracle(t *rapid.T) {
 	or := newOracle()
-	reps := make([]*classReplica, rapid.IntRange(2, 4).Draw(t, "replicas"))
+	reps := make([]*classReplica, rapid.IntRange(3, 4).Draw(t, "replicas"))
 	for i := range reps {
 		reps[i] = &classReplica{clock: &fakeClock{now: env.Time(1_000_000 + rapid.Int64Range(-3_000, 3_000).Draw(t, "skew"))}, node: fmt.Sprintf("r%d", i), gen: uint64(i)}
 		reps[i].open(t, uint64(i+1))
 	}
-	for range rapid.IntRange(1, 120).Draw(t, "steps") {
+	for range rapid.IntRange(80, 240).Draw(t, "steps") {
 		r := reps[rapid.IntRange(0, len(reps)-1).Draw(t, "replica")]
 		switch rapid.IntRange(0, 9).Draw(t, "action") {
 		case 0, 1, 2, 3:
-			key := rapid.SampledFrom(propKeys).Draw(t, "key")
+			key := rapid.SampledFrom(classKeys).Draw(t, "key")
 			rec := r.s.Record(key)
 			p := occ.IfMatch(rec.ETag())
 			if !rec.Present() || rapid.Bool().Draw(t, "blind") {
@@ -63,7 +65,7 @@ func propClassificationMatchesOracle(t *rapid.T) {
 		case 4, 5, 6, 7:
 			src := reps[rapid.IntRange(0, len(reps)-1).Draw(t, "from")].s.Doc()
 			if rapid.Bool().Draw(t, "one key") {
-				src = src.Subset(rapid.SampledFrom(propKeys).Draw(t, "subset"))
+				src = src.Subset(rapid.SampledFrom(classKeys).Draw(t, "subset"))
 			}
 			before := r.s.Doc()
 			hooks := len(r.log.discards)

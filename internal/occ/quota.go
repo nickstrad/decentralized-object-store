@@ -100,7 +100,12 @@ func recountQuota(w putter, r Reader, key string, attempts int, recount Recount)
 			return Usage{}, false, fmt.Errorf("occ: recount quota %q: %w", key, err)
 		}
 		if rerr == nil && cur == want {
-			return want, false, nil
+			_, now, nerr := r.ReadQuota(key)
+			if nerr == nil && now == p {
+				return want, false, nil
+			}
+			last = fmt.Errorf("occ: recount quota %q: changed while recounting: %w", key, ErrPreconditionFailed)
+			continue
 		}
 		if _, err := writeQuota(w, key, want, p); err != nil {
 			if errors.Is(err, ErrPreconditionFailed) {

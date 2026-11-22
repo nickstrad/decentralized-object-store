@@ -157,9 +157,9 @@ func (n *Node) load() {
 			return
 		}
 		n.stats.Corrupt++
-		n.open(persisted{doc: NewDoc()}, true)
+		n.open(persisted{}, true)
 	case errors.Is(err, env.ErrNotFound):
-		n.open(persisted{doc: NewDoc()}, true)
+		n.open(persisted{}, true)
 	case errors.Is(err, env.ErrClosed):
 	default:
 		n.stats.LoadErrors++
@@ -168,26 +168,24 @@ func (n *Node) load() {
 }
 
 func (n *Node) open(st persisted, fresh bool) {
-	if fresh {
-		n.stats.Fresh++
-		if hazardReuseEpoch {
-			st.epoch = 1
-		}
-	}
-	n.store = newStore(StoreConfig{
+	cfg := StoreConfig{
 		Node:      n.e.ID,
-		Epoch:     st.epoch,
-		Counter:   st.counter,
-		Discards:  st.discards,
 		Clock:     n.e.Clock,
 		Rand:      n.e.Rand,
-		Doc:       st.doc,
 		Persist:   n.persist,
 		Log:       n.cfg.Log,
 		OnDiscard: n.cfg.OnDiscard,
-	})
+	}
 	if fresh {
+		n.stats.Fresh++
+		if hazardReuseEpoch {
+			cfg.Epoch = 1
+		}
+		n.store = newStore(cfg)
 		_ = n.persist(n.store.EncodeState())
+	} else {
+		n.store = openStore(cfg, st)
+		n.store.replay()
 	}
 	n.arm()
 }
