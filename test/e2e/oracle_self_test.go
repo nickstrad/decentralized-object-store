@@ -219,7 +219,7 @@ func TestAckOracleFlagsALostWriteMissingFromEveryDiscardLog(t *testing.T) {
 	if tally["discarded"] == 0 {
 		t.Fatalf("no write was discarded: %v", tally)
 	}
-	c.o.lost = map[occ.VersionID]bool{}
+	c.o.lineage.Forget()
 	if _, err := c.o.checkAcks(rd); !errors.Is(err, errScenario) {
 		t.Fatalf("checkAcks = %v with the discard logs emptied", err)
 	}

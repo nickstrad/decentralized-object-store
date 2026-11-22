@@ -197,7 +197,7 @@ func partitionRun(res *partitionResult) func(seed int64) *sim.Sim {
 			}
 		}
 		res.events, res.distinctLosers = len(h.discards), len(losers)
-		tally, err := h.acks.check(rd, func(key string) bool {
+		tally, err := h.acks.Check(rd, func(key string) bool {
 			kind, parts, err := occ.ParseKey(key)
 			return err == nil && (kind == occ.KindManifest || kind == occ.KindTag && !strings.HasPrefix(parts[2], "~"))
 		})

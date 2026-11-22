@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/node"
+	"github.com/nickstrad/decentralized-object-store/internal/nodetest"
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 	"github.com/nickstrad/decentralized-object-store/internal/sim/simtest"
@@ -51,7 +52,7 @@ type harness struct {
 	ids      []env.NodeID
 	cfg      node.Config
 	discards []discardRec
-	acks     *ackOracle
+	acks     *nodetest.Lineage
 	gc       *gcOracle
 	mans     map[string]*storage.Manifest
 	declared []string
@@ -62,13 +63,13 @@ func newHarness(seed int64, n int, cfg node.Config, net sim.NetConfig) (*harness
 	if err != nil {
 		return &harness{s: sim.New(sim.Config{Seed: seed})}, err
 	}
-	h := &harness{s: sim.New(sim.Config{Seed: seed, Codes: table, Net: net}), ids: sim.NodeIDs(n), acks: newAckOracle(), mans: map[string]*storage.Manifest{}}
+	h := &harness{s: sim.New(sim.Config{Seed: seed, Codes: table, Net: net}), ids: sim.NodeIDs(n), acks: nodetest.NewLineage(), mans: map[string]*storage.Manifest{}}
 	h.gc = newGCOracle(h)
 	cfg.Seeds = []env.NodeID{h.ids[0], h.ids[1], h.ids[2]}
 	sink := cfg.DiscardSink
 	cfg.DiscardSink = func(key string, w, l occ.Version) {
 		h.discards = append(h.discards, discardRec{key: key, winner: w, loser: l})
-		h.acks.discard(l)
+		h.acks.Discard(l)
 		if sink != nil {
 			sink(key, w, l)
 		}
@@ -79,7 +80,7 @@ func newHarness(seed int64, n int, cfg node.Config, net sim.NetConfig) (*harness
 		c := cfg
 		id := e.ID
 		c.CommitSink = func(key string, held occ.Record, v occ.Version) {
-			h.acks.commit(id, key, held, v)
+			h.acks.Commit(id, key, held, v)
 			h.gc.onCommit(key, v)
 			h.onCommitLoss(id, key, v)
 			if commits != nil {

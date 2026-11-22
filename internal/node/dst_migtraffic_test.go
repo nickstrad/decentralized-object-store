@@ -313,7 +313,7 @@ func migrationTrafficRun(res *trafficResult) func(seed int64) *sim.Sim {
 			s.Fail(err)
 			return s
 		}
-		tally, err := h.acks.check(rd, func(k string) bool {
+		tally, err := h.acks.Check(rd, func(k string) bool {
 			kind, parts, err := occ.ParseKey(k)
 			return err == nil && kind == occ.KindManifest && parts[0] == mtBucket
 		})

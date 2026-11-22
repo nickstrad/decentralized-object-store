@@ -198,7 +198,7 @@ func TestLossDeclarationRacesConcurrentOverwriteAndDelete(t *testing.T) {
 					}
 				}
 			} else {
-				if _, err := h.acks.check(rd, func(k string) bool { return k == occ.ManifestKey("g", "k") }); err != nil {
+				if _, err := h.acks.Check(rd, func(k string) bool { return k == occ.ManifestKey("g", "k") }); err != nil {
 					t.Fatalf("overwrite v2 disappeared without a counted discard: %v", err)
 				}
 				if h.node(h.ids[0]).Health().Discards == 0 && h.node(h.ids[1]).Health().Discards == 0 {

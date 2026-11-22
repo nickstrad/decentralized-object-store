@@ -152,7 +152,7 @@ func lateFlipRun(res *lateResult, isolate bool) func(seed int64) *sim.Sim {
 			s.Fail(err)
 			return s
 		}
-		if _, err := h.acks.check(rd, func(k string) bool { return k == occ.ManifestKey(mtBucket, lateKey) }); err != nil {
+		if _, err := h.acks.Check(rd, func(k string) bool { return k == occ.ManifestKey(mtBucket, lateKey) }); err != nil {
 			s.Fail(err)
 			return s
 		}

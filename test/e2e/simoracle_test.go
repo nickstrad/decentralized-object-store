@@ -1,9 +1,6 @@
 package e2e
 
 import (
-	"bytes"
-	"cmp"
-	"encoding/hex"
 	"fmt"
 	"slices"
 	"strings"
@@ -11,17 +8,10 @@ import (
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/node"
+	"github.com/nickstrad/decentralized-object-store/internal/nodetest"
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
-
-type commitEntry struct {
-	key     string
-	node    env.NodeID
-	v       occ.Version
-	content string
-	client  bool
-}
 
 type discardEntry struct {
 	node          env.NodeID
@@ -30,28 +20,23 @@ type discardEntry struct {
 }
 
 type simOracle struct {
-	c         *simCluster
-	failed    []string
-	commits   []commitEntry
-	seen      map[occ.VersionID]map[occ.VersionID]bool
-	seenAny   map[occ.VersionID]bool
-	byContent map[string]occ.VersionID
-	lost      map[occ.VersionID]bool
-	discards  []discardEntry
-	mans      map[storage.VersionID]*storage.Manifest
-	declared  []storage.VersionID
-	deleted   map[storage.VersionID][]string
-	refs      map[occ.VersionID]storage.VersionID
-	spreadOK  map[string]bool
-	spreadN   int
-	off       bool
-	skipLoss  bool
-	residual  map[string]bool
+	c        *simCluster
+	failed   []string
+	lineage  *nodetest.Lineage
+	discards []discardEntry
+	mans     map[storage.VersionID]*storage.Manifest
+	declared []storage.VersionID
+	deleted  map[storage.VersionID][]string
+	refs     map[occ.VersionID]storage.VersionID
+	spreadOK map[string]bool
+	spreadN  int
+	off      bool
+	skipLoss bool
+	residual map[string]bool
 }
 
 func newSimOracle(c *simCluster) *simOracle {
-	return &simOracle{c: c, seen: map[occ.VersionID]map[occ.VersionID]bool{}, seenAny: map[occ.VersionID]bool{},
-		byContent: map[string]occ.VersionID{}, lost: map[occ.VersionID]bool{}, mans: map[storage.VersionID]*storage.Manifest{},
+	return &simOracle{c: c, lineage: nodetest.NewLineage(), mans: map[storage.VersionID]*storage.Manifest{},
 		deleted: map[storage.VersionID][]string{}, refs: map[occ.VersionID]storage.VersionID{}, spreadOK: map[string]bool{},
 		residual: map[string]bool{}}
 }
@@ -82,48 +67,8 @@ func manifestOf(key string, v occ.Version) *storage.Manifest {
 	return man
 }
 
-func contentOf(key string, v occ.Version) string {
-	man := manifestOf(key, v)
-	if man == nil {
-		return ""
-	}
-	return hex.EncodeToString(man.ContentSHA[:]) + fmt.Sprintf(":%d", man.Size)
-}
-
-func (o *simOracle) ancestors(key string, held occ.Record) map[occ.VersionID]bool {
-	out := map[occ.VersionID]bool{}
-	h, ok := held.Version()
-	if !ok {
-		return out
-	}
-	add := func(id occ.VersionID) {
-		out[id] = true
-		for a := range o.seen[id] {
-			out[a] = true
-		}
-	}
-	add(h.ID())
-	if c := contentOf(key, h); c != "" {
-		if id, ok := o.byContent[key+"\x00"+c]; ok {
-			add(id)
-		}
-	}
-	return out
-}
-
 func (o *simOracle) commit(id env.NodeID, key string, held occ.Record, v occ.Version) {
-	anc := o.ancestors(key, held)
-	for a := range anc {
-		o.seenAny[a] = true
-	}
-	o.seen[v.ID()] = anc
-	c := contentOf(key, v)
-	if c != "" {
-		if _, dup := o.byContent[key+"\x00"+c]; !dup {
-			o.byContent[key+"\x00"+c] = v.ID()
-		}
-	}
-	o.commits = append(o.commits, commitEntry{key: key, node: id, v: v, content: c})
+	o.lineage.Commit(id, key, held, v)
 	if sv, ok := o.ref(key, v); ok && len(o.deleted[sv]) > 0 && !o.residual[key] {
 		o.fail(fmt.Errorf("version %s committed as %q on %s after its shard %s was deleted", sv, key, id, o.deleted[sv][0]))
 	}
@@ -136,7 +81,7 @@ func (o *simOracle) commit(id env.NodeID, key string, held occ.Record, v occ.Ver
 
 func (o *simOracle) discard(id env.NodeID, key string, w, l occ.Version) {
 	o.discards = append(o.discards, discardEntry{node: id, key: key, winner: w, loser: l})
-	o.lost[l.ID()] = true
+	o.lineage.Discard(l)
 }
 
 func (o *simOracle) settled(k *Call) {}
@@ -292,25 +237,6 @@ func (o *simOracle) readers() []occ.Reader {
 	return out
 }
 
-func lwwAfter(a, b occ.Version) bool {
-	sa, sb := a.Stamp(), b.Stamp()
-	if c := cmp.Compare(sa.Wall, sb.Wall); c != 0 {
-		return c > 0
-	}
-	if c := cmp.Compare(sa.Logical, sb.Logical); c != 0 {
-		return c > 0
-	}
-	if c := cmp.Compare(sa.Node, sb.Node); c != 0 {
-		return c > 0
-	}
-	ia, ib := a.ID(), b.ID()
-	return bytes.Compare(ia[:], ib[:]) > 0
-}
-
-func covers(x, w occ.Version) bool {
-	return x.ID() != w.ID() && x.Clock().Get(w.Dot().Actor) >= w.Dot().Counter
-}
-
 func (o *simOracle) protector(v storage.VersionID) (string, bool) {
 	rds := o.readers()
 	for _, rd := range rds {
@@ -325,7 +251,7 @@ func (o *simOracle) protector(v storage.VersionID) (string, bool) {
 			beaten := false
 			for _, other := range rds {
 				y, ok := other.Record(k).Version()
-				if ok && y.ID() != x.ID() && (covers(y, x) || lwwAfter(y, x)) {
+				if ok && y.ID() != x.ID() && (nodetest.Covers(y, x) || nodetest.LWWAfter(y, x)) {
 					beaten = true
 					break
 				}
@@ -348,34 +274,10 @@ func (o *simOracle) onDelete(id env.NodeID, name string, v storage.VersionID) {
 	}
 }
 
-func (o *simOracle) explain(e commitEntry, final occ.Record) string {
-	if f, ok := final.Version(); ok {
-		if f.ID() == e.v.ID() {
-			return "current"
-		}
-		if e.content != "" && contentOf(e.key, f) == e.content {
-			return "current-copy"
-		}
-	}
-	switch {
-	case o.seenAny[e.v.ID()]:
-		return "superseded"
-	case o.lost[e.v.ID()]:
-		return "discarded"
-	}
-	return ""
-}
-
 func (o *simOracle) checkAcks(rd occ.Reader) (map[string]int, error) {
-	tally := map[string]int{}
-	for _, e := range o.commits {
-		why := o.explain(e, rd.Record(e.key))
-		if why == "" {
-			id := e.v.ID()
-			return tally, failf("acknowledged version %s of %q (written on %s) is not current, not superseded by a later write that held it, and named as a loser in no discard record",
-				hex.EncodeToString(id[:4]), e.key, e.node)
-		}
-		tally[why]++
+	tally, err := o.lineage.Check(rd, nil)
+	if err != nil {
+		return tally, failf("%v", err)
 	}
 	return tally, nil
 }
