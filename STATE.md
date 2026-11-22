@@ -36,7 +36,7 @@ arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.
 | 3 | Merkle anti-entropy (internal/merkle) | LANDED 2a86f4c; chapter 4; review NITS → repair → PASS; harness 72 held, 2 restated (cost bounds; PLAN 2.2/7.4 updated) |
 | 4 | Optimistic concurrency control for metadata, last-writer-wins (internal/occ) | LANDED 9acc7ea; chapter 5; review FAIL → LWW rework → FAIL → round 2 → Astra arbitration NITS closed; harness 60 held, 1 expects exactly one record per loss |
 | 5 | Saga engine and bucket migration (internal/saga) | LANDED 4892ab9; chapter 6; review FAIL → repair → NITS closed; harness 125 held |
-| 6 | Integration: node, real runtime, HTTP object API, cmd/objnode | Opus build `06-integration-build` dispatched 2026-11-22 (worktree `06-integration`, brief /root/briefs/objstore-p2-06-integration-build.md, copied to agent_work/06-integration/) |
+| 6 | Integration: node, real runtime, HTTP object API, cmd/objnode | Built (gate green); Neon REVIEW-1 FAIL (1 blocker: a pre-flip write lost by migration retire; 8 majors); Astra harness committed (284 held, 0 broken). The one Opus repair round `06-integration-repair1` is RUNNING (brief agent_work/06-integration/objstore-p2-06-integration-repair1.md; it also moves the real runtime to `internal/noderuntime`). AFTER it exits: commit gates, rebase; ORCHESTRATOR gate changes on the chunk branch (add `internal/node` to the detlint roots and floor_pkgs, `internal/storage`, `internal/noderuntime` to floor_pkgs, `internal/noderuntime` and `cmd/objnode` to the race count=3 list, a host-side cluster-smoke step in gate.sh; re-run the fast canaries; these go into the re-review brief); rerun the harness + RESULTS.md; Neon re-review; second FAIL → Astra arbitration |
 | 7 | E2E suite, nemesis cycles, fuzz hardening | not started (needs 6) |
 | 8 | Publishing finish: the assembled book (assembly and polish only) | not started |
 
@@ -90,13 +90,12 @@ arbitrates an Opus/Neon standoff. Mission: /root/briefs/objstore-phase2-mission.
 
 ## Open items (none blocks the build)
 
-- CI on main: the canary fix (242fad4) is correct locally, but no CI run has COMPLETED
-  since — a run takes longer than the gap between landings (one ran 57 min before the
-  next push cancelled it). Check `gh run list --workflow CI` during the Chunk 6 build;
-  if a run still fails or exceeds an hour, find where the time goes (50 canaries, each
-  a gate run on a growing tree) and fix the CI job, with review.
-- The canary fix itself (agent_work/gates/canaries.sh, 12 lines) has not had a
-  cross-family review; fold it into Chunk 6's review brief.
+- CI: GREEN on main since 631b44e (2026-11-22). ci.yml runs gates, prose provenance and
+  the 33 fast canaries (`CANARY_FAST=1`) on every push in about 18 minutes; the full
+  canary set runs from .github/workflows/canaries.yml on tooling changes, weekly and on
+  demand (hours; check `gh run list --workflow "Gate canaries"` — the first full run was
+  still in progress when this was written). Both tooling changes were reviewed by Neon
+  (agent_work/ci-canaries/REVIEW-2.md, NITS closed).
 - docs/c4 diagrams 1 and 2 still draw a "Sync client" person marked "not to be built"
   (OQ-7 decided node-level sync only). Removing it renumbers both views — owner: Nick,
   or do it in Chunk 8's final C4 pass.

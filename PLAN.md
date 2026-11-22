@@ -1147,7 +1147,9 @@ runtime needs one that is not `internal/storage`.
 - **Tombstones.** A delete is a version carrying a tombstone; it obeys the same
   preconditions and competes under last-writer-wins like any write (a delete can discard
   a concurrent put and the reverse; either way the discard is recorded). Tombstones are
-  kept for a retention period, then collected.
+  retained indefinitely as built (restated at Chunk 6: collecting them safely needs a
+  cluster-wide proof that no node can still hold the deleted version, which this project
+  does not build); the cost, metadata that grows with every delete, is a stated limit.
 
 ### 7.6 Property testing, fuzz budget, Docker, Go version (as ruled)
 
