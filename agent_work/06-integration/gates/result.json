@@ -1,16 +1,16 @@
 {
   "chunk": "06-integration",
-  "sha": "97b9850a600120fd7a7b22a8821b6776bd465f93",
-  "stage": "build",
-  "comment_baseline": "631b44ede9ffa3ca4a53abc4bcec824ee362d061",
-  "started": "2026-11-22T08:13:14Z",
-  "finished": "2026-11-22T09:13:03Z",
+  "sha": "20990dfbca0bcd7bb07051aa89bd4750a0f64800",
+  "stage": "final",
+  "comment_baseline": "none",
+  "started": "2026-11-22T14:38:56Z",
+  "finished": "2026-11-22T15:46:17Z",
   "go_version": "go version go1.26.11 linux/amd64",
-  "image_id": "sha256:1b5ba941beb49ee3f90411898be6bb49414f4fba660ba06230f2c0d7e2003661",
+  "image_id": "sha256:e5622e67449b84f89adf985181e4d5f8a2f78673163bfb4913e0442584152126",
   "in_container": true,
   "partial": false,
   "dirty_tree": false,
-  "seed_from_sha": 166823056793601,
+  "seed_from_sha": 35841736690187,
   "fuzz_seconds": 30,
   "overall": "pass",
   "counts_for_landing": true,
@@ -19,28 +19,28 @@
       "gate": "G0",
       "check": "tools",
       "status": "pass",
-      "seconds": 1,
+      "seconds": 2,
       "note": ""
     },
     {
       "gate": "G0",
       "check": "gofmt",
       "status": "pass",
-      "seconds": 0,
+      "seconds": 1,
       "note": ""
     },
     {
       "gate": "G0",
       "check": "vet",
       "status": "pass",
-      "seconds": 1,
+      "seconds": 4,
       "note": ""
     },
     {
       "gate": "G0",
       "check": "build",
       "status": "pass",
-      "seconds": 1,
+      "seconds": 2,
       "note": ""
     },
     {
@@ -54,14 +54,14 @@
       "gate": "G0",
       "check": "panics",
       "status": "pass",
-      "seconds": 0,
+      "seconds": 1,
       "note": ""
     },
     {
       "gate": "G0",
       "check": "deps",
       "status": "pass",
-      "seconds": 1,
+      "seconds": 0,
       "note": ""
     },
     {
@@ -69,55 +69,62 @@
       "check": "comments",
       "status": "pass",
       "seconds": 0,
-      "note": "comments compared with baseline 631b44ede9ffa3ca4a53abc4bcec824ee362d061"
+      "note": "stage=final, comment rule is checked by prose-check.sh"
     },
     {
       "gate": "G0",
       "check": "selfcontained",
       "status": "pass",
-      "seconds": 5,
+      "seconds": 6,
       "note": ""
     },
     {
       "gate": "G1",
       "check": "unit",
       "status": "pass",
-      "seconds": 67,
+      "seconds": 78,
       "note": ""
     },
     {
       "gate": "G2",
       "check": "property",
       "status": "pass",
-      "seconds": 360,
-      "note": "rapid seed 166823056793601, 2000 checks, 8 packages"
+      "seconds": 359,
+      "note": "rapid seed 35841736690187, 2000 checks, 8 packages"
     },
     {
       "gate": "G3",
       "check": "fuzz",
       "status": "pass",
-      "seconds": 460,
+      "seconds": 464,
       "note": "14 fuzz targets, 30s each"
     },
     {
       "gate": "G4",
       "check": "race",
       "status": "pass",
-      "seconds": 963,
+      "seconds": 1068,
       "note": ""
     },
     {
       "gate": "G5",
       "check": "dst",
       "status": "pass",
-      "seconds": 1726,
-      "note": "500 seeds from base 166823056793601"
+      "seconds": 2054,
+      "note": "500 seeds from base 35841736690187"
     },
     {
       "gate": "G6",
       "check": "docker",
       "status": "pass",
       "seconds": 0,
+      "note": ""
+    },
+    {
+      "gate": "G7",
+      "check": "cluster",
+      "status": "pass",
+      "seconds": 8,
       "note": ""
     }
   ]
