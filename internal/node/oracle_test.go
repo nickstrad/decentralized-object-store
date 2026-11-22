@@ -141,13 +141,13 @@ func covers(x, w occ.Version) bool {
 }
 
 type gcOracle struct {
-	h       *harness
+	h        *harness
 	off      bool
 	residual map[string]bool
 	onWrite  func(id env.NodeID, name string)
-	deleted map[storage.VersionID][]string
-	refs    map[occ.VersionID]storage.VersionID
-	found   []string
+	deleted  map[storage.VersionID][]string
+	refs     map[occ.VersionID]storage.VersionID
+	found    []string
 }
 
 func newGCOracle(h *harness) *gcOracle {
