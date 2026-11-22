@@ -56,6 +56,9 @@ func config() node.Config {
 }
 func newCluster(seed int64) *cluster { return makeCluster(seed, nil) }
 func makeCluster(seed int64, wrap func(env.Env) env.Env) *cluster {
+	return configuredCluster(seed, wrap, nil)
+}
+func configuredCluster(seed int64, wrap func(env.Env) env.Env, tune func(*node.Config)) *cluster {
 	c := &cluster{ids: sim.NodeIDs(9)}
 	codes, e := node.CodeTable()
 	must(e)
@@ -67,6 +70,9 @@ func makeCluster(seed int64, wrap func(env.Env) env.Env) *cluster {
 	cfg.Seeds = c.ids[:3]
 	cfg.DiscardSink = func(k string, w, l occ.Version) { c.losses = append(c.losses, loss{k, l}) }
 	cfg.Log = func(s string) { c.logs = append(c.logs, s) }
+	if tune != nil {
+		tune(&cfg)
+	}
 	factory := node.NewFactory(cfg)
 	must(c.s.AddCluster(c.ids, 3, func(e env.Env) env.Process {
 		if wrap != nil {
@@ -398,8 +404,20 @@ func main() {
 	if len(os.Args) > 1 {
 		mode = os.Args[1]
 	}
-	if mode == "real" {
+	if mode == "quota" {
+		for seed := int64(7301); seed <= 7320; seed++ {
+			if selectedSeed(seed) {
+				check("C4", "object-only-discard-quota", seed, func() string { return quotaManifestScenario(seed) })
+			}
+		}
+	} else if mode == "http" {
+		httpModelChecks()
+	} else if mode == "real" {
 		realChecks()
+		httpModelChecks()
+		shutdownChecks()
+	} else if mode == "extended" {
+		extendedChecks()
 	} else if mode == "cli" {
 		cliChecks()
 	} else {

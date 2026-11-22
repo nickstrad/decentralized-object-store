@@ -1,41 +1,47 @@
-# Integration robustness test report
+# Integration robustness testing — round 2
 
-Completed: **284 HELD, 0 BROKEN, 0 setup errors in 110 seconds**. Exit status 0 from the final `run-all.sh`. No confirmed product counterexamples. No product files changed; no commits.
+Completed: **658 HELD, 4 BROKEN, 0 setup errors in 467 seconds** (7 minutes 47 seconds). `run-all.sh` exited **1**, as required for confirmed counterexamples. The four failures are one HTTP entity-tag-list parsing defect affecting four mutation routes. All migration, returning-peer, duel, quota, disk and shutdown checks held. Final output: [evidence/run-all.txt](evidence/run-all.txt).
 
-Source HEAD: `db64eb1cfeb05853bbef335c10770470e80d7c13`. Evidence: `evidence/run-all.txt` (284 check lines: 240 independent simulator, 6 independent loopback, 37 existing-suite checks, 1 independent CLI smoke).
+The restored baseline separately passed all 284 original check slots in 263 seconds. The first expanded run had 657 held and five failure lines; four were the same HTTP defect and one was a fixture coverage assertion, corrected and explained below. Its output remains in `evidence/first-expanded-run.txt`.
 
-## Claims
+Source HEAD: `cc7d95e69970fe64f7452c71a51f941f5c353f93`.
 
-- C1: The joined code table has no collision; every code round-trips to its sentinel; unknown → `ErrRemote`
-- C2: No GET returns wrong bytes; every acknowledged PUT reads back after heal; metadata and membership converge (21 nodes, 3 regions, 1% loss, region partition, crash)
-- C3: Concurrent writes on both sides of a partition converge to one version per key on every node; every acknowledged metadata write is current, causally superseded or named as a loser in a discard record (oracle independent of occ's classifier)
-- C4: After a quota discard the usage is recounted from the manifests and matches them on every node
-- C5: The losing version's shards are collected after the grace; no live version's shard is ever collected
-- C6: A deleted object stays deleted through anti-entropy, a partition heal and a crashed node rejoining
-- C7: A restarted node gets its missing shards back; a wiped node is refilled
-- C8: With up to m shards per stripe rotted every GET is correct and every rotted shard is rebuilt, moving the damaged bytes only
-- C9: Chunk 5's 78-cell failure matrix holds on real components
-- C10: A bucket that migrates away leaves no inventory running on the source; a stopped node runs no worker
-- C11: Object round-trip through the full path
-- C12: A duplicated request and a lost response never double-apply
-- C13: The same Node code runs on the simulator and on real sockets
-- C14: Frame codec: malformed, truncated, oversized input is refused; never a panic
-- C15: The frame limit fits a full Merkle reply and a shard request
-- C16: One HTTP status table, tested row by row through real HTTP; on a real node for the rows a node produces
-- C17: Arbitrary HTTP requests give a status in the table and never a GET that disagrees with the last acknowledged PUT
-- C18: Oversized bodies (413), oversized headers (431), slow header/body clients are cut off by the timeouts
-- C19: Lifecycle: start, double start, use after close, double close, close during start-up, canceled start (synctest)
-- C20: Cancellation mid put (leaves only collectable shards), get, migration start and status
-- C21: Shutdown under load returns every call; shutdown during repair and restart on the same disk
-- C22: No goroutine survives (leak check in `TestMain` of `internal/node` and `cmd/objnode`); an untracked goroutine fails it
-- C23: A loop panic stops the node (recovered and logged), datagram overflow drops and counts
-- C24: Three Docker peers in three regions start, join, serve a put on one and a get on another, and refuse stale conditional writes
-- C25: Measure quota overshoot during partition.
-- C26: GET during migration and migration interleaved with partition, bit-rot and restart.
-- C27: Conditional PUT races through HTTP.
-- C28: Real-socket short reads, resets, malformed clients and shutdown churn.
+Scope: only `agent_work/adversarial/06-integration/` was written. No product edits, commits or git write commands. The project state file was read; this report is the handoff because the brief forbids writing STATE.md. The concurrent gate owns changes under `agent_work/06-integration/gates/`.
 
-## How to reproduce
+## Harness changes and retained checks
+
+All 240 independent simulator checks, six loopback checks and the CLI smoke from round 1 remain. The 37 supplemental test slots remain, with the following changes:
+
+- Runtime imports now use `internal/noderuntime`; HTTP server/limits use `internal/storage/httpapi`. The shutdown stack search uses the new runtime package name.
+- Supplemental tests search the two new packages as well as node, storage and objnode.
+- `TestRuntimeCloseDuringStartup` was removed by the repair. Its slot now runs `TestCloseWhileStartIsInProgress`, which actually pauses startup.
+- `TestRuntimeCancelMidPutLeavesOnlyCollectableShards` and `TestCancelMidGetAndMidMigrationReturnContextErrors` were removed. Their slots now run `TestACallCanceledBeforeItReachesTheLoopNeverApplies` and `TestACallCanceledAfterTheLoopTookItAppliesOnceAndIsReported`. These cover the repaired cancellation contract; the old tests could not be retained as executable tests because they no longer exist. The original claim that those tests proved mid-write orphan collection is withdrawn.
+- The existing unknown/stale conditional-write refusals remain 412. New model rows explicitly expect 412 for unknown quoted entity tags, empty/whitespace If-Match fields and weak-only lists, 400 for malformed syntax or unsupported If-None-Match values, and success only for a matching strong validator or `*` on an existing entity. These are intentional re-judgements of repaired behavior; no original harness assertion of unknown-tag 400 existed to change.
+- Migration's source-empty check remains for its fully converged fixture. A returning hidden write is allowed to retain its shards in the source region, as the repaired protocol specifies; its readability is checked separately.
+
+Original numbered claims C1–C28, detailed checks and round-1 evidence are preserved in [ROUND1.md](ROUND1.md). C19/C20 are narrowed as above. C23 now also has independent public-API panic injection. The remaining old check bodies were retained.
+
+## Added numbered claims and checks
+
+| Claim | Scenario and oracle | Sample |
+|---|---|---|
+| C29, C2–C4 | Non-coordinator create/overwrite/delete traffic throughout a migration, with 1% datagram loss, 2% duplication and simulated network delay. Requests continue at 100 ms intervals until both ten seconds of traffic and terminal migration state; a 60-second cap is enforced. The rollback wrapper runs verify then returns a permanent refusal. Every acknowledged manifest/tombstone is matched only against the same key's final version or discard record using its version vector. Every live key is GET on all nine nodes; bytes must be from an acknowledged value on that key and match winning metadata's SHA-256. All metadata digests agree. Quota is independently summed on every node after heal. | Seeds 7201–7250, separately for completion and compensation: 100 scenarios. |
+| C30 | Two starts with no simulated event between them, coordinators 0 and 4, destinations r1 and r2. Same bucket and different buckets. Both sagas must terminate, at least one complete (both for different buckets); all metadata must converge and all nine original-object reads must be exact. Per-bucket quota recounts on every node. Both same-bucket sagas may report completed when one observes the winning flip; that alone is not an error. | Seeds 7301–7320 × two variants: 40 scenarios. |
+| C4 | 100-byte initial object; isolated source side writes 500 bytes, other side later writes 100 bytes. Assert the same-size write leaves its quota version unchanged. Assert the first manifest discard occurs before any quota discard; subsequent repair writes may themselves conflict. After heal all nine quota records must equal independently summed live objects. | 20 seeds, 7301–7320. |
+| C33, C4 | Begin a PUT on peer 1, then drop its outbound links after shard requests have left. Wait for acknowledgement, isolate it, and pause it on even seeds. Assert all other eight nodes lack the key. Complete migration while it is absent, resume/heal, then require all nine reads to return its exact acknowledged bytes and all quota records to match recounts. | 20 seeds, 7301–7320: ten partitioned, ten paused and partitioned. |
+| C31 | Independent status/mutation table through the real HTTP handler and real runtime, including object PUT, object DELETE, tag PUT, ACL PUT. Empty fields, whitespace, empty quoted tags, malformed quoting, unknown tag, weak validator, star, matching/nonmatching lists, empty list members, star mixed into list, and If-None-Match variants. Each refusal must preserve the complete metadata digest; successful writes must change it, and objects are read back. A quoted comma inside an entity-tag is also exercised. | 21 cases × four mutation routes = 84 checks. |
+| C23, C22 | Panic in `Runtime.Inspect` on the node loop. Require ErrClosed, Done closed, ErrPanicked and listener refusal before explicit Close. | One race-enabled independent check plus retained existing panic tests. |
+| C21, C22 | Hold a real saga's first step without calling its completion. Verify it is nonterminal, call Shutdown, require Done and socket closure and post-close API refusal. | One race-enabled independent check. |
+| C32 | Go overlay adds an independent in-package test using the package's existing test-only memFS fault layer. Overwrite two paths with sizes 0, 1, 4097 and 65537; inject crash or I/O failure at every operation boundary, then recover both durable-directory and retained-directory images. Require old or new bytes only, and new bytes whenever Sync succeeded. | 108 boundary checks, two recovery images each. |
+| C29, C33, C32 | Supplement repaired targeted late-flip and isolated-late-write tests, each with deterministic replay; original file-disk crash suite also checks new directories, append, delete and short writes. | Seeds 7401–7420 for each targeted scenario, each replayed for determinism; exact subtests in repair.jsonl. |
+
+Go builds/tests run only through `docker compose run --rm -T dev`. Final drivers use GOMAXPROCS=2, build parallelism 2 and test parallelism 2. All six drivers run serially. The retained migration matrix tests seed 6281 in all 78 cells and assigns seed 6282 to one cell: 79 seed/cell combinations, each with deterministic replay (confirmed from JSON leaf results). The loopback checks and retained supplemental suite use the race detector. The independent simulator and disk/targeted supplement do not.
+
+## Final measurements
+
+The 100 independent migration scenarios made **11,753 traffic attempts**, including **6,773 while migration was nonterminal**, and acknowledged **5,519 mutations**, including **1,444 deletes**. Per-scenario attempts ranged from 100 to 165. Fifty migrations completed and fifty compensated. All 40 duel scenarios, 20 returning-peer scenarios and 20 corrected manifest-discard quota scenarios held. The 84 HTTP model checks held 80 cases and failed the four quoted-comma cases. All 108 independent disk boundary checks and all four supplemental repaired-suite checks held. These counts are checks/samples, not population bounds.
+
+## Reproduction
 
 From the worktree root:
 
@@ -43,46 +49,40 @@ From the worktree root:
 agent_work/adversarial/06-integration/run-all.sh
 ```
 
-Each `aNN-*.sh` also runs with no arguments from that directory. All Go compilation and execution happens through `docker compose run --rm -T dev`. The only nested module is this directory. No additional dependencies. Drivers clean compiled executables; runtime and CLI temporary disks live here and are removed. Result logs are confined to `evidence/`. No git writes or changes to product files.
+Output is one HELD/BROKEN line per check, followed by `SUMMARY held=N broken=M setup_errors=K elapsed_seconds=S` in `evidence/run-all.txt`. Exit 0 means all held, 1 means a counterexample, 2 means a setup error. Drivers preserve full logs under `evidence/`; compiler/container errors are not product findings.
 
-The driver returns 0 for all HELD, 1 for any BROKEN, 2 for setup errors. Individual assertion failures print their actual seed and reason; compiler/container failures do not become product counterexamples. Existing-suite output is explicitly labeled `existing-` so it cannot be mistaken for independent evidence.
+For a single new simulator seed (7301 also selects its returning-peer, quota and two duel checks):
 
-## Checks by claim
+```sh
+docker compose run --rm -T dev env GOMAXPROCS=2 GOFLAGS=-p=2 CHECK_SEED=7301 sh -c 'cd agent_work/adversarial/06-integration && go build -o evidence/repro . && ./evidence/repro extended; r=$?; rm -f evidence/repro; exit "$r"'
+```
 
-| Claims | Independent checks and supplementary checks |
-|---|---|
-| C1 | Every joined sentinel wrapped and round-tripped; all unassigned code bytes checked for ErrRemote. Existing collision, round-trip and block tests. |
-| C2, C3 | Twenty seeds, 9 nodes, three regions. Isolate r0 from the other six nodes, wait 7 virtual seconds for membership, acknowledge a write on each side, heal, compare metadata digests and nine GETs. Odd seeds use create-only; even seeds share the initial ETag. Identify losing acknowledged version independently from final winning storage version, then require its OCC version ID in both discard callbacks and text logs. Health totals must equal callbacks and logs. Existing 21-node put/get and partition scenarios supplement this. |
-| C4, C25 | Two 600-byte distinct objects plus a 701-byte shared-key version accepted on each partition side. After heal, independently sum ListObjects sizes/count, compare all nine quota records, report overshoot over 2200 bytes. Existing partition suite has a different quota/workload. |
-| C5 | After 15 virtual seconds healing (GC grace 4 seconds), scan every simulated disk for loser shards, require actual loser collection events, forbid collection of the final winner; all nine winning reads must succeed. Existing suite additionally checks collection throughout its scenarios. |
-| C6, C7 | Wipe and restart node 8; compare every expected shard assigned there against its manifest checksum. Crash it again, delete while offline, restart, compare all nine metadata records and require not-found. Existing crash/restart scenarios add other fault schedules. |
-| C8, C11 | Sizes 0, 1, 1023, 1024, 1025, 3077 bytes; independently decode object record framing and use the exported manifest decoder. Rot one shard per stripe (m=1), GET on every node while repair runs, check exact bytes and eventual durable shard checksum, require rebuilt bytes to equal damaged blob bytes exactly. Empty objects exercise the zero-stripe path; only nonempty objects contribute repair evidence. |
-| C9, C26 | Twenty separate combined-fault scenarios: regional bucket, 2081 bytes, one rotted shard, r2 partition, migration r0→r1, 15 reads through the transition, coordinator crash/restart after read 5, heal, then require Completed, nine agreeing routes and exact bytes. Temporary unavailability during the combined fault is allowed; incorrect successful reads are never allowed. Supplement: all 78 existing real-component migration matrix cells, with determinism replay and distinct seeds. |
-| C10 | Independent disk scan requires no bucket shards in the old region after migration. Existing stopped-node and migrated-away-worker checks inspect worker lifecycle, which is not public API. |
-| C12 | Twenty simulator seeds, transport wrapper duplicates every storage RPC while enabled, suppresses each seventh successful response as ErrTimeout, overwrites three keys over nine PUTs. Disable faults, converge, compare every acknowledged object's bytes and all nine quota records to actual object sizes/count. Require both duplication and lost successful replies to occur. |
-| C13 | Independent scenarios use the exported node on simulation and loopback runtime with exact-byte checks; existing conformance tests repeat the same four scenarios on both runtimes. |
-| C14, C28 | Byte-at-a-time TCP frame delivery with an invalid channel must yield an error response. Reset each of 17 frame prefixes; send oversized, empty and invalid-version frames; malformed frames must close, BadFrames must rise and Health must still work. Existing frame round-trips and malformed codec tables add decoder-only coverage. |
-| C15 | Check Merkle reply plus overhead and both default/small shard layouts against MaxFrame; reject negative object size. Existing frame-capacity and config field tables cover boundary layouts. |
-| C16, C17, C27 | Eight HTTP races of 12 writers using the same ETag: exactly one 2xx, eleven refusals (412 precondition or 503 unavailable), GET equals winning request bytes, stale DELETE is 412. Oversized object/tag bodies, malformed quota/migration JSON, absent bucket and unsupported method have exact expected status. Existing HTTP model and status-row suites cover every error row. |
-| C18 | Loopback partial header and partial body, configured 80/120 ms timeouts, must finish within one second; 10 KB header against 1 KB configured bound must get 431. Existing server bound checks add different sizes/timeouts. |
-| C19, C20, C21, C22 | Ten loopback runtime cycles, 16 concurrent PUT/GET pairs each, close races with calls, double start must fail, canceled GET must return context cancellation, use after close must return ErrClosed. After 600 ms settle plus GC, exact FD/goroutine baseline (no positive tolerance), and no runtime stack. Existing synctest lifecycle, mid-operation cancellation, shutdown-during-repair, restart and leak checks supplement this. Independent loopback executable is built with `-race`. |
-| C23 | Existing loop panic recovery and queue overflow tests run with `-race`; both require unexported controls. No independent private hooks added. |
-| C24 | Build objnode, start three subprocesses in three regions using only container loopback and temporary disks; create/put on peer 0, GET on all peers, conditional overwrite then stale 412, SIGTERM all peers and require clean exits within five seconds each. Existing flags/config/help/invalid-config tests and loopback cluster tests supplement this. |
+## Confirmed counterexample: quoted commas in If-Match lists (C31)
 
-## Measurements and scope
+Four checks fail: object PUT, object DELETE, tag PUT and ACL PUT. This is one shared parser defect. In `internal/storage/httpapi/http.go`, `parseEntityTags` splits the raw field on every comma before parsing quotes. A comma is permitted inside an opaque entity-tag, so `"a,b", "<current ETag>"` is a valid two-member list whose second strong validator matches. The implementation sees the invalid fragment `"a` and returns 400. Expected: 200 for the three PUT routes, 204 for DELETE. No precondition was silently ignored: this counterexample is rejection of a valid matching request.
 
-The final combined run returned `SUMMARY held=284 broken=0 setup_errors=0 elapsed_seconds=110`. All 20 partition scenarios settled at **3101 bytes against a 2200-byte limit: 901 bytes overshoot**. Each collected three losing-version shards. Discard callbacks/counters/text logs agreed exactly, ranging from 9 to 57 events per partition scenario. All 300 reads during the 20 combined migration scenarios returned exact bytes, with zero temporary read refusals. Duplicate scenarios each duplicated 45 storage requests and suppressed six successful replies; each retained two acknowledged keys with exact bytes and quota counts. The HTTP races had exactly one successful writer per round and zero 503s in the final run. Ten churn cycles restored the FD/goroutine baseline. The first complete run had 138 HELD, zero BROKEN and zero setup errors; later coverage expansion and two oracle corrections are documented below. Twenty independent seeds are 6101–6120. Simulator layout is k=2/m=1 with 1 KiB stripes, 1% datagram loss and 2% datagram duplication. Cross-region latency uses the simulator defaults. Quota observations are exact workload measurements, not statistical bounds. No tolerance for wrong bytes, metadata disagreement, missing expected discard, or collection of the current winner.
+Minimal operation sequence (real-runtime seed marker **0**): create bucket `b`; unconditional PUT `/b/k` with `initial`, retaining its returned ETag `E`; PUT `/b/k` with `changed` and `If-Match: "a,b", E`. Actual status 400 with `storage: entity-tag "\"a" is not quoted: storage: invalid argument`; expected 200. The generated ETag varies with real time, but the failure does not depend on its value.
 
-Supplemental existing tests use `DST_SEED_BASE=6281 DST_SEEDS=2`, `GOMAXPROCS=4`, `-parallel=4`, `-race -count=1`. The existing migration test runs all 78 cells on the first seed and assigns the second seed to one cell; each scenario is replayed for determinism. This is not 78 independent rewrites of its oracle. All other existing test names and raw output are retained in `evidence/supplement.jsonl`.
+Exact isolated reproduction from the worktree root:
 
-## Counterexamples
+```sh
+docker compose run --rm -T dev env GOMAXPROCS=2 GOFLAGS=-p=2 CHECK_HTTP_CASE=object-quoted-comma-list sh -c 'cd agent_work/adversarial/06-integration && go build -o evidence/http-repro . && ./evidence/http-repro http; r=$?; rm -f evidence/http-repro; exit "$r"'
+```
 
-No confirmed product counterexample. A preliminary race-enabled run printed BROKEN because its oracle required every losing conditional PUT to return 412; one returned 503 (round 1, real-socket seed marker 0). That is an allowed availability refusal, not a stale conditional write succeeding. The initial helper reused a 400 ms simulator shard deadline. The final helper uses a 5 s real-runtime shard deadline and a 10 s client deadline, and allows 503 refusals while still requiring exactly one successful writer, exact winning GET bytes, and 412 for the later stale DELETE. The preliminary output is preserved in `evidence/preliminary-loopback.txt`. The response body was not retained, so timeout is a plausible cause, not a proven diagnosis. No product fix was made. A later coverage assertion incorrectly required all three duplicated/lost-response keys to be acknowledged; each seed actually acknowledged two, with valid unavailable refusals for the other key. The oracle now requires a nonempty acknowledged set, validates all refusal errors, visits acknowledged keys in sorted order, and checks every acknowledged value and actual quota. That preliminary output is in `evidence/preliminary-duplicate.txt`; it is not a product counterexample. A correct refusal of an invalid request is scored HELD.
+Expected harness exit is 1. Captured isolated output: `evidence/http-minimal.txt`. Full four-route output: `evidence/run-all.txt` and `evidence/loopback.log`. Change the filter to `delete-quoted-comma-list`, `tag-quoted-comma-list` or `acl-quoted-comma-list` to reproduce the other routes. No product fix was attempted, as required by the brief.
 
-## Limits
+## Preliminary oracle corrections
 
-These samples do not prove all schedules or reproduce the builder's 500-seed latency percentiles. The report makes no population-confidence or latency-distribution claim. Migration fault timing in the independent combined scenario is selected by read index rather than an internal saga-step hook. The existing matrix supplies those exact step/log boundaries. Private panic/queue/worker controls are covered by existing tests, not independent public-API instrumentation. Tests do not inject OS disk-full or fsync faults, external network behavior, or a permanently lost coordinator. The three-peer smoke uses the actual CLI binary and equivalent layout inside one dev container; it does not test the compose cluster profile's separate-container DNS or published ports. Separate-container execution would conflict with the brief's loopback-only real-socket scope.
+The first extended diagnostic compared terminal saga states against capitalized strings; the API returns lowercase. Its deadline failures were harness errors, not migration failures. That diagnostic was stopped and corrected. `evidence/preliminary-state-case.log` preserves the diagnostic where available (logs are ignored by git).
 
-The project STATE.md was read but is deliberately untouched: this brief restricts every write to this harness directory and forbids commits. This report is the local handoff record.
+The initial quota check required zero quota discards throughout repair. Seed 7301 correctly repaired usage but produced 22 later quota discards. The corrected check requires no quota update from the same-size overwrite and no quota discard before the first object discard; subsequent repair conflicts are allowed. `evidence/seed7301.txt` and `evidence/seed7301-recheck.txt` show the incorrect assertion and its corrected result.
 
-The required kb search failed before issuing a search ID because this checkout has no kb index. There was no result to judge with an explicit search number; no index or environment files were changed.
+Seed 7315 in the first full expanded run reported two quota discards before the first object discard, although its final quota recount passed. That violates the fixture coverage assertion, not the product quota invariant. The fixture now waits for initial usage to settle, clears setup-period discard observations, and uses a five-second recount settle window to prevent its own early audits from introducing the quota conflict the scenario is intended to exclude. The corrected fixture passed all 20 seeds in `evidence/quota-recheck.txt`, including seed 7315 (`evidence/seed7315-recheck.txt`). The corrected fixture also passed all 20 seeds in the final complete run.
+
+## Limits and handoff
+
+Finite schedules are evidence, not proof. The independent acknowledgement oracle allows a causal same-key successor recorded as discarded to explain an earlier acknowledgement; it never uses another key's version. It does not independently require each discard's text log in the new scenarios; the retained partition checks still cross-check callbacks, health counters and logs. The returning-peer sample returns before OrphanGrace; long-term abandoned writes are outside its claim. No physical power cut or real filesystem power-loss behavior is tested: disk recovery uses the existing fault model, whose assumptions remain shared with product tests. The independent overlay covers overwrite boundaries; append/new-directory/short-write coverage comes from the retained product disk suite. HTTP model fields are passed via httptest to preserve empty/whitespace fields exactly; original socket tests still cover actual HTTP transport.
+
+Shutdown during migration is checked while its first step is held; it is not a sweep of every saga step. The existing matrix and shutdown-under-load/repair checks remain supplemental evidence. There is no new continuous independent shard-deletion oracle: exact winning reads after heal and the existing repaired targeted suite supplement the retained collection checks.
+
+The kb search failed before assigning an ID because this checkout has no kb index. No corpus was opened, no index was created, and no feedback ID existed to judge. No durable environment finding was added.

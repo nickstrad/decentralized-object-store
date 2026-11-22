@@ -1,0 +1,22 @@
+ Container objstore-dev-run-2260d524f45d Creating 
+ Container objstore-dev-run-2260d524f45d Created 
+HELD C4 object-only-discard-quota: seed=7301 manifest discards=4 quota discards before first object discard=0 later quota discards=12; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7302 manifest discards=9 quota discards before first object discard=0 later quota discards=15; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7303 manifest discards=9 quota discards before first object discard=0 later quota discards=15; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7304 manifest discards=6 quota discards before first object discard=0 later quota discards=10; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7305 manifest discards=3 quota discards before first object discard=0 later quota discards=5; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7306 manifest discards=5 quota discards before first object discard=0 later quota discards=13; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7307 manifest discards=5 quota discards before first object discard=0 later quota discards=6; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7308 manifest discards=5 quota discards before first object discard=0 later quota discards=11; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7309 manifest discards=4 quota discards before first object discard=0 later quota discards=8; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7310 manifest discards=7 quota discards before first object discard=0 later quota discards=18; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7311 manifest discards=8 quota discards before first object discard=0 later quota discards=18; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7312 manifest discards=7 quota discards before first object discard=0 later quota discards=15; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7313 manifest discards=3 quota discards before first object discard=0 later quota discards=5; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7314 manifest discards=4 quota discards before first object discard=0 later quota discards=18; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7315 manifest discards=7 quota discards before first object discard=0 later quota discards=2; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7316 manifest discards=5 quota discards before first object discard=0 later quota discards=7; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7317 manifest discards=4 quota discards before first object discard=0 later quota discards=14; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7318 manifest discards=5 quota discards before first object discard=0 later quota discards=16; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7319 manifest discards=5 quota discards before first object discard=0 later quota discards=15; same-size overwrite did not update quota; nine independent recounts
+HELD C4 object-only-discard-quota: seed=7320 manifest discards=7 quota discards before first object discard=0 later quota discards=5; same-size overwrite did not update quota; nine independent recounts

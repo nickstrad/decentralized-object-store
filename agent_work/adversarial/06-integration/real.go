@@ -10,7 +10,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/merkle"
 	"github.com/nickstrad/decentralized-object-store/internal/node"
+	"github.com/nickstrad/decentralized-object-store/internal/noderuntime"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/decentralized-object-store/internal/storage/httpapi"
 	"io"
 	"net"
 	"net/http"
@@ -22,13 +24,19 @@ import (
 	"time"
 )
 
-func realNode() (*node.Runtime, func()) {
+func realNode() (*noderuntime.Runtime, func()) {
+	return realNodeWithTune(nil)
+}
+func realNodeWithTune(tune func(*node.Config)) (*noderuntime.Runtime, func()) {
 	dir, e := os.MkdirTemp(".", "runtime-")
 	must(e)
 	cfg := config()
 	cfg.RequestTimeout = 5 * time.Second
 	cfg.Layout = storage.Layout{K: 1, M: 0, StripeSize: 1024}
-	rt, e := node.NewRuntime(node.RuntimeConfig{ID: "127.0.0.1:1", Region: "r0", Listen: "127.0.0.1:0", DataDir: dir, Node: cfg, IOTimeout: 200 * time.Millisecond, ServeTimeout: 300 * time.Millisecond})
+	if tune != nil {
+		tune(&cfg)
+	}
+	rt, e := noderuntime.NewRuntime(noderuntime.RuntimeConfig{ID: "127.0.0.1:1", Region: "r0", Listen: "127.0.0.1:0", DataDir: dir, Node: cfg, IOTimeout: 200 * time.Millisecond, ServeTimeout: 300 * time.Millisecond})
 	must(e)
 	must(rt.Start(context.Background()))
 	return rt, func() { must(rt.Close()); must(os.RemoveAll(dir)) }
@@ -76,7 +84,7 @@ func realChecks() {
 	check("C16,C17,C27", "http-conditional-races", 0, func() string {
 		rt, closeRT := realNode()
 		defer closeRT()
-		s := storage.NewServer("127.0.0.1:0", rt, storage.Limits{MaxObjectSize: 4096, MaxSmallBody: 64}, node.StatusRows()...)
+		s := httpapi.NewServer("127.0.0.1:0", rt, httpapi.Limits{MaxObjectSize: 4096, MaxSmallBody: 64}, node.StatusRows()...)
 		must(s.Start(context.Background()))
 		defer s.Shutdown(context.Background())
 		tr := &http.Transport{}
@@ -149,7 +157,7 @@ func realChecks() {
 	check("C18", "slow-and-large-http", 0, func() string {
 		rt, closeRT := realNode()
 		defer closeRT()
-		s := storage.NewServer("127.0.0.1:0", rt, storage.Limits{MaxHeaderBytes: 1024, ReadHeaderTimeout: 80 * time.Millisecond, ReadTimeout: 120 * time.Millisecond}, node.StatusRows()...)
+		s := httpapi.NewServer("127.0.0.1:0", rt, httpapi.Limits{MaxHeaderBytes: 1024, ReadHeaderTimeout: 80 * time.Millisecond, ReadTimeout: 120 * time.Millisecond}, node.StatusRows()...)
 		must(s.Start(context.Background()))
 		defer s.Shutdown(context.Background())
 		for _, raw := range []string{"GET /_health HTTP/1.1\r\nHost: x\r\nX: ", "PUT /b/k HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\nx"} {
@@ -255,7 +263,7 @@ func realChecks() {
 		must(e)
 		var stacks bytes.Buffer
 		pprof.Lookup("goroutine").WriteTo(&stacks, 2)
-		require(!strings.Contains(stacks.String(), "internal/node.(*Runtime)."), "runtime goroutine survives")
+		require(!strings.Contains(stacks.String(), "internal/noderuntime.(*Runtime)."), "runtime goroutine survives")
 		require(len(after) <= len(fds) && runtime.NumGoroutine() <= base, "leak fd %d->%d goroutines %d->%d", len(fds), len(after), base, runtime.NumGoroutine())
 		return "10 runtime cycles, 160 overlapping PUT/GET calls, exact FD and goroutine baseline restored"
 	})

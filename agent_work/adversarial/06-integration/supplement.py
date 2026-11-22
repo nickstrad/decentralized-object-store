@@ -13,8 +13,8 @@ groups={
 'C16':'TestStatusRowsThroughHTTPOnARealNode|TestStatusTableRowByRowThroughHTTP',
 'C17':'TestHTTPObjectAPIAgainstTheModel',
 'C18':'TestServerBoundsHeadersBodiesAndSlowClients',
-'C19':'TestRuntimeLifecycleInABubble|TestRuntimeCloseDuringStartup|TestRuntimeStartHonoursItsContext|TestRuntimeCallsBeforeStartAreNotReady',
-'C20':'TestRuntimeCancelMidPutLeavesOnlyCollectableShards|TestCancelMidGetAndMidMigrationReturnContextErrors',
+'C19':'TestRuntimeLifecycleInABubble|TestCloseWhileStartIsInProgress|TestRuntimeStartHonoursItsContext|TestRuntimeCallsBeforeStartAreNotReady',
+'C20':'TestACallCanceledBeforeItReachesTheLoopNeverApplies|TestACallCanceledAfterTheLoopTookItAppliesOnceAndIsReported',
 'C21':'TestShutdownUnderLoadReturnsEveryCall|TestShutdownDuringRepairAndRestartOnTheSameDisk',
 'C22':'TestRealRuntimeLeavesNoGoroutineBehind|TestServeAndShutdownOnCancel',
 'C23':'TestRuntimeRecoversAPanicOnTheLoop|TestRuntimeDatagramsToSelfAndQueueOverflow',
@@ -22,7 +22,7 @@ groups={
 }
 names={n:c for c,ns in groups.items() for n in ns.split('|')}
 pattern='^('+'|'.join(names)+')$'
-cmd=['docker','compose','run','--rm','-T','dev','env','DST_SEEDS=2','DST_SEED_BASE=6281','DST_ARTIFACTS=/src/'+str(p/'evidence/dst'),'GOMAXPROCS=4','go','test','-json','-race','-count=1','-parallel=4','-timeout=12m','-run',pattern,'./internal/node','./internal/storage','./cmd/objnode']
+cmd=['docker','compose','run','--rm','-T','dev','env','DST_SEEDS=2','DST_SEED_BASE=6281','DST_ARTIFACTS=/src/'+str(p/'evidence/dst'),'GOMAXPROCS=2','GOFLAGS=-p=2','go','test','-json','-race','-count=1','-parallel=2','-timeout=12m','-run',pattern,'./internal/node','./internal/storage','./internal/storage/httpapi','./internal/noderuntime','./cmd/objnode']
 log=p/'evidence/supplement.jsonl'
 with log.open('w') as out:r=subprocess.run(cmd,stdout=out,stderr=subprocess.STDOUT)
 results={}; packages_failed=[]

@@ -1,0 +1,7 @@
+ Container objstore-dev-run-1af55c95fb5d Creating 
+ Container objstore-dev-run-1af55c95fb5d Created 
+HELD C33,C4 isolated-writer-return: seed=7301 paused=false; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+BROKEN C4 object-only-discard-quota: seed=7301 scenario also discarded quota (22)
+HELD C30 simultaneous-migrations-true: seed=7301 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7301 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+

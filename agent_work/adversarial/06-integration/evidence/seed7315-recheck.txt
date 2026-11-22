@@ -1,0 +1,6 @@
+ Container objstore-dev-run-43c48c38143a Creating 
+ Container objstore-dev-run-43c48c38143a Created 
+HELD C33,C4 isolated-writer-return: seed=7315 paused=false; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7315 manifest discards=7 quota discards before first object discard=0 later quota discards=2; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7315 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7315 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
