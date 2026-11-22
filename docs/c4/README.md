@@ -11,6 +11,8 @@
 | HTTP object API (`internal/storage`) | target design | 2, 9 |
 | Gossip membership (`internal/gossip`): SWIM node (join and leave, probe, indirect probe, suspicion, dissemination, full-state sync), Membership view and events, wire codec | built | 2, 3, 4 |
 | Readers of the Membership view: storage placement, replication peer choice, the object API, the node runtime | target design | 2, 3, 4, 7, 9 |
+| Merkle anti-entropy (`internal/merkle`): hash tree, diff protocol, wire codec, anti-entropy worker with scrub, `Repairer` and `Membership` interfaces | built | 2, 3, 6 |
+| Users and suppliers of the Merkle package: the storage engine as `Repairer` and tree content, the gossip view as the peer list, the saga verify step, the node runtime | target design | 2, 3, 6, 8, 9 |
 | Saga engine (`internal/saga`): orchestrator, log, recovery, retry policy, bucket-migration workflow, step interfaces; model cluster (`internal/saga/sagasim`) | built | 2, 3, 8 |
 | Migration steps on the real storage, Merkle and metadata components | target design | 2, 6, 7, 8 |
 | Everything else | target design | 1–9 |
@@ -27,7 +29,7 @@ part lands, its diagrams are checked against the code and updated in the same la
 | 3 | Container | [03-container-runtime.md](03-container-runtime.md) | Runtime and environment view: `cmd/objnode`, `internal/node`, `internal/env`, node disk, peers, and the DST harness (`internal/sim`) |
 | 4 | Component | [04-component-gossip.md](04-component-gossip.md) | `internal/gossip`: join and leave, SWIM probe, indirect probe, suspicion state machine, dissemination, full-state sync, Membership view, wire codec |
 | 5 | Component | [05-component-erasure.md](05-component-erasure.md) | `internal/erasure`: GF(2^8) arithmetic, matrix inversion, Cauchy coding matrix, Encode, Reconstruct, Verify |
-| 6 | Component | [06-component-merkle.md](06-component-merkle.md) | `internal/merkle`: tree builder, diff protocol, anti-entropy worker, Repairer interface |
+| 6 | Component | [06-component-merkle.md](06-component-merkle.md) | `internal/merkle`: tree builder, diff protocol, wire codec, anti-entropy worker, Repairer and Membership interfaces |
 | 7 | Component | [07-component-crdt.md](07-component-crdt.md) | `internal/crdt`: four CRDT types, hybrid logical clock, canonical encoding, metadata document, replicator |
 | 8 | Component | [08-component-saga.md](08-component-saga.md) | `internal/saga`: orchestrator, log, recovery, bucket-migration workflow, step interfaces, model cluster |
 | 9 | Component | [09-component-storage.md](09-component-storage.md) | `internal/storage`: shard format, chunk store, striping, manifest, placement, shard request protocol, put and get paths |
@@ -59,8 +61,8 @@ Checked on 2026-11-22:
 | --- | --- | --- |
 | `model.json` decodes | `decodeArchitecture` from `c4-sdk@0.1.0` (`c4-sdk/core`) | `ok: true`, 0 errors, 0 warnings |
 | Every diagram builds a scene | `buildScene` from `c4-sdk/core`, all 9 diagrams | 9 of 9 succeed |
-| Mermaid blocks parse | `mermaid.parse`, Mermaid 11, all 9 blocks and all 30 sources | all parse |
-| Terminal embeds are current and fit | `render.py --check` with `DRAW_VISUAL_MAX_WIDTH=80` | 30 embeds pass |
+| Mermaid blocks parse | `mermaid.parse`, Mermaid 11, all 9 blocks and all 31 sources | all parse |
+| Terminal embeds are current and fit | `render.py --check` with `DRAW_VISUAL_MAX_WIDTH=80` | 31 embeds pass |
 
 To repeat the checks after a change:
 

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "objstore",
   "title": "Decentralized Object Store & Sync Engine \u2014 target architecture, as built where landed",
-  "revision": "as-built-gossip-2026-11-22",
+  "revision": "as-built-merkle-2026-11-22",
   "defaultDiagramId": "context",
   "model": {
     "elements": [
@@ -212,11 +212,14 @@
         "parentId": "store",
         "containerType": "application",
         "name": "Merkle anti-entropy (internal/merkle)",
-        "description": "Merkle tree builder, diff protocol, anti-entropy repair worker.",
+        "description": "Fixed-depth 16-ary SHA-256 hash tree over a key-to-hash map with O(1) snapshots; a diff protocol that walks one tree level per round trip, with every reply at most 1 MiB; a wire codec; and an anti-entropy worker that scrubs local data by re-hashing it, diffs against one peer per period and pulls the keys that differ through the Repairer interface. It uses Clock, Rand and Transport and no Disk: stored bytes are reached only through the Repairer.",
         "technology": "Go, sans-IO state machine",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
-        "plannedNotes": [],
+        "plannedNotes": [
+          "Only test stores implement Repairer and Membership so far. The chunk store and manifests as the tree's content, the gossip view as the peer list, the saga verify step and the node runtime are wired in the integration chunk (Chunk 6).",
+          "No tombstones: a pull-only repair would bring back a deleted key. Deletes are a stated limit for Chunk 6."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -510,11 +513,13 @@
         "kind": "component",
         "parentId": "c-merkle",
         "name": "Tree builder",
-        "description": "SHA-256 hash tree over a key-to-hash map; fixed-fanout trie on the hash of the key; incremental update.",
+        "description": "Tree in tree.go: New, Build, Set, Delete, Get, Root, Snapshot, DepthFor. A trie of fixed depth 1 to 16 and fanout 16 on the first 64 bits of SHA-256(key); leaves hold their entries sorted by key. Leaf and inner hashes are domain-separated by a tag byte, and an inner hash also covers its level; an empty subtree is the all-zero hash. Nodes are immutable: Set and Delete copy one path, and Snapshot is O(1). Limits: keys of at most 1,024 bytes, at most 4,096 entries per leaf.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
-        "plannedNotes": [],
+        "plannedNotes": [
+          "Kept in memory only and rebuilt from the stored data at every start."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -525,9 +530,9 @@
         "kind": "component",
         "parentId": "c-merkle",
         "name": "Diff protocol",
-        "description": "Exchanges roots and descends only mismatched branches, one level per round trip.",
+        "description": "diff.go. Session is the asking side: a state machine over a snapshot of the local tree that produces one request per tree level and takes the reply through Feed. Tree.Answer is the answering side and holds no state between requests. Leaf entries are packed into replies of at most 1 MiB; a leaf that does not fit is cut and resumed. At most Limits.Frontier mismatched nodes (default 1,024, at most 2,040) go on to the next level; the rest are dropped and the result is marked Truncated. Every reply is validated, so a session ends within Depth + 5 x Frontier round trips whatever the peer sends. Compare runs a whole diff in memory. This code does no I/O.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -540,11 +545,13 @@
         "kind": "component",
         "parentId": "c-merkle",
         "name": "Anti-entropy worker",
-        "description": "Picks a peer each period, diffs, and repairs through the Repairer interface.",
+        "description": "Worker in worker.go: NewWorker, Start, Stop, Record, Forget, OnRequest, Stats. Each jittered period it re-reads and re-hashes the next batch of stored keys, so that rotted, missing and unreadable data shows in its tree (the scrub), then starts a round if none is in flight: picks one peer at random from Membership, diffs, and pulls each key whose remote hash the Repairer accepts. Pull-only: a node repairs itself. A round has a deadline; a failed round is abandoned whole and the next period is the retry. Stop ends the round in flight with ErrClosed.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
-        "plannedNotes": [],
+        "plannedNotes": [
+          "No tombstones: Forget removes a key from the tree, and a later round with a peer that still has the key would pull it back."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -555,11 +562,48 @@
         "kind": "component",
         "parentId": "c-merkle",
         "name": "Repairer interface",
-        "description": "Interface the merkle package declares; repairs go through it.",
+        "description": "Repairer in worker.go, declared by the package: Keys, Read, Valid, Fetch, Put. The worker's only way to stored bytes, local or on a peer. Valid decides which hash is right for a key; fetched bytes are stored only when their SHA-256 passes it.",
         "technology": "Go interface",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
-        "plannedNotes": [],
+        "plannedNotes": [
+          "Only the test chunk store implements it so far. The storage engine implements it in Chunk 6."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "m-wire",
+        "kind": "component",
+        "parentId": "c-merkle",
+        "name": "Wire codec",
+        "description": "wire.go and errors.go. Encodes and decodes the diff request and the four reply kinds: inner, leaf, cut leaf and equal. Big-endian, minimal varints; decoding is strict and canonical: every accepted message re-encodes to the same bytes. Sets MaxReplyBytes (1 MiB) and MaxRequestNodes (2,040). Wire error codes 112 and 113 in the package's block 112 to 127. This code does no I/O.",
+        "technology": "Go",
+        "status": "existing",
+        "tags": [],
+        "plannedNotes": [
+          "Added by the build; PLAN.md does not name it."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "m-membership",
+        "kind": "component",
+        "parentId": "c-merkle",
+        "name": "Membership interface",
+        "description": "Membership in worker.go, declared by the package: Peers returns the candidate peer IDs. The worker sorts them, removes duplicates and its own ID, and picks one at random each round.",
+        "technology": "Go interface",
+        "status": "existing",
+        "tags": [],
+        "plannedNotes": [
+          "Added by the build; PLAN.md does not name it.",
+          "Only test code implements it so far. Chunk 6 supplies the live peer list from the gossip view."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -1013,9 +1057,9 @@
         "parentId": "store",
         "containerType": "application",
         "name": "Merkle anti-entropy (internal/merkle)",
-        "description": "The same package as element c-merkle, shown as a neighbour in the component views of other packages. Merkle tree builder, diff protocol, anti-entropy repair worker.",
+        "description": "The same package as element c-merkle, shown as a neighbour in the component views of other packages. Fixed-depth 16-ary SHA-256 hash tree over a key-to-hash map with O(1) snapshots; a diff protocol that walks one tree level per round trip, with every reply at most 1 MiB; a wire codec; and an anti-entropy worker that scrubs local data by re-hashing it, diffs against one peer per period and pulls the keys that differ through the Repairer interface. It uses Clock, Rand and Transport and no Disk: stored bytes are reached only through the Repairer.",
         "technology": "Go, sans-IO state machine",
-        "status": "planned",
+        "status": "existing",
         "tags": [
           "external",
           "neighbour"
@@ -1265,7 +1309,9 @@
         "targetId": "c-storage",
         "label": "Diffs manifest and shard-inventory trees; repairs through the Repairer interface",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "The merkle package is built over its own Repairer interface and a test chunk store. The storage engine is bound to it in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -1485,7 +1531,7 @@
         "sourceId": "c-merkle",
         "targetId": "c-env",
         "label": "Acts only through Clock, Rand, Transport, Disk",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2021,8 +2067,8 @@
         "id": "m-r1",
         "sourceId": "m-worker",
         "targetId": "m-diff",
-        "label": "Each period: picks a peer and diffs",
-        "status": "planned",
+        "label": "Each round: runs a diff Session on a snapshot of its tree; answers a peer's diff requests with Tree.Answer",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2034,8 +2080,8 @@
         "id": "m-r2",
         "sourceId": "m-diff",
         "targetId": "m-tree",
-        "label": "Compares roots; descends mismatched branches",
-        "status": "planned",
+        "label": "Reads the root, child hashes and leaf entries; compares them and descends only mismatched branches",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2047,8 +2093,8 @@
         "id": "m-r3",
         "sourceId": "m-worker",
         "targetId": "m-repairer",
-        "label": "Repairs the differing keys",
-        "status": "planned",
+        "label": "Lists and reads stored keys for the scrub; checks remote hashes, fetches differing keys from the peer and stores the bytes that pass",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2062,7 +2108,9 @@
         "targetId": "m-repairer",
         "label": "Implements: rebuilds rotted or missing shards from any k good shards",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "Only the test chunk store implements Repairer so far."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2075,7 +2123,9 @@
         "targetId": "m-tree",
         "label": "Supplies manifest and shard-inventory key-to-hash maps",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "As built, the worker fills its tree itself: it hashes what Repairer.Keys and Repairer.Read return, and takes writes through Record and Forget. Build accepts a ready key-to-hash list."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2085,10 +2135,10 @@
       {
         "id": "m-r6",
         "sourceId": "m-diff",
-        "targetId": "n-env",
-        "label": "Request/response rounds with the peer, one tree level each",
-        "technology": "Transport",
-        "status": "planned",
+        "targetId": "m-wire",
+        "label": "Encodes and decodes every diff request and reply",
+        "technology": "Go, in-process",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2099,9 +2149,9 @@
         "id": "m-r7",
         "sourceId": "m-worker",
         "targetId": "n-env",
-        "label": "Period timer",
-        "technology": "Clock",
-        "status": "planned",
+        "label": "Period and round-deadline timers; period jitter and random peer choice; one diff request per round trip, with a timeout",
+        "technology": "Clock, Rand, Transport",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2114,6 +2164,34 @@
         "targetId": "m-diff",
         "label": "Migration verify step: compares source and target roots",
         "status": "planned",
+        "plannedNotes": [
+          "Tree.Root and Compare exist; nothing outside the package calls them yet."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "m-r9",
+        "sourceId": "m-worker",
+        "targetId": "m-tree",
+        "label": "Keeps the tree equal to the stored bytes: scrub re-hashes, repaired keys, Record and Forget; takes a snapshot for each round",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "m-r10",
+        "sourceId": "m-worker",
+        "targetId": "m-membership",
+        "label": "Reads the peer list at the start of each round",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2413,7 +2491,9 @@
         "targetId": "n-merkle",
         "label": "Verify Merkle root",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "The merkle package is built. The verify step is bound to it in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2664,7 +2744,9 @@
         "targetId": "t-chunk",
         "label": "Repairs rotted or missing shards (Repairer)",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "The merkle package is built over its own Repairer interface and a test chunk store. The chunk store is bound to it in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2838,7 +2920,7 @@
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, domain view \u2014 as built for erasure coding, the storage engine, the saga engine and gossip membership; the rest is the target design",
+      "title": "Container, domain view \u2014 as built for erasure coding, the storage engine, the saga engine, gossip membership and Merkle anti-entropy; the rest is the target design",
       "nodes": [
         {
           "elementId": "api-client"
@@ -2999,7 +3081,7 @@
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, runtime and environment view \u2014 as built for the simulator, the environment interfaces, the storage engine, the saga engine and gossip membership; the rest is the target design",
+      "title": "Container, runtime and environment view \u2014 as built for the simulator, the environment interfaces, the storage engine, the saga engine, gossip membership and Merkle anti-entropy; the rest is the target design",
       "nodes": [
         {
           "elementId": "operator"
@@ -3512,7 +3594,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, merkle \u2014 TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "title": "Component, merkle \u2014 as built for the tree, the diff protocol, the wire codec, the worker and its two interfaces; the links from storage and the saga engine are the target design",
       "nodes": [
         {
           "elementId": "m-worker"
@@ -3525,6 +3607,12 @@
         },
         {
           "elementId": "m-repairer"
+        },
+        {
+          "elementId": "m-wire"
+        },
+        {
+          "elementId": "m-membership"
         },
         {
           "elementId": "n-storage",
@@ -3589,6 +3677,12 @@
         },
         {
           "relationshipId": "m-r8"
+        },
+        {
+          "relationshipId": "m-r9"
+        },
+        {
+          "relationshipId": "m-r10"
         }
       ],
       "legend": {
@@ -3597,7 +3691,7 @@
           {
             "id": "box",
             "label": "Component",
-            "description": "A part of the package that PLAN.md names",
+            "description": "A part of the package that PLAN.md names, or one the build added",
             "swatch": {
               "shape": "box",
               "tone": "default",
