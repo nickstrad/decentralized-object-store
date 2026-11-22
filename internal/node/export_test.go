@@ -67,3 +67,5 @@ func EncodePointerViewForTest(route, owner string) []byte {
 func (n *Node) CopyForTest(c saga.Call, in saga.MigrationInput, done func([]byte, error)) {
 	n.mig.Copy(c, in, done)
 }
+
+func SetCanaryNoQuotaAudit(v bool) { canaryNoQuotaAudit = v }

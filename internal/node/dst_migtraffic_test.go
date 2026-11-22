@@ -255,17 +255,28 @@ func migrationTrafficRun(res *trafficResult) func(seed int64) *sim.Sim {
 		contents := map[string][]byte{}
 		h.createBucket(env.Time(2*time.Second), storage.BucketSpec{Name: mtBucket, Region: migFrom})
 		gen = h.traffic(mtBucket, env.Time(3*time.Second), mtTraffic, mtGap, []env.NodeID{coord}, contents, res)
-		s.At(mtBegin, "begin", func() {
-			if err := h.node(coord).BeginMigration(mtSaga, saga.MigrationInput{Bucket: mtBucket, From: migFrom, To: migTo}); err != nil {
-				s.Fail(err)
-			}
-		})
-		if err := s.RunUntil(mtBegin.Add(time.Millisecond)); err != nil {
+		if err := s.RunUntil(mtBegin); err != nil {
 			return s
 		}
-		before := res.acked
+		if err := s.RunUntilConverged(mtBegin.Add(10*time.Second), func() bool {
+			rd, err := h.node(coord).OCC().Reader()
+			if err != nil {
+				return false
+			}
+			r, _ := rd.Route(mtBucket)
+			_, lerr := h.node(coord).ListObjects(mtBucket, "", 1)
+			return string(r) == migFrom && lerr == nil
+		}); err != nil {
+			s.Fail(fmt.Errorf("the coordinator never saw the bucket and its route: %w", err))
+			return s
+		}
+		if err := h.node(coord).BeginMigration(mtSaga, saga.MigrationInput{Bucket: mtBucket, From: migFrom, To: migTo}); err != nil {
+			s.Fail(err)
+			return s
+		}
+		before, begun := res.acked, s.Now()
 		var st saga.Status
-		if err := s.RunUntilConverged(mtBegin.Add(60*time.Second), func() bool {
+		if err := s.RunUntilConverged(begun.Add(60*time.Second), func() bool {
 			n := h.node(coord)
 			if n == nil {
 				return false
@@ -277,14 +288,14 @@ func migrationTrafficRun(res *trafficResult) func(seed int64) *sim.Sim {
 			s.Fail(fmt.Errorf("migration never ended (state %v, step %d, err %v): %w", st.State, st.Step, st.Err, err))
 			return s
 		}
-		res.state, res.elapsed = st.State, s.Now().Sub(mtBegin)
+		res.state, res.elapsed = st.State, s.Now().Sub(begun)
 		res.duringMigration = res.acked - before
 		want := saga.StateCompleted
 		if compensate {
 			want = saga.StateCompensated
 		}
 		if st.State != want {
-			s.Fail(fmt.Errorf("migration ended %v, want %v", st.State, want))
+			s.Fail(fmt.Errorf("migration ended %v (step %d: %v), want %v", st.State, st.Step, st.Err, want))
 			return s
 		}
 		if err := s.RunUntil(max(s.Now(), mtTraffic).Add(time.Second)); err != nil {

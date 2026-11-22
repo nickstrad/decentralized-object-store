@@ -289,7 +289,8 @@ func TestClusterPartitionHealDST(t *testing.T) {
 
 func TestCanaryNodeSkipsDiscardRecount(t *testing.T) {
 	node.SetCanaryNoDiscardRecount(true)
-	t.Cleanup(func() { node.SetCanaryNoDiscardRecount(false) })
+	node.SetCanaryNoQuotaAudit(true)
+	t.Cleanup(func() { node.SetCanaryNoDiscardRecount(false); node.SetCanaryNoQuotaAudit(false) })
 	failed := 0
 	for _, seed := range []int64{1, 2, 3} {
 		var res partitionResult

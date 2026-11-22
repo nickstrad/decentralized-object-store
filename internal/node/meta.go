@@ -13,6 +13,7 @@ import (
 var (
 	canaryNoDiscardRecount bool
 	canaryIgnoreTombstones bool
+	canaryNoQuotaAudit     bool
 )
 
 type metaRepairer struct{ n *Node }

@@ -249,3 +249,27 @@ func TestCanaryDeleteResurrected(t *testing.T) {
 		t.Fatal("with tombstones ignored by anti-entropy, no deleted object came back on any seed")
 	}
 }
+
+var driftSeeds = []int64{7, 383}
+
+func TestCrashScenarioUsageMatchesARecountOnTheSeedsThatDrifted(t *testing.T) {
+	for _, seed := range driftSeeds {
+		var res crashResult
+		simtest.RequireDeterministic(t, seed, crashRun(&res))
+	}
+}
+
+func TestCanaryNodeSkipsQuotaAudit(t *testing.T) {
+	node.SetCanaryNoQuotaAudit(true)
+	t.Cleanup(func() { node.SetCanaryNoQuotaAudit(false) })
+	failed := 0
+	for _, seed := range driftSeeds {
+		var res crashResult
+		if crashRun(&res)(seed).Err() != nil {
+			failed++
+		}
+	}
+	if failed != len(driftSeeds) {
+		t.Fatalf("with the quota audit switched off, %d of %d drift seeds still matched a recount", len(driftSeeds)-failed, len(driftSeeds))
+	}
+}

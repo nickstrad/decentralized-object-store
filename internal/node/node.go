@@ -3,6 +3,7 @@ package node
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
@@ -182,6 +183,7 @@ type Stats struct {
 	OrphanRecords   uint64
 	LostDeclared    uint64
 	PurgeRefused    uint64
+	QuotaAudits     uint64
 }
 
 type collectRecord struct {
@@ -214,6 +216,8 @@ type Node struct {
 	losers      map[storage.VersionID]bool
 	purged      map[storage.VersionID]bool
 	recountDue  map[string]env.Time
+	audits      map[string]quotaAudit
+	auditCursor string
 	rebuilding  int
 	cache       map[occ.ETag]objectRecord
 	collected   []collectRecord
@@ -250,7 +254,7 @@ func New(e env.Env, cfg Config) (*Node, error) {
 		e: e, cfg: cfg, net: chanNet{net: e.Net, ch: chNode},
 		scoped: map[env.Region]*storage.Node{}, inv: map[string]*inventory{},
 		orphaned: map[storage.VersionID]map[[2]int]bool{}, losers: map[storage.VersionID]bool{}, purged: map[storage.VersionID]bool{},
-		recountDue: map[string]env.Time{}, cache: map[occ.ETag]objectRecord{},
+		recountDue: map[string]env.Time{}, audits: map[string]quotaAudit{}, cache: map[occ.ETag]objectRecord{},
 	}
 	n.view = &gossipView{self: e.ID}
 	gcfg := cfg.Gossip
@@ -430,7 +434,7 @@ func (n *Node) EncodeState() []byte {
 		s.Discards, s.DiscardedObject, s.QuotaDiscards, s.Recounts, s.RecountWrites, s.RecountErrors, s.UsageErrors,
 		s.MetaStale, s.MetaMerged, s.Scrubbed, s.ScrubCorrupt, s.Rebuilds, s.RebuildFailures, s.RebuiltBytes,
 		s.Collected, s.CollectedLoser, s.Purged, s.InventoryStart, s.InventoryStop, s.SagasEnded, s.MemberDeaths, s.GCMarkers,
-		s.OrphanRecords, s.LostDeclared, s.PurgeRefused} {
+		s.OrphanRecords, s.LostDeclared, s.PurgeRefused, s.QuotaAudits} {
 		w.uvarint(v)
 	}
 	if n.started {
@@ -497,7 +501,79 @@ func (n *Node) maintain() {
 		return
 	}
 	n.runRecounts()
+	n.auditQuotas(rd)
 	n.runInventories(rd)
+}
+
+const AuditBatch = 4
+
+type quotaAudit struct {
+	state [32]byte
+	since env.Time
+}
+
+func (n *Node) buckets(rd occ.Reader) []string {
+	var out []string
+	for _, k := range rd.Keys() {
+		if len(k) == 0 || occ.Kind(k[0]) != occ.KindTag || !rd.Record(k).Live() {
+			continue
+		}
+		if _, parts, err := occ.ParseKey(k); err == nil && parts[1] == "" && parts[2] == tagBucket {
+			out = append(out, parts[0])
+		}
+	}
+	return out
+}
+
+func (n *Node) auditQuotas(rd occ.Reader) {
+	bs := n.buckets(rd)
+	if len(bs) == 0 || canaryNoQuotaAudit {
+		return
+	}
+	i, _ := slices.BinarySearch(bs, n.auditCursor)
+	now := n.e.Clock.Now()
+	for c := range min(AuditBatch, len(bs)) {
+		b := bs[(i+c)%len(bs)]
+		n.auditCursor = b + "\x00"
+		stored, _, err := rd.ReadQuota(occ.QuotaKey(b))
+		if err != nil && !isNotFound(err) {
+			continue
+		}
+		var truth occ.Usage
+		for _, o := range n.liveObjects(rd, b) {
+			truth.Bytes += uint64(o.rec.Manifest.Size)
+			truth.Objects++
+		}
+		if stored == truth {
+			delete(n.audits, b)
+			continue
+		}
+		state := n.pointerView(rd, b).digest
+		qv, _ := rd.Record(occ.QuotaKey(b)).Version()
+		qid := qv.ID()
+		for j := range state {
+			state[j] ^= qid[j]
+		}
+		a, ok := n.audits[b]
+		if !ok || a.state != state {
+			n.audits[b] = quotaAudit{state: state, since: now}
+			continue
+		}
+		if now.Sub(a.since) < n.cfg.RecountSettle || !n.designated() {
+			continue
+		}
+		n.stats.QuotaAudits++
+		delete(n.audits, b)
+		_, wrote, err := n.occ.RecountQuota(occ.QuotaKey(b), QuotaAttempts, n.recount)
+		if err != nil {
+			n.stats.RecountErrors++
+			continue
+		}
+		if wrote {
+			n.stats.RecountWrites++
+			n.RecordMeta(occ.QuotaKey(b))
+		}
+	}
 }
 
 func (n *Node) onDiscard(key string, winner, loser occ.Version) {
