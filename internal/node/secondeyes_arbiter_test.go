@@ -1,0 +1,99 @@
+package node_test
+
+import (
+	"testing"
+	"time"
+
+	"github.com/nickstrad/decentralized-object-store/internal/occ"
+	"github.com/nickstrad/decentralized-object-store/internal/sim"
+	"github.com/nickstrad/decentralized-object-store/internal/storage"
+)
+
+func TestArbitrationOrphansPlusAnUnwrittenShardFixed(t *testing.T) {
+	cfg := smallConfig()
+	cfg.Layout = storage.Layout{K: 2, M: 2, StripeSize: 1024}
+	cfg.OrphanGrace = 30 * time.Second
+	fixed := sim.Range{Min: 2 * time.Millisecond, Max: 2 * time.Millisecond}
+	net := sim.DefaultNetConfig()
+	net.Latency, net.InterRegionLatency = fixed, fixed
+	h, err := newHarness(1, 4, cfg, net)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.gc.off = true
+	if err = h.s.RunFor(3 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	w := h.ids[3]
+	missing := h.ids[2]
+	if err = h.node(w).CreateBucket(storage.BucketSpec{Name: "g"}); err != nil {
+		t.Fatal(err)
+	}
+	if err = h.s.RunUntilConverged(h.s.Now().Add(20*time.Second), h.converged); err != nil {
+		t.Fatal(err)
+	}
+	if err = h.s.SetLinkLoss(w, missing, sim.PPM); err != nil {
+		t.Fatal(err)
+	}
+	done := false
+	var oi storage.ObjectInfo
+	h.node(w).PutObject(storage.PutRequest{Bucket: "g", Key: "k", Data: make([]byte, 512)}, func(o storage.ObjectInfo, e error) {
+		done = true
+		oi = o
+		if e != nil {
+			t.Errorf("put: %v", e)
+		}
+		if e = h.s.Isolate(w); e != nil {
+			t.Error(e)
+		}
+	})
+	landed := func() bool {
+		return len(shardsByStripe(h, h.ids[0], "g")) == 1 && len(shardsByStripe(h, h.ids[1], "g")) == 1
+	}
+	if err = h.s.RunUntilConverged(h.s.Now().Add(10*time.Second), landed); err != nil {
+		t.Fatal(err)
+	}
+	if done {
+		t.Fatal("put completed before metadata isolation")
+	}
+	for _, id := range h.ids[:3] {
+		if err = h.s.SetLinkLoss(w, id, sim.PPM); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = h.s.RunUntilConverged(h.s.Now().Add(10*time.Second), func() bool { return done }); err != nil {
+		t.Fatal(err)
+	}
+	if err = h.s.RunFor(cfg.OrphanGrace + 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.gc.deleted) == 0 {
+		t.Fatal("no orphan collection")
+	}
+	t.Logf("acknowledged %s; orphan deletions=%v", oi.Version, h.gc.deleted)
+	h.s.HealAll()
+	if err = h.s.RunFor(120 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if !h.converged() {
+		t.Fatal("cluster did not converge after heal")
+	}
+	for _, n := range h.up() {
+		rd, e := n.OCC().Reader()
+		if e != nil {
+			t.Fatal(e)
+		}
+		if rd.Record(occ.ManifestKey("g", "k")).Live() {
+			t.Fatalf("%s: manifest still live", n.ID())
+		}
+		if !rd.Record(occ.TagKey("g", "k", "~lost/"+oi.Version)).Live() {
+			t.Fatalf("%s: ~lost/%s not present", n.ID(), oi.Version)
+		}
+		if _, _, err := h.syncGet(t, n.ID(), "g", "k"); !isNotFoundErr(err) {
+			t.Fatalf("%s: GET returned %v, want not found", n.ID(), err)
+		}
+	}
+	if err := h.s.Err(); err != nil {
+		t.Fatal(err)
+	}
+}

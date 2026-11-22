@@ -1,0 +1,351 @@
+package node_test
+
+import (
+	"bytes"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/nickstrad/decentralized-object-store/internal/node"
+	"github.com/nickstrad/decentralized-object-store/internal/occ"
+	"github.com/nickstrad/decentralized-object-store/internal/storage"
+)
+
+func TestHolderIntactRestartPreservesAbsenceRefusal(t *testing.T) {
+	h, _ := lossHarness(t, 4, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)
+	_, _, man := putEverywhere(t, h, 700)
+	a := h.ids[0]
+	name, ok := holderOf(man, 0, a)
+	if !ok {
+		t.Fatalf("%s holds no shard", a)
+	}
+	sid, err := storage.ParseBlobName(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good, ok := h.s.Disk(a).Peek(name)
+	if !ok {
+		t.Fatal("missing good shard")
+	}
+	for _, id := range h.ids[:3] {
+		nm, _ := holderOf(man, 0, id)
+		if err := h.s.BitRot(id, nm); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stated := func() bool {
+		rd, err := h.node(a).OCC().Reader()
+		return err == nil && rd.Record(node.AbsentKeyForTest(sid, a)).Live()
+	}
+	if err := h.s.RunUntilConverged(h.s.Now().Add(30*time.Second), stated); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.Crash(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.RunFor(100 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.Restart(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.RunFor(time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	var got error
+	replied := false
+	h.node(a).OnRequest(h.ids[3], append([]byte{2}, storage.EncodeShardRequest(storage.OpPutShard, sid, good)...), func(_ []byte, err error) {
+		got, replied = err, true
+	})
+	if err := h.s.RunUntilConverged(h.s.Now().Add(time.Second), func() bool { return replied }); err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(got, node.ErrFenced) {
+		t.Fatalf("after intact restart, OpPutShard returned %v, want ErrFenced", got)
+	}
+	if b, ok := h.s.Disk(a).Peek(name); ok && bytes.Equal(b, good) {
+		t.Fatal("refused shard reappeared on disk after intact restart")
+	}
+	if h.node(a).Stats().AbsentRefused == 0 {
+		t.Fatal("AbsentRefused not incremented after intact restart")
+	}
+}
+
+func TestDeclarerCrashBetweenLossRecordAndTombstone(t *testing.T) {
+	for _, restartDeclarer := range []bool{true, false} {
+		name := "declarer_restarts"
+		if !restartDeclarer {
+			name = "declarer_stays_down_successor_finishes"
+		}
+		t.Run(name, func(t *testing.T) {
+			layout := storage.Layout{K: 2, M: 2, StripeSize: 1024}
+			var h *harness
+			var lostKey string
+			crashed := false
+			sink := func(key string, _ occ.Record, v occ.Version) {
+				if !crashed && lostKey != "" && key == lostKey && !v.Tombstone() {
+					crashed = true
+					if err := h.s.Crash(h.ids[0]); err != nil {
+						t.Errorf("crash declarer: %v", err)
+					}
+				}
+			}
+			var logs *[]string
+			h, logs = lossHarnessSink(t, 4, layout, 0, sink)
+			oi, data, man := putEverywhere(t, h, 700)
+			lostKey = occ.TagKey("g", "k", "~lost/"+oi.Version)
+			for _, id := range h.ids[:3] {
+				nm, _ := holderOf(man, 0, id)
+				if err := h.s.BitRot(id, nm); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := h.s.RunUntilConverged(h.s.Now().Add(30*time.Second), func() bool { return crashed }); err != nil {
+				t.Fatalf("declarer never committed loss record: %v", err)
+			}
+			if err := h.s.RunFor(200 * time.Millisecond); err != nil {
+				t.Fatal(err)
+			}
+			if restartDeclarer {
+				if err := h.s.Restart(h.ids[0]); err != nil {
+					t.Fatal(err)
+				}
+				if err := h.s.RunFor(time.Millisecond); err != nil {
+					t.Fatal(err)
+				}
+				rd0, err := h.node(h.ids[0]).OCC().Reader()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !rd0.Record(lostKey).Live() {
+					t.Fatal("restarted declarer lost the ~lost record across crash")
+				}
+				if !rd0.Record(occ.ManifestKey("g", "k")).Live() {
+					t.Fatal("manifest was already tombstoned before crash; test did not split the two writes")
+				}
+			}
+			if err := h.s.RunUntilConverged(h.s.Now().Add(60*time.Second), h.converged); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.s.RunFor(30 * time.Second); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.s.RunUntilConverged(h.s.Now().Add(30*time.Second), func() bool { return h.quotaAgrees("g") }); err != nil {
+				t.Fatalf("quota disagreed after crash recovery: %v", err)
+			}
+			if err := h.s.Err(); err != nil {
+				t.Fatal(err)
+			}
+			for _, n := range h.up() {
+				rd, _ := n.OCC().Reader()
+				if rd.Record(occ.ManifestKey("g", "k")).Live() {
+					t.Fatalf("%s: manifest still live after declarer crash recovery", n.ID())
+				}
+				if !rd.Record(lostKey).Live() {
+					t.Fatalf("%s: ~lost record missing after declarer crash recovery", n.ID())
+				}
+				if _, _, err := h.syncGet(t, n.ID(), "g", "k"); !isNotFoundErr(err) {
+					t.Fatalf("%s: GET returned %v, want not found", n.ID(), err)
+				}
+			}
+			q, err := h.up()[0].Quota("g")
+			if err != nil || q.UsedObjects != 0 || q.UsedBytes != 0 {
+				t.Fatalf("quota after declarer crash recovery: %+v, err=%v", q, err)
+			}
+			_ = data
+			_ = logs
+		})
+	}
+}
+
+func TestServeStorageRefusesShardWriteBeforeMetadataLoads(t *testing.T) {
+	h, _ := lossHarness(t, 4, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)
+	_, _, man := putEverywhere(t, h, 700)
+	a := h.ids[0]
+	name, ok := holderOf(man, 0, a)
+	if !ok {
+		t.Fatal("missing holder")
+	}
+	sid, err := storage.ParseBlobName(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good, ok := h.s.Disk(a).Peek(name)
+	if !ok {
+		t.Fatal("missing shard")
+	}
+	for _, id := range h.ids[:3] {
+		nm, _ := holderOf(man, 0, id)
+		if err := h.s.BitRot(id, nm); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.s.RunUntilConverged(h.s.Now().Add(30*time.Second), func() bool {
+		rd, err := h.node(a).OCC().Reader()
+		return err == nil && rd.Record(node.AbsentKeyForTest(sid, a)).Live()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.Crash(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.FailReads(a, occ.StateBlob, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.Restart(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.RunFor(time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if h.node(a).OCC().Ready() {
+		t.Fatal("OCC loaded immediately despite FailReads on occ/state")
+	}
+	var got error
+	replied := false
+	h.node(a).OnRequest(h.ids[3], append([]byte{2}, storage.EncodeShardRequest(storage.OpPutShard, sid, good)...), func(_ []byte, err error) {
+		got, replied = err, true
+	})
+	if err := h.s.RunUntilConverged(h.s.Now().Add(50*time.Millisecond), func() bool { return replied }); err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(got, occ.ErrNotReady) {
+		t.Fatalf("OpPutShard before metadata loaded returned %v, want occ.ErrNotReady", got)
+	}
+	if b, ok := h.s.Disk(a).Peek(name); ok && bytes.Equal(b, good) {
+		t.Fatal("shard was written to disk before metadata loaded")
+	}
+	if err := h.s.RunUntilConverged(h.s.Now().Add(time.Second), func() bool { return h.node(a).OCC().Ready() }); err != nil {
+		t.Fatal(err)
+	}
+	got, replied = nil, false
+	h.node(a).OnRequest(h.ids[3], append([]byte{2}, storage.EncodeShardRequest(storage.OpPutShard, sid, good)...), func(_ []byte, err error) {
+		got, replied = err, true
+	})
+	if err := h.s.RunUntilConverged(h.s.Now().Add(time.Second), func() bool { return replied }); err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(got, node.ErrFenced) {
+		t.Fatalf("after metadata loaded, OpPutShard returned %v, want ErrFenced", got)
+	}
+}
+
+func TestWipedHolderRebuildRacesOwnAbsenceRecord(t *testing.T) {
+	cfg := smallConfig()
+	cfg.Layout = storage.Layout{K: 2, M: 2, StripeSize: 1024}
+	cfg.RequestTimeout = 5 * time.Second
+	cfg.MaintainPeriod = 500 * time.Millisecond
+	h, err := newHarness(1, 4, cfg, fixedNet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.RunFor(3 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.node(h.ids[0]).CreateBucket(storage.BucketSpec{Name: "g"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.RunUntilConverged(h.s.Now().Add(20*time.Second), h.converged); err != nil {
+		t.Fatal(err)
+	}
+	_, _, man := putEverywhere(t, h, 700)
+	h0 := man.Stripes[0].Shards[0].Node
+	name0, _ := holderOf(man, 0, h0)
+	sid0, _ := storage.ParseBlobName(name0)
+	absKey := node.AbsentKeyForTest(sid0, h0)
+
+	if _, err := h.node(h0).OCC().SetScalar(absKey, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	h.node(h0).RecordMeta(absKey)
+	if err := h.s.RunUntilConverged(h.s.Now().Add(20*time.Second), h.converged); err != nil {
+		t.Fatal(err)
+	}
+	peer := h.ids[0]
+	if peer == h0 {
+		peer = h.ids[1]
+	}
+	rdPeer, _ := h.node(peer).OCC().Reader()
+	manDoc := occ.NewDoc()
+	mv, _ := rdPeer.Record(occ.ManifestKey("g", "k")).Version()
+	manDoc.MergeVersion(occ.ManifestKey("g", "k"), mv)
+	absDoc := occ.NewDoc()
+	av, _ := rdPeer.Record(absKey).Version()
+	absDoc.MergeVersion(absKey, av)
+
+	if err := h.s.WipeRejoin(h0); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.RunFor(5 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range h.ids {
+		if id != h0 {
+			if err := h.s.Clog(id, h0); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if _, err := h.node(h0).OCC().Merge(manDoc); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.RunFor(cfg.MaintainPeriod + 50*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.node(h0).OCC().Merge(absDoc); err != nil {
+		t.Fatal(err)
+	}
+	rd0, _ := h.node(h0).OCC().Reader()
+	if !rd0.Record(absKey).Live() {
+		t.Fatal("h0 does not hold its own absence record before rebuild finishes")
+	}
+	for _, id := range h.ids {
+		if id != h0 {
+			if err := h.s.Unclog(id, h0); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := h.s.RunFor(500 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if _, onDisk := h.s.Disk(h0).Peek(name0); onDisk {
+		t.Fatalf("rebuild stored shard %s on %s even though %s already held its own binding absence record %s before finish() ran (Rebuilds=%d)", name0, h0, h0, absKey, h.node(h0).Stats().Rebuilds)
+	}
+}
+
+func TestHolderPauseResumeBlocksThenAllowsDeclaration(t *testing.T) {
+	h, logs := lossHarness(t, 4, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)
+	oi, data, man := putEverywhere(t, h, 700)
+	goodHolder := man.Stripes[0].Shards[3].Node
+	if err := h.s.Pause(goodHolder); err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range man.Stripes[0].Shards[:3] {
+		nm, _ := holderOf(man, 0, ref.Node)
+		if err := h.s.BitRot(ref.Node, nm); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.s.RunFor(30 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range h.up() {
+		if n.Stats().AbsentRecords != 0 || n.Stats().LostDeclared != 0 {
+			t.Fatalf("%s wrote absent=%d declared=%d while %s was paused", n.ID(), n.Stats().AbsentRecords, n.Stats().LostDeclared, goodHolder)
+		}
+	}
+	if len(h.declared) != 0 {
+		t.Fatalf("declared lost while a holder was paused: %v", h.declared)
+	}
+	if err := h.s.Resume(goodHolder); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.RunFor(30 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.s.Err(); err != nil {
+		t.Fatal(err)
+	}
+	requireDeclaredLost(t, orphanRun{h: h, oi: oi, data: data, logs: logs})
+}
