@@ -282,3 +282,13 @@ func TestCanaryE8ADeafSideNeverReachesOneVersionPerKey(t *testing.T) {
 	}
 	expectCanaryFailure(t, c.s, "one version of every key on every replica after the heal: not within")
 }
+
+func TestCanaryE7WipingTheOnlyCopyOfAnAcknowledgedWriteIsCaught(t *testing.T) {
+	const seed = 166963932986536
+	var st nemesisStats
+	s := runNemesis(seed, e7Options(), func(n *nemesis) nemesisPlan {
+		n.loneWipe = true
+		return randomPlan(n.r, e7Cycles, e7Chaos)
+	}, &st)(seed)
+	expectCanaryFailure(t, s, "on no discard record")
+}

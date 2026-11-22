@@ -98,6 +98,7 @@ type nemesis struct {
 	region   string
 	seq      int
 	noGrace  bool
+	loneWipe bool
 }
 
 func newNemesis(c *simCluster) *nemesis {
@@ -259,6 +260,45 @@ func (n *nemesis) allows(node env.NodeID, blob string) bool {
 	return true
 }
 
+func (n *nemesis) metadataElsewhere(id env.NodeID) bool {
+	self := n.c.node(id)
+	if self == nil {
+		return false
+	}
+	rd, err := self.OCC().Reader()
+	if err != nil {
+		return false
+	}
+	var others []occ.Reader
+	for _, x := range n.c.ids {
+		if x == id {
+			continue
+		}
+		if nd := n.c.node(x); nd != nil {
+			if r, err := nd.OCC().Reader(); err == nil {
+				others = append(others, r)
+			}
+		}
+	}
+	for _, k := range rd.Keys() {
+		v, ok := rd.Record(k).Version()
+		if !ok {
+			continue
+		}
+		held := false
+		for _, o := range others {
+			if w, ok := o.Record(k).Version(); ok && w.ID() == v.ID() {
+				held = true
+				break
+			}
+		}
+		if !held {
+			return false
+		}
+	}
+	return true
+}
+
 func (n *nemesis) apply(op chaosOp) error {
 	c := n.c
 	ids := c.ids
@@ -272,6 +312,9 @@ func (n *nemesis) apply(op chaosOp) error {
 			return skip()
 		}
 		if n.mig != nil && n.migCoord.ID == string(id) && op.kind == opWipeNode {
+			return skip()
+		}
+		if op.kind == opWipeNode && !n.loneWipe && !n.metadataElsewhere(id) {
 			return skip()
 		}
 		f = sim.Fault{Kind: map[opKind]sim.FaultKind{opCrashNode: sim.FaultCrash, opPauseNode: sim.FaultPause, opWipeNode: sim.FaultWipeRejoin}[op.kind], Node: id}
