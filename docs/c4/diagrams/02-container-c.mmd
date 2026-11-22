@@ -1,6 +1,8 @@
 %% draw-visual: -x 4 -y 1 -p 0
 graph LR
-  MERKLE[Merkle anti-entropy] -->|11| STORAGE[Storage engine]
-  STORAGE -->|8| ERASURE[Erasure coding]
-  STORAGE -->|9| GOSSIP[Gossip membership]
-  STORAGE -->|10| OCC[OCC metadata]
+  NODE[Node core] -->|6| STORAGE[Storage engine]
+  STORAGE -->|11| ERASURE[Erasure coding]
+  NODE -->|7| OCC[OCC metadata]
+  NODE -->|8| SAGA[Saga engine]
+  NODE -->|9| GOSSIP[Gossip membership]
+  NODE -->|10| MERKLE[Merkle anti-entropy]

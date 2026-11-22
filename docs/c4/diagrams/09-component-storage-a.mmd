@@ -1,7 +1,6 @@
 %% draw-visual: -x 4 -y 1 -p 0
 graph LR
-  API[Object API] -->|1| PATHS[Object put and get paths]
-  PATHS -->|2| STRIPE[Object striping]
+  PATHS[Object put and get paths] -->|2| STRIPE[Object striping]
   PATHS -->|4| PLACE[Placement]
   PATHS -->|6| CHUNK[Local chunk store]
   PATHS -->|7| ENV[internal/env]

@@ -1,8 +1,8 @@
 %% draw-visual: -x 4 -y 1 -p 0
 graph LR
-  GOSSIP[Gossip] -->|11| ENV[internal/env]
-  STORAGE[Storage] -->|12| ENV
-  MERKLE[Merkle] -->|13| ENV
-  OCC[OCC] -->|14| ENV
-  SAGA[Saga] -->|15| ENV
-  DST[DST harness] -->|16| ENV
+  DST[DST harness] -->|21| NODE[Node core]
+  NODE -->|10| GOSSIP[Gossip]
+  NODE -->|11| STORAGE[Storage]
+  NODE -->|12| MERKLE[Merkle]
+  NODE -->|13| OCC[OCC]
+  NODE -->|14| SAGA[Saga]

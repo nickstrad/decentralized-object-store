@@ -1,14 +1,13 @@
 # C4 Level 3 — Component: gossip (`internal/gossip`)
 
-**Partly as built.** The seven components PLAN.md names and the wire codec exist and match this diagram (checked against `internal/gossip` when Chunk 1 landed, 2026-11-22). Relationships 10 and 11 are the target design: no other package reads the Membership view yet. Storage placement and replication peer choice are wired to it in Chunk 6.
+**As built.** The seven components PLAN.md names and the wire codec exist and match this diagram (checked against `internal/gossip` when Chunk 1 landed, 2026-11-22). Relationships 10 and 11 are as built since Chunk 6 (checked against `internal/node`, 2026-11-22). The one reader of the view is the Node core (`internal/node`): storage, Merkle and OCC do not import this package, and take their members through interfaces they declare and the node core implements.
 
 Model: diagram `component-gossip` in [model.json](model.json). Source: PLAN.md sections 3, 4.2 (Chunk 1), 7.7; code in `node.go`, `member.go`, `wire.go`, `config.go`, `errors.go`.
 All components but the wire codec and the `View` lattice are parts of one single-threaded `Node`; the boxes are groups of its handlers, not separate types.
 
 ```mermaid
 flowchart TB
-  STORAGE["Storage engine<br/>internal/storage"]
-  OCC["OCC metadata<br/>internal/occ"]
+  NODE["Node core<br/>internal/node"]
   subgraph GOSSIP["internal/gossip"]
     JOIN["Join and leave"]
     PROBE["Probe"]
@@ -29,8 +28,8 @@ flowchart TB
   SUSP -->|7| DISSEM
   FSYNC -->|8| VIEW
   PROBE -->|9| ENV
-  STORAGE -->|10| VIEW
-  OCC -->|11| VIEW
+  NODE -->|10| VIEW
+  NODE -->|11| JOIN
   JOIN -->|12| FSYNC
   VIEW -->|13| SUSP
   VIEW -->|14| DISSEM
@@ -47,12 +46,12 @@ flowchart TB
   JOIN -->|25| ENV
   PROBE -->|26| JOIN
   classDef ext stroke-dasharray:4 3
-  class STORAGE,OCC,ENV ext
+  class NODE,ENV ext
 ```
 
-Terminal rendering, in 4 parts. Each numbered relationship appears in exactly one part.
+Terminal rendering, in 5 parts. Each numbered relationship appears in exactly one part.
 
-**Part a.** Who reads and writes the Membership view, and what it starts (1, 2, 5, 6, 8, 10, 11, 13, 15).
+**Part a.** Who reads and writes the Membership view, and what it starts (1, 2, 5, 6, 8, 10, 13, 15).
 
 <!-- draw-visual: diagrams/04-component-gossip-a.mmd -->
 ```text
@@ -81,11 +80,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 └─────────────────────────┘             │
                                         │
 ┌─────────────────────────┐             │
-│      Storage engine     ├─────10──────┤
-└─────────────────────────┘             │
-                                        │
-┌─────────────────────────┐             │
-│       OCC metadata      ├─────11──────┘
+│        Node core        ├─────10──────┘
 └─────────────────────────┘
 ```
 
@@ -160,6 +155,15 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 └─────────────────────────┘
 ```
 
+**Part e.** The node core and the seeds (11).
+
+<!-- draw-visual: diagrams/04-component-gossip-e.mmd -->
+```text
+┌─────────┐     ┌──────────────┐
+│Node core├─11─►│Join and leave│
+└─────────┘     └──────────────┘
+```
+
 | ID | Component | As built |
 | --- | --- | --- |
 | `g-join` | Join and leave | `Join` and `Leave` in `node.go`. `Join` sends the push-pull sync to every seed at once and completes on the first reply, or fails with `ErrJoinFailed` and each seed's cause; its callback never runs inside `Join`. Seeds from `Config.Seeds` and from `Join` are remembered, at most `MaxSeeds` (256). `Leave` marks the node left at its incarnation, tells every live member in one gossip datagram, stops the timers and closes the node |
@@ -182,8 +186,8 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 7 | Suspicion state machine | Piggybacked dissemination | Queues this node's refutation, alive at a higher incarnation |
 | 8 | Full-state sync | Membership view | Sends the whole view and merges the peer's; picks one random live member and one heal target from dead entries, dead tombstones and seeds that are not live |
 | 9 | Probe | Environment interfaces | Period and probe-timeout timers; random probe order (Clock, Rand) |
-| 10 | Storage engine | Membership view | Reads Membership for shard placement (target design) |
-| 11 | OCC metadata | Membership view | Reads the live members as its replication peers, through the `Membership` interface `internal/occ` declares (target design) |
+| 10 | Node core | Membership view | Reads the live members (`Members`) through its `gossipView` adapter, which answers the `Membership` interfaces of storage (members with their regions, for placement), Merkle and OCC (the peers other than the node itself). Reads all members (`All`) and the live count (`LiveCount`) for the members and health endpoints. Subscribes to change events: a join resets its view-settle clock, a death or leave is counted |
+| 11 | Node core | Join and leave | Passes the seed list in `Config.Seeds`; calls `Leave` when the node stops |
 | 12 | Join and leave | Full-state sync | A join is the push-pull sync sent to every seed; the first reply completes it |
 | 13 | Membership view | Suspicion state machine | Starts the suspicion timer when a member becomes suspect, by probe or by gossip, and stops it when the member leaves suspect; hands claims about this node itself to refutation |
 | 14 | Membership view | Piggybacked dissemination | Queues every accepted change for gossip, except a dead or left verdict about a member this node never held |
@@ -211,6 +215,10 @@ Differences from the target design:
 - Relationship 7 covered every state change in the target design. As built, the view's
   merge step queues changes (relationship 14) and the suspicion code queues only this
   node's refutation.
+- Relationships 10 and 11 started at the Storage engine and at the metadata layer in the
+  target design. As built both start at the Node core. It also starts the gossip node and
+  hands it the datagrams and requests of the gossip channel; that is not drawn, because
+  those calls enter every component.
 - Relationships 12 to 26 and the Wire codec are new. The package uses Clock, Rand and
   Transport and no Disk. The view and its tombstones also read the time from the Clock,
   for event times and retention; that is not drawn.

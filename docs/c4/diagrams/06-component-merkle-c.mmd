@@ -1,4 +1,7 @@
 %% draw-visual: -x 4 -y 1 -p 0
 graph LR
-  STORAGE[Storage engine] -->|4| REPAIRER[Repairer interface]
-  STORAGE -->|5| TREE[Tree builder]
+  NODE[Node core] -->|4| REPAIRER[Repairer interface]
+  NODE -->|12| MEMBERSHIP[Membership interface]
+  NODE -->|11| WORKER[Anti-entropy worker]
+  NODE -->|5| TREE[Tree builder]
+  NODE -->|8| DIFF[Diff protocol]

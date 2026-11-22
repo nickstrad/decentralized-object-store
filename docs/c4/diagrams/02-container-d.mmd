@@ -1,6 +1,6 @@
 %% draw-visual: -x 4 -y 1 -p 0
 graph LR
-  SAGA[Saga engine] -->|15| OCC[OCC metadata]
-  OCC -->|12| GOSSIP[Gossip membership]
-  SAGA -->|13| STORAGE[Storage engine]
-  SAGA -->|14| MERKLE[Merkle anti-entropy]
+  STORAGE[Storage engine] -->|12| NODE[Node core]
+  OCC[OCC metadata] -->|13| NODE
+  MERKLE[Merkle anti-entropy] -->|14| NODE
+  SAGA[Saga engine] -->|15| NODE

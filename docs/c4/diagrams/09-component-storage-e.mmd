@@ -1,0 +1,7 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  NODE[Node core] -->|1| PATHS[Object put and get paths]
+  NODE -->|11| MANIFEST[Object manifest]
+  NODE -->|12| CHUNK[Local chunk store]
+  NODE -->|16| STRIPE[Object striping]
+  NODE -->|17| PROTO[Shard request protocol]

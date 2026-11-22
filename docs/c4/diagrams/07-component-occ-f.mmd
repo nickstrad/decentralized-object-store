@@ -1,5 +1,6 @@
 %% draw-visual: -x 4 -y 1 -p 0
 graph LR
-  API[Object API] -->|20| NODE[Replicating node]
-  STORAGE[Storage engine] -->|21| META[Typed metadata document]
-  SAGA[Saga engine] -->|22| META
+  NC[Node core] -->|20| NODE[Replicating node]
+  NC -->|21| META[Typed metadata document]
+  NC -->|22| QUOTA[Quota check-and-set]
+  NC -->|5| MEMBERSHIP[Membership interface]
