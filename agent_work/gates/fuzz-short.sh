@@ -25,9 +25,10 @@ for pkg in $pkgs; do
     if ! go test "$pkg" -run '^$' -fuzz "^${t}\$" -fuzztime "${secs}s" -fuzzminimizetime 5s 2>&1 | tee "$log"; then
       # The Go fuzzer can end a clean run with "context deadline exceeded" when the time
       # budget expires while a worker is mid-call on a loaded machine: no failing input,
-      # no crasher file. That one signature is retried ONCE; a target that really stalls
+      # no crasher file. That one signature (fuzzing had started, and the failure is the
+      # fuzzer's own bare deadline line) is retried ONCE; a target that really stalls
       # shows it again and fails, and any failure that names an input fails at once.
-      if grep -q 'context deadline exceeded' "$log" && ! grep -qE 'Failing input written to|panic:|fuzzing process hung or terminated' "$log" \
+      if grep -q '^fuzz: elapsed:' "$log" && grep -qE '^[[:space:]]+context deadline exceeded$' "$log" && ! grep -qE 'Failing input written to|panic:|fuzzing process hung or terminated' "$log" \
          && [ "$(grep -c -- '--- FAIL' "$log")" = 1 ]; then
         echo "NOTE-RETRY $pkg $t: deadline at the end of the budget with no failing input; running it once more"
         retried="$retried $t"
