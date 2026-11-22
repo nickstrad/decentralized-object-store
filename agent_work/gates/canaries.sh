@@ -6,6 +6,10 @@
 #
 # Usage: agent_work/gates/canaries.sh [name-regexp]
 #   On the host it re-executes itself inside the dev container.
+#   CANARY_FAST=1 runs only the canaries that need gates G0 and G6 (a few minutes in
+#   all): the ones a push can break by changing the PRODUCT tree under the plants. The
+#   full set contains several complete gate runs and takes hours on the grown tree; CI
+#   runs it from its own workflow when the tester changes, weekly, and on demand.
 #   Writes agent_work/0a-foundation/gates/canaries.json. Exit 0 when every canary is caught.
 set -u
 here=$(cd "$(dirname "$0")" && pwd -P)
@@ -13,10 +17,11 @@ root=$(cd "$here/../.." && pwd -P)
 cd "$root" || exit 2
 if ! { [ -f /.dockerenv ] && [ "${OBJSTORE_DEV_CONTAINER:-}" = 1 ]; }; then
   docker compose build -q dev || exit 2
-  exec docker compose run --rm -T dev agent_work/gates/canaries.sh "$@"
+  exec docker compose run --rm -T -e CANARY_FAST="${CANARY_FAST:-}" dev agent_work/gates/canaries.sh "$@"
 fi
 
 only=${1:-.}
+fast=${CANARY_FAST:-}
 work=$(mktemp -d)
 fake_sha=00c0ffee00c0ffee00c0ffee00c0ffee00c0ffee
 fake_base=0ba5e0000ba5e0000ba5e0000ba5e0000ba5e000
@@ -24,9 +29,26 @@ fake_image=sha256:$(printf 'c%.0s' $(seq 64))
 results='[]'
 rc=0
 
-fresh() { # fresh <name>: a clean copy of the tree at $work/<name>
-  mkdir -p "$work/$1"
+fresh() { # fresh <name>: a clean copy of the tree at $work/<name>; a failed copy stops the run
+  mkdir -p "$work/$1" || { echo "canaries: cannot create $work/$1" >&2; exit 2; }
   tar -C "$root" --exclude=./.git --exclude=./kb --exclude=./_site --exclude='./agent_work/*/gates' -cf - . | tar -C "$work/$1" -xf -
+  local st=("${PIPESTATUS[@]}")
+  [ "${st[0]}" = 0 ] && [ "${st[1]}" = 0 ] || { echo "canaries: copying the tree for $1 failed" >&2; exit 2; }
+}
+# plant_in <name> <plant-function>: run the plant in the copy with errexit, so a plant
+# that cannot write (a missing directory, a renamed file) fails here and is reported as a
+# MISSED canary with its own error, instead of leaving a clean copy that some canaries
+# would then "catch" for the wrong reason. Never call this inside if/&&/||: errexit is
+# switched off there. Sets plant_rc.
+plant_in() {
+  ( set -euo pipefail
+    cd "$work/$1"
+    "$2"
+  ) > "$work/$1.plant.log" 2>&1
+  plant_rc=$?
+  if [ $plant_rc != 0 ]; then
+    { echo "PLANT FAILED ($2, exit $plant_rc):"; cat "$work/$1.plant.log"; } > "$work/$1.log"
+  fi
 }
 # The comment baseline of every canary run is the unmutated tree, so prose that has landed
 # with earlier chunks does not turn the clean run red, and a comment canary is caught for
@@ -47,7 +69,12 @@ record() { # record <name> <what was planted> <expected> <caught true|false>
 canary() {
   local name=$1 gate=$2 chk=$3 pat=$4 desc=$5 only_gates=$6 plant=$7
   [[ "$name" =~ $only ]] || return 0
-  fresh "$name"; ( cd "$work/$name" && $plant )
+  if [ "$fast" = 1 ] && [ "$only_gates" != G0 ] && [ "$only_gates" != G6 ]; then return 0; fi
+  fresh "$name"; plant_in "$name" "$plant"
+  if [ $plant_rc != 0 ]; then
+    record "$name" "$desc" "$gate/$chk red with /$pat/ (the plant itself failed)" false
+    rm -rf "$work/$name" "$work/$name.out"; return 0
+  fi
   run_gate "$name" "$only_gates"
   if [ "$(status_of "$name" "$gate" "$chk")" = fail ] && grep -qE -- "$pat" "$work/$name.out/$gate-$chk.log"; then
     record "$name" "$desc" "$gate/$chk red with /$pat/" true
@@ -58,6 +85,7 @@ canary() {
 counts() {
   local name=$1 desc=$2 want=$3; shift 3
   [[ "$name" =~ $only ]] || return 0
+  [ "$fast" != 1 ] || return 0
   fresh "$name"; run_gate "$name" "" "$@"
   local j="$work/$name.out/result.json"
   if [ "$(jq -r '.overall' "$j" 2>/dev/null)" = pass ] && [ "$(jq -r '.counts_for_landing' "$j")" = "$want" ]; then
@@ -94,7 +122,7 @@ plant_helper() {
   printf 'package sim\n\nimport "github.com/nickstrad/decentralized-object-store/internal/zzhelper"\n\nfunc zzNow() int64 {\n\treturn zzhelper.Now()\n}\n' > internal/sim/zz_canary.go
 }
 plant_tagclock() { mkdir -p internal/sim; printf 'package sim\n' > internal/sim/zz_base.go; printf '//go:build missingtag\n\npackage sim\n\nimport "time"\n\nvar zzAttack = time.Now()\n' > internal/sim/zz_canary.go; }
-plant_tagonly()  { mkdir -p internal/sim; printf '//go:build missingtag\n\npackage sim\n\nimport "time"\n\nvar zzAttack = time.Now()\n' > internal/sim/zz_canary.go; }
+plant_tagonly()  { mkdir -p internal/sim; find internal/sim -maxdepth 1 -type f -name '*.go' -delete; printf '//go:build missingtag\n\npackage sim\n\nimport "time"\n\nvar zzAttack = time.Now()\n' > internal/sim/zz_canary.go; }
 plant_ptrfmt()   { mkdir -p internal/sim; printf 'package sim\n\nimport "fmt"\n\nfunc zzAddr(p *int) string {\n\treturn fmt.Sprintf("%%v", p)\n}\n' > internal/sim/zz_canary.go; }
 plant_sortties() { mkdir -p internal/sim; printf 'package sim\n\nimport "sort"\n\nfunc zzKeys(m map[string]int) []string {\n\tvar a []string\n\tfor k := range m {\n\t\ta = append(a, k)\n\t}\n\tsort.Slice(a, func(i, j int) bool { return false })\n\treturn a\n}\n' > internal/sim/zz_canary.go; }
 plant_asm()      { mkdir -p internal/buildcheck; printf 'package buildcheck\n\nfunc zzTicks() uint64\n' > internal/buildcheck/zz_canary.go; printf '#include "textflag.h"\n\nTEXT ·zzTicks(SB), NOSPLIT, $0-8\n\tRDTSC\n\tSHLQ $32, DX\n\tORQ DX, AX\n\tMOVQ AX, ret+0(FP)\n\tRET\n' > internal/buildcheck/zz_canary_amd64.s; }
@@ -105,7 +133,7 @@ plant_generated(){ mkdir -p internal/buildcheck; printf '// Code generated by a 
 plant_vet()      { mkdir -p internal/buildcheck; printf 'package buildcheck\n\nimport "fmt"\n\nfunc zzVet() string {\n\treturn fmt.Sprintf("%%d", "not a number")\n}\n' > internal/buildcheck/zz_canary.go; }
 plant_build()    { mkdir -p internal/buildcheck; printf 'package buildcheck\n\nfunc zzBroken() int {\n\treturn zzUndefined\n}\n' > internal/buildcheck/zz_canary.go; }
 plant_badlink()  { mkdir -p docs; printf '# Front page\n\n[missing](nowhere.md)\n' > docs/index.md; }
-plant_symlink()  { ln -s ../../STATE.md book/chapters/zz-private.md; }
+plant_symlink()  { mkdir -p book/chapters; ln -s ../../STATE.md book/chapters/zz-private.md; }
 plant_unnamed() {
   base_pkg
   cat > internal/sim/zz_prop_test.go <<'EOT'
@@ -265,12 +293,12 @@ counts clean "nothing (well-formed commit, clean tree, in the container)" true
 
 # Prose that landed with an earlier chunk (a comment present in the baseline too) must not
 # turn a build-stage run red: the comment rule is about what this chunk adds.
-if [[ landed-prose =~ $only ]]; then
-  fresh landed-prose; ( cd "$work/landed-prose" && plant_comment )
+if [[ landed-prose =~ $only ]] && [ "$fast" != 1 ]; then
+  fresh landed-prose; plant_in landed-prose plant_comment
   cp -a "$work/landed-prose" "$work/landed-prose.base"
-  run_gate landed-prose "" GATE_BASELINE="$work/landed-prose.base"
+  [ $plant_rc != 0 ] || run_gate landed-prose "" GATE_BASELINE="$work/landed-prose.base"
   j="$work/landed-prose.out/result.json"
-  if [ "$(jq -r '.overall' "$j" 2>/dev/null)" = pass ] && [ "$(jq -r '.counts_for_landing' "$j")" = true ]; then record landed-prose "a comment that is also in the baseline commit" "all gates green, counts_for_landing=true" true
+  if [ $plant_rc = 0 ] && [ "$(jq -r '.overall' "$j" 2>/dev/null)" = pass ] && [ "$(jq -r '.counts_for_landing' "$j")" = true ]; then record landed-prose "a comment that is also in the baseline commit" "all gates green, counts_for_landing=true" true
   else record landed-prose "a comment that is also in the baseline commit" "all gates green, counts_for_landing=true" false; fi
   rm -rf "$work/landed-prose" "$work/landed-prose.out" "$work/landed-prose.base"
 fi
@@ -296,7 +324,7 @@ canary go-work          G0 deps            'go.work present'              "a go.
 canary nested-module    G0 deps            'go.mod outside the root'      "a nested module with its own requirement"                 G0 plant_nestedmod
 canary assembly         G0 deps            'assembly, C or object files'  "an assembly file reading the CPU timestamp counter"       G0 plant_asm
 canary panic            G0 panics          ' panic: '                     "a panic missing from the allowlist"                       G0 plant_panic
-canary panic-shadow     G0 panics          'panic'                        "a build-excluded func named panic hiding a real panic"    G0 plant_shadow
+canary panic-shadow     G0 panics          ' panic: '                     "a build-excluded func named panic hiding a real panic"    G0 plant_shadow
 canary stale-allow      G0 panics          'stale-allow'                  "an allowlist entry that matches no panic"                 G0 plant_stale
 canary comment          G0 comments        ' comment: '                   "a comment in pre-prose Go"                                G0 plant_comment
 canary fake-directive   G0 comments        ' comment: '                   "prose written as a //go: directive"                       G0 plant_fakedir
@@ -328,7 +356,7 @@ if [[ partial-run =~ $only ]]; then
   rm -rf "$work/partial-run" "$work/partial-run.out"
 fi
 # A result produced outside the container must say so, fail G6 and not count.
-if [[ outside-container =~ $only ]]; then
+if [[ outside-container =~ $only ]] && [ "$fast" != 1 ]; then
   fresh outside-container
   run_gate outside-container "" OBJSTORE_DEV_CONTAINER=0 GATE_NO_DOCKER=1
   j="$work/outside-container.out/result.json"
@@ -347,8 +375,8 @@ fi
 # A build-stage run whose comment baseline is the gated commit itself certifies nothing:
 # the gate must stop, not pass. A baseline that names no commit must not count.
 if [[ self-baseline =~ $only ]]; then
-  fresh self-baseline; ( cd "$work/self-baseline" && plant_comment )
-  run_gate self-baseline G0 GATE_BASELINE="$work/self-baseline" GATE_BASE_SHA=$fake_sha; grc=$?
+  fresh self-baseline; plant_in self-baseline plant_comment
+  grc=-1; [ $plant_rc != 0 ] || { run_gate self-baseline G0 GATE_BASELINE="$work/self-baseline" GATE_BASE_SHA=$fake_sha; grc=$?; }
   if [ $grc = 2 ] && [ ! -e "$work/self-baseline.out/result.json" ]; then record self-baseline "a commit used as its own comment baseline" "gate exits 2, no result" true
   else record self-baseline "a commit used as its own comment baseline" "gate exits 2, no result" false; fi
   rm -rf "$work/self-baseline" "$work/self-baseline.out"
@@ -356,15 +384,15 @@ fi
 counts unnamed-baseline "a comment baseline that names no commit" false GATE_BASE_SHA=some-directory
 # A misspelt stage must stop the gate, not switch the comment rule off.
 if [[ stage-typo =~ $only ]]; then
-  fresh stage-typo; ( cd "$work/stage-typo" && plant_comment )
-  run_gate stage-typo G0 GATE_STAGE=buidl; grc=$?
+  fresh stage-typo; plant_in stage-typo plant_comment
+  grc=-1; [ $plant_rc != 0 ] || { run_gate stage-typo G0 GATE_STAGE=buidl; grc=$?; }
   if [ $grc = 2 ] && [ ! -e "$work/stage-typo.out/result.json" ]; then record stage-typo "GATE_STAGE=buidl with a comment in pre-prose Go" "gate exits 2, no result" true
   else record stage-typo "GATE_STAGE=buidl with a comment in pre-prose Go" "gate exits 2, no result" false; fi
   rm -rf "$work/stage-typo" "$work/stage-typo.out"
 fi
 
 mkdir -p agent_work/0a-foundation/gates
-if [ "$only" = . ]; then
+if [ "$only" = . ] && [ "$fast" != 1 ]; then
   jq -n --arg at "$(date -u +%FT%TZ)" --arg go "$(go version)" --argjson r "$results" \
     '{ran_at:$at, go_version:$go, canaries:$r, all_caught:([$r[].caught]|all)}' > agent_work/0a-foundation/gates/canaries.json
 fi

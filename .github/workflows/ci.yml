@@ -30,7 +30,9 @@ jobs:
         env:
           BEFORE: ${{ github.event.before || github.event.pull_request.base.sha }}
         run: agent_work/gates/ci-prose.sh "$BEFORE" HEAD
-      - name: Gate canaries
+      - name: Fast gate canaries (G0 and G6 plants on this tree)
+        env:
+          CANARY_FAST: "1"
         run: agent_work/gates/canaries.sh
       - name: Upload gate result
         if: always()
