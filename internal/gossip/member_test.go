@@ -322,3 +322,22 @@ func TestViewAccessors(t *testing.T) {
 		}
 	}
 }
+
+func TestViewApplyRemoveWithoutReadStaysBounded(t *testing.T) {
+	v := gossip.NewView()
+	v.Apply(gossip.Member{ID: "a", State: gossip.StateAlive})
+	v.Apply(gossip.Member{ID: "b", State: gossip.StateAlive})
+	for i := 0; i < 1000; i++ {
+		v.Apply(gossip.Member{ID: "x", State: gossip.StateAlive})
+		v.Remove("x")
+		if got, limit := gossip.ViewBacklog(v), 2*v.Len()+2; got > limit {
+			t.Fatalf("after %d apply/remove rounds the view holds %d ordered IDs for %d members, want at most %d", i+1, got, v.Len(), limit)
+		}
+	}
+	if got := v.IDs(); !slices.Equal(got, []env.NodeID{"a", "b"}) {
+		t.Fatalf("IDs() = %v, want [a b]", got)
+	}
+	if v.Len() != 2 || v.LiveCount() != 2 {
+		t.Fatalf("Len %d LiveCount %d, want 2 and 2", v.Len(), v.LiveCount())
+	}
+}
