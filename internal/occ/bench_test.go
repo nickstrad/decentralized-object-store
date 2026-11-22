@@ -25,6 +25,8 @@ func benchDocs(b *testing.B, n int) (*occ.Doc, *occ.Doc) {
 	return x.Doc(), y.Doc()
 }
 
+// BenchmarkMergeDoc measures Doc.Merge, Store.Merge with 10% concurrent
+// discards, and canonical encode+decode at 1,000 and 10,000 records.
 func BenchmarkMergeDoc(b *testing.B) {
 	for _, n := range []int{1_000, 10_000} {
 		b.Run(fmt.Sprintf("records=%d", n), func(b *testing.B) {

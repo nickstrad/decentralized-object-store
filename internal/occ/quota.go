@@ -8,11 +8,13 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// Usage holds a bucket's tracked byte and object totals.
 type Usage struct {
 	Bytes   uint64
 	Objects uint64
 }
 
+// Encode returns the canonical varint encoding of u.
 func (u Usage) Encode() []byte {
 	var e encoder
 	e.uvarint(u.Bytes)
@@ -20,6 +22,8 @@ func (u Usage) Encode() []byte {
 	return e.b
 }
 
+// DecodeUsage parses a canonical Usage encoding, returning ErrMalformed on
+// truncated, trailing, or non-canonical bytes.
 func DecodeUsage(b []byte) (Usage, error) {
 	d := &decoder{b: b}
 	u := Usage{Bytes: d.uvarint(), Objects: d.uvarint()}
@@ -33,12 +37,18 @@ func DecodeUsage(b []byte) (Usage, error) {
 	return u, nil
 }
 
+// Recount computes the authoritative Usage for a quota key from underlying
+// metadata so RecountQuota can repair drift after a partition discard.
 type Recount func(key string) (Usage, error)
 
 type putter interface {
 	Put(key string, value []byte, p Precondition) (Version, error)
 }
 
+// ReadQuota reads the current Usage at key and returns the Precondition needed
+// for a conditional follow-up write (IfNoneMatch when absent, IfMatch on the
+// current version or tombstone otherwise). On malformed bytes it still returns
+// the record's IfMatch precondition so a recount can overwrite it.
 func (r Reader) ReadQuota(key string) (Usage, Precondition, error) {
 	rec := r.doc.Record(key)
 	if !rec.Live() {
@@ -62,6 +72,8 @@ func writeQuota(w putter, key string, u Usage, p Precondition) (Version, error) 
 	return w.Put(key, u.Encode(), p)
 }
 
+// updateQuota runs a bounded check-and-set loop, retrying only on
+// ErrPreconditionFailed so a value computed from a stale read is never applied.
 func updateQuota(w putter, r Reader, key string, attempts int, fn func(Usage) (Usage, error)) (Usage, error) {
 	if attempts < 1 {
 		return Usage{}, fmt.Errorf("occ: update quota %q: %d attempts: %w", key, attempts, env.ErrInvalidArgument)
@@ -88,6 +100,9 @@ func updateQuota(w putter, r Reader, key string, attempts int, fn func(Usage) (U
 	return Usage{}, fmt.Errorf("occ: update quota %q: gave up after %d attempts: %w", key, attempts, last)
 }
 
+// recountQuota recomputes usage via recount and writes only when the stored
+// usage differs or is unreadable, stopping nodes from writing redundant
+// identical versions that would discard each other indefinitely.
 func recountQuota(w putter, r Reader, key string, attempts int, recount Recount) (Usage, bool, error) {
 	if attempts < 1 || recount == nil {
 		return Usage{}, false, fmt.Errorf("occ: recount quota %q: %d attempts, hook set %v: %w", key, attempts, recount != nil, env.ErrInvalidArgument)
@@ -100,6 +115,8 @@ func recountQuota(w putter, r Reader, key string, attempts int, recount Recount)
 			return Usage{}, false, fmt.Errorf("occ: recount quota %q: %w", key, err)
 		}
 		if rerr == nil && cur == want {
+			// Re-check the stored version before skipping the write so a
+			// concurrent modification during recount does not slip past as a no-op.
 			_, now, nerr := r.ReadQuota(key)
 			if nerr == nil && now == p {
 				return want, false, nil
@@ -119,18 +136,31 @@ func recountQuota(w putter, r Reader, key string, attempts int, recount Recount)
 	return Usage{}, false, fmt.Errorf("occ: recount quota %q: gave up after %d attempts: %w", key, attempts, last)
 }
 
+// WriteQuota writes u to key conditionally. An unconditional Precondition is
+// rejected with env.ErrInvalidArgument.
 func (s *Store) WriteQuota(key string, u Usage, p Precondition) (Version, error) {
 	return writeQuota(s, key, u, p)
 }
 
+// UpdateQuota performs a read-modify-write on quota key using fn, retrying on
+// ErrPreconditionFailed up to attempts times. It returns env.ErrInvalidArgument
+// if attempts < 1, fn's error, ErrPreconditionFailed after the final attempt,
+// or any underlying read/persist error.
 func (s *Store) UpdateQuota(key string, attempts int, fn func(Usage) (Usage, error)) (Usage, error) {
 	return updateQuota(s, s.Reader, key, attempts, fn)
 }
 
+// RecountQuota recomputes key's Usage via recount and conditionally writes it
+// only if the stored figure differs or is malformed. It returns the computed
+// Usage, whether a write was performed, and any error.
 func (s *Store) RecountQuota(key string, attempts int, recount Recount) (Usage, bool, error) {
 	return recountQuota(s, s.Reader, key, attempts, recount)
 }
 
+// AddUsage returns an UpdateQuota callback that adds signed byte and object
+// deltas to the current Usage with checked arithmetic. Positive growth is
+// checked against any non-zero limit fields and fails with ErrQuotaExceeded;
+// overflow or underflow fails with env.ErrInvalidArgument.
 func AddUsage(bytes, objects int64, limit Usage) func(Usage) (Usage, error) {
 	return func(u Usage) (Usage, error) {
 		nb, okb := addSigned(u.Bytes, bytes)
@@ -146,6 +176,8 @@ func AddUsage(bytes, objects int64, limit Usage) func(Usage) (Usage, error) {
 	}
 }
 
+// addSigned adds signed delta d to unsigned x, reporting false on overflow or
+// underflow (including d == math.MinInt64).
 func addSigned(x uint64, d int64) (uint64, bool) {
 	if d >= 0 {
 		if x > math.MaxUint64-uint64(d) {

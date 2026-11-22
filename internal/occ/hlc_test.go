@@ -15,6 +15,9 @@ func st(wall int64, logical uint32, node string) occ.Stamp {
 	return occ.Stamp{Wall: wall, Logical: logical, Node: env.NodeID(node)}
 }
 
+// TestHLCRules proves HLC.Now and HLC.Observe across forward/stalled/backward
+// physical clocks, remote observation, MaxClockLead rejection, logical carry,
+// and exhaustion at (MaxInt64, MaxUint32).
 func TestHLCRules(t *testing.T) {
 	type step struct {
 		clock   int64
@@ -104,6 +107,9 @@ func TestHLCRules(t *testing.T) {
 	}
 }
 
+// TestLWWSkewPicksTheHigherClock proves that with skewed clocks the higher HLC
+// stamp wins a concurrent write (recording the discard), and a subsequent write
+// after observing that stamp beats it.
 func TestLWWSkewPicksTheHigherClock(t *testing.T) {
 	fast, fc := newTestStore(t, "fast", 1, 1)
 	slow, scl := newTestStore(t, "slow", 1, 2)
@@ -134,6 +140,8 @@ func TestLWWSkewPicksTheHigherClock(t *testing.T) {
 	}
 }
 
+// TestPropHLCMonotonic proves that every stamp from HLC.Now is strictly after
+// all prior issued and observed stamps and never behind local physical time.
 func TestPropHLCMonotonic(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		c := &fakeClock{now: env.Time(rapid.Int64Range(0, 1<<40).Draw(t, "start"))}

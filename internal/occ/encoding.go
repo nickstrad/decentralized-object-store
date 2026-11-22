@@ -7,6 +7,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// encoder appends canonical binary primitives for documents, state blobs,
+// typed metadata values, and wire messages.
 type encoder struct {
 	b []byte
 }
@@ -50,6 +52,8 @@ func (e *encoder) version(v Version) {
 	e.bytes(v.value)
 }
 
+// decoder parses canonical binary inputs with sticky errors and a running
+// operation counter (ops) to bound work on hostile inputs.
 type decoder struct {
 	b   []byte
 	off int
@@ -57,6 +61,7 @@ type decoder struct {
 	ops int
 }
 
+// fail records the first decode failure as ErrMalformed and keeps it sticky.
 func (d *decoder) fail(what string) {
 	if d.err == nil {
 		d.err = fmt.Errorf("occ: decode %s at offset %d: %w", what, d.off, ErrMalformed)
@@ -107,6 +112,8 @@ func (d *decoder) varint() int64 {
 	return x
 }
 
+// count reads a declared element count and rejects any count that exceeds
+// what can fit in the remaining bytes at minSize bytes per element.
 func (d *decoder) count(minSize int) int {
 	n := d.uvarint()
 	if d.err != nil {
@@ -169,7 +176,10 @@ func (d *decoder) stamp() Stamp {
 	return Stamp{Wall: wall, Logical: uint32(logical), Node: env.NodeID(d.str())}
 }
 
+// vector decodes a canonical VersionVector, checking non-zero counters and
+// strictly increasing actor order inline so malformed inputs fail without sorting.
 func (d *decoder) vector() VersionVector {
+	// An entry needs at least 3 bytes: empty node length (1), epoch (1), counter (1).
 	n := d.count(3)
 	if d.err != nil || n == 0 {
 		return VersionVector{}
@@ -197,6 +207,8 @@ func (d *decoder) vector() VersionVector {
 	return VersionVector{entries: es}
 }
 
+// version decodes a Version and returns early on any error before hashing
+// the VersionID.
 func (d *decoder) version() Version {
 	a := d.actor()
 	c := d.uvarint()
@@ -216,6 +228,7 @@ func (d *decoder) version() Version {
 	return NewVersion(Dot{Actor: a, Counter: c}, ctx, tomb, val, st)
 }
 
+// end fails the decoder if any unconsumed trailing bytes remain.
 func (d *decoder) end() {
 	if d.err == nil && d.rest() != 0 {
 		d.fail("trailing bytes")

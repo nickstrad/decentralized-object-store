@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// Wire message tags for anti-entropy replication and remote client operations.
 const (
 	msgDigest byte = 1
 	msgPush   byte = 2
@@ -68,6 +69,8 @@ func decodeOp(b []byte) (op, error) {
 	return o, nil
 }
 
+// Result carries the version ID, ETag, and optional value returned by a remote
+// Client.Get, Client.Put, or Client.Delete call.
 type Result struct {
 	Version VersionID
 	ETag    ETag

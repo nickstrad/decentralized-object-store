@@ -13,6 +13,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim/simtest"
 )
 
+// DST scenario parameters and named bounds:
+//   - ConvergeBound: maximum virtual time allowed to converge after final heal.
+//   - MaxOvershoot: worst-case quota overshoot across partitioned writers before recount.
 const (
 	dstNodes        = 6
 	chaosStart      = env.Time(time.Second)
@@ -79,6 +82,8 @@ func newWorld(s *sim.Sim) *world {
 	return w
 }
 
+// tracked wraps an occ.Node in DST runs to report every decoded delta, push,
+// and digest reply actually processed by the node to the independent oracle.
 type tracked struct {
 	*occ.Node
 	w  *world
@@ -465,6 +470,9 @@ func logWorld(t *testing.T, w *world) {
 		w.acks, w.refused, w.discards, len(w.or.lost), w.diskLosses, w.maxCtx, w.maxState, w.tally, w.convergedIn, w.s.Steps(), w.won, w.lost, w.overshoot, w.rounds)
 }
 
+// TestMultiRegionConvergenceDST proves 6-node, 3-region convergence under skew,
+// drift, packet loss/duplication, nemesis faults, and 3 disk-loss kinds:
+// byte-identical docs and ETags within ConvergeBound and every loss accounted for.
 func TestMultiRegionConvergenceDST(t *testing.T) {
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
 		simtest.RequireDeterministic(t, seed, multiRegionRun)
@@ -549,6 +557,9 @@ func offlineRun(seed int64) *sim.Sim {
 	return s
 }
 
+// TestOfflineRegionDST proves that after one region edits conditionally offline
+// for 60s and heals, every offline write either survives, is causally superseded,
+// or is recorded as discarded, with both wins and losses occurring on every seed.
 func TestOfflineRegionDST(t *testing.T) {
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
 		simtest.RequireDeterministic(t, seed, offlineRun)
@@ -696,6 +707,9 @@ func raceRun(partitioned bool) func(int64) *sim.Sim {
 	}
 }
 
+// TestConditionalWriteRaceDST proves two clients racing with the same ETag:
+// on one node exactly one wins with zero discards; across a partition both are
+// acknowledged, one wins everywhere after heal, and the other's discard is logged.
 func TestConditionalWriteRaceDST(t *testing.T) {
 	t.Run("two writers on one node: exactly one wins", func(t *testing.T) {
 		simtest.Sweep(t, func(t *testing.T, seed int64) {
@@ -821,6 +835,9 @@ func quotaRun(seed int64) *sim.Sim {
 	return s
 }
 
+// TestQuotaOvershootUnderPartitionDST proves that partitioned quota updates
+// trigger a quota-key discard, subsequent RecountQuota rounds settle on true
+// object usage with no further writes, and overshoot stays within MaxOvershoot.
 func TestQuotaOvershootUnderPartitionDST(t *testing.T) {
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
 		simtest.RequireDeterministic(t, seed, quotaRun)
@@ -861,6 +878,8 @@ func canaryDST(t *testing.T) int {
 	return failed
 }
 
+// TestCanaryDiscardNotRecorded plants the bug of suppressing all LWW discard
+// recording and proves that both the two-writer check and multi-region DST fail.
 func TestCanaryDiscardNotRecorded(t *testing.T) {
 	if err := canaryTwoWriters(t); err != nil {
 		t.Fatalf("the honest store must record the discard: %v", err)
@@ -877,6 +896,8 @@ func TestCanaryDiscardNotRecorded(t *testing.T) {
 	t.Logf("canary: the convergence DST failed on %d of %d seeds with unrecorded discards", failed, canarySeeds)
 }
 
+// TestCanaryMergePrefersLocal plants the bug of keeping the local version on
+// merge (arrival-order winner) and proves that merge laws and multi-region DST fail.
 func TestCanaryMergePrefersLocal(t *testing.T) {
 	a, b := occ.NewDoc(), occ.NewDoc()
 	a.MergeVersion("k", version("a", 1, occ.VersionVector{}, false, "a", st(1, 0, "a")))

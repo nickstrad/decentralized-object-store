@@ -10,6 +10,9 @@ import (
 	"pgregory.net/rapid"
 )
 
+// TestQuotaCheckAndSet proves quota creation, limit enforcement, stale-read
+// retry, bounded attempts, tombstone recreation, unconditional-write refusal,
+// corrupt-counter reporting, checked arithmetic, and canonical usage encoding.
 func TestQuotaCheckAndSet(t *testing.T) {
 	limit := occ.Usage{Bytes: 100, Objects: 3}
 	t.Run("the first update creates the counter with If-None-Match", func(t *testing.T) {
@@ -131,6 +134,8 @@ func TestQuotaCheckAndSet(t *testing.T) {
 	})
 }
 
+// TestPropQuotaNoStaleApply proves that WriteQuota succeeds if and only if its
+// precondition matches the latest quota version, never applying a stale read.
 func TestPropQuotaNoStaleApply(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		s, _ := newTestStore(t, "a", 1, 1)
@@ -191,6 +196,9 @@ func currentPre(s *occ.Store) occ.Precondition {
 	return p
 }
 
+// TestQuotaRecount proves that RecountQuota skips writing when already right,
+// retries stale reads, repairs corrupt counters, and settles across peers after
+// partition-side quota updates lose by LWW.
 func TestQuotaRecount(t *testing.T) {
 	limit := occ.Usage{Bytes: 1000}
 	truth := occ.Usage{Bytes: 140, Objects: 3}

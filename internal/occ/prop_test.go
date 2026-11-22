@@ -20,6 +20,8 @@ func mergeDocs(x, y *occ.Doc) *occ.Doc {
 	return z
 }
 
+// checkLaws asserts that Doc.Merge is commutative, associative, and idempotent,
+// preserves the exact key union, and picks the independent LWW maximum per key.
 func checkLaws(a, b, c *occ.Doc) error {
 	ab, ba := mergeDocs(a, b), mergeDocs(b, a)
 	if !ab.Equal(ba) {
@@ -226,6 +228,9 @@ func propEveryLossRecorded(t *rapid.T) {
 	}
 }
 
+// TestPropEveryLossRecorded proves that under random writes, deletes, merges,
+// clock moves, wipes, and permanent crashes, every acknowledged version ends
+// current, causally seen, named in a discard record, or lost with every holding disk.
 func TestPropEveryLossRecorded(t *testing.T) {
 	rapid.Check(t, propEveryLossRecorded)
 }
@@ -242,11 +247,16 @@ func fuzzSeeds(f *testing.F) {
 	}
 }
 
+// FuzzOCCConditionalWrite fuzzes propEveryLossRecorded under Go's coverage-guided
+// fuzzer with 32 KiB corpus seeds so rapid draws complete without skipping.
 func FuzzOCCConditionalWrite(f *testing.F) {
 	fuzzSeeds(f)
 	f.Fuzz(rapid.MakeFuzz(propEveryLossRecorded))
 }
 
+// TestPropCheckAndSetModel proves single-replica conditional Put and Delete
+// against a reference model: operations succeed iff the precondition holds,
+// every new version gets a distinct ETag, and no discards occur.
 func TestPropCheckAndSetModel(t *testing.T) {
 	type mver struct {
 		present, tomb bool
@@ -393,15 +403,21 @@ func propMergeLaws(t *rapid.T) {
 	}
 }
 
+// TestPropMergeLaws proves commutativity, associativity, idempotence, and
+// per-key LWW maximum across honest and forged hostile decoded documents.
 func TestPropMergeLaws(t *testing.T) {
 	rapid.Check(t, propMergeLaws)
 }
 
+// FuzzOCCMergeLaws fuzzes propMergeLaws over arbitrary honest and hostile
+// documents under Go's coverage-guided fuzzer.
 func FuzzOCCMergeLaws(f *testing.F) {
 	fuzzSeeds(f)
 	f.Fuzz(rapid.MakeFuzz(propMergeLaws))
 }
 
+// TestPropConvergence proves that delivering full states and single-key deltas
+// in any permuted, duplicated order converges to byte-identical docs and ETags.
 func TestPropConvergence(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		reps := newReplicas(t, rapid.IntRange(2, 3).Draw(t, "writers"), nil, 5_000)
@@ -469,6 +485,9 @@ func TestPropConvergence(t *testing.T) {
 	})
 }
 
+// TestPropCausalWriteAlwaysWins proves that any acknowledged write strictly
+// supersedes and beats every version it transitively saw, even under extreme
+// clock skew up to sim.MaxSkew and forged remote stamps.
 func TestPropCausalWriteAlwaysWins(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		or := newOracle()
@@ -522,6 +541,8 @@ func TestPropCausalWriteAlwaysWins(t *testing.T) {
 	})
 }
 
+// TestPropNoDiscardWithoutConcurrency proves that causally ordered writes
+// (conditional, blind, and deletes) across replicas never record a discard.
 func TestPropNoDiscardWithoutConcurrency(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		or := newOracle()

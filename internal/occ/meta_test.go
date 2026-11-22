@@ -10,6 +10,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
 )
 
+// TestTypedMetadataDocument proves typed reads, writes, validation, and
+// RecountObjects across tags, ACLs, object metadata, manifests, routes, and
+// content types.
 func TestTypedMetadataDocument(t *testing.T) {
 	s, _ := newTestStore(t, "a", 1, 1)
 	if _, err := s.PutTag("b", "o", "color", "red", occ.IfNoneMatch()); err != nil {
@@ -93,6 +96,8 @@ func TestTypedMetadataDocument(t *testing.T) {
 	}
 }
 
+// TestParseKey proves round-trip parsing of all metadata key kinds, bucket
+// prefix isolation, and ErrMalformed rejection of malformed or non-canonical keys.
 func TestParseKey(t *testing.T) {
 	rows := []struct {
 		key   string
@@ -145,6 +150,8 @@ func TestParseKey(t *testing.T) {
 	}
 }
 
+// TestErrorCodesRoundTrip proves every occ wire code lies uniquely in 128-143,
+// leaves 131 unassigned, and round-trips through Codes().Encode/Decode.
 func TestErrorCodesRoundTrip(t *testing.T) {
 	table, err := occ.Codes()
 	if err != nil {
@@ -179,6 +186,8 @@ func TestErrorCodesRoundTrip(t *testing.T) {
 	}
 }
 
+// TestNodeTypedWritesGoThroughCommit proves that every typed write method on
+// Node persists durably to StateBlob and replicates to peers.
 func TestNodeTypedWritesGoThroughCommit(t *testing.T) {
 	s, ids := twoNodes(t, 11)
 	n := occNode(s, ids[0])

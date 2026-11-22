@@ -104,6 +104,9 @@ func runCASTable(t *testing.T, del bool, want [][]error) {
 	}
 }
 
+// TestConditionalPutTable proves every precondition x record-state row
+// (absent, live, tombstone) for Store.Put, checking error codes, no-op refusal,
+// causal succession, and zero discards.
 func TestConditionalPutTable(t *testing.T) {
 	runCASTable(t, false, [][]error{
 		{okW, okW, pf, pf, pf},
@@ -112,6 +115,8 @@ func TestConditionalPutTable(t *testing.T) {
 	})
 }
 
+// TestConditionalDeleteTable proves every precondition x record-state row
+// for Store.Delete, checking precondition-before-liveness ordering and no-op refusal.
 func TestConditionalDeleteTable(t *testing.T) {
 	runCASTable(t, true, [][]error{
 		{nf, nf, pf, pf, pf},
@@ -120,6 +125,9 @@ func TestConditionalDeleteTable(t *testing.T) {
 	})
 }
 
+// TestETagDeterministic proves that ETags are a pure function of the single
+// version across merge orders, differ for distinct versions with equal values,
+// cover tombstones, are zero when absent, and round-trip through ParseETag.
 func TestETagDeterministic(t *testing.T) {
 	a, _ := newTestStore(t, "a", 1, 1)
 	b, _ := newTestStore(t, "b", 1, 2)
@@ -179,6 +187,9 @@ func version(node string, counter uint64, ctx occ.VersionVector, tomb bool, valu
 	return occ.NewVersion(occ.Dot{Actor: occ.Actor{Node: env.NodeID(node), Epoch: 1}, Counter: counter}, ctx, tomb, []byte(value), s)
 }
 
+// TestLWWWinnerTable proves the LWW total order (Wall, Logical, Node, VersionID)
+// across values, tombstones, forged equal stamps, and causally-below higher stamps
+// consistently in Compare, Record.Merge, and Doc.Merge in both orders.
 func TestLWWWinnerTable(t *testing.T) {
 	forgedA := version("z", 1, occ.VersionVector{}, false, "p", st(5, 1, "z"))
 	forgedB := version("z", 1, occ.VersionVector{}, false, "q", st(5, 1, "z"))
@@ -228,6 +239,9 @@ func concurrentPair(t *testing.T) (a, b *occ.Store, la, lb *discardLog, ca, cb *
 	return
 }
 
+// TestLWWDiscardCountedAndLogged proves that concurrent replacements and
+// rejected incoming losers are counted, formatted, tailed, and reported once,
+// covering puts vs. deletes, counter saturation, and DiscardTailLen bounds.
 func TestLWWDiscardCountedAndLogged(t *testing.T) {
 	a, b, la, lb, _, _ := concurrentPair(t)
 	et := a.Record("k").ETag()
@@ -331,6 +345,8 @@ func TestLWWDiscardCountedAndLogged(t *testing.T) {
 	})
 }
 
+// TestCausalOverwriteIsNotADiscard proves that causally ordered conditional
+// and unconditional overwrites across replicas record zero LWW discards.
 func TestCausalOverwriteIsNotADiscard(t *testing.T) {
 	a, _, la := newLoggedStore(t, "a", 1, 1)
 	b, _, lb := newLoggedStore(t, "b", 1, 2)
@@ -355,6 +371,8 @@ func TestCausalOverwriteIsNotADiscard(t *testing.T) {
 	}
 }
 
+// TestEpochRotatesAtCounterOverflow proves that a hostile context carrying
+// MaxUint64 for the local actor triggers a single epoch rotation before writing.
 func TestEpochRotatesAtCounterOverflow(t *testing.T) {
 	a, _ := newTestStore(t, "a", 7, 1)
 	hostile := occ.NewDoc()
@@ -376,6 +394,8 @@ func TestEpochRotatesAtCounterOverflow(t *testing.T) {
 	}
 }
 
+// TestNewStoreValidates proves that NewStore rejects missing required config
+// fields and draws a fresh non-zero epoch when Epoch is 0.
 func TestNewStoreValidates(t *testing.T) {
 	if _, err := occ.NewStore(occ.StoreConfig{}); !errors.Is(err, env.ErrInvalidArgument) {
 		t.Fatalf("err = %v", err)
@@ -389,6 +409,7 @@ func TestNewStoreValidates(t *testing.T) {
 	}
 }
 
+// TestPreconditionStrings proves String formatting for all three precondition kinds.
 func TestPreconditionStrings(t *testing.T) {
 	e := occ.ETag{1}
 	for p, want := range map[string]string{
@@ -402,6 +423,9 @@ func TestPreconditionStrings(t *testing.T) {
 	}
 }
 
+// TestFarFutureStampPinsOnlyItsKey proves that a far-future stamp is merged
+// and counted without moving the node HLC, that a local write steps past it
+// (including logical carry), and that (MaxInt64, MaxUint32) refuses writes cleanly.
 func TestFarFutureStampPinsOnlyItsKey(t *testing.T) {
 	s, c := newTestStore(t, "a", 1, 1)
 	far := st(int64(c.now)+int64(2*occ.MaxClockLead), 5, "rogue")
@@ -443,6 +467,8 @@ func TestFarFutureStampPinsOnlyItsKey(t *testing.T) {
 	}
 }
 
+// TestStoreClockEdges proves initial stamp assignment, ahead-stamp counting
+// when loading a Doc, and ErrClockExhausted on Put and SetScalar.
 func TestStoreClockEdges(t *testing.T) {
 	s, c := newTestStore(t, "a", 1, 1)
 	v := mustPut(t, s, "k", "v", occ.IfNoneMatch())
@@ -467,6 +493,9 @@ func TestStoreClockEdges(t *testing.T) {
 	}
 }
 
+// TestHLCObservesEveryStamp proves that a far-future stamp on one key does not
+// block observing valid stamps on other keys, that negative-skew nodes start at
+// their own clock on empty docs, and that MaxStamp handles empty and negative docs.
 func TestHLCObservesEveryStamp(t *testing.T) {
 	t.Run("a far-future stamp on one key does not hide in-range stamps on others", func(t *testing.T) {
 		fast, fc := newTestStore(t, "fast", 1, 1)
@@ -549,6 +578,9 @@ func snap(s *occ.Store, l *discardLog) storeSnapshot {
 	return storeSnapshot{s.Doc().Encode(), s.Actor(), s.Counter(), s.LWWDiscards(), len(s.DiscardTail()), s.EncodeState(), s.HLC().Last(), s.AheadStamps(), len(l.lines) + len(l.discards)}
 }
 
+// TestFailedPersistLeavesNoTrace proves that a Persist error rolls back every
+// store field (doc, actor, counter, rotations, HLC, ahead, discards, tail,
+// outbox, dedup window, and callbacks) across writes, merges, and epoch rotation.
 func TestFailedPersistLeavesNoTrace(t *testing.T) {
 	ops := []struct {
 		name  string

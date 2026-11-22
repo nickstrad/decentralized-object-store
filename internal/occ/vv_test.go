@@ -23,6 +23,8 @@ func vv(pairs ...any) occ.VersionVector {
 	return occ.NewVersionVector(es...)
 }
 
+// TestVersionVectorCompareTable proves Compare and Descends across empty,
+// equal, ordered, concurrent, zero-entry, duplicate-actor, and multi-epoch vectors.
 func TestVersionVectorCompareTable(t *testing.T) {
 	rows := []struct {
 		name string
@@ -55,6 +57,8 @@ func TestVersionVectorCompareTable(t *testing.T) {
 	}
 }
 
+// TestVersionVectorBasics proves Len, Get, defensive Entries cloning, Join,
+// Actor ordering, and String formatting for vectors and orderings.
 func TestVersionVectorBasics(t *testing.T) {
 	v := vv(actB, 3, actA, 2)
 	if v.Len() != 2 || v.Get(actA) != 2 || v.Get(actB) != 3 || v.Get(actC) != 0 {
@@ -102,6 +106,9 @@ func pointwiseLE(a, b occ.VersionVector) bool {
 	return true
 }
 
+// TestPropVersionVectorPartialOrder proves that VersionVector.Compare matches
+// the pointwise partial order (reflexive, antisymmetric, transitive, symmetric
+// concurrency) and that Join is the commutative least upper bound.
 func TestPropVersionVectorPartialOrder(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		a, b, c := genVector(t, "a"), genVector(t, "b"), genVector(t, "c")

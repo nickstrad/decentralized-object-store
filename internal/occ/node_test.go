@@ -116,6 +116,9 @@ func ackedPut(t *testing.T, w *nodeWorld, n *occ.Node, key, val string, p occ.Pr
 	return v
 }
 
+// TestNodePersistsAndReloadsItsEpoch proves that a crashed and restarted node
+// reloads its acknowledged writes, actor epoch, and dot counter without taking
+// a fresh epoch.
 func TestNodePersistsAndReloadsItsEpoch(t *testing.T) {
 	s, ids := twoNodes(t, 1)
 	n := occNode(s, ids[0])
@@ -189,6 +192,9 @@ func wipeScenario(t *testing.T) error {
 	return nil
 }
 
+// TestWipedNodeTakesAFreshEpoch proves that a wiped node draws a new epoch so
+// its post-wipe writes do not appear causal over pre-wipe writes held by peers,
+// and verifies that enabling hazardReuseEpoch makes the oracle catch the loss.
 func TestWipedNodeTakesAFreshEpoch(t *testing.T) {
 	if err := wipeScenario(t); err != nil {
 		t.Fatalf("with epochs, the write lost to the wiped node's new writes must be on the record: %v", err)
@@ -200,6 +206,8 @@ func TestWipedNodeTakesAFreshEpoch(t *testing.T) {
 	}
 }
 
+// TestCorruptStateTakesAFreshEpoch proves that bit-rot in StateBlob is detected
+// on restart, counted in Stats.Corrupt, and answered with a fresh actor epoch.
 func TestCorruptStateTakesAFreshEpoch(t *testing.T) {
 	s, ids := twoNodes(t, 4)
 	n := occNode(s, ids[0])
@@ -223,6 +231,8 @@ func TestCorruptStateTakesAFreshEpoch(t *testing.T) {
 	}
 }
 
+// TestNodeRetriesLoadAfterReadErrors proves that transient StateBlob read errors
+// keep the node ErrNotReady until retries succeed and reload its own state.
 func TestNodeRetriesLoadAfterReadErrors(t *testing.T) {
 	s, ids := twoNodes(t, 5)
 	n := occNode(s, ids[0])
@@ -270,6 +280,8 @@ func TestNodeRetriesLoadAfterReadErrors(t *testing.T) {
 	}
 }
 
+// TestNodeWireProtocol proves wire request/reply handling, error-code framing,
+// Client remote operations, and malformed datagram counting.
 func TestNodeWireProtocol(t *testing.T) {
 	s, _ := twoNodes(t, 6)
 	p := addProbe(t, s)
@@ -384,6 +396,9 @@ func viewOf(n *occ.Node, w *nodeWorld) nodeView {
 	return nodeView{string(n.Doc().Encode()), n.Record("k").ETag(), n.Actor(), n.LWWDiscards(), len(n.DiscardTail()), logs}
 }
 
+// TestNodeFailedPersistLeavesNoTrace proves that Disk.Write or Disk.Sync errors
+// during Node writes or inbound pushes roll back all state, emit no discards,
+// replicate nothing, and allow later writes on the pre-failure ETag after recovery.
 func TestNodeFailedPersistLeavesNoTrace(t *testing.T) {
 	ops := []struct {
 		name string
@@ -461,6 +476,8 @@ func TestNodeFailedPersistLeavesNoTrace(t *testing.T) {
 	}
 }
 
+// TestPeerChoiceIgnoresMembershipOrder proves that anti-entropy peer selection
+// produces identical event digests regardless of Membership ordering or duplicates.
 func TestPeerChoiceIgnoresMembershipOrder(t *testing.T) {
 	runWith := func(order []env.NodeID) [32]byte {
 		s := newSim(t, 21)

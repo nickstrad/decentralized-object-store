@@ -121,6 +121,10 @@ func propClassificationMatchesOracle(t *rapid.T) {
 	}
 }
 
+// TestPropClassificationMatchesOracle proves across random multi-replica runs
+// (writes, deletes, full/subset merges, clock moves, and wipes) that product
+// Supersedes classification and emitted discard records match the independent
+// ancestry oracle for both replaced held versions and rejected incoming ones.
 func TestPropClassificationMatchesOracle(t *testing.T) {
 	rapid.Check(t, propClassificationMatchesOracle)
 }

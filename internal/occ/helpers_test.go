@@ -95,6 +95,8 @@ func value(r occ.Record) string {
 	return string(v.Value())
 }
 
+// lwwLess is an independent test-side implementation of the LWW total order
+// (Wall, Logical, Node, then VersionID bytes) used to cross-check product code.
 func lwwLess(a, b occ.Version) bool {
 	sa, sb := a.Stamp(), b.Stamp()
 	switch {
@@ -114,6 +116,9 @@ type ack struct {
 	v   occ.Version
 }
 
+// oracle independently tracks acknowledged versions, transitive seen ancestry
+// from each write's held record (without consulting product version vectors),
+// emitted discard callbacks, and per-incarnation holders vs. lost disks.
 type oracle struct {
 	acks    []ack
 	seen    map[occ.VersionID]map[occ.VersionID]bool

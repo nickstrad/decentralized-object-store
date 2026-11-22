@@ -72,6 +72,9 @@ func golden(t *testing.T, name string, got []byte) {
 	}
 }
 
+// TestCanonicalEncoding proves golden byte stability for documents, state blobs,
+// and client ops, round-trip equality, order-independent encoding, and defensive
+// copying of Doc's cached bytes.
 func TestCanonicalEncoding(t *testing.T) {
 	d := goldenDoc()
 	enc := d.Encode()
@@ -111,6 +114,9 @@ func oneRecord(build func(r *raw)) []byte {
 	return r.b
 }
 
+// TestDecodeMalformedTable proves that Decode, DecodeStateBlob, and
+// DecodeResult reject malformed, repeated-key, out-of-order, non-canonical,
+// and truncated inputs with ErrMalformed.
 func TestDecodeMalformedTable(t *testing.T) {
 	valid := oneRecord(func(r *raw) { r.version("a", 1, nil, 0, "v") })
 	if _, err := occ.Decode(valid); err != nil {
@@ -193,6 +199,8 @@ func TestDecodeMalformedTable(t *testing.T) {
 	})
 }
 
+// reviewerShape builds a ~28 KiB malformed document packing 400 versions under
+// one key to test early rejection of multi-version records.
 func reviewerShape() []byte {
 	r := (&raw{}).magic().u(400)
 	for i := range 400 {
@@ -209,6 +217,9 @@ func fuzzSeed(data []byte) []byte {
 	return fmt.Appendf(nil, "go test fuzz v1\n[]byte(%q)\n", data)
 }
 
+// TestReviewerHostileInputIsRejectedEarly proves that a ~28 KiB hostile input
+// repeating one key 400 times fails at the second version with ErrMalformed
+// and matches the committed fuzz corpus seed.
 func TestReviewerHostileInputIsRejectedEarly(t *testing.T) {
 	in := reviewerShape()
 	if len(in) < 28<<10 || len(in) > 32<<10 {
@@ -270,6 +281,8 @@ func raceBuild() bool {
 
 func fitCount(limit, per int) int { return (limit - 64) / per }
 
+// TestHostileMessagesBoundedWork proves that decoding and merging maximum-size
+// hostile messages with many keys or large contexts do linear work per byte.
 func TestHostileMessagesBoundedWork(t *testing.T) {
 	limit := sim.DefaultMaxMessage - 1
 	if raceBuild() {
@@ -350,6 +363,8 @@ func hostileDocs() []*occ.Doc {
 	return []*occ.Doc{d1, d2, d3}
 }
 
+// TestMergeIsTotalOnDecodedStates proves that Doc.Merge and Store.Merge satisfy
+// all merge laws and never error across honest and hand-built hostile decoded states.
 func TestMergeIsTotalOnDecodedStates(t *testing.T) {
 	var states []*occ.Doc
 	for _, h := range hostileDocs() {
@@ -387,6 +402,9 @@ func TestMergeIsTotalOnDecodedStates(t *testing.T) {
 	}
 }
 
+// FuzzOCCDecode proves that decoding arbitrary bytes never panics, runs in
+// linear work, rejects invalid input with ErrMalformed, round-trips valid docs,
+// and preserves merge laws and total Store.Merge on every decoded document.
 func FuzzOCCDecode(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte("OCC\x02"))

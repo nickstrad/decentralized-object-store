@@ -125,6 +125,9 @@ func incomingLoserScenario(t *testing.T, fate string) error {
 
 var writerFates = []string{"crash for good", "wipe and rejoin", "state blob rot"}
 
+// TestIncomingLoserRecordedWhenWriterIsLost proves that when a behind-clock
+// writer delivers a losing version to a peer and then crashes for good, wipes
+// and rejoins, or suffers state-blob bit-rot, the surviving peer's log names the loser.
 func TestIncomingLoserRecordedWhenWriterIsLost(t *testing.T) {
 	for _, fate := range writerFates {
 		t.Run(fate, func(t *testing.T) {
@@ -135,6 +138,9 @@ func TestIncomingLoserRecordedWhenWriterIsLost(t *testing.T) {
 	}
 }
 
+// TestCanaryIncomingLoserSilent plants the bug of silently dropping rejected
+// incoming concurrent losers and proves incomingLoserScenario fails for all
+// three writer-loss fates.
 func TestCanaryIncomingLoserSilent(t *testing.T) {
 	restore := occ.SetCanaryIncomingLoserSilent(true)
 	defer restore()
@@ -147,6 +153,10 @@ func TestCanaryIncomingLoserSilent(t *testing.T) {
 	}
 }
 
+// TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss proves that an acknowledged
+// version lost only with every holding disk has no discard record, is flagged
+// until disk loss is declared, and loses that allowance if any surviving or
+// later incarnation received it.
 func TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss(t *testing.T) {
 	p := newSkewedPair(t, 22, nil)
 	n1, n2 := p.ids[0], p.ids[1]
@@ -221,6 +231,10 @@ func (d *countingDisk) Write(name string, data []byte) error {
 	return d.Disk.Write(name, data)
 }
 
+// TestNodeReplaysOutboxAfterRestart proves at-least-once discard emission
+// across crashes: if the post-emit drain write fails, restarting replays the
+// outbox once, drains it, preserves counter and tail, and emits nothing on a
+// subsequent restart.
 func TestNodeReplaysOutboxAfterRestart(t *testing.T) {
 	disks := map[env.NodeID]*countingDisk{}
 	p := newSkewedPair(t, 23, func(e env.Env) env.Env {

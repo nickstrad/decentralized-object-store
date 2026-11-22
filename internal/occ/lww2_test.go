@@ -13,6 +13,10 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
 )
 
+// TestDiscardGapNeverClaimed proves that after a node discards its own write,
+// retiring the actor epoch prevents subsequent writes (by itself or another
+// node) from claiming the discarded dot so a third replica holding it still
+// records the discard.
 func TestDiscardGapNeverClaimed(t *testing.T) {
 	for _, secondWriter := range []string{"a", "b"} {
 		t.Run("next2 written by "+secondWriter, func(t *testing.T) {
@@ -54,6 +58,9 @@ func TestDiscardGapNeverClaimed(t *testing.T) {
 	}
 }
 
+// TestDotsAreNeverReused proves that a discarded write's dot is never reissued
+// or falsely claimed across six follow-up writes by two nodes, and a replica
+// holding the lost version records a discard on replacing it after each write.
 func TestDotsAreNeverReused(t *testing.T) {
 	a, ca, la := newLoggedStore(t, "a", 1, 1)
 	b, cb, _ := newLoggedStore(t, "b", 1, 2)
@@ -103,6 +110,9 @@ func TestDotsAreNeverReused(t *testing.T) {
 	}
 }
 
+// TestIncomingConcurrentLoserIsRecorded proves that rejecting an incoming
+// concurrent loser records it once (deduplicating re-sends), ignores causal
+// old news, and leaves no trace on Persist failure.
 func TestIncomingConcurrentLoserIsRecorded(t *testing.T) {
 	a, b, _, lb, _, _ := concurrentPair(t)
 	base := a.Doc()
@@ -177,6 +187,9 @@ func loserDoc(i int, wall int64) *occ.Doc {
 	return d
 }
 
+// TestDiscardDedupIsBounded proves the DiscardDedupLen FIFO deduplication
+// window suppresses repeats inside the window (including across OpenStore
+// restarts) and recounts a loser re-delivered after eviction.
 func TestDiscardDedupIsBounded(t *testing.T) {
 	var blobs [][]byte
 	c := &fakeClock{now: 1_000_000}
@@ -225,6 +238,9 @@ func (d *diskLog) persist(b []byte) error {
 	return nil
 }
 
+// TestDiscardRecordSurvivesCrashBeforePublish proves that opening a state blob
+// written by a merge before emission replays the outbox record, drains it on
+// disk, preserves the readable tail across restarts, and rejects malformed blobs.
 func TestDiscardRecordSurvivesCrashBeforePublish(t *testing.T) {
 	disk := &diskLog{}
 	c := &fakeClock{now: 1_000_000}
@@ -296,6 +312,9 @@ func TestDiscardRecordSurvivesCrashBeforePublish(t *testing.T) {
 	}
 }
 
+// TestRecountObjectsNeverWraps proves checked uint64 addition in RecountObjects:
+// MaxUint64 alone succeeds, MaxUint64+1 returns ErrUsageOverflow without
+// writing a quota, and CodeUsageOverflow round-trips over the wire.
 func TestRecountObjectsNeverWraps(t *testing.T) {
 	s, _ := newTestStore(t, "a", 1, 1)
 	if _, err := s.PutObjectMeta("b", "x", occ.ObjectMeta{Size: math.MaxUint64}, occ.Unconditional()); err != nil {
@@ -328,6 +347,9 @@ func TestRecountObjectsNeverWraps(t *testing.T) {
 	}
 }
 
+// TestRecountNoopRechecksCurrentVersion proves that RecountQuota's no-op
+// shortcut re-verifies the stored version after the hook, retries concurrent
+// modifications up to the attempt limit, and returns ErrPreconditionFailed when unstable.
 func TestRecountNoopRechecksCurrentVersion(t *testing.T) {
 	s, _ := newTestStore(t, "a", 1, 1)
 	key := occ.QuotaKey("q")
@@ -386,6 +408,9 @@ func stateBlob(payload []byte) []byte {
 	return append(append([]byte("OCS2"), sum[:]...), payload...)
 }
 
+// TestOpenStoreRejectsHostileState proves OpenStore rejects state blobs with
+// oversized tails or dedup windows, truncated discards or windows, and missing
+// required config fields.
 func TestOpenStoreRejectsHostileState(t *testing.T) {
 	c := &fakeClock{now: 1_000_000}
 	cfg := storeConfig("a", 0, 1, c)

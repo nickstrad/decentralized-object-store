@@ -73,6 +73,10 @@ func writerLossRun(seed int64) *sim.Sim {
 	return s
 }
 
+// TestWriterLostAfterDeliveryDST proves across 4 nodes in 2 regions that when
+// a skewed writer's concurrent deltas reach peers right before the writer loses
+// its disk (across all three disk-loss kinds), surviving peers record every
+// delivered loss and the cluster converges cleanly.
 func TestWriterLostAfterDeliveryDST(t *testing.T) {
 	simtest.Sweep(t, func(t *testing.T, seed int64) {
 		simtest.RequireDeterministic(t, seed, writerLossRun)
@@ -83,6 +87,8 @@ func TestWriterLostAfterDeliveryDST(t *testing.T) {
 	})
 }
 
+// TestCanaryIncomingLoserSilentDST plants the bug of silently dropping rejected
+// incoming concurrent losers and proves TestWriterLostAfterDeliveryDST fails.
 func TestCanaryIncomingLoserSilentDST(t *testing.T) {
 	restore := occ.SetCanaryIncomingLoserSilent(true)
 	defer restore()

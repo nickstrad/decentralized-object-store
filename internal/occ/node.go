@@ -11,14 +11,21 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// Membership supplies the peer list used by Node for anti-entropy sync and
+// delta broadcasts. Peers need not be sorted or deduplicated.
 type Membership interface {
 	Peers() []env.NodeID
 }
 
+// StaticMembership is a fixed Membership backed by a slice of node IDs.
 type StaticMembership []env.NodeID
 
+// Peers returns a defensive copy of the configured peer IDs.
 func (m StaticMembership) Peers() []env.NodeID { return slices.Clone(m) }
 
+// Config configures a Node's peer view, anti-entropy cadence, delta fanout,
+// and optional discard reporting hooks. Zero timing or fanout fields fall back
+// to the Default* constants.
 type Config struct {
 	Membership Membership
 	Period     time.Duration
@@ -29,6 +36,13 @@ type Config struct {
 	OnDiscard  func(key string, winner, loser Version)
 }
 
+// Storage and replication defaults for Node:
+//   - StateBlob: disk blob name holding the node's checksummed local state.
+//   - DefaultPeriod: base interval between anti-entropy digest rounds (jittered ±50%).
+//   - DefaultTimeout: request timeout for digest and push exchanges.
+//   - DefaultFanout: number of random peers sent a delta datagram after a local write.
+//   - DefaultMaxDelta: maximum encoded delta datagram size in bytes.
+//   - LoadRetry: retry delay when reading StateBlob fails with a transient disk error.
 const (
 	StateBlob       = "occ/state"
 	DefaultPeriod   = 500 * time.Millisecond
@@ -38,6 +52,8 @@ const (
 	LoadRetry       = 100 * time.Millisecond
 )
 
+// hazardReuseEpoch is a test-only switch that pins a freshly initialized node
+// to epoch 1 to reproduce the wiped-node counter-reuse hazard.
 var hazardReuseEpoch bool
 
 func (c Config) withDefaults() Config {
@@ -56,6 +72,7 @@ func (c Config) withDefaults() Config {
 	return c
 }
 
+// Stats holds diagnostic counters for a Node's replication and disk activity.
 type Stats struct {
 	Rounds     uint64
 	Matches    uint64
@@ -70,6 +87,11 @@ type Stats struct {
 	Fresh      uint64
 }
 
+// Node is a single-threaded env.Process hosting a durable Store and epidemic
+// push-pull anti-entropy replication. Local writes persist synchronously inside
+// the store transaction and broadcast a single-key delta to Fanout peers.
+// Node does not schedule quota recounts automatically; callers drive
+// RecountQuota after syncing (for example, from Config.OnDiscard).
 type Node struct {
 	e     env.Env
 	cfg   Config
@@ -77,18 +99,27 @@ type Node struct {
 	stats Stats
 }
 
+// NewFactory returns a process constructor suitable for sim.Sim that creates
+// a Node configured with cfg for each node incarnation.
 func NewFactory(cfg Config) func(env.Env) env.Process {
 	cfg = cfg.withDefaults()
 	return func(e env.Env) env.Process { return NewNode(e, cfg) }
 }
 
+// NewNode constructs an unstarted Node bound to environment e and cfg.
+// Call Start before issuing reads, writes, or inbound messages.
 func NewNode(e env.Env, cfg Config) *Node {
 	return &Node{e: e, cfg: cfg.withDefaults()}
 }
 
+// Node lifecycle and diagnostic accessors:
+//   - Ready: reports whether durable state has finished loading.
+//   - Stats: returns a snapshot of the node's replication and disk counters.
 func (n *Node) Ready() bool  { return n.store != nil }
 func (n *Node) Stats() Stats { return n.stats }
 
+// Digest returns the SHA-256 digest of the replicated document, or the zero
+// hash before Ready is true.
 func (n *Node) Digest() [32]byte {
 	if n.store == nil {
 		return [32]byte{}
@@ -96,6 +127,8 @@ func (n *Node) Digest() [32]byte {
 	return n.store.doc.Digest()
 }
 
+// Reader returns a read-only view of the node's store, or ErrNotReady before
+// durable state has loaded.
 func (n *Node) Reader() (Reader, error) {
 	if n.store == nil {
 		return Reader{}, fmt.Errorf("occ: read on %s: %w", n.e.ID, ErrNotReady)
@@ -103,6 +136,7 @@ func (n *Node) Reader() (Reader, error) {
 	return n.store.Reader, nil
 }
 
+// Record returns the Record at key, or the zero Record before Ready is true.
 func (n *Node) Record(key string) Record {
 	if n.store == nil {
 		return Record{}
@@ -110,6 +144,7 @@ func (n *Node) Record(key string) Record {
 	return n.store.Record(key)
 }
 
+// Doc returns a clone of the node's replicated Doc, or nil before Ready is true.
 func (n *Node) Doc() *Doc {
 	if n.store == nil {
 		return nil
@@ -117,6 +152,7 @@ func (n *Node) Doc() *Doc {
 	return n.store.Doc()
 }
 
+// Actor returns the node's current writer Actor, or the zero Actor before Ready.
 func (n *Node) Actor() Actor {
 	if n.store == nil {
 		return Actor{}
@@ -124,6 +160,8 @@ func (n *Node) Actor() Actor {
 	return n.store.actor
 }
 
+// LWWDiscards returns the persisted saturating count of discard events
+// observed by this node, or 0 before Ready is true.
 func (n *Node) LWWDiscards() uint64 {
 	if n.store == nil {
 		return 0
@@ -131,6 +169,8 @@ func (n *Node) LWWDiscards() uint64 {
 	return n.store.discards
 }
 
+// DiscardTail returns up to DiscardTailLen most recent discards recorded by
+// this node, oldest first, or nil before Ready is true.
 func (n *Node) DiscardTail() []Discard {
 	if n.store == nil {
 		return nil
@@ -138,6 +178,8 @@ func (n *Node) DiscardTail() []Discard {
 	return n.store.DiscardTail()
 }
 
+// AheadStamps returns the number of incoming or loaded stamps refused by the
+// HLC for exceeding MaxClockLead, or 0 before Ready is true.
 func (n *Node) AheadStamps() int {
 	if n.store == nil {
 		return 0
@@ -145,8 +187,13 @@ func (n *Node) AheadStamps() int {
 	return n.store.ahead
 }
 
+// Start begins loading durable state from Disk and arms periodic anti-entropy
+// once the store is open.
 func (n *Node) Start() { n.load() }
 
+// load reads StateBlob. Missing or corrupt blobs open a fresh store with a new
+// actor epoch; transient disk read errors keep the node not-ready and retry
+// after LoadRetry rather than guessing.
 func (n *Node) load() {
 	b, err := n.e.Disk.Read(StateBlob)
 	switch {
@@ -182,6 +229,9 @@ func (n *Node) open(st persisted, fresh bool) {
 			cfg.Epoch = 1
 		}
 		n.store = newStore(cfg)
+		// Best-effort initial write: if it fails, the first mutation persists
+		// the epoch with its data, and a restart without a blob safely draws a
+		// new epoch.
 		_ = n.persist(n.store.EncodeState())
 	} else {
 		n.store = openStore(cfg, st)
@@ -202,11 +252,14 @@ func (n *Node) persist(blob []byte) error {
 	return nil
 }
 
+// arm schedules the next anti-entropy round after Period jittered by ±50%.
 func (n *Node) arm() {
 	d := n.cfg.Period/2 + time.Duration(n.e.Rand.Int64N(int64(n.cfg.Period)))
 	n.e.Clock.AfterFunc(d, n.round)
 }
 
+// peers returns all remote peers sorted and deduplicated so random peer choice
+// does not depend on the order returned by Membership.
 func (n *Node) peers() []env.NodeID {
 	if n.cfg.Membership == nil {
 		return nil
@@ -260,6 +313,8 @@ func (n *Node) onDigestReply(peer env.NodeID, reply []byte, err error) {
 	if _, err := n.store.Merge(doc); err != nil {
 		return
 	}
+	// Push back only when our merged state still differs from what peer sent,
+	// meaning we hold newer or additional versions peer has not seen.
 	if n.Digest() != stateDigest(state) {
 		n.stats.Pushes++
 		n.e.Net.Request(peer, append([]byte{msgPush}, n.store.doc.Encode()...), n.cfg.Timeout, func(_ []byte, err error) {
@@ -270,6 +325,9 @@ func (n *Node) onDigestReply(peer env.NodeID, reply []byte, err error) {
 	}
 }
 
+// OnDatagram handles an inbound single-key delta datagram from peer from.
+// Malformed datagrams are counted and dropped; failed persists roll back
+// inside Store.Merge and are retried on the next anti-entropy round.
 func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 	if n.store == nil {
 		return
@@ -284,9 +342,13 @@ func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 		return
 	}
 	n.stats.Deltas++
+	// Persist failures roll back inside Merge and increment Stats.DiskErrors;
+	// periodic anti-entropy will pull the missing update later.
 	_, _ = n.store.Merge(doc)
 }
 
+// OnRequest handles inbound digest pulls, state pushes, and remote Client ops.
+// Before Ready is true it replies with ErrNotReady.
 func (n *Node) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	if n.store == nil {
 		reply(nil, fmt.Errorf("occ: request from %s: %w", from, ErrNotReady))
@@ -352,6 +414,8 @@ func (n *Node) serveOp(from env.NodeID, req []byte, reply env.Reply) {
 	reply(encodeResult(r), nil)
 }
 
+// broadcast sends a single-key delta datagram to Fanout random peers when it
+// fits within MaxDelta; larger updates propagate via periodic digest sync.
 func (n *Node) broadcast(key string) {
 	delta := append([]byte{msgDelta}, n.store.doc.Subset(key).Encode()...)
 	if len(delta) > n.cfg.MaxDelta {
@@ -369,6 +433,8 @@ func (n *Node) notReady(op, key string) error {
 	return fmt.Errorf("occ: %s %q on %s: %w", op, key, n.e.ID, ErrNotReady)
 }
 
+// Get returns a copy of the live value at key and its ETag, or ErrNotReady /
+// ErrNotFound.
 func (n *Node) Get(key string) ([]byte, ETag, error) {
 	if n.store == nil {
 		return nil, ETag{}, n.notReady("get", key)
@@ -376,6 +442,8 @@ func (n *Node) Get(key string) ([]byte, ETag, error) {
 	return n.store.Get(key)
 }
 
+// Put conditionally writes value at key, persists the state blob, and
+// broadcasts a delta on success. It returns ErrNotReady if state is not loaded.
 func (n *Node) Put(key string, value []byte, p Precondition) (Version, error) {
 	if n.store == nil {
 		return Version{}, n.notReady("put", key)
@@ -388,6 +456,8 @@ func (n *Node) Put(key string, value []byte, p Precondition) (Version, error) {
 	return v, nil
 }
 
+// Delete conditionally tombstones key, persists the state blob, and broadcasts
+// a delta on success. It returns ErrNotReady if state is not loaded.
 func (n *Node) Delete(key string, p Precondition) (Version, error) {
 	if n.store == nil {
 		return Version{}, n.notReady("delete", key)
@@ -400,10 +470,13 @@ func (n *Node) Delete(key string, p Precondition) (Version, error) {
 	return v, nil
 }
 
+// SetScalar writes value unconditionally at key, persists, and broadcasts a delta.
 func (n *Node) SetScalar(key string, value []byte) (Version, error) {
 	return n.Put(key, value, Unconditional())
 }
 
+// UpdateQuota runs a bounded check-and-set update on quota key through Node.Put
+// so successful updates persist and broadcast. Returns ErrNotReady before Ready.
 func (n *Node) UpdateQuota(key string, attempts int, fn func(Usage) (Usage, error)) (Usage, error) {
 	if n.store == nil {
 		return Usage{}, n.notReady("update quota", key)
@@ -411,6 +484,8 @@ func (n *Node) UpdateQuota(key string, attempts int, fn func(Usage) (Usage, erro
 	return updateQuota(n, n.store.Reader, key, attempts, fn)
 }
 
+// RecountQuota recomputes quota key via recount and conditionally writes it
+// through Node.Put only if the stored value differs or is malformed.
 func (n *Node) RecountQuota(key string, attempts int, recount Recount) (Usage, bool, error) {
 	if n.store == nil {
 		return Usage{}, false, n.notReady("recount quota", key)
@@ -418,30 +493,38 @@ func (n *Node) RecountQuota(key string, attempts int, recount Recount) (Usage, b
 	return recountQuota(n, n.store.Reader, key, attempts, recount)
 }
 
+// PutTag conditionally writes an object tag, persisting and broadcasting a delta.
 func (n *Node) PutTag(bucket, object, name, value string, p Precondition) (Version, error) {
 	return putTag(n, bucket, object, name, value, p)
 }
 
+// PutACL conditionally writes a bucket ACL entry, persisting and broadcasting.
 func (n *Node) PutACL(bucket, principal string, perm Permission, p Precondition) (Version, error) {
 	return putACL(n, bucket, principal, perm, p)
 }
 
+// PutObjectMeta conditionally writes an object's ObjectMeta, persisting and broadcasting.
 func (n *Node) PutObjectMeta(bucket, object string, m ObjectMeta, p Precondition) (Version, error) {
 	return putObjectMeta(n, bucket, object, m, p)
 }
 
+// PutManifest conditionally writes an object's manifest bytes, persisting and broadcasting.
 func (n *Node) PutManifest(bucket, object string, manifest []byte, p Precondition) (Version, error) {
 	return putManifest(n, bucket, object, manifest, p)
 }
 
+// SetRoute writes a bucket's routing region unconditionally, persisting and broadcasting.
 func (n *Node) SetRoute(bucket string, region env.Region) (Version, error) {
 	return setRoute(n, bucket, region)
 }
 
+// SetContentType writes an object's content type unconditionally, persisting and broadcasting.
 func (n *Node) SetContentType(bucket, object, contentType string) (Version, error) {
 	return setContentType(n, bucket, object, contentType)
 }
 
+// EncodeState returns a canonical byte representation of the node's volatile
+// state and counters for deterministic simulation state-digest comparison.
 func (n *Node) EncodeState() []byte {
 	var e encoder
 	if n.store == nil {
@@ -461,11 +544,13 @@ func (n *Node) EncodeState() []byte {
 	return e.b
 }
 
+// Client issues remote Get, Put, and Delete requests to a Node over env.Transport.
 type Client struct {
 	net     env.Transport
 	timeout time.Duration
 }
 
+// NewClient constructs a Client using net with per-request timeout.
 func NewClient(net env.Transport, timeout time.Duration) *Client {
 	return &Client{net: net, timeout: timeout}
 }
@@ -480,14 +565,20 @@ func (c *Client) call(node env.NodeID, o op, cb func(Result, error)) {
 	})
 }
 
+// Get sends a remote read for key to node and passes the decoded Result or
+// transport/remote error to cb.
 func (c *Client) Get(node env.NodeID, key string, cb func(Result, error)) {
 	c.call(node, op{code: opGet, key: key}, cb)
 }
 
+// Put sends a conditional write for (key, value, p) to node and passes the
+// decoded Result or error to cb.
 func (c *Client) Put(node env.NodeID, key string, value []byte, p Precondition, cb func(Result, error)) {
 	c.call(node, op{code: opPut, key: key, pre: p, value: value}, cb)
 }
 
+// Delete sends a conditional delete for (key, p) to node and passes the
+// decoded Result or error to cb.
 func (c *Client) Delete(node env.NodeID, key string, p Precondition, cb func(Result, error)) {
 	c.call(node, op{code: opDelete, key: key, pre: p}, cb)
 }
