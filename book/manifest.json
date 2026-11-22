@@ -42,6 +42,13 @@
       "title": "Sagas",
       "file": "chapters/06-sagas.md",
       "status": "published"
+    },
+    {
+      "n": 7,
+      "slug": "object-store-and-sync-engine",
+      "title": "The Object Store and Sync Engine",
+      "file": "chapters/07-object-store-and-sync-engine.md",
+      "status": "published"
     }
   ],
   "front_matter": []
