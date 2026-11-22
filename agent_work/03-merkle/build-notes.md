@@ -545,3 +545,33 @@ after a deadline are now covered (`TestRoundDeadlineKeepsCost`, `TestWorkerStop`
 - A larger single hard bound (one leaf of 4,096 × 1,024-byte keys ≈ 4.34 MB in one
   reply): splitting keeps one 1 MiB figure for Chunk 6.
 - The harness is unchanged; its two remaining BROKEN checks pin the old bounds (below).
+
+### Gate and harness after the repair
+
+- `agent_work/gates/gate.sh 03-merkle` from the host at `48bfdfc` (clean tree):
+  `overall=pass counts_for_landing=true`, seed 79988930801092. G0 all pass (comments
+  compared with baseline `8eb934d`); G1 unit 39 s; G2 rapid 2,000 checks 272 s; G3 fuzz
+  3 targets × 30 s 100 s; G4 race 71 s; G5 500 seeds 450 s; G6 docker pass. The result
+  file is left uncommitted. (A first launch was killed by me before it ran any check
+  because an untracked file would have marked the tree dirty; it had deleted the tracked
+  `gates/result.json`, which I restored from git.)
+- `agent_work/adversarial/03-merkle/run-all.sh` at `48bfdfc`, harness unchanged:
+  **`SUMMARY held=72 broken=2 setup_errors=0 elapsed_seconds=41`** (exit 1). The full
+  output is `agent_work/03-merkle/repair-harness-run.txt`; the harness's own evidence
+  files, which the script rewrites, were restored to their committed state.
+  - C8 `single-leaf-reply-size`: now HELD (the leaf is cut; the reply is under 1 MiB).
+  - C12 `batched-round-trip-bound`: now HELD (exact packing: 984 keys fit one reply).
+  - C21 `sim-prefix-reply-tight-bound`: still BROKEN, **claim restated in writing**. The
+    check pins "Worker.MaxRoundTrips ≤ Depth+1" against a peer that answers one leaf per
+    reply. The repair does not tighten this: such a peer needs one round trip per leaf
+    (3 = Depth + 2 here, pinned in `TestDiffBoundsPinned`), and the stated bounds are
+    Depth + L (honest) and ≤ Depth + 5·Frontier (any peer). The data still converges.
+  - C31 `clustered-hash-cost`: still BROKEN, **claim restated in writing**. The check pins
+    PLAN's `16·d·(Depth+1)`; the true count is the exact formula in item 3 (49 here,
+    pinned), bounded by `1 + 16·d·Depth + d·LeafLoad`; `16·d·(Depth+1)` holds only when
+    LeafLoad ≤ 15.
+
+### Requests to the orchestrator
+
+- PLAN 7.4's cost wording ("hashes ≤ 16·d·depth", "round trips ≤ depth") should become
+  the restated bounds in item 3. I have not edited PLAN.md.
