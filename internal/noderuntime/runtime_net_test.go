@@ -58,7 +58,8 @@ func realConfig() node.Config {
 }
 
 type realCluster struct {
-	rts []*noderuntime.Runtime
+	rts  []*noderuntime.Runtime
+	dirs []string
 }
 
 func startReal(t *testing.T, n int, cfg node.Config) *realCluster {
@@ -70,7 +71,9 @@ func startReal(t *testing.T, n int, cfg node.Config) *realCluster {
 	cfg.Seeds = ids
 	c := &realCluster{}
 	for i, id := range ids {
-		rt, err := noderuntime.NewRuntime(noderuntime.RuntimeConfig{ID: id, Region: env.Region(fmt.Sprintf("r%d", i%3)), DataDir: t.TempDir(), Node: cfg})
+		dir := t.TempDir()
+		c.dirs = append(c.dirs, dir)
+		rt, err := noderuntime.NewRuntime(noderuntime.RuntimeConfig{ID: id, Region: env.Region(fmt.Sprintf("r%d", i%3)), DataDir: dir, Node: cfg})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -527,6 +527,8 @@ func (rt *Runtime) serve(c net.Conn) {
 
 type realNet struct{ rt *Runtime }
 
+var outboundFilter func(dataDir string, to env.NodeID) bool
+
 func (t *realNet) Send(to env.NodeID, msg []byte) error {
 	rt := t.rt
 	if rt.ctx.Err() != nil {
@@ -541,6 +543,9 @@ func (t *realNet) Send(to env.NodeID, msg []byte) error {
 	}
 	if rt.udp == nil {
 		return fmt.Errorf("node: send to %s: no network: %w", to, env.ErrUnreachable)
+	}
+	if outboundFilter != nil && outboundFilter(rt.cfg.DataDir, to) {
+		return nil
 	}
 	b, err := encodeDatagram(rt.cfg.ID, msg)
 	if err != nil {
@@ -649,6 +654,9 @@ func (t *realNet) Request(to env.NodeID, req []byte, timeout time.Duration, cb f
 	}
 	if rt.udp == nil {
 		rt.afterFunc(0, func() { complete(nil, fmt.Errorf("node: request to %s: no network: %w", to, env.ErrUnreachable)) })
+		return
+	}
+	if outboundFilter != nil && outboundFilter(rt.cfg.DataDir, to) {
 		return
 	}
 	payload, err := encodeRequest(requestFrame{ID: id, From: rt.cfg.ID, Body: req})
