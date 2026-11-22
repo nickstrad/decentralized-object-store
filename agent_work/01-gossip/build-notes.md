@@ -196,8 +196,12 @@ every survivor purges the victim exactly once and reinstates nothing).
 new at any incarnation (a replayed alive(x, 0) would be believed by that node). Each node
 also keeps a verdict about a stranger it learned from a sync for one full retention from when
 it learned it, so a verdict can outlive its first burial by up to one `DeadRetention` per
-node that had never heard of the member; it cannot cycle, because every node that buries it
-then holds a tombstone.
+node that had never heard of the member; it cannot cycle while fewer than `MaxTombstones`
+(4,096) other burials occur before peers purge, because every node that buries it then holds a
+tombstone. Past that bound a node that evicted the tombstone can re-admit the dead entry from a
+peer that still holds it, for one more `DeadRetention` (not re-gossiped); a finite burst of K
+deaths settles within ceil(K/4096) retention periods, sustained churn above 4,096 burials per
+`DeadRetention` keeps the window open.
 
 **Partition re-merge (PLAN 7.7, as worded here):** two sides of a partition of any length
 re-merge after the heal if at least one node on either side holds, on the other side, a
@@ -581,3 +585,21 @@ Test-only (`export_test.go`): `RelayCount`, `RelayBacklog`, `TombBacklog`, `Seed
 - No deduplication of ping-reqs by (requester, sequence): the cap and the O(1) ack path bound
   the work; a duplicated ping-req costs one extra relay slot until it expires.
 - The adversarial harness was not edited (as briefed).
+
+## REVIEW-2 nits
+
+- Finding 1: `FuzzViewMergeLaws` seeds 3 and 4 are rapid buffers from
+  `internal/gossip/testdata/merge-seeds.txt` (hex uint64 words, blank line between seeds) that
+  draw 12 and 36 updates covering all four IDs and states; seeds 0–2 keep the old empty-draw
+  patterns. `TestFuzzSeedsDrawNonEmptyViews` fails unless at least two seeds draw five or more
+  updates; `TestFuzzSeedsRunWithoutSkipping` still covers every seed. The draw is factored into
+  `drawMergeUpdates` and the checks into `checkViewMerge`; the property is unchanged.
+- Finding 2: the "cannot cycle" sentence above now carries the `MaxTombstones` bound.
+- Finding 3: `View.Apply` runs the ordered compaction when the ID list exceeds twice the member
+  count, so `len(ids) <= 2*Len()` after any Apply and `<= 2*Len()+2` after any Remove, with no
+  ordered read needed. `TestViewApplyRemoveWithoutReadStaysBounded` (1,000 Apply/Remove rounds,
+  checked through the `ViewBacklog` export_test hook) failed before (7 IDs for 2 members after
+  5 rounds) and passes after. Merge laws untouched.
+- Checks (Docker): `gofmt -l .` empty; `go vet ./...` clean;
+  `go test ./internal/gossip/...` ok (11.6 s); `-race` ok (52.5 s); `-run 'Prop|Laws|FuzzSeeds'
+  -rapid.checks=2000` ok; coverage 97.4%. Full gate not run (orchestrator).
