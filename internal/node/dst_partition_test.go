@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,13 +23,10 @@ const (
 	phQuota      = 800
 	phObjectSize = 100
 	phCut        = env.Time(8 * time.Second)
-	phHeal       = env.Time(22 * time.Second)
+	phHeal       = env.Time(17 * time.Second)
+	phRounds     = 6
+	phGrace      = 6 * time.Second
 )
-
-type ackedWrite struct {
-	key string
-	v   occ.Version
-}
 
 type partitionResult struct {
 	acked, quotaRefused, objectLosers, events int
@@ -37,6 +35,7 @@ type partitionResult struct {
 	converge, quotaSettle                     time.Duration
 	recountWrites, collectedLoser             uint64
 	quotaOK                                   bool
+	tally                                     map[string]int
 }
 
 func partitionConfig() node.Config {
@@ -45,8 +44,10 @@ func partitionConfig() node.Config {
 	return c
 }
 
-func covers(v, w occ.Version) bool {
-	return v.ID() == w.ID() || v.Clock().Get(w.Dot().Actor) >= w.Dot().Counter
+func phConfig() node.Config {
+	c := partitionConfig()
+	c.GCGrace = phGrace
+	return c
 }
 
 func (h *harness) quotaTruth(bucket string) (occ.Usage, error) {
@@ -94,7 +95,7 @@ func (h *harness) quotaAgrees(bucket string) bool {
 func partitionRun(res *partitionResult) func(seed int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
 		*res = partitionResult{}
-		h, err := newHarness(seed, dstNodes, partitionConfig(), sim.DefaultNetConfig())
+		h, err := newHarness(seed, dstNodes, phConfig(), sim.DefaultNetConfig())
 		if err != nil {
 			h.s.Fail(err)
 			return h.s
@@ -114,31 +115,21 @@ func partitionRun(res *partitionResult) func(seed int64) *sim.Sim {
 				s.Fail(err)
 			}
 		})
-		var acked []ackedWrite
 		data := map[string][]byte{}
-		record := func(n *node.Node, key string) {
-			v, ok := n.OCC().Record(key).Version()
-			if !ok {
-				s.Fail(fmt.Errorf("acknowledged write of %q not held by its writer", key))
-				return
-			}
-			acked = append(acked, ackedWrite{key: key, v: v})
-		}
 		peak := map[string]uint64{}
-		put := func(group []env.NodeID, key string, at env.Time) {
+		put := func(group []env.NodeID, key string, at env.Time, size int) {
 			s.At(at, "put "+key, func() {
 				id := group[w.IntN(len(group))]
 				n := h.node(id)
 				if n == nil {
 					return
 				}
-				body := payload(w, phObjectSize)
+				body := payload(w, size)
 				n.PutObject(storage.PutRequest{Bucket: phBucket, Key: key, Data: body}, func(oi storage.ObjectInfo, err error) {
 					switch {
 					case err == nil:
 						res.acked++
 						data[oi.Version] = body
-						record(n, occ.ManifestKey(phBucket, key))
 						if q, err := n.Quota(phBucket); err == nil {
 							peak[string(id)] = max(peak[string(id)], q.UsedBytes)
 						}
@@ -158,22 +149,20 @@ func partitionRun(res *partitionResult) func(seed int64) *sim.Sim {
 				if n == nil {
 					return
 				}
-				if _, err := n.PutTag(phBucket, key, name, fmt.Sprintf("%s@%d", id, s.Now()), storage.Condition{}); err == nil {
-					record(n, occ.TagKey(phBucket, key, name))
-				}
+				_, _ = n.PutTag(phBucket, key, name, fmt.Sprintf("%s@%d", id, s.Now()), storage.Condition{})
 			})
 		}
 		for i := range 3 {
-			put(h.ids, fmt.Sprintf("c%d", i), env.Time(4*time.Second+time.Duration(i)*200*time.Millisecond))
+			put(h.ids, fmt.Sprintf("c%d", i), env.Time(4*time.Second+time.Duration(i)*200*time.Millisecond), phObjectSize)
 		}
-		cutPhase := phCut.Add(6 * time.Second)
-		for i := range 10 {
+		cutPhase := phCut.Add(4 * time.Second)
+		for i := range phRounds {
 			at := cutPhase.Add(time.Duration(i) * 600 * time.Millisecond)
-			put(side, fmt.Sprintf("a%d", i), at)
-			put(other, fmt.Sprintf("b%d", i), at.Add(100*time.Millisecond))
+			put(side, fmt.Sprintf("a%d", i), at, phObjectSize)
+			put(other, fmt.Sprintf("b%d", i), at.Add(100*time.Millisecond), phObjectSize)
 			c := fmt.Sprintf("c%d", i%3)
-			put(side, c, at.Add(200*time.Millisecond))
-			put(other, c, at.Add(250*time.Millisecond))
+			put(side, c, at.Add(200*time.Millisecond), phObjectSize/2+w.IntN(phObjectSize))
+			put(other, c, at.Add(250*time.Millisecond), phObjectSize)
 			tag(side, c, "owner", at.Add(300*time.Millisecond))
 			tag(other, c, "owner", at.Add(350*time.Millisecond))
 		}
@@ -196,10 +185,8 @@ func partitionRun(res *partitionResult) func(seed int64) *sim.Sim {
 			s.Fail(err)
 			return s
 		}
-		var pool []occ.Version
 		losers := map[occ.VersionID]bool{}
 		for _, d := range h.discards {
-			pool = append(pool, d.loser)
 			if !losers[d.loser.ID()] {
 				losers[d.loser.ID()] = true
 				if k, _, _ := occ.ParseKey(d.key); k == occ.KindManifest {
@@ -208,18 +195,28 @@ func partitionRun(res *partitionResult) func(seed int64) *sim.Sim {
 			}
 		}
 		res.events, res.distinctLosers = len(h.discards), len(losers)
-		for _, a := range acked {
-			if cur, ok := rd.Record(a.key).Version(); ok {
-				pool = append(pool, cur)
-			}
+		tally, err := h.acks.check(rd, func(key string) bool {
+			kind, parts, err := occ.ParseKey(key)
+			return err == nil && (kind == occ.KindManifest || kind == occ.KindTag && !strings.HasPrefix(parts[2], "~"))
+		})
+		if err != nil {
+			s.Fail(err)
+			return s
 		}
-		for _, a := range acked {
-			cur, _ := rd.Record(a.key).Version()
-			if cur.ID() == a.v.ID() || losers[a.v.ID()] {
-				continue
+		res.tally = tally
+		if res.events > 0 {
+			seen := false
+			for _, n := range h.up() {
+				hl := n.Health()
+				if hl.Discards > 0 && len(hl.RecentDiscards) > 0 {
+					seen = true
+					if k := hl.RecentDiscards[0].Key; strings.HasPrefix(k, `"`) {
+						s.Fail(fmt.Errorf("health reports discard key %s quoted", k))
+					}
+				}
 			}
-			if !slices.ContainsFunc(pool, func(x occ.Version) bool { return covers(x, a.v) }) {
-				s.Fail(fmt.Errorf("acknowledged write %s of %q is not current, not superseded and not on any discard record", a.v.ID(), a.key))
+			if !seen {
+				s.Fail(fmt.Errorf("%d discard events and no node reports one through its health surface", res.events))
 			}
 		}
 		truth, _ := h.quotaTruth(phBucket)
@@ -277,6 +274,9 @@ func TestClusterPartitionHealDST(t *testing.T) {
 		m.add("partition/collected_loser_shards", int64(res.collectedLoser))
 		m.add("partition/acked", int64(res.acked))
 		m.add("partition/quota_refused", int64(res.quotaRefused))
+		for k, v := range res.tally {
+			m.add("partition/oracle_"+k, int64(v))
+		}
 	})
 	t.Cleanup(func() { m.report(t) })
 }

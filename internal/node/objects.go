@@ -253,11 +253,13 @@ func (n *Node) commitPut(req storage.PutRequest, region string, pre occ.Precondi
 		return
 	}
 	old, _, oldErr := n.object(rd, key)
+	held := rd.Record(key)
 	v, err := n.occ.Put(key, val, pre)
 	if err != nil {
 		dead(fmt.Errorf("node: commit %s/%s: %w", req.Bucket, req.Key, err))
 		return
 	}
+	n.committed(key, held, v)
 	if oldErr == nil {
 		n.markDead(req.Bucket, old.Manifest.Version)
 	}
@@ -336,10 +338,12 @@ func (n *Node) DeleteObject(bucket, key string, cond storage.Condition) (storage
 		return storage.ObjectInfo{}, err
 	}
 	old, _, oerr := n.object(rd, k)
+	held := rd.Record(k)
 	v, err := n.occ.Delete(k, pre)
 	if err != nil {
 		return storage.ObjectInfo{}, fmt.Errorf("node: delete %s/%s: %w", bucket, key, err)
 	}
+	n.committed(k, held, v)
 	n.stats.Deletes++
 	n.RecordMeta(k)
 	oi := storage.ObjectInfo{Bucket: bucket, Key: key, ETag: v.ETag().String(), Deleted: true}
@@ -427,10 +431,12 @@ func (n *Node) PutTag(bucket, key, name, value string, cond storage.Condition) (
 	if err != nil {
 		return storage.TagInfo{}, err
 	}
+	held := rd.Record(k)
 	v, err := n.occ.PutTag(bucket, key, name, value, pre)
 	if err != nil {
 		return storage.TagInfo{}, fmt.Errorf("node: tag %s/%s %q: %w", bucket, key, name, err)
 	}
+	n.committed(k, held, v)
 	n.RecordMeta(k)
 	return storage.TagInfo{Name: name, Value: value, ETag: v.ETag().String()}, nil
 }

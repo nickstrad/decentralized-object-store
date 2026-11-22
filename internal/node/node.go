@@ -39,6 +39,7 @@ type Config struct {
 	RequestTimeout time.Duration
 	Gossip         gossip.Config
 	OCCPeriod      time.Duration
+	OCCFanout      int
 	MetaPeriod     time.Duration
 	MetaDepth      int
 	MaintainPeriod time.Duration
@@ -55,6 +56,7 @@ type Config struct {
 	ConfigureSaga  func(*saga.Config)
 	Log            func(string)
 	DiscardSink    func(key string, winner, loser occ.Version)
+	CommitSink     func(key string, held occ.Record, written occ.Version)
 }
 
 func (c Config) WithDefaults() Config {
@@ -122,7 +124,7 @@ func (c Config) Validate() error {
 	if c.MetaDepth < merkle.MinDepth || c.MetaDepth > merkle.MaxDepth {
 		return fmt.Errorf("node: config: merkle depth %d: %w", c.MetaDepth, ErrConfig)
 	}
-	if c.ScrubBatch < 0 || c.InventoryScrub < 0 {
+	if c.ScrubBatch < 0 || c.InventoryScrub < 0 || c.OCCFanout < 0 {
 		return fmt.Errorf("node: config: scrub batch %d or inventory scrub %d: %w", c.ScrubBatch, c.InventoryScrub, ErrConfig)
 	}
 	if c.MaxObjectSize < 0 || c.MaxObjectSize > MaxObjectSizeLimit {
@@ -264,7 +266,7 @@ func New(e env.Env, cfg Config) (*Node, error) {
 	}
 	n.store = st
 	n.occ = occ.NewNode(e.WithNet(chanNet{net: e.Net, ch: chOCC}), occ.Config{
-		Membership: n.view, Period: cfg.OCCPeriod, Log: cfg.Log, OnDiscard: n.onDiscard,
+		Membership: n.view, Period: cfg.OCCPeriod, Fanout: cfg.OCCFanout, Log: cfg.Log, OnDiscard: n.onDiscard,
 	})
 	w, err := merkle.NewWorker(e.WithNet(chanNet{net: e.Net, ch: chMeta}), merkle.Config{
 		Depth: cfg.MetaDepth, Period: cfg.MetaPeriod, ScrubBatch: cfg.ScrubBatch,
@@ -499,6 +501,12 @@ func (n *Node) onDiscard(key string, winner, loser occ.Version) {
 		n.cfg.DiscardSink(key, winner, loser)
 	}
 	n.later(func() { n.handleDiscard(key, loser) })
+}
+
+func (n *Node) committed(key string, held occ.Record, v occ.Version) {
+	if n.cfg.CommitSink != nil {
+		n.cfg.CommitSink(key, held, v)
+	}
 }
 
 func (n *Node) handleDiscard(key string, loser occ.Version) {

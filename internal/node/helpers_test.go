@@ -47,6 +47,8 @@ type harness struct {
 	ids      []env.NodeID
 	cfg      node.Config
 	discards []discardRec
+	acks     *ackOracle
+	gc       *gcOracle
 }
 
 func newHarness(seed int64, n int, cfg node.Config, net sim.NetConfig) (*harness, error) {
@@ -54,51 +56,36 @@ func newHarness(seed int64, n int, cfg node.Config, net sim.NetConfig) (*harness
 	if err != nil {
 		return &harness{s: sim.New(sim.Config{Seed: seed})}, err
 	}
-	h := &harness{s: sim.New(sim.Config{Seed: seed, Codes: table, Net: net}), ids: sim.NodeIDs(n)}
+	h := &harness{s: sim.New(sim.Config{Seed: seed, Codes: table, Net: net}), ids: sim.NodeIDs(n), acks: newAckOracle()}
+	h.gc = newGCOracle(h)
 	cfg.Seeds = []env.NodeID{h.ids[0], h.ids[1], h.ids[2]}
 	sink := cfg.DiscardSink
 	cfg.DiscardSink = func(key string, w, l occ.Version) {
 		h.discards = append(h.discards, discardRec{key: key, winner: w, loser: l})
+		h.acks.discard(l)
 		if sink != nil {
 			sink(key, w, l)
 		}
 	}
+	commits := cfg.CommitSink
 	h.cfg = cfg
-	if err := h.s.AddCluster(h.ids, dstRegions, node.NewFactory(cfg)); err != nil {
+	inner := func(e env.Env) env.Process {
+		c := cfg
+		id := e.ID
+		c.CommitSink = func(key string, held occ.Record, v occ.Version) {
+			h.acks.commit(id, key, held, v)
+			h.gc.onCommit(key, v)
+			if commits != nil {
+				commits(key, held, v)
+			}
+		}
+		return node.NewFactory(c)(e.WithDisk(watchDisk{Disk: e.Disk, id: e.ID, o: h.gc}))
+	}
+	if err := h.s.AddCluster(h.ids, dstRegions, inner); err != nil {
 		return h, err
 	}
-	h.s.AddInvariant("node/no-live-version-collected", 1000, h.noLiveVersionCollected)
+	h.s.AddInvariant("node/no-shard-of-a-possible-winner-deleted", 500, h.gc.check)
 	return h, nil
-}
-
-func (h *harness) noLiveVersionCollected() error {
-	for _, n := range h.up() {
-		cs := n.Collected()
-		if len(cs) == 0 {
-			continue
-		}
-		rd, err := n.OCC().Reader()
-		if err != nil {
-			continue
-		}
-		live := map[storage.VersionID]bool{}
-		for _, k := range rd.Keys() {
-			if len(k) == 0 || occ.Kind(k[0]) != occ.KindManifest {
-				continue
-			}
-			if val, _, err := rd.Get(k); err == nil {
-				if man, err := manifestOf(val); err == nil {
-					live[man.Version] = true
-				}
-			}
-		}
-		for _, c := range cs {
-			if live[c.Version] {
-				return fmt.Errorf("node %s collected shards of version %s, live in its own metadata", n.ID(), c.Version)
-			}
-		}
-	}
-	return nil
 }
 
 func (h *harness) node(id env.NodeID) *node.Node {
@@ -243,11 +230,9 @@ func (h *harness) checkShardsReferenced(grace bool) error {
 				}
 			}
 		}
-		for _, c := range h.node(id).Collected() {
-			if live[c.Version] != nil {
-				errs = append(errs, fmt.Errorf("node %s collected shards of live version %s", id, c.Version))
-			}
-		}
+	}
+	if err := h.gc.check(); err != nil {
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }

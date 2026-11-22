@@ -53,3 +53,11 @@ const (
 func (n *Node) ClaimForTest(c saga.Call, in saga.MigrationInput, done func(error)) {
 	n.mig.Claim(c, in, done)
 }
+
+func ManifestOfStaged(b []byte) (*storage.Manifest, error) {
+	st, err := decodeStaged(b)
+	if err != nil {
+		return nil, err
+	}
+	return ManifestOfRecord(st.Object)
+}
