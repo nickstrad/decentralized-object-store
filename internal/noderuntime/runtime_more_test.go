@@ -3,6 +3,7 @@ package noderuntime
 import (
 	"context"
 	"errors"
+	"net"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -156,4 +157,53 @@ func TestRuntimeConfigValidation(t *testing.T) {
 			t.Errorf("row %d: runtime built", i)
 		}
 	}
+}
+
+func TestNoConnectionIsTrackedAfterALoopPanic(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rt := newLoopRuntime(t)
+		if err := rt.Start(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		rt.post(func() { var m map[int]int; m[1] = 1 })
+		synctest.Wait()
+		if !rt.Panicked() {
+			t.Fatal("the loop did not record its panic")
+		}
+		a, b := net.Pipe()
+		defer func() {
+			_ = a.Close()
+			_ = b.Close()
+		}()
+		if rt.track(a) {
+			rt.untrack(a)
+			t.Fatal("a connection accepted after the loop panicked was tracked and would be served")
+		}
+		if err := rt.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestNoConnectionIsTrackedAfterTheRuntimeContextEnds(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rt := newLoopRuntime(t)
+		if err := rt.Start(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		rt.cancel()
+		synctest.Wait()
+		a, b := net.Pipe()
+		defer func() {
+			_ = a.Close()
+			_ = b.Close()
+		}()
+		if rt.track(a) {
+			rt.untrack(a)
+			t.Fatal("a connection accepted after the runtime context ended was tracked")
+		}
+		if err := rt.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
 }

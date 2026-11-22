@@ -162,26 +162,33 @@ func TestConfigValidationRejectsEachBadField(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows := []struct {
-		name string
-		mut  func(*node.Config)
+		name  string
+		mut   func(*node.Config)
+		names string
 	}{
-		{"an invalid layout", func(c *node.Config) { c.Layout = storage.Layout{K: 0, M: 1, StripeSize: 10} }},
-		{"a negative duration", func(c *node.Config) { c.GCGrace = -time.Second }},
-		{"a merkle depth out of range", func(c *node.Config) { c.MetaDepth = 99 }},
-		{"a negative scrub batch", func(c *node.Config) { c.ScrubBatch = -1 }},
-		{"an object size over the limit", func(c *node.Config) { c.MaxObjectSize = node.MaxObjectSizeLimit + 1 }},
-		{"an ack quorum outside [k, k+m]", func(c *node.Config) { c.AckQuorum = 9 }},
+		{"a negative inventory scrub", func(c *node.Config) { c.InventoryScrub = -2 }, "inventory scrub -2"},
+		{"a negative OCC fanout", func(c *node.Config) { c.OCCFanout = -3 }, "occ fanout -3"},
+		{"an invalid layout", func(c *node.Config) { c.Layout = storage.Layout{K: 0, M: 1, StripeSize: 10} }, ""},
+		{"a negative duration", func(c *node.Config) { c.GCGrace = -time.Second }, ""},
+		{"a merkle depth out of range", func(c *node.Config) { c.MetaDepth = 99 }, ""},
+		{"a negative scrub batch", func(c *node.Config) { c.ScrubBatch = -1 }, "scrub batch -1"},
+		{"an object size over the limit", func(c *node.Config) { c.MaxObjectSize = node.MaxObjectSizeLimit + 1 }, ""},
+		{"an ack quorum outside [k, k+m]", func(c *node.Config) { c.AckQuorum = 9 }, ""},
 		{"an invalid saga policy", func(c *node.Config) {
 			c.SagaPolicy = saga.Policy{MaxAttempts: -1, BaseDelay: 1, MaxDelay: 1, StepTimeout: 1}
-		}},
-		{"an invalid gossip setting", func(c *node.Config) { c.Gossip.ProbeTimeout = time.Hour * 2 }},
+		}, ""},
+		{"an invalid gossip setting", func(c *node.Config) { c.Gossip.ProbeTimeout = time.Hour * 2 }, ""},
 	}
 	for _, r := range rows {
 		t.Run(r.name, func(t *testing.T) {
 			c := smallConfig()
 			r.mut(&c)
-			if err := c.Validate(); !errors.Is(err, node.ErrConfig) {
+			err := c.Validate()
+			if !errors.Is(err, node.ErrConfig) {
 				t.Fatalf("got %v", err)
+			}
+			if r.names != "" && !strings.Contains(err.Error(), r.names) {
+				t.Fatalf("error %q does not name %q", err, r.names)
 			}
 		})
 	}
