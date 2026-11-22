@@ -1,0 +1,7 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  SUSP[Suspicion state machine] -->|7| DISSEM[Piggybacked dissemination]
+  VIEW[Membership view] -->|14| DISSEM
+  INDIRECT[Indirect probe] -->|17| DISSEM
+  JOIN[Join and leave] -->|18| DISSEM
+  DISSEM -->|19| WIRE[Wire codec]

@@ -1,6 +1,6 @@
 # C4 Level 2 — Container, runtime and environment view
 
-**Partly as built.** The DST harness (`internal/sim`, `internal/sim/simtest`, `cmd/objsim`), the environment interfaces (`internal/env`), the Storage engine (`internal/storage`, relationship 12) and the Saga engine (`internal/saga`, relationship 15; the engine itself uses Clock, Rand and Disk) exist and match this diagram. Everything else is the target design.
+**Partly as built.** The DST harness (`internal/sim`, `internal/sim/simtest`, `cmd/objsim`), the environment interfaces (`internal/env`), Gossip membership (`internal/gossip`, relationship 11; it uses Clock, Rand and Transport and no Disk), the Storage engine (`internal/storage`, relationship 12) and the Saga engine (`internal/saga`, relationship 15; the engine itself uses Clock, Rand and Disk) exist and match this diagram. Everything else is the target design.
 
 Model: diagram `container-runtime` in [model.json](model.json). Source: PLAN.md sections 2.1, 2.5, 3, 7.1.
 One protocol core, two environments: `internal/node` (real) and the DST harness

@@ -131,7 +131,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 2 | Put and get paths | Object striping | built | Cuts objects into stripes; encodes and decodes each stripe |
 | 3 | Object striping | Erasure coding | built | `Split`, `Encode`, `ReconstructData` and `Join` per stripe |
 | 4 | Put and get paths | Placement | built | Chooses a node for each shard of a stripe |
-| 5 | Placement | Gossip membership | target | Rendezvous hashing over Membership; at most `m` shards of a stripe per region. Built over the `Membership` interface with a static member list; gossip supplies the live view when it lands |
+| 5 | Placement | Gossip membership | target | Rendezvous hashing over Membership; at most `m` shards of a stripe per region. Built over the `Membership` interface with a static member list; the gossip package is built, and its live view is wired to placement in Chunk 6 |
 | 6 | Put and get paths | Local chunk store | built | Serves shard put, get and delete requests from the local store |
 | 7 | Put and get paths | Environment interfaces | built | Sends shards to peers and fetches shards from peers (Transport); zero-delay callbacks and retry backoff (Clock); version IDs (Rand) |
 | 8 | Local chunk store | Shard file format | built | Header plus payload; SHA-256 verified on every write and read |

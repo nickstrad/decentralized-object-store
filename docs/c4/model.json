@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "id": "objstore",
-  "title": "Decentralized Object Store & Sync Engine — target architecture, as built where landed",
-  "revision": "as-built-saga-2026-11-22",
+  "title": "Decentralized Object Store & Sync Engine \u2014 target architecture, as built where landed",
+  "revision": "as-built-gossip-2026-11-22",
   "defaultDiagramId": "context",
   "model": {
     "elements": [
@@ -194,11 +194,13 @@
         "parentId": "store",
         "containerType": "application",
         "name": "Gossip membership (internal/gossip)",
-        "description": "SWIM membership: probe, indirect probe, suspicion state machine, piggybacked dissemination.",
+        "description": "SWIM membership as one single-threaded node: probe, indirect probe through relays, suspicion with refutation by incarnation, piggybacked dissemination with a retransmit limit, periodic push-pull sync, join and leave, and the Membership view with change events. Expired dead and left entries become bounded tombstones. It uses Clock, Rand and Transport and no Disk.",
         "technology": "Go, sans-IO state machine",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
-        "plannedNotes": [],
+        "plannedNotes": [
+          "No other package reads the Membership view yet. Storage placement, replication peer choice and the node runtime are wired to it in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -291,9 +293,9 @@
         "kind": "component",
         "parentId": "c-gossip",
         "name": "Join and leave",
-        "description": "Join through seed nodes; clean leave.",
+        "description": "Node.Join and Node.Leave (node.go). Join sends the push-pull sync to every seed at once and completes on the first reply, or fails with ErrJoinFailed and each seed's cause; its callback never runs inside Join. Seeds from Config.Seeds and from Join are remembered, at most MaxSeeds (256). While the node knows no live member but itself it re-joins its seeds every probe period. Leave marks the node left, tells every live member in one gossip datagram, stops the timers and closes the node.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -306,9 +308,9 @@
         "kind": "component",
         "parentId": "c-gossip",
         "name": "Probe",
-        "description": "Per-period randomized probe of one member in shuffled round-robin order.",
+        "description": "onTick and nextTarget (node.go). One ping per ProbeInterval to the next live member in shuffled round-robin order; a member that becomes live in mid-round is inserted at a random later position. A target with no ack, direct or relayed, by the next tick becomes suspect.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -321,9 +323,9 @@
         "kind": "component",
         "parentId": "c-gossip",
         "name": "Indirect probe",
-        "description": "Indirect probe through k others on timeout.",
+        "description": "onProbeTimeout, onPingReq and the relay table (node.go). After ProbeTimeout without an ack, asks k random other live members (IndirectProbes, default 3) to ping the target. A relay pings with its own sequence number and forwards the ack with the requester's; a relay entry lasts one probe interval, at most MaxRelays (1,024) are held, and none is kept for a ping that could not be sent.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -336,9 +338,9 @@
         "kind": "component",
         "parentId": "c-gossip",
         "name": "Suspicion state machine",
-        "description": "Alive, suspect, dead; suspicion timeout scaled by log N; incarnation numbers for refutation.",
+        "description": "suspectLocally, startSuspicion and refute (node.go). A member that becomes suspect, by a failed probe or by gossip, gets a timer of SuspicionMult x ceil(log2 N) x ProbeInterval; if it is still suspect at that incarnation when the timer fires it is declared dead. A node refutes any claim about itself, other than alive at its own incarnation, by raising its incarnation; it cannot go past the maximum uint32.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -351,9 +353,9 @@
         "kind": "component",
         "parentId": "c-gossip",
         "name": "Piggybacked dissemination",
-        "description": "Piggybacked dissemination with a retransmit limit of lambda times log N.",
+        "description": "enqueue, piggyback and sendWith (node.go). One queue entry per member. Every datagram the node sends carries updates within MaxPacket: explicit leads, then the destination's own entry if it is not alive, then the queue, fewest transmissions first. An entry is dropped after RetransmitMult x ceil(log2 N) transmissions. Updates on an inbound datagram are handed to the view's merge.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -366,9 +368,9 @@
         "kind": "component",
         "parentId": "c-gossip",
         "name": "Full-state sync",
-        "description": "Periodic full-state sync with one random peer, including previously dead and seed addresses.",
+        "description": "syncWith, onSync and OnRequest (node.go). Push-pull: the caller sends its whole view, the receiver merges it and replies with its merged view, the caller merges that. Every SyncInterval a node syncs with one random live member and one random heal target taken from the dead entries in its view, its dead tombstones and its remembered seeds that are not live.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -381,11 +383,31 @@
         "kind": "component",
         "parentId": "c-gossip",
         "name": "Membership view and change events",
-        "description": "The Membership view and change events that the package exposes.",
+        "description": "View, the pure merge lattice ordered by (incarnation, state, region) through Supersedes (member.go), and the node's merge step, Node.apply (node.go). Exposes the Membership interface (Members, Lookup, Subscribe) and five event kinds, delivered synchronously: joined, suspected, recovered, died, left. Holds at most MaxMembers entries. A dead or left entry stays for DeadRetention, then becomes a tombstone; at most MaxTombstones (4,096) are kept and the oldest is evicted.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
-        "plannedNotes": [],
+        "plannedNotes": [
+          "Retention followed by bounded tombstones was added by the build; PLAN.md names only the view and its events.",
+          "Nothing outside the package reads the view yet (relationships 10 and 11)."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "g-wire",
+        "kind": "component",
+        "parentId": "c-gossip",
+        "name": "Wire codec",
+        "description": "Message, Encode and Decode (wire.go) and the wire error codes 80 to 84 (errors.go). Version 1, big-endian. Ping, ack, ping-req and gossip are datagram kinds; sync request and sync response travel only as requests. Decoding is strict and canonical: every accepted byte string re-encodes to itself. This code does no I/O.",
+        "technology": "Go",
+        "status": "existing",
+        "tags": [],
+        "plannedNotes": [
+          "Added by the build; PLAN.md does not name it."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -951,9 +973,9 @@
         "parentId": "store",
         "containerType": "application",
         "name": "Gossip membership (internal/gossip)",
-        "description": "The same package as element c-gossip, shown as a neighbour in the component views of other packages. SWIM membership: probe, indirect probe, suspicion state machine, piggybacked dissemination.",
+        "description": "The same package as element c-gossip, shown as a neighbour in the component views of other packages. SWIM membership as one single-threaded node: probe, indirect probe through relays, suspicion with refutation by incarnation, piggybacked dissemination with a retransmit limit, periodic push-pull sync, join and leave, and the Membership view with change events. Expired dead and left entries become bounded tombstones. It uses Clock, Rand and Transport and no Disk.",
         "technology": "Go, sans-IO state machine",
-        "status": "planned",
+        "status": "existing",
         "tags": [
           "external",
           "neighbour"
@@ -1437,7 +1459,7 @@
         "sourceId": "c-gossip",
         "targetId": "c-env",
         "label": "Acts only through Clock, Rand, Transport, Disk",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1514,8 +1536,8 @@
         "id": "g-r1",
         "sourceId": "g-join",
         "targetId": "g-view",
-        "label": "Joins through seed nodes; clean leave",
-        "status": "planned",
+        "label": "Leave marks this node left in the view",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1527,8 +1549,8 @@
         "id": "g-r2",
         "sourceId": "g-probe",
         "targetId": "g-view",
-        "label": "Picks one member per period, shuffled round-robin",
-        "status": "planned",
+        "label": "Picks one live member per period, shuffled round-robin; each tick also buries expired dead and left entries",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1540,8 +1562,8 @@
         "id": "g-r3",
         "sourceId": "g-probe",
         "targetId": "g-indirect",
-        "label": "On timeout, probes through k others",
-        "status": "planned",
+        "label": "After the probe timeout with no ack, asks k other members to ping the target; a relayed ack counts as the probe's ack",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1553,8 +1575,8 @@
         "id": "g-r4",
         "sourceId": "g-probe",
         "targetId": "g-suspicion",
-        "label": "Reports the probe result",
-        "status": "planned",
+        "label": "Marks the target suspect when no ack, direct or relayed, came by the next period",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1565,9 +1587,9 @@
       {
         "id": "g-r5",
         "sourceId": "g-indirect",
-        "targetId": "g-suspicion",
-        "label": "Reports the indirect probe result",
-        "status": "planned",
+        "targetId": "g-view",
+        "label": "Picks the k relays at random from the live members other than the target",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1579,8 +1601,8 @@
         "id": "g-r6",
         "sourceId": "g-suspicion",
         "targetId": "g-view",
-        "label": "Sets alive, suspect or dead; incarnation numbers refute",
-        "status": "planned",
+        "label": "Sets suspect, then dead when the timeout fires at the same incarnation; raises this node's incarnation to refute",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1592,8 +1614,8 @@
         "id": "g-r7",
         "sourceId": "g-suspicion",
         "targetId": "g-dissem",
-        "label": "Hands over state changes to disseminate",
-        "status": "planned",
+        "label": "Queues this node's refutation, alive at a higher incarnation",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1605,8 +1627,8 @@
         "id": "g-r8",
         "sourceId": "g-sync",
         "targetId": "g-view",
-        "label": "Merges full state with one random peer, including dead and seed addresses",
-        "status": "planned",
+        "label": "Sends the whole view and merges the peer's; picks one random live member and one heal target from dead entries, dead tombstones and seeds that are not live",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1618,9 +1640,9 @@
         "id": "g-r9",
         "sourceId": "g-probe",
         "targetId": "n-env",
-        "label": "Datagrams, period timers, random order",
-        "technology": "Transport, Clock, Rand",
-        "status": "planned",
+        "label": "Period and probe-timeout timers; random probe order",
+        "technology": "Clock, Rand",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1633,7 +1655,9 @@
         "targetId": "g-view",
         "label": "Reads Membership for shard placement",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "Storage placement is built over its own Membership interface with a static member list; the gossip view is wired to it in Chunk 6."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -1646,6 +1670,203 @@
         "targetId": "g-view",
         "label": "Reads Membership for replication peer choice",
         "status": "planned",
+        "plannedNotes": [
+          "Wired in Chunk 6."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r12",
+        "sourceId": "g-join",
+        "targetId": "g-sync",
+        "label": "A join is the push-pull sync sent to every seed; the first reply completes it",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r13",
+        "sourceId": "g-view",
+        "targetId": "g-suspicion",
+        "label": "Starts the suspicion timer when a member becomes suspect, by probe or by gossip, and stops it when the member leaves suspect; hands claims about this node itself to refutation",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r14",
+        "sourceId": "g-view",
+        "targetId": "g-dissem",
+        "label": "Queues every accepted change for gossip, except a dead or left verdict about a member this node never held",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r15",
+        "sourceId": "g-dissem",
+        "targetId": "g-view",
+        "label": "Hands the updates on each inbound datagram to the merge; reads the destination's entry and the live count for the retransmit limit",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r16",
+        "sourceId": "g-probe",
+        "targetId": "g-dissem",
+        "label": "Sends pings and acks; each carries piggybacked updates",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r17",
+        "sourceId": "g-indirect",
+        "targetId": "g-dissem",
+        "label": "Sends ping-reqs, relayed pings and forwarded acks; each carries piggybacked updates",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r18",
+        "sourceId": "g-join",
+        "targetId": "g-dissem",
+        "label": "Leave queues the left entry and sends a gossip datagram led by it to every live member",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r19",
+        "sourceId": "g-dissem",
+        "targetId": "g-wire",
+        "label": "Encodes every outbound datagram and decodes every inbound one",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r20",
+        "sourceId": "g-sync",
+        "targetId": "g-wire",
+        "label": "Encodes and decodes sync requests and replies",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "g-r21",
+        "sourceId": "g-dissem",
+        "targetId": "n-env",
+        "label": "Sends every datagram",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Transport"
+      },
+      {
+        "id": "g-r22",
+        "sourceId": "g-sync",
+        "targetId": "n-env",
+        "label": "Sync requests with a timeout; the sync timer; random peer choice",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Transport, Clock, Rand"
+      },
+      {
+        "id": "g-r23",
+        "sourceId": "g-suspicion",
+        "targetId": "n-env",
+        "label": "Suspicion timeout timers",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Clock"
+      },
+      {
+        "id": "g-r24",
+        "sourceId": "g-indirect",
+        "targetId": "n-env",
+        "label": "Random choice of relays; relay expiry times",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Rand, Clock"
+      },
+      {
+        "id": "g-r25",
+        "sourceId": "g-join",
+        "targetId": "n-env",
+        "label": "Zero-delay timer, so that a join callback never runs inside Join",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Clock"
+      },
+      {
+        "id": "g-r26",
+        "sourceId": "g-probe",
+        "targetId": "g-join",
+        "label": "While the node knows no live member but itself, re-joins the remembered seeds once per period",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2349,7 +2570,7 @@
         "label": "Rendezvous hashing over Membership; at most m shards of a stripe per region",
         "status": "planned",
         "plannedNotes": [
-          "Placement is built over the Membership interface with a static member list. Gossip supplies the live view when it lands."
+          "Placement is built over the Membership interface with a static member list. The gossip package is built; its live view is wired to placement in the integration chunk (Chunk 6)."
         ],
         "docIds": [],
         "sourceIds": [
@@ -2497,7 +2718,7 @@
       "kind": "context",
       "scopeId": "store",
       "status": "mixed",
-      "title": "System Context — as built for the simulator and the environment interfaces; the rest is the target design",
+      "title": "System Context \u2014 as built for the simulator and the environment interfaces; the rest is the target design",
       "nodes": [
         {
           "elementId": "api-client"
@@ -2617,7 +2838,7 @@
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, domain view — as built for erasure coding, the storage engine and the saga engine; the rest is the target design",
+      "title": "Container, domain view \u2014 as built for erasure coding, the storage engine, the saga engine and gossip membership; the rest is the target design",
       "nodes": [
         {
           "elementId": "api-client"
@@ -2778,7 +2999,7 @@
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, runtime and environment view — as built for the simulator, the environment interfaces, the storage engine and the saga engine; the rest is the target design",
+      "title": "Container, runtime and environment view \u2014 as built for the simulator, the environment interfaces, the storage engine, the saga engine and gossip membership; the rest is the target design",
       "nodes": [
         {
           "elementId": "operator"
@@ -2950,7 +3171,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, gossip — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "title": "Component, gossip \u2014 as built for the SWIM node, the view, the wire codec and their use of the environment interfaces; the links from storage and CRDT metadata are the target design",
       "nodes": [
         {
           "elementId": "g-join"
@@ -2972,6 +3193,9 @@
         },
         {
           "elementId": "g-view"
+        },
+        {
+          "elementId": "g-wire"
         },
         {
           "elementId": "n-env",
@@ -3045,6 +3269,51 @@
         },
         {
           "relationshipId": "g-r11"
+        },
+        {
+          "relationshipId": "g-r12"
+        },
+        {
+          "relationshipId": "g-r13"
+        },
+        {
+          "relationshipId": "g-r14"
+        },
+        {
+          "relationshipId": "g-r15"
+        },
+        {
+          "relationshipId": "g-r16"
+        },
+        {
+          "relationshipId": "g-r17"
+        },
+        {
+          "relationshipId": "g-r18"
+        },
+        {
+          "relationshipId": "g-r19"
+        },
+        {
+          "relationshipId": "g-r20"
+        },
+        {
+          "relationshipId": "g-r21"
+        },
+        {
+          "relationshipId": "g-r22"
+        },
+        {
+          "relationshipId": "g-r23"
+        },
+        {
+          "relationshipId": "g-r24"
+        },
+        {
+          "relationshipId": "g-r25"
+        },
+        {
+          "relationshipId": "g-r26"
         }
       ],
       "legend": {
@@ -3053,7 +3322,7 @@
           {
             "id": "box",
             "label": "Component",
-            "description": "A part of the package that PLAN.md names",
+            "description": "A part of the package that PLAN.md names, or one the build added",
             "swatch": {
               "shape": "box",
               "tone": "default",
@@ -3110,7 +3379,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, erasure — as built",
+      "title": "Component, erasure \u2014 as built",
       "nodes": [
         {
           "elementId": "n-storage",
@@ -3243,7 +3512,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, merkle — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "title": "Component, merkle \u2014 TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
       "nodes": [
         {
           "elementId": "m-worker"
@@ -3385,7 +3654,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, crdt — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "title": "Component, crdt \u2014 TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
       "nodes": [
         {
           "elementId": "x-doc"
@@ -3578,7 +3847,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, saga — as built for the engine, the log, recovery, the migration workflow and the model cluster; the object API and the links to storage, Merkle and CRDT are the target design",
+      "title": "Component, saga \u2014 as built for the engine, the log, recovery, the migration workflow and the model cluster; the object API and the links to storage, Merkle and CRDT are the target design",
       "nodes": [
         {
           "elementId": "n-api",
@@ -3787,7 +4056,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, storage — as built for the chunk store, striping, manifest, placement and the node; the object API and the links to gossip, CRDT and Merkle are the target design",
+      "title": "Component, storage \u2014 as built for the chunk store, striping, manifest, placement and the node; the object API and the links to gossip, CRDT and Merkle are the target design",
       "nodes": [
         {
           "elementId": "n-api",
@@ -3994,7 +4263,7 @@
   "sources": [
     {
       "id": "plan",
-      "title": "PLAN.md — testing-first plan, Phase 1",
+      "title": "PLAN.md \u2014 testing-first plan, Phase 1",
       "url": "https://github.com/nickstrad/decentralized-object-store/blob/main/PLAN.md",
       "notes": "Sections 1, 2.1, 3, 4.2 and 7 define the target architecture drawn here."
     }
