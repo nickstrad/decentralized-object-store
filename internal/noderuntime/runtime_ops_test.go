@@ -17,6 +17,7 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/node"
 	"github.com/nickstrad/decentralized-object-store/internal/noderuntime"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/decentralized-object-store/internal/storage/httpapi"
 )
 
 func TestShutdownDuringRepairAndRestartOnTheSameDisk(t *testing.T) {
@@ -92,7 +93,7 @@ func TestStatusRowsThroughHTTPOnARealNode(t *testing.T) {
 	c := startReal(t, 3, cfg)
 	bg := context.Background()
 	eventually(t, 20*time.Second, "joined", func() bool { return c.joined(3) })
-	srv := storage.NewServer("127.0.0.1:0", c.rts[0], storage.Limits{MaxObjectSize: 4096}, node.StatusRows()...)
+	srv := httpapi.NewServer("127.0.0.1:0", c.rts[0], httpapi.Limits{MaxObjectSize: 4096}, node.StatusRows()...)
 	if err := srv.Start(bg); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +150,7 @@ func TestStatusRowsThroughHTTPOnARealNode(t *testing.T) {
 		}
 		if s.name == "a put" {
 			etag = resp.Header.Get("ETag")
-			if etag == "" || resp.Header.Get(storage.HeaderVersion) == "" {
+			if etag == "" || resp.Header.Get(httpapi.HeaderVersion) == "" {
 				t.Fatal("a put response without ETag or version")
 			}
 		}
@@ -160,7 +161,7 @@ func TestStatusRowsThroughHTTPOnARealNode(t *testing.T) {
 }
 
 type rowService struct {
-	storage.Service
+	httpapi.Service
 	err error
 }
 
@@ -174,7 +175,7 @@ func TestEveryNodeStatusRowThroughHTTP(t *testing.T) {
 		t.Fatal("no node status rows")
 	}
 	for _, row := range rows {
-		h := storage.NewHandler(rowService{err: fmt.Errorf("node: wrapped: %w", row.Err)}, storage.Limits{}, rows...)
+		h := httpapi.NewHandler(rowService{err: fmt.Errorf("node: wrapped: %w", row.Err)}, httpapi.Limits{}, rows...)
 		srv := httptest.NewServer(h)
 		resp, err := http.Get(srv.URL + "/b/k")
 		if err != nil {

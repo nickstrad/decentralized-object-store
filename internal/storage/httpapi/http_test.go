@@ -1,4 +1,4 @@
-package storage_test
+package httpapi_test
 
 import (
 	"bufio"
@@ -22,6 +22,7 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
 	"github.com/nickstrad/decentralized-object-store/internal/saga"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/decentralized-object-store/internal/storage/httpapi"
 )
 
 type modelObject struct {
@@ -302,7 +303,7 @@ func do(t testing.TB, srv *httptest.Server, method, path string, body []byte, hd
 }
 
 func TestHTTPObjectAPIAgainstTheModel(t *testing.T) {
-	srv := httptest.NewServer(storage.NewHandler(newModel(), storage.Limits{MaxObjectSize: 1 << 20}))
+	srv := httptest.NewServer(httpapi.NewHandler(newModel(), httpapi.Limits{MaxObjectSize: 1 << 20}))
 	defer srv.Close()
 	steps := []struct {
 		name   string
@@ -391,7 +392,7 @@ func TestHTTPObjectAPIAgainstTheModel(t *testing.T) {
 		}
 		switch s.name {
 		case "putting an object":
-			if resp.Header.Get("ETag") == "" || resp.Header.Get(storage.HeaderVersion) == "" {
+			if resp.Header.Get("ETag") == "" || resp.Header.Get(httpapi.HeaderVersion) == "" {
 				t.Fatalf("%s: no ETag or version header", s.name)
 			}
 		case "reading it":
@@ -408,9 +409,9 @@ func TestHTTPObjectAPIAgainstTheModel(t *testing.T) {
 }
 
 func TestStatusTableRowByRowThroughHTTP(t *testing.T) {
-	for _, row := range storage.StatusTable() {
+	for _, row := range httpapi.StatusTable() {
 		t.Run(row.Err.Error(), func(t *testing.T) {
-			srv := httptest.NewServer(storage.NewHandler(errService{err: fmt.Errorf("wrapped: %w", row.Err)}, storage.Limits{}))
+			srv := httptest.NewServer(httpapi.NewHandler(errService{err: fmt.Errorf("wrapped: %w", row.Err)}, httpapi.Limits{}))
 			defer srv.Close()
 			for _, req := range []struct{ method, path string }{{"GET", "/b/k"}, {"PUT", "/b/k"}, {"DELETE", "/b/k"}, {"GET", "/b"}, {"GET", "/_health"}} {
 				resp, body := do(t, srv, req.method, req.path, nil, nil)
@@ -427,11 +428,11 @@ func TestStatusTableRowByRowThroughHTTP(t *testing.T) {
 			}
 		})
 	}
-	if got := storage.StatusOf(storage.StatusTable(), errors.New("unknown")); got != 500 {
+	if got := httpapi.StatusOf(httpapi.StatusTable(), errors.New("unknown")); got != 500 {
 		t.Fatalf("an unknown error maps to %d", got)
 	}
 	extra := storage.StatusRow{Err: errors.New("extra"), Status: 418}
-	if got := storage.StatusOf(storage.StatusTable(extra), fmt.Errorf("x: %w", extra.Err)); got != 418 {
+	if got := httpapi.StatusOf(httpapi.StatusTable(extra), fmt.Errorf("x: %w", extra.Err)); got != 418 {
 		t.Fatalf("an extra row maps to %d", got)
 	}
 }
@@ -483,9 +484,9 @@ func (e errService) Health(context.Context) (storage.Health, error) {
 	return storage.Health{}, e.err
 }
 
-func startServer(t *testing.T, l storage.Limits) *storage.Server {
+func startServer(t *testing.T, l httpapi.Limits) *httpapi.Server {
 	t.Helper()
-	s := storage.NewServer("127.0.0.1:0", newModel(), l)
+	s := httpapi.NewServer("127.0.0.1:0", newModel(), l)
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -500,7 +501,7 @@ func startServer(t *testing.T, l storage.Limits) *storage.Server {
 }
 
 func TestServerBoundsHeadersBodiesAndSlowClients(t *testing.T) {
-	s := startServer(t, storage.Limits{MaxObjectSize: 1024, MaxHeaderBytes: 2048, ReadHeaderTimeout: 200 * time.Millisecond, ReadTimeout: 500 * time.Millisecond})
+	s := startServer(t, httpapi.Limits{MaxObjectSize: 1024, MaxHeaderBytes: 2048, ReadHeaderTimeout: 200 * time.Millisecond, ReadTimeout: 500 * time.Millisecond})
 	base := "http://" + s.Addr()
 	req, err := http.NewRequest("PUT", base+"/b", nil)
 	if err != nil {
@@ -562,7 +563,7 @@ func TestServerBoundsHeadersBodiesAndSlowClients(t *testing.T) {
 }
 
 func TestServerShutdownTwiceAndAfterUse(t *testing.T) {
-	s := storage.NewServer("127.0.0.1:0", newModel(), storage.Limits{})
+	s := httpapi.NewServer("127.0.0.1:0", newModel(), httpapi.Limits{})
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -575,10 +576,10 @@ func TestServerShutdownTwiceAndAfterUse(t *testing.T) {
 	if err := s.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := storage.NewServer("256.0.0.1:1", newModel(), storage.Limits{}).Start(context.Background()); err == nil {
+	if err := httpapi.NewServer("256.0.0.1:1", newModel(), httpapi.Limits{}).Start(context.Background()); err == nil {
 		t.Fatal("listening on an invalid address succeeded")
 	}
-	if storage.NewServer(":0", newModel(), storage.Limits{}).Addr() != "" {
+	if httpapi.NewServer(":0", newModel(), httpapi.Limits{}).Addr() != "" {
 		t.Fatal("an unstarted server has an address")
 	}
 }
@@ -621,7 +622,7 @@ func FuzzObjectAPI(f *testing.F) {
 	f.Add([]byte("\x01/b\x00\x00\x00\x01/b/k\x00\x00v1\x00\x01/b/k\x00\x01\"x\", \"@\"\x00v2\x00\x01/b/k\x00\x02\x00v3\x00"))
 	f.Fuzz(func(t *testing.T, in []byte) {
 		m := newModel()
-		h := storage.NewHandler(m, storage.Limits{MaxObjectSize: 4096, MaxSmallBody: 1024})
+		h := httpapi.NewHandler(m, httpapi.Limits{MaxObjectSize: 4096, MaxSmallBody: 1024})
 		puts := map[string][]byte{}
 		etags := map[string]string{}
 		parts := bytes.Split(in, []byte{0})
@@ -689,14 +690,4 @@ func FuzzObjectAPI(f *testing.F) {
 			}
 		}
 	})
-}
-
-func TestAPICodesAreInTheirBlockAndDistinct(t *testing.T) {
-	seen := map[int]bool{}
-	for _, e := range storage.APICodeEntries() {
-		if e.Code < 160 || e.Code > 175 || seen[int(e.Code)] || e.Err == nil {
-			t.Fatalf("api code %d for %v", e.Code, e.Err)
-		}
-		seen[int(e.Code)] = true
-	}
 }

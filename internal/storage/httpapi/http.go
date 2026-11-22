@@ -1,4 +1,4 @@
-package storage
+package httpapi
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
 	"github.com/nickstrad/decentralized-object-store/internal/saga"
+	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
 const (
@@ -71,42 +72,37 @@ func (l Limits) WithDefaults() Limits {
 	return l
 }
 
-type StatusRow struct {
-	Err    error
-	Status int
-}
-
-func StatusTable(extra ...StatusRow) []StatusRow {
-	rows := []StatusRow{
-		{ErrMethod, http.StatusMethodNotAllowed},
-		{env.ErrTooLarge, http.StatusRequestEntityTooLarge},
-		{ErrNoSuchBucket, http.StatusNotFound},
-		{ErrNotFound, http.StatusNotFound},
-		{occ.ErrNotFound, http.StatusNotFound},
-		{env.ErrNotFound, http.StatusNotFound},
-		{saga.ErrSagaNotFound, http.StatusNotFound},
-		{ErrBucketExists, http.StatusConflict},
-		{ErrExists, http.StatusConflict},
-		{occ.ErrPreconditionFailed, http.StatusPreconditionFailed},
-		{occ.ErrQuotaExceeded, http.StatusInsufficientStorage},
-		{ErrInvalid, http.StatusBadRequest},
-		{env.ErrInvalidArgument, http.StatusBadRequest},
-		{occ.ErrMalformed, http.StatusBadRequest},
-		{saga.ErrPermanent, http.StatusBadRequest},
-		{ErrBusy, http.StatusServiceUnavailable},
-		{ErrUnavailable, http.StatusServiceUnavailable},
-		{occ.ErrNotReady, http.StatusServiceUnavailable},
-		{env.ErrClosed, http.StatusServiceUnavailable},
-		{env.ErrUnreachable, http.StatusServiceUnavailable},
-		{env.ErrTimeout, http.StatusGatewayTimeout},
-		{context.DeadlineExceeded, http.StatusGatewayTimeout},
-		{context.Canceled, http.StatusServiceUnavailable},
-		{ErrCorrupt, http.StatusInternalServerError},
+func StatusTable(extra ...storage.StatusRow) []storage.StatusRow {
+	rows := []storage.StatusRow{
+		{Err: storage.ErrMethod, Status: http.StatusMethodNotAllowed},
+		{Err: env.ErrTooLarge, Status: http.StatusRequestEntityTooLarge},
+		{Err: storage.ErrNoSuchBucket, Status: http.StatusNotFound},
+		{Err: storage.ErrNotFound, Status: http.StatusNotFound},
+		{Err: occ.ErrNotFound, Status: http.StatusNotFound},
+		{Err: env.ErrNotFound, Status: http.StatusNotFound},
+		{Err: saga.ErrSagaNotFound, Status: http.StatusNotFound},
+		{Err: storage.ErrBucketExists, Status: http.StatusConflict},
+		{Err: storage.ErrExists, Status: http.StatusConflict},
+		{Err: occ.ErrPreconditionFailed, Status: http.StatusPreconditionFailed},
+		{Err: occ.ErrQuotaExceeded, Status: http.StatusInsufficientStorage},
+		{Err: storage.ErrInvalid, Status: http.StatusBadRequest},
+		{Err: env.ErrInvalidArgument, Status: http.StatusBadRequest},
+		{Err: occ.ErrMalformed, Status: http.StatusBadRequest},
+		{Err: saga.ErrPermanent, Status: http.StatusBadRequest},
+		{Err: storage.ErrBusy, Status: http.StatusServiceUnavailable},
+		{Err: storage.ErrUnavailable, Status: http.StatusServiceUnavailable},
+		{Err: occ.ErrNotReady, Status: http.StatusServiceUnavailable},
+		{Err: env.ErrClosed, Status: http.StatusServiceUnavailable},
+		{Err: env.ErrUnreachable, Status: http.StatusServiceUnavailable},
+		{Err: env.ErrTimeout, Status: http.StatusGatewayTimeout},
+		{Err: context.DeadlineExceeded, Status: http.StatusGatewayTimeout},
+		{Err: context.Canceled, Status: http.StatusServiceUnavailable},
+		{Err: storage.ErrCorrupt, Status: http.StatusInternalServerError},
 	}
 	return append(extra, rows...)
 }
 
-func StatusOf(rows []StatusRow, err error) int {
+func StatusOf(rows []storage.StatusRow, err error) int {
 	if err == nil {
 		return http.StatusOK
 	}
@@ -121,10 +117,10 @@ func StatusOf(rows []StatusRow, err error) int {
 type handler struct {
 	svc   Service
 	l     Limits
-	table []StatusRow
+	table []storage.StatusRow
 }
 
-func NewHandler(svc Service, l Limits, extra ...StatusRow) http.Handler {
+func NewHandler(svc Service, l Limits, extra ...storage.StatusRow) http.Handler {
 	return &handler{svc: svc, l: l.WithDefaults(), table: StatusTable(extra...)}
 }
 
@@ -146,7 +142,7 @@ func (h *handler) json(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func objectHeaders(w http.ResponseWriter, oi ObjectInfo) {
+func objectHeaders(w http.ResponseWriter, oi storage.ObjectInfo) {
 	if oi.ETag != "" {
 		w.Header().Set("ETag", `"`+oi.ETag+`"`)
 	}
@@ -175,12 +171,12 @@ func parseEntityTags(v string) ([]string, bool, error) {
 		weak := strings.HasPrefix(el, "W/")
 		tag := strings.TrimPrefix(el, "W/")
 		if len(tag) < 2 || tag[0] != '"' || tag[len(tag)-1] != '"' {
-			return nil, false, fmt.Errorf("storage: entity-tag %q is not quoted: %w", el, ErrInvalid)
+			return nil, false, fmt.Errorf("storage: entity-tag %q is not quoted: %w", el, storage.ErrInvalid)
 		}
 		opaque := tag[1 : len(tag)-1]
 		for i := 0; i < len(opaque); i++ {
 			if c := opaque[i]; c == '"' || c < 0x21 || c == 0x7f {
-				return nil, false, fmt.Errorf("storage: entity-tag %q: %w", el, ErrInvalid)
+				return nil, false, fmt.Errorf("storage: entity-tag %q: %w", el, storage.ErrInvalid)
 			}
 		}
 		if !weak {
@@ -188,17 +184,17 @@ func parseEntityTags(v string) ([]string, bool, error) {
 		}
 	}
 	if star && elements > 1 {
-		return nil, false, fmt.Errorf("storage: * inside an entity-tag list %q: %w", v, ErrInvalid)
+		return nil, false, fmt.Errorf("storage: * inside an entity-tag list %q: %w", v, storage.ErrInvalid)
 	}
 	return strong, star, nil
 }
 
-func condition(r *http.Request) (Condition, error) {
-	var c Condition
+func condition(r *http.Request) (storage.Condition, error) {
+	var c storage.Condition
 	if vs, ok := r.Header["If-None-Match"]; ok {
 		v := strings.Join(vs, ",")
 		if strings.TrimSpace(v) != "*" {
-			return c, fmt.Errorf("storage: If-None-Match %q: only * is supported: %w", v, ErrInvalid)
+			return c, fmt.Errorf("storage: If-None-Match %q: only * is supported: %w", v, storage.ErrInvalid)
 		}
 		c.IfNoneMatch = true
 	}
@@ -214,7 +210,7 @@ func condition(r *http.Request) (Condition, error) {
 		}
 	}
 	if c.IfNoneMatch && (c.IfMatch != "" || c.IfMatchList) {
-		return c, fmt.Errorf("storage: both If-Match and If-None-Match: %w", ErrInvalid)
+		return c, fmt.Errorf("storage: both If-Match and If-None-Match: %w", storage.ErrInvalid)
 	}
 	return c, nil
 }
@@ -229,7 +225,7 @@ func (h *handler) body(w http.ResponseWriter, r *http.Request, limit int64) ([]b
 		if errors.As(err, &mbe) {
 			return nil, fmt.Errorf("storage: body over %d bytes: %w", limit, env.ErrTooLarge)
 		}
-		return nil, fmt.Errorf("storage: read body: %v: %w", err, ErrInvalid)
+		return nil, fmt.Errorf("storage: read body: %v: %w", err, storage.ErrInvalid)
 	}
 	return b, nil
 }
@@ -246,10 +242,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "_migrations" || strings.HasPrefix(path, "_migrations/"):
 		h.migrations(ctx, w, r, strings.TrimPrefix(strings.TrimPrefix(path, "_migrations"), "/"))
 	case path == "":
-		h.fail(w, fmt.Errorf("storage: no bucket in path: %w", ErrInvalid))
+		h.fail(w, fmt.Errorf("storage: no bucket in path: %w", storage.ErrInvalid))
 	default:
 		bucket, key, hasKey := strings.Cut(path, "/")
-		if err := ValidBucket(bucket); err != nil {
+		if err := storage.ValidBucket(bucket); err != nil {
 			h.fail(w, err)
 			return
 		}
@@ -263,7 +259,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *handler) health(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		h.fail(w, ErrMethod)
+		h.fail(w, storage.ErrMethod)
 		return
 	}
 	hl, err := h.svc.Health(ctx)
@@ -276,7 +272,7 @@ func (h *handler) health(ctx context.Context, w http.ResponseWriter, r *http.Req
 
 func (h *handler) members(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		h.fail(w, ErrMethod)
+		h.fail(w, storage.ErrMethod)
 		return
 	}
 	ms, err := h.svc.Members(ctx)
@@ -302,7 +298,7 @@ func (h *handler) migrations(ctx context.Context, w http.ResponseWriter, r *http
 		}
 		var req migrationRequest
 		if err := json.Unmarshal(b, &req); err != nil {
-			h.fail(w, fmt.Errorf("storage: migration request: %v: %w", err, ErrInvalid))
+			h.fail(w, fmt.Errorf("storage: migration request: %v: %w", err, storage.ErrInvalid))
 			return
 		}
 		mi, err := h.svc.StartMigration(ctx, req.Bucket, req.To)
@@ -319,7 +315,7 @@ func (h *handler) migrations(ctx context.Context, w http.ResponseWriter, r *http
 		}
 		h.json(w, http.StatusOK, mi)
 	default:
-		h.fail(w, ErrMethod)
+		h.fail(w, storage.ErrMethod)
 	}
 }
 
@@ -333,7 +329,7 @@ func uintParam(q map[string][]string, name string) (uint64, error) {
 	}
 	n, err := strconv.ParseUint(v, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("storage: parameter %s=%q: %w", name, v, ErrInvalid)
+		return 0, fmt.Errorf("storage: parameter %s=%q: %w", name, v, storage.ErrInvalid)
 	}
 	return n, nil
 }
@@ -356,7 +352,7 @@ func (h *handler) bucket(ctx context.Context, w http.ResponseWriter, r *http.Req
 		}
 		var req quotaRequest
 		if err := json.Unmarshal(b, &req); err != nil {
-			h.fail(w, fmt.Errorf("storage: quota request: %v: %w", err, ErrInvalid))
+			h.fail(w, fmt.Errorf("storage: quota request: %v: %w", err, storage.ErrInvalid))
 			return
 		}
 		qi, err := h.svc.SetQuota(ctx, bucket, req.Bytes, req.Objects)
@@ -413,15 +409,15 @@ func (h *handler) bucket(ctx context.Context, w http.ResponseWriter, r *http.Req
 			h.fail(w, err)
 			return
 		}
-		if err := h.svc.CreateBucket(ctx, BucketSpec{Name: bucket, Region: q.Get("region"), QuotaBytes: qb, QuotaObjects: qo}); err != nil {
+		if err := h.svc.CreateBucket(ctx, storage.BucketSpec{Name: bucket, Region: q.Get("region"), QuotaBytes: qb, QuotaObjects: qo}); err != nil {
 			h.fail(w, err)
 			return
 		}
-		h.json(w, http.StatusOK, BucketSpec{Name: bucket, Region: q.Get("region"), QuotaBytes: qb, QuotaObjects: qo})
+		h.json(w, http.StatusOK, storage.BucketSpec{Name: bucket, Region: q.Get("region"), QuotaBytes: qb, QuotaObjects: qo})
 	case r.Method == http.MethodGet:
 		limit, err := uintParam(q, "limit")
 		if err != nil || limit > MaxListLimit {
-			h.fail(w, fmt.Errorf("storage: list limit: %w", ErrInvalid))
+			h.fail(w, fmt.Errorf("storage: list limit: %w", storage.ErrInvalid))
 			return
 		}
 		if limit == 0 {
@@ -433,17 +429,17 @@ func (h *handler) bucket(ctx context.Context, w http.ResponseWriter, r *http.Req
 			return
 		}
 		if objs == nil {
-			objs = []ObjectInfo{}
+			objs = []storage.ObjectInfo{}
 		}
 		h.json(w, http.StatusOK, objs)
 	default:
-		h.fail(w, ErrMethod)
+		h.fail(w, storage.ErrMethod)
 	}
 }
 
 func (h *handler) object(ctx context.Context, w http.ResponseWriter, r *http.Request, bucket, key string) {
-	if key == "" || len(key) > MaxKeyLen {
-		h.fail(w, fmt.Errorf("storage: object key length %d: %w", len(key), ErrInvalid))
+	if key == "" || len(key) > storage.MaxKeyLen {
+		h.fail(w, fmt.Errorf("storage: object key length %d: %w", len(key), storage.ErrInvalid))
 		return
 	}
 	q := r.URL.Query()
@@ -473,7 +469,7 @@ func (h *handler) object(ctx context.Context, w http.ResponseWriter, r *http.Req
 			return
 		}
 		if ts == nil {
-			ts = []TagInfo{}
+			ts = []storage.TagInfo{}
 		}
 		h.json(w, http.StatusOK, ts)
 	case r.Method == http.MethodGet && q.Has("meta"):
@@ -497,10 +493,10 @@ func (h *handler) object(ctx context.Context, w http.ResponseWriter, r *http.Req
 		}
 		ct := r.Header.Get("Content-Type")
 		if len(ct) > 255 {
-			h.fail(w, fmt.Errorf("storage: content type of %d bytes: %w", len(ct), ErrInvalid))
+			h.fail(w, fmt.Errorf("storage: content type of %d bytes: %w", len(ct), storage.ErrInvalid))
 			return
 		}
-		oi, err := h.svc.PutObject(ctx, PutRequest{Bucket: bucket, Key: key, Data: b, ContentType: ct, Cond: c})
+		oi, err := h.svc.PutObject(ctx, storage.PutRequest{Bucket: bucket, Key: key, Data: b, ContentType: ct, Cond: c})
 		if err != nil {
 			h.fail(w, err)
 			return
@@ -509,7 +505,7 @@ func (h *handler) object(ctx context.Context, w http.ResponseWriter, r *http.Req
 		h.json(w, http.StatusOK, oi)
 	case r.Method == http.MethodGet || r.Method == http.MethodHead:
 		var (
-			oi   ObjectInfo
+			oi   storage.ObjectInfo
 			data []byte
 			err  error
 		)
@@ -547,7 +543,7 @@ func (h *handler) object(ctx context.Context, w http.ResponseWriter, r *http.Req
 		objectHeaders(w, oi)
 		w.WriteHeader(http.StatusNoContent)
 	default:
-		h.fail(w, ErrMethod)
+		h.fail(w, storage.ErrMethod)
 	}
 }
 
@@ -559,7 +555,7 @@ type Server struct {
 	err error
 }
 
-func NewServer(addr string, svc Service, l Limits, extra ...StatusRow) *Server {
+func NewServer(addr string, svc Service, l Limits, extra ...storage.StatusRow) *Server {
 	l = l.WithDefaults()
 	return &Server{srv: &http.Server{
 		Addr: addr, Handler: NewHandler(svc, l, extra...), MaxHeaderBytes: l.MaxHeaderBytes,

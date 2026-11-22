@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"context"
 	"errors"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
@@ -123,21 +122,7 @@ type Counter struct {
 	Value uint64
 }
 
-type Service interface {
-	CreateBucket(ctx context.Context, spec BucketSpec) error
-	ListObjects(ctx context.Context, bucket, prefix string, limit int) ([]ObjectInfo, error)
-	PutObject(ctx context.Context, req PutRequest) (ObjectInfo, error)
-	GetObject(ctx context.Context, bucket, key string) (ObjectInfo, []byte, error)
-	HeadObject(ctx context.Context, bucket, key string) (ObjectInfo, error)
-	DeleteObject(ctx context.Context, bucket, key string, cond Condition) (ObjectInfo, error)
-	PutTag(ctx context.Context, bucket, key, name, value string, cond Condition) (TagInfo, error)
-	Tags(ctx context.Context, bucket, key string) ([]TagInfo, error)
-	PutACL(ctx context.Context, bucket, principal, perm string, cond Condition) (ACLInfo, error)
-	ACL(ctx context.Context, bucket, principal string) (ACLInfo, error)
-	Quota(ctx context.Context, bucket string) (QuotaInfo, error)
-	SetQuota(ctx context.Context, bucket string, bytes, objects uint64) (QuotaInfo, error)
-	StartMigration(ctx context.Context, bucket, to string) (MigrationInfo, error)
-	Migration(ctx context.Context, id string) (MigrationInfo, error)
-	Members(ctx context.Context) ([]MemberInfo, error)
-	Health(ctx context.Context) (Health, error)
+type StatusRow struct {
+	Err    error
+	Status int
 }

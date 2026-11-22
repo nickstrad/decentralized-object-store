@@ -19,6 +19,7 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/node"
 	"github.com/nickstrad/decentralized-object-store/internal/noderuntime"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/decentralized-object-store/internal/storage/httpapi"
 )
 
 //go:embed help.txt
@@ -41,7 +42,7 @@ type options struct {
 }
 
 func defaults() options {
-	return options{HTTP: ":8080", K: storage.DefaultK, M: storage.DefaultM, Stripe: storage.DefaultStripeSize, MaxObject: storage.DefaultMaxObjectSize, ShutdownTimeout: 20 * time.Second}
+	return options{HTTP: ":8080", K: storage.DefaultK, M: storage.DefaultM, Stripe: storage.DefaultStripeSize, MaxObject: httpapi.DefaultMaxObjectSize, ShutdownTimeout: 20 * time.Second}
 }
 
 func parse(args []string, stderr io.Writer) (options, error) {
@@ -105,7 +106,7 @@ func merge(file, flags options, set map[string]bool) options {
 	return out
 }
 
-func (o options) configs(logf func(string, ...any)) (noderuntime.RuntimeConfig, storage.Limits, error) {
+func (o options) configs(logf func(string, ...any)) (noderuntime.RuntimeConfig, httpapi.Limits, error) {
 	var seeds []env.NodeID
 	for _, s := range strings.Split(o.Seeds, ",") {
 		if s = strings.TrimSpace(s); s != "" {
@@ -120,12 +121,12 @@ func (o options) configs(logf func(string, ...any)) (noderuntime.RuntimeConfig, 
 		},
 	}
 	if err := cfg.Validate(); err != nil {
-		return cfg, storage.Limits{}, fmt.Errorf("objnode: %w: %w", err, errUsage)
+		return cfg, httpapi.Limits{}, fmt.Errorf("objnode: %w: %w", err, errUsage)
 	}
 	if o.HTTP == "" {
-		return cfg, storage.Limits{}, fmt.Errorf("objnode: no http address: %w", errUsage)
+		return cfg, httpapi.Limits{}, fmt.Errorf("objnode: no http address: %w", errUsage)
 	}
-	return cfg, storage.Limits{MaxObjectSize: o.MaxObject}, nil
+	return cfg, httpapi.Limits{MaxObjectSize: o.MaxObject}, nil
 }
 
 func serve(ctx context.Context, o options, logger *log.Logger, ready func(httpAddr string, rt *noderuntime.Runtime)) error {
@@ -140,7 +141,7 @@ func serve(ctx context.Context, o options, logger *log.Logger, ready func(httpAd
 	if err := rt.Start(ctx); err != nil {
 		return err
 	}
-	srv := storage.NewServer(o.HTTP, rt, limits, node.StatusRows()...)
+	srv := httpapi.NewServer(o.HTTP, rt, limits, node.StatusRows()...)
 	if err := srv.Start(ctx); err != nil {
 		return errors.Join(err, rt.Close())
 	}

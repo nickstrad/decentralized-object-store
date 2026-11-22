@@ -10,6 +10,7 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/node"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/decentralized-object-store/internal/storage/httpapi"
 )
 
 type result[T any] struct {
@@ -100,7 +101,7 @@ func syncCall[T any](ctx context.Context, rt *Runtime, op string, fn func(n *nod
 	return call(ctx, rt, op, func(n *node.Node, done func(T, error)) { done(fn(n)) })
 }
 
-var _ storage.Service = (*Runtime)(nil)
+var _ httpapi.Service = (*Runtime)(nil)
 
 func (rt *Runtime) Inspect(ctx context.Context, fn func(*node.Node)) error {
 	_, err := syncCall(ctx, rt, "inspect", func(n *node.Node) (struct{}, error) { fn(n); return struct{}{}, nil })
