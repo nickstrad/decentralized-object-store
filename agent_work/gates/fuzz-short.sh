@@ -11,7 +11,7 @@ set -u
 set -o pipefail
 secs=${FUZZ_SECONDS:-30}
 pats=("$@"); [ ${#pats[@]} -gt 0 ] || pats=(./...)
-rc=0; n=0
+rc=0; n=0; retried=
 pkgs=$(go list "${pats[@]}") || { echo "FUZZ FAIL: go list failed"; exit 1; }
 [ -n "$pkgs" ] || { echo "FUZZ FAIL: no packages matched ${pats[*]}"; exit 1; }
 for pkg in $pkgs; do
@@ -21,10 +21,26 @@ for pkg in $pkgs; do
     if [ -n "${FUZZ_ONLY:-}" ] && ! [[ "$t" =~ ${FUZZ_ONLY} ]]; then continue; fi
     n=$((n + 1))
     echo "== fuzz $pkg $t for ${secs}s"
-    if ! go test "$pkg" -run '^$' -fuzz "^${t}\$" -fuzztime "${secs}s" -fuzzminimizetime 5s; then
-      echo "FUZZ FAIL $pkg $t"; rc=1
+    log=$(mktemp)
+    if ! go test "$pkg" -run '^$' -fuzz "^${t}\$" -fuzztime "${secs}s" -fuzzminimizetime 5s 2>&1 | tee "$log"; then
+      # The Go fuzzer can end a clean run with "context deadline exceeded" when the time
+      # budget expires while a worker is mid-call on a loaded machine: no failing input,
+      # no crasher file. That one signature (fuzzing had started, and the failure is the
+      # fuzzer's own bare deadline line) is retried ONCE; a target that really stalls
+      # shows it again and fails, and any failure that names an input fails at once.
+      if grep -q '^fuzz: elapsed:' "$log" && grep -qE '^[[:space:]]+context deadline exceeded$' "$log" && ! grep -qE 'Failing input written to|panic:|fuzzing process hung or terminated' "$log" \
+         && [ "$(grep -c -- '--- FAIL' "$log")" = 1 ]; then
+        echo "NOTE-RETRY $pkg $t: deadline at the end of the budget with no failing input; running it once more"
+        retried="$retried $t"
+        if ! go test "$pkg" -run '^$' -fuzz "^${t}\$" -fuzztime "${secs}s" -fuzzminimizetime 5s; then
+          echo "FUZZ FAIL $pkg $t (twice)"; rc=1
+        fi
+      else
+        echo "FUZZ FAIL $pkg $t"; rc=1
+      fi
     fi
+    rm -f "$log"
   done
 done
-echo "NOTE: $n fuzz targets, ${secs}s each"
+echo "NOTE: $n fuzz targets, ${secs}s each${retried:+; retried once after a deadline at the end of the budget:$retried}"
 exit $rc

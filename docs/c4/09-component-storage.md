@@ -1,14 +1,13 @@
 # C4 Level 3 — Component: storage (`internal/storage`)
 
-**Partly as built.** The shard format, chunk store, striping, manifest, placement, shard request protocol and the node's put and get paths exist and match this diagram (checked against `internal/storage` when Chunk 2 landed, 2026-11-21). The Object API and relationships 1, 5, 11 and 12 are the target design.
+**As built.** The shard format, chunk store, striping, manifest, placement, shard request protocol and the node's put and get paths exist and match this diagram (checked against `internal/storage` when Chunk 2 landed, 2026-11-21). Relationships 1, 5, 11, 12, 16 and 17 are as built since Chunk 6 (checked against `internal/node`, 2026-11-22). The one caller of the package's engine is the Node core (`internal/node`). The package imports only `internal/env` and `internal/erasure`: it does not call gossip, the metadata layer or Merkle.
 
 Model: diagram `component-storage` in [model.json](model.json). Source: PLAN.md sections 3, 4.2 (Chunks 2 and 6), 7.2, 7.4; code in `shard.go`, `chunkstore.go`, `stripe.go`, `manifest.go`, `placement.go`, `shardproto.go`, `node.go`.
-The HTTP object API lives in the same package and is drawn as its own container (`c-api`).
+The HTTP object API is its own package, `internal/storage/httpapi`, and its own container (`c-api`). `api.go` in this package holds only what the API and the node core share: the request and response types and the API error sentinels (wire codes 160 to 163).
 
 ```mermaid
 flowchart TB
-  API["Object API<br/>internal/storage, HTTP"]
-  MERKLE["Merkle anti-entropy<br/>internal/merkle"]
+  NODE["Node core<br/>internal/node"]
   subgraph STORAGE["internal/storage"]
     PATHS["Object put and get paths<br/>Node"]
     PROTO["Shard request protocol"]
@@ -19,83 +18,79 @@ flowchart TB
     FORMAT["Shard file format"]
   end
   ERASURE["Erasure coding<br/>internal/erasure"]
-  GOSSIP["Gossip membership<br/>internal/gossip"]
-  OCC["OCC metadata<br/>internal/occ"]
   ENV["Environment interfaces<br/>internal/env"]
-  API -->|1| PATHS
+  NODE -->|1| PATHS
   PATHS -->|2| STRIPE
   STRIPE -->|3| ERASURE
   PATHS -->|4| PLACE
-  PLACE -->|5| GOSSIP
+  PLACE -->|5| NODE
   PATHS -->|6| CHUNK
   PATHS -->|7| ENV
   CHUNK -->|8| FORMAT
   CHUNK -->|9| ENV
   PATHS -->|10| MANIFEST
-  MANIFEST -->|11| OCC
-  MERKLE -->|12| CHUNK
+  NODE -->|11| MANIFEST
+  NODE -->|12| CHUNK
   STRIPE -->|13| FORMAT
   PATHS -->|14| PROTO
   PROTO -->|15| FORMAT
+  NODE -->|16| STRIPE
+  NODE -->|17| PROTO
   classDef ext stroke-dasharray:4 3
-  class API,MERKLE,ERASURE,GOSSIP,OCC,ENV ext
+  class NODE,ERASURE,ENV ext
 ```
 
-Terminal rendering, in 4 parts. Each numbered relationship appears in exactly one part.
+Terminal rendering, in 5 parts. Each numbered relationship appears in exactly one part.
 
-**Part a.** The put and get paths (1, 2, 4, 6, 7, 10).
+**Part a.** The put and get paths (2, 4, 6, 7, 10).
 
 <!-- draw-visual: diagrams/09-component-storage-a.mmd -->
 ```text
-┌──────────┐    ┌────────────────────────┐     ┌─────────────────┐
-│Object API├─1─►│Object put and get paths├──2─►│ Object striping │
-└──────────┘    └────────────┬───────────┘     └─────────────────┘
-                             │
-                             │                 ┌─────────────────┐
-                             ├──────────────4─►│    Placement    │
-                             │                 └─────────────────┘
-                             │
-                             │                 ┌─────────────────┐
-                             ├──────────────6─►│Local chunk store│
-                             │                 └─────────────────┘
-                             │
-                             │                 ┌─────────────────┐
-                             ├──────────────7─►│   internal/env  │
-                             │                 └─────────────────┘
-                             │
-                             │                 ┌─────────────────┐
-                             └─────────────10─►│ Object manifest │
-                                               └─────────────────┘
+┌────────────────────────┐     ┌─────────────────┐
+│Object put and get paths├──2─►│ Object striping │
+└────────────┬───────────┘     └─────────────────┘
+             │
+             │                 ┌─────────────────┐
+             ├──────────────4─►│    Placement    │
+             │                 └─────────────────┘
+             │
+             │                 ┌─────────────────┐
+             ├──────────────6─►│Local chunk store│
+             │                 └─────────────────┘
+             │
+             │                 ┌─────────────────┐
+             ├──────────────7─►│   internal/env  │
+             │                 └─────────────────┘
+             │
+             │                 ┌─────────────────┐
+             └─────────────10─►│ Object manifest │
+                               └─────────────────┘
 ```
 
-**Part b.** Calls into neighbouring packages (3, 5, 11).
+**Part b.** What the package needs from outside (3, 5).
 
 <!-- draw-visual: diagrams/09-component-storage-b.mmd -->
 ```text
-┌───────────────┐     ┌─────────────────┐
-│Object striping├──3─►│  Erasure coding │
-└───────────────┘     └─────────────────┘
+┌───────────────┐    ┌──────────────┐
+│Object striping├─3─►│Erasure coding│
+└───────────────┘    └──────────────┘
 
-┌───────────────┐     ┌─────────────────┐
-│   Placement   ├──5─►│Gossip membership│
-└───────────────┘     └─────────────────┘
-
-┌───────────────┐     ┌─────────────────┐
-│Object manifest├─11─►│   OCC metadata  │
-└───────────────┘     └─────────────────┘
+┌───────────────┐    ┌──────────────┐
+│   Placement   ├─5─►│  Node core   │
+└───────────────┘    └──────────────┘
 ```
 
-**Part c.** The local chunk store (8, 9, 12).
+**Part c.** The local chunk store (8, 9).
 
 <!-- draw-visual: diagrams/09-component-storage-c.mmd -->
 ```text
-┌───────────────────┐     ┌─────────────────┐    ┌─────────────────┐
-│Merkle anti-entropy├─12─►│Local chunk store├─8─►│Shard file format│
-└───────────────────┘     └────────┬────────┘    └─────────────────┘
-                                   │
-                                   │             ┌─────────────────┐
-                                   └──────────9─►│   internal/env  │
-                                                 └─────────────────┘
+┌─────────────────┐    ┌─────────────────┐
+│Local chunk store├─8─►│Shard file format│
+└────────┬────────┘    └─────────────────┘
+         │
+         │             ┌─────────────────┐
+         └──────────9─►│   internal/env  │
+                       └─────────────────┘
 ```
 
 **Part d.** The shard request protocol, and what else uses the shard file format (13 to 15).
@@ -115,6 +110,31 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 └────────────────────────┘
 ```
 
+**Part e.** What the Node core calls (1, 11, 12, 16, 17).
+
+<!-- draw-visual: diagrams/09-component-storage-e.mmd -->
+```text
+┌─────────┐     ┌────────────────────────┐
+│Node core├──1─►│Object put and get paths│
+└────┬────┘     └────────────────────────┘
+     │
+     │          ┌────────────────────────┐
+     ├──────11─►│    Object manifest     │
+     │          └────────────────────────┘
+     │
+     │          ┌────────────────────────┐
+     ├──────12─►│   Local chunk store    │
+     │          └────────────────────────┘
+     │
+     │          ┌────────────────────────┐
+     ├──────16─►│    Object striping     │
+     │          └────────────────────────┘
+     │
+     │          ┌────────────────────────┐
+     └──────17─►│ Shard request protocol │
+                └────────────────────────┘
+```
+
 | ID | Component | As built |
 | --- | --- | --- |
 | `t-format` | Shard file format | `shard.go`: 64-byte header plus payload; the SHA-256 in the header covers the other header fields and the payload; canonical blob names |
@@ -123,22 +143,42 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | `t-manifest` | Object manifest | `manifest.go`: size, content SHA-256, layout (`k`, `m`, stripe size), and per shard the node chosen and the blob checksum; canonical binary encoding |
 | `t-place` | Placement | `placement.go`: region-aware rendezvous hashing over the `Membership` interface declared here; `Place` for a new stripe, `Replace` for repair |
 | `t-proto` | Shard request protocol | `shardproto.go`: op byte (put, get or delete shard), blob name, body; errors return as wire codes 96 to 100. Added by the build; PLAN.md does not name it |
-| `t-paths` | Object put and get paths | `node.go`: `Node`. PUT succeeds when every stripe has `k+1` durable shard acknowledgements and returns the manifest; GET reads any `k` verified shards per stripe; the same node serves shard requests. Not built yet: storing the manifest, and delete as a tombstone manifest (OQ-15, Chunk 6) |
+| `t-paths` | Object put and get paths | `node.go`: `Node`. PUT succeeds when every stripe has `k+1` durable shard acknowledgements and returns the manifest; GET reads any `k` verified shards per stripe; the same node serves shard requests. The package stores no manifest and has no object delete: the node core keeps the manifest in OCC metadata, and a delete is an OCC tombstone there |
 
 | # | From | To | State | Relationship |
 | --- | --- | --- | --- | --- |
-| 1 | Object API | Put and get paths | target | Object put, get, head, delete, list |
+| 1 | Node core | Put and get paths | built | `Put` on the storage node of the bucket's placement scope, `Get` by manifest. The node core keeps one storage node for all regions and one per region for routed buckets, and the migration copy uses a further one of its own; only the first serves inbound shard requests, which the node core hands to `OnRequest` after its own checks. Head, delete and list do not reach this package: they are metadata reads and writes |
 | 2 | Put and get paths | Object striping | built | Cuts objects into stripes; encodes and decodes each stripe |
 | 3 | Object striping | Erasure coding | built | `Split`, `Encode`, `ReconstructData` and `Join` per stripe |
 | 4 | Put and get paths | Placement | built | Chooses a node for each shard of a stripe |
-| 5 | Placement | Gossip membership | target | Rendezvous hashing over Membership; at most `m` shards of a stripe per region. Built over the `Membership` interface with a static member list; the gossip package is built, and its live view is wired to placement in Chunk 6 |
+| 5 | Placement | Node core | built | Rendezvous hashing over the `Membership` interface; at most `m` shards of a stripe per region. The node core implements the interface from the gossip view's live members (`gossipView`), or from those of one region (`regionView`). New writes are placed on the current view; an existing manifest keeps its placement when a member dies |
 | 6 | Put and get paths | Local chunk store | built | Serves shard put, get and delete requests from the local store |
 | 7 | Put and get paths | Environment interfaces | built | Sends shards to peers and fetches shards from peers (Transport); zero-delay callbacks and retry backoff (Clock); version IDs (Rand) |
 | 8 | Local chunk store | Shard file format | built | Header plus payload; SHA-256 verified on every write and read |
 | 9 | Local chunk store | Environment interfaces | built | Write then sync, verified read, list, delete (Disk) |
-| 10 | Put and get paths | Object manifest | built | PUT fills in and returns the manifest; GET takes each shard's node and checksum from it. Target: storing the manifest; tombstone manifest on delete |
-| 11 | Object manifest | OCC metadata | target | Stored as the one version of the object's manifest key (`PutManifest`, a conditional write) |
-| 12 | Merkle anti-entropy | Local chunk store | target | Repairs rotted or missing shards (Repairer). The merkle package is built over its own `Repairer` interface and a test chunk store; the chunk store is bound to it in Chunk 6 |
+| 10 | Put and get paths | Object manifest | built | PUT fills in and returns the manifest; GET takes each shard's node and checksum from it |
+| 11 | Node core | Object manifest | built | Stores the encoded manifest, with the content type, as the object record under the object's OCC manifest key, and decodes it (`DecodeManifest`) for every read, inventory pass and migration copy |
+| 12 | Node core | Local chunk store | built | Shard inventory and repair through `Node.Store()`: lists a bucket's shards and reads their headers for the scrub, reads blobs to answer and to verify, writes a rebuilt shard (`Put`), and deletes collected and purged shards (`Delete`) |
 | 13 | Object striping | Shard file format | built | Wraps each shard in a header on encode; checks header and checksum on decode |
 | 14 | Put and get paths | Shard request protocol | built | Encodes requests to peers; decodes requests it serves |
 | 15 | Shard request protocol | Shard file format | built | Names the shard by its canonical blob name |
+| 16 | Node core | Object striping | built | Rebuild of a missing or rotted shard: `DecodeStripe` from the other holders' shards against the manifest's checksums, then `EncodeStripe`, keeping its own index |
+| 17 | Node core | Shard request protocol | built | Encodes get-shard requests to the other holders for a rebuild. Decodes every inbound shard request before the storage node sees it: a shard delete is refused, and so is a put of a shard the node recorded absent |
+
+Differences from the target design:
+
+- Relationship 1 started at the Object API. As built the API calls the node through one
+  service interface, and the Node core calls this package.
+- Relationship 5 ended at Gossip membership. As built placement reads an interface that
+  the Node core implements from the gossip view; this package does not import
+  `internal/gossip`.
+- Relationship 11 ran from the Object manifest to the metadata layer. As built it is
+  reversed in ownership: the Node core stores the manifest, and this package never calls
+  `internal/occ`.
+- Relationship 12 started at Merkle anti-entropy, as a `Repairer` over the chunk store.
+  As built the Merkle worker repairs metadata only. Shards are repaired by the Node core:
+  it compares the tree of shards a bucket's manifests expect with the tree of shards on
+  disk, and rebuilds or collects on the chunk store itself.
+- Relationships 16 and 17 are new.
+- Not built: re-placing the shards of a node that never returns. `Replace` in
+  `placement.go` has no caller outside the package's tests.

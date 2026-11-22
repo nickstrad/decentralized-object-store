@@ -1,0 +1,319 @@
+package node_test
+
+import (
+	"bytes"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/decentralized-object-store/internal/occ"
+	"github.com/nickstrad/decentralized-object-store/internal/sim"
+	"github.com/nickstrad/decentralized-object-store/internal/storage"
+)
+
+// TestOrphanManifestArrivesJustBeforeGrace proves a manifest that reaches
+// holders shortly before OrphanGrace expires cancels orphan collection and
+// leaves the object intact and readable with zero absence or orphan records.
+func TestOrphanManifestArrivesJustBeforeGrace(t *testing.T) {
+	for _, seed := range []int64{1, 2, 3} {
+		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
+			cfg := smallConfig()
+			cfg.Layout = storage.Layout{K: 2, M: 2, StripeSize: 1024}
+			cfg.OrphanGrace = 30 * time.Second
+			h, err := newHarness(seed, 4, cfg, fixedNet())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := h.s.RunFor(3 * time.Second); err != nil {
+				t.Fatal(err)
+			}
+			w := h.ids[3]
+			if err := h.node(w).CreateBucket(storage.BucketSpec{Name: "g"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.s.RunUntilConverged(h.s.Now().Add(20*time.Second), h.converged); err != nil {
+				t.Fatal(err)
+			}
+			data := make([]byte, 700)
+			for i := range data {
+				data[i] = byte(i*11 + int(seed))
+			}
+			done := false
+			var oi storage.ObjectInfo
+			h.node(w).PutObject(storage.PutRequest{Bucket: "g", Key: "k", Data: data}, func(o storage.ObjectInfo, err error) {
+				done, oi = true, o
+				if err != nil {
+					t.Errorf("put: %v", err)
+				}
+				if err := h.s.Isolate(w); err != nil {
+					t.Error(err)
+				}
+			})
+			landed := func() bool {
+				for _, id := range h.ids[:3] {
+					if len(shardsByStripe(h, id, "g")) != 1 {
+						return false
+					}
+				}
+				return true
+			}
+			if err := h.s.RunUntilConverged(h.s.Now().Add(10*time.Second), landed); err != nil {
+				t.Fatal(err)
+			}
+			for _, id := range h.ids[:3] {
+				if err := h.s.SetLinkLoss(w, id, sim.PPM); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := h.s.RunUntilConverged(h.s.Now().Add(10*time.Second), func() bool { return done }); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.s.RunFor(cfg.OrphanGrace - 6*cfg.MaintainPeriod); err != nil {
+				t.Fatal(err)
+			}
+			h.s.HealAll()
+			if err := h.s.RunUntilConverged(h.s.Now().Add(20*time.Second), h.converged); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.s.RunFor(20 * time.Second); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.s.Err(); err != nil {
+				t.Fatal(err)
+			}
+			if len(h.gc.deleted) != 0 {
+				t.Fatalf("shards were collected although the manifest arrived before OrphanGrace: %v", h.gc.deleted)
+			}
+			if len(h.declared) != 0 {
+				t.Fatalf("unexpected loss declaration: %v", h.declared)
+			}
+			for _, n := range h.up() {
+				if n.Stats().AbsentRecords != 0 || n.Stats().OrphanRecords != 0 {
+					t.Fatalf("%s recorded absent=%d orphan=%d before OrphanGrace expired", n.ID(), n.Stats().AbsentRecords, n.Stats().OrphanRecords)
+				}
+				_, got, err := h.syncGet(t, n.ID(), "g", "k")
+				if err != nil || !bytes.Equal(got, data) {
+					t.Fatalf("%s: get returned %d bytes, err=%v", n.ID(), len(got), err)
+				}
+			}
+			_ = oi
+		})
+	}
+}
+
+// TestOrphanStaggeredCollectionAcrossTicks proves 2+2 and 4+2 writes whose
+// holders receive shards on staggered maintenance ticks end readable when k
+// shards survive and declared lost when fewer than k survive.
+func TestOrphanStaggeredCollectionAcrossTicks(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		nodes   int
+		layout  storage.Layout
+		quorum  int
+		missing int
+		keepers []int
+		lost    bool
+	}{
+		{"k2m2_recoverable", 4, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 3, -1, []int{2}, false},
+		{"k2m2_unrecoverable", 4, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 3, 2, nil, true},
+		{"k4m2_recoverable", 6, storage.Layout{K: 4, M: 2, StripeSize: 1024}, 5, -1, []int{2, 3, 4}, false},
+		{"k4m2_unrecoverable", 6, storage.Layout{K: 4, M: 2, StripeSize: 1024}, 5, 4, []int{2, 3}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := smallConfig()
+			cfg.Layout = tc.layout
+			cfg.AckQuorum = tc.quorum
+			cfg.OrphanGrace = 30 * time.Second
+			cfg.RequestTimeout = 5 * time.Second
+			logs := &[]string{}
+			cfg.Log = func(s string) { *logs = append(*logs, s) }
+			h, err := newHarness(1, tc.nodes, cfg, fixedNet())
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.gc.off = true
+			if err := h.s.RunFor(3 * time.Second); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.node(h.ids[0]).CreateBucket(storage.BucketSpec{Name: "g"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.s.RunUntilConverged(h.s.Now().Add(20*time.Second), h.converged); err != nil {
+				t.Fatal(err)
+			}
+			w := h.ids[tc.nodes-1]
+			staggered := h.ids[0]
+			if err := h.s.Clog(w, staggered); err != nil {
+				t.Fatal(err)
+			}
+			if tc.missing >= 0 {
+				if err := h.s.SetLinkLoss(w, h.ids[tc.missing], sim.PPM); err != nil {
+					t.Fatal(err)
+				}
+			}
+			group := []env.NodeID{w}
+			for _, k := range tc.keepers {
+				group = append(group, h.ids[k])
+			}
+			var rest []env.NodeID
+			for _, id := range h.ids {
+				inGroup := false
+				for _, g := range group {
+					if g == id {
+						inGroup = true
+					}
+				}
+				if !inGroup {
+					rest = append(rest, id)
+				}
+			}
+			data := make([]byte, tc.layout.StripeSize+17)
+			for i := range data {
+				data[i] = byte(i*13 + 5)
+			}
+			done := false
+			var oi storage.ObjectInfo
+			h.node(w).PutObject(storage.PutRequest{Bucket: "g", Key: "k", Data: data}, func(o storage.ObjectInfo, err error) {
+				done, oi = true, o
+				if err != nil {
+					t.Errorf("put: %v", err)
+				}
+				if err := h.s.Partition(group, rest); err != nil {
+					t.Error(err)
+				}
+			})
+			if err := h.s.RunFor(2 * h.cfg.MaintainPeriod); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.s.Unclog(w, staggered); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.s.RunUntilConverged(h.s.Now().Add(10*time.Second), func() bool {
+				return len(shardsByStripe(h, staggered, "g")) == 2 && len(shardsByStripe(h, h.ids[1], "g")) == 2
+			}); err != nil {
+				t.Fatal(err)
+			}
+			for _, id := range rest {
+				if err := h.s.SetLinkLoss(w, id, sim.PPM); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := h.s.RunUntilConverged(h.s.Now().Add(10*time.Second), func() bool { return done }); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.s.RunFor(h.cfg.OrphanGrace + 10*time.Second); err != nil {
+				t.Fatal(err)
+			}
+			h.s.HealAll()
+			if err := h.s.RunUntilConverged(h.s.Now().Add(60*time.Second), h.converged); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.s.RunFor(30 * time.Second); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.s.Err(); err != nil {
+				t.Fatal(err)
+			}
+			r := orphanRun{h: h, oi: oi, data: data, logs: logs}
+			if tc.lost {
+				requireDeclaredLost(t, r)
+			} else {
+				requireReadableNotLost(t, r)
+			}
+		})
+	}
+}
+
+// TestEdgeLayoutsAndShortAndZeroObjects proves loss declaration and repair
+// across k=1,m=0, k=2,m=0 (short last stripe), k=1,m=1, and zero-byte objects
+// (which have no stripes and are never declared lost).
+func TestEdgeLayoutsAndShortAndZeroObjects(t *testing.T) {
+	t.Run("k1m0_single_rot_declared_lost", func(t *testing.T) {
+		h, logs := lossHarness(t, 3, storage.Layout{K: 1, M: 0, StripeSize: 1024}, 1)
+		oi, data, man := putEverywhere(t, h, 1)
+		holder := man.Stripes[0].Shards[0].Node
+		name, _ := holderOf(man, 0, holder)
+		if err := h.s.BitRot(holder, name); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.s.RunFor(30 * time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.s.Err(); err != nil {
+			t.Fatal(err)
+		}
+		requireDeclaredLost(t, orphanRun{h: h, oi: oi, data: data, logs: logs})
+	})
+
+	t.Run("k2m0_short_last_stripe_single_rot_declared_lost", func(t *testing.T) {
+		h, logs := lossHarness(t, 3, storage.Layout{K: 2, M: 0, StripeSize: 1024}, 2)
+		oi, data, man := putEverywhere(t, h, 1025)
+		holder := man.Stripes[1].Shards[0].Node
+		name, _ := holderOf(man, 1, holder)
+		if err := h.s.BitRot(holder, name); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.s.RunFor(30 * time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.s.Err(); err != nil {
+			t.Fatal(err)
+		}
+		requireDeclaredLost(t, orphanRun{h: h, oi: oi, data: data, logs: logs})
+	})
+
+	t.Run("k1m1_one_rot_rebuilt_two_rot_lost", func(t *testing.T) {
+		h, logs := lossHarness(t, 3, storage.Layout{K: 1, M: 1, StripeSize: 1024}, 2)
+		oi, data, man := putEverywhere(t, h, 1025)
+		n0, _ := holderOf(man, 1, man.Stripes[1].Shards[0].Node)
+		if err := h.s.BitRot(man.Stripes[1].Shards[0].Node, n0); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.s.RunFor(20 * time.Second); err != nil {
+			t.Fatal(err)
+		}
+		requireReadableNotLost(t, orphanRun{h: h, oi: oi, data: data, logs: logs})
+
+		for _, ref := range man.Stripes[1].Shards {
+			nm, _ := holderOf(man, 1, ref.Node)
+			if err := h.s.BitRot(ref.Node, nm); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := h.s.RunFor(30 * time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.s.Err(); err != nil {
+			t.Fatal(err)
+		}
+		requireDeclaredLost(t, orphanRun{h: h, oi: oi, data: data, logs: logs})
+	})
+
+	t.Run("zero_byte_object_never_declared_lost", func(t *testing.T) {
+		h, _ := lossHarness(t, 3, storage.Layout{K: 1, M: 0, StripeSize: 1024}, 1)
+		oi, err := h.syncPut(t, h.ids[0], storage.PutRequest{Bucket: "g", Key: "empty", Data: nil})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := h.s.RunFor(20 * time.Second); err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range h.up() {
+			rd, err := n.OCC().Reader()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !rd.Record(occ.ManifestKey("g", "empty")).Live() {
+				t.Fatalf("%s: empty object not live", n.ID())
+			}
+			if rd.Record(occ.TagKey("g", "empty", "~lost/"+oi.Version)).Live() {
+				t.Fatalf("%s: empty object declared lost", n.ID())
+			}
+			_, got, err := h.syncGet(t, n.ID(), "g", "empty")
+			if err != nil || len(got) != 0 {
+				t.Fatalf("%s: get empty returned %d bytes, %v", n.ID(), len(got), err)
+			}
+		}
+	})
+}

@@ -1,0 +1,663 @@
+HELD C12 duplicate-lost-replies: seed=6101 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6101 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6101 35 discard callbacks, health total=35, log lines=35
+HELD C4,C25 quota-overshoot-recount: seed=6101 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6101 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6101 scenario completed
+HELD C8,C11 get-during-repair: seed=6101 size=3077 repaired=4 shards bytes=1795; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6101 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6101 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6101 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6101 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6101 scenario completed
+HELD C12 duplicate-lost-replies: seed=6102 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6102 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6102 38 discard callbacks, health total=38, log lines=38
+HELD C4,C25 quota-overshoot-recount: seed=6102 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6102 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6102 scenario completed
+HELD C8,C11 get-during-repair: seed=6102 size=0 repaired=0 shards bytes=0; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6102 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6102 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6102 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6102 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6102 scenario completed
+HELD C12 duplicate-lost-replies: seed=6103 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6103 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6103 31 discard callbacks, health total=31, log lines=31
+HELD C4,C25 quota-overshoot-recount: seed=6103 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6103 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6103 scenario completed
+HELD C8,C11 get-during-repair: seed=6103 size=1 repaired=1 shards bytes=65; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6103 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6103 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6103 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6103 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6103 scenario completed
+HELD C12 duplicate-lost-replies: seed=6104 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6104 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6104 40 discard callbacks, health total=40, log lines=40
+HELD C4,C25 quota-overshoot-recount: seed=6104 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6104 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6104 scenario completed
+HELD C8,C11 get-during-repair: seed=6104 size=1023 repaired=1 shards bytes=576; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6104 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6104 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6104 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6104 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6104 scenario completed
+HELD C12 duplicate-lost-replies: seed=6105 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6105 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6105 40 discard callbacks, health total=40, log lines=40
+HELD C4,C25 quota-overshoot-recount: seed=6105 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6105 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6105 scenario completed
+HELD C8,C11 get-during-repair: seed=6105 size=1024 repaired=1 shards bytes=576; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6105 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6105 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6105 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6105 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6105 scenario completed
+HELD C12 duplicate-lost-replies: seed=6106 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6106 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6106 38 discard callbacks, health total=38, log lines=38
+HELD C4,C25 quota-overshoot-recount: seed=6106 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6106 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6106 scenario completed
+HELD C8,C11 get-during-repair: seed=6106 size=1025 repaired=2 shards bytes=641; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6106 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6106 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6106 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6106 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6106 scenario completed
+HELD C12 duplicate-lost-replies: seed=6107 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6107 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6107 26 discard callbacks, health total=26, log lines=26
+HELD C4,C25 quota-overshoot-recount: seed=6107 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6107 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6107 scenario completed
+HELD C8,C11 get-during-repair: seed=6107 size=3077 repaired=4 shards bytes=1795; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6107 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6107 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6107 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6107 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6107 scenario completed
+HELD C12 duplicate-lost-replies: seed=6108 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6108 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6108 62 discard callbacks, health total=62, log lines=62
+HELD C4,C25 quota-overshoot-recount: seed=6108 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6108 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6108 scenario completed
+HELD C8,C11 get-during-repair: seed=6108 size=0 repaired=0 shards bytes=0; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6108 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6108 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6108 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6108 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6108 scenario completed
+HELD C12 duplicate-lost-replies: seed=6109 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6109 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6109 19 discard callbacks, health total=19, log lines=19
+HELD C4,C25 quota-overshoot-recount: seed=6109 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6109 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6109 scenario completed
+HELD C8,C11 get-during-repair: seed=6109 size=1 repaired=1 shards bytes=65; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6109 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6109 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6109 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6109 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6109 scenario completed
+HELD C12 duplicate-lost-replies: seed=6110 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6110 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6110 37 discard callbacks, health total=37, log lines=37
+HELD C4,C25 quota-overshoot-recount: seed=6110 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6110 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6110 scenario completed
+HELD C8,C11 get-during-repair: seed=6110 size=1023 repaired=1 shards bytes=576; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6110 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6110 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6110 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6110 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6110 scenario completed
+HELD C12 duplicate-lost-replies: seed=6111 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6111 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6111 43 discard callbacks, health total=43, log lines=43
+HELD C4,C25 quota-overshoot-recount: seed=6111 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6111 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6111 scenario completed
+HELD C8,C11 get-during-repair: seed=6111 size=1024 repaired=1 shards bytes=576; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6111 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6111 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6111 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6111 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6111 scenario completed
+HELD C12 duplicate-lost-replies: seed=6112 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6112 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6112 37 discard callbacks, health total=37, log lines=37
+HELD C4,C25 quota-overshoot-recount: seed=6112 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6112 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6112 scenario completed
+HELD C8,C11 get-during-repair: seed=6112 size=1025 repaired=2 shards bytes=641; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6112 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6112 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6112 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6112 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6112 scenario completed
+HELD C12 duplicate-lost-replies: seed=6113 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6113 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6113 14 discard callbacks, health total=14, log lines=14
+HELD C4,C25 quota-overshoot-recount: seed=6113 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6113 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6113 scenario completed
+HELD C8,C11 get-during-repair: seed=6113 size=3077 repaired=4 shards bytes=1795; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6113 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6113 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6113 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6113 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6113 scenario completed
+HELD C12 duplicate-lost-replies: seed=6114 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6114 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6114 41 discard callbacks, health total=41, log lines=41
+HELD C4,C25 quota-overshoot-recount: seed=6114 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6114 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6114 scenario completed
+HELD C8,C11 get-during-repair: seed=6114 size=0 repaired=0 shards bytes=0; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6114 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6114 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6114 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6114 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6114 scenario completed
+HELD C12 duplicate-lost-replies: seed=6115 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6115 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6115 39 discard callbacks, health total=39, log lines=39
+HELD C4,C25 quota-overshoot-recount: seed=6115 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6115 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6115 scenario completed
+HELD C8,C11 get-during-repair: seed=6115 size=1 repaired=1 shards bytes=65; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6115 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6115 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6115 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6115 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6115 scenario completed
+HELD C12 duplicate-lost-replies: seed=6116 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6116 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6116 28 discard callbacks, health total=28, log lines=28
+HELD C4,C25 quota-overshoot-recount: seed=6116 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6116 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6116 scenario completed
+HELD C8,C11 get-during-repair: seed=6116 size=1023 repaired=1 shards bytes=576; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6116 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6116 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6116 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6116 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6116 scenario completed
+HELD C12 duplicate-lost-replies: seed=6117 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6117 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6117 20 discard callbacks, health total=20, log lines=20
+HELD C4,C25 quota-overshoot-recount: seed=6117 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6117 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6117 scenario completed
+HELD C8,C11 get-during-repair: seed=6117 size=1024 repaired=1 shards bytes=576; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6117 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6117 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6117 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6117 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6117 scenario completed
+HELD C12 duplicate-lost-replies: seed=6118 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6118 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6118 22 discard callbacks, health total=22, log lines=22
+HELD C4,C25 quota-overshoot-recount: seed=6118 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6118 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6118 scenario completed
+HELD C8,C11 get-during-repair: seed=6118 size=1025 repaired=2 shards bytes=641; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6118 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6118 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6118 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6118 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6118 scenario completed
+HELD C12 duplicate-lost-replies: seed=6119 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6119 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6119 46 discard callbacks, health total=46, log lines=46
+HELD C4,C25 quota-overshoot-recount: seed=6119 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6119 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6119 scenario completed
+HELD C8,C11 get-during-repair: seed=6119 size=3077 repaired=4 shards bytes=1795; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6119 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6119 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6119 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6119 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6119 scenario completed
+HELD C12 duplicate-lost-replies: seed=6120 duplicated=45 lost-successful-replies=6; acknowledged-keys=2; acknowledged bytes and quota exact after heal
+HELD C2,C3 partition-single-winner: seed=6120 nine replicas return identical acknowledged bytes after two isolated writers
+HELD C3 discard-record-and-log: seed=6120 46 discard callbacks, health total=46, log lines=46
+HELD C4,C25 quota-overshoot-recount: seed=6120 settled bytes=3101 limit=2200 overshoot=901 objects=5
+HELD C5 loser-only-collection: seed=6120 3 loser shard collections; winning version remains readable
+HELD C2,C3,C4,C5 partition-scenario: seed=6120 scenario completed
+HELD C8,C11 get-during-repair: seed=6120 size=0 repaired=0 shards bytes=0; all nine reads exact
+HELD C2,C6,C7 wipe-rejoin-delete: seed=6120 wiped holder refilled, then stale restarted replica learned deletion
+HELD C6,C7,C8,C11 fault-scenario: seed=6120 scenario completed
+HELD C9,C26 migration-partition-rot: seed=6120 partition+rot+coordinator restart; reads exact=15 temporarily unavailable=0; completed with nine agreeing routes
+HELD C10 migration-source-collected: seed=6120 no source-region bucket shards remain after migration
+HELD C9,C26 migration-scenario: seed=6120 scenario completed
+HELD C1 wire-codes: seed=0 all registered sentinels round-trip wrapped; every unassigned byte maps to remote error
+HELD C15 frame-capacity: seed=0 default and small layouts fit; Merkle reply fits; invalid config refused
+HELD C16,C17,C27 http-conditional-races: seed=0 8 races x 12 writers: one success each, exact winning bytes, stale DELETE refused; unavailable=0; six malformed/status checks
+HELD C18 slow-and-large-http: seed=0 partial headers and bodies terminated within one second; oversized header got 431
+HELD C14,C28 tcp-fragments-resets: seed=0 bytewise valid frame rejected invalid channel; 17 reset prefixes and three malformed lengths; runtime alive
+HELD C19,C20,C21,C22 shutdown-churn: seed=0 10 runtime cycles, 160 overlapping PUT/GET calls, exact FD and goroutine baseline restored
+HELD C31 http-model-object-empty: seed=0 PUT /b/k header=If-Match value="" status=412, mutation matches model
+HELD C31 http-model-object-space: seed=0 PUT /b/k header=If-Match value=" \t " status=412, mutation matches model
+HELD C31 http-model-object-empty-tag: seed=0 PUT /b/k header=If-Match value="\"\"" status=412, mutation matches model
+HELD C31 http-model-object-bare: seed=0 PUT /b/k header=If-Match value="garbage" status=400, mutation matches model
+HELD C31 http-model-object-unclosed: seed=0 PUT /b/k header=If-Match value="\"abc" status=400, mutation matches model
+HELD C31 http-model-object-quotes: seed=0 PUT /b/k header=If-Match value="\"\"\"\"" status=400, mutation matches model
+HELD C31 http-model-object-unknown: seed=0 PUT /b/k header=If-Match value="\"unknown\"" status=412, mutation matches model
+HELD C31 http-model-object-weak: seed=0 PUT /b/k header=If-Match value="W/\"e2330097b77ec92924878cfdcdb2a61111abee7270ebbe1aa42cd6afaced27de\"" status=412, mutation matches model
+HELD C31 http-model-object-star: seed=0 PUT /b/k header=If-Match value="*" status=200, mutation matches model
+HELD C31 http-model-object-match: seed=0 PUT /b/k header=If-Match value="\"73a5677aa836ea2a98378f7a77193baa49baec5e61de1d811ec76b3b6a264219\"" status=200, mutation matches model
+HELD C31 http-model-object-list-match: seed=0 PUT /b/k header=If-Match value="\"unknown\", \"3fcbe068d39bdf2044c346b5a3866f9879b3b828d408e5f755dffce620123f08\"" status=200, mutation matches model
+BROKEN C31 http-model-object-quoted-comma-list: seed=0 PUT /b/k If-Match="\"a,b\", \"e8947fdd65d98b5c2af4a4fc693f664c05b3dfd875bef59291c7f3f539156674\"" status=400 want=200 body={"error":"storage: entity-tag \"\\\"a\" is not quoted: storage: invalid argument","status":400} 
+HELD C31 http-model-object-list-no-match: seed=0 PUT /b/k header=If-Match value="\"a\", \"b\"" status=412, mutation matches model
+HELD C31 http-model-object-list-weak: seed=0 PUT /b/k header=If-Match value="\"unknown\", W/\"f825ded1bf781cdeead6e1330f59785a56a4b8218c4df9bd9b877cdcb21be21c\"" status=412, mutation matches model
+HELD C31 http-model-object-empty-elements: seed=0 PUT /b/k header=If-Match value=", , \"185e27876f14cb576b088b6a702d704a7732e01e5d59a7baaac511a73a00c563\"," status=200, mutation matches model
+HELD C31 http-model-object-star-list: seed=0 PUT /b/k header=If-Match value="*, \"266e44e66ac2c38d10d95ba93a811efba7c527572617c92acce6b1b00a2b2672\"" status=400, mutation matches model
+HELD C31 http-model-object-none-star: seed=0 PUT /b/k header=If-None-Match value="*" status=412, mutation matches model
+HELD C31 http-model-object-none-empty: seed=0 PUT /b/k header=If-None-Match value="" status=400, mutation matches model
+HELD C31 http-model-object-none-space: seed=0 PUT /b/k header=If-None-Match value=" \t " status=400, mutation matches model
+HELD C31 http-model-object-none-weak: seed=0 PUT /b/k header=If-None-Match value="W/\"7682beadae93ad21b693c9fae2897840111fd1d69434441d4abf280357892ab8\"" status=400, mutation matches model
+HELD C31 http-model-object-none-list: seed=0 PUT /b/k header=If-None-Match value="\"a\", \"b\"" status=400, mutation matches model
+HELD C31 http-model-delete-empty: seed=0 DELETE /b/k header=If-Match value="" status=412, mutation matches model
+HELD C31 http-model-delete-space: seed=0 DELETE /b/k header=If-Match value=" \t " status=412, mutation matches model
+HELD C31 http-model-delete-empty-tag: seed=0 DELETE /b/k header=If-Match value="\"\"" status=412, mutation matches model
+HELD C31 http-model-delete-bare: seed=0 DELETE /b/k header=If-Match value="garbage" status=400, mutation matches model
+HELD C31 http-model-delete-unclosed: seed=0 DELETE /b/k header=If-Match value="\"abc" status=400, mutation matches model
+HELD C31 http-model-delete-quotes: seed=0 DELETE /b/k header=If-Match value="\"\"\"\"" status=400, mutation matches model
+HELD C31 http-model-delete-unknown: seed=0 DELETE /b/k header=If-Match value="\"unknown\"" status=412, mutation matches model
+HELD C31 http-model-delete-weak: seed=0 DELETE /b/k header=If-Match value="W/\"4b65ec1ec593d655649bb4263882830fcb00a9af18d6dfec673ed43d8f2a32bd\"" status=412, mutation matches model
+HELD C31 http-model-delete-star: seed=0 DELETE /b/k header=If-Match value="*" status=204, mutation matches model
+HELD C31 http-model-delete-match: seed=0 DELETE /b/k header=If-Match value="\"47918add69952e883ce1975245be2a8c5fb32970a0e25810dd10544ded8852ee\"" status=204, mutation matches model
+HELD C31 http-model-delete-list-match: seed=0 DELETE /b/k header=If-Match value="\"unknown\", \"11dc4667dd01c39b12c4cfd0476ff66a9363a25ad0e1c0f90f1890542e42f49c\"" status=204, mutation matches model
+BROKEN C31 http-model-delete-quoted-comma-list: seed=0 DELETE /b/k If-Match="\"a,b\", \"16bc7b25a6bc9d4c6e07ebe950b44bbc34c2f85058c86e963bb4d2e2dd0fdd70\"" status=400 want=204 body={"error":"storage: entity-tag \"\\\"a\" is not quoted: storage: invalid argument","status":400} 
+HELD C31 http-model-delete-list-no-match: seed=0 DELETE /b/k header=If-Match value="\"a\", \"b\"" status=412, mutation matches model
+HELD C31 http-model-delete-list-weak: seed=0 DELETE /b/k header=If-Match value="\"unknown\", W/\"6331fbc0e182eef5ff97960cae8ca463d043985a8ad7e1759535f93b9853a162\"" status=412, mutation matches model
+HELD C31 http-model-delete-empty-elements: seed=0 DELETE /b/k header=If-Match value=", , \"3a0ee769c90db8eb271f1beed3b44e5e26198fa89e19c58a8ecdb8f20ed579ec\"," status=204, mutation matches model
+HELD C31 http-model-delete-star-list: seed=0 DELETE /b/k header=If-Match value="*, \"2449a93f7ae2be6df5e624d395de26e03a393557b7071eec32d07de329a6162d\"" status=400, mutation matches model
+HELD C31 http-model-delete-none-star: seed=0 DELETE /b/k header=If-None-Match value="*" status=412, mutation matches model
+HELD C31 http-model-delete-none-empty: seed=0 DELETE /b/k header=If-None-Match value="" status=400, mutation matches model
+HELD C31 http-model-delete-none-space: seed=0 DELETE /b/k header=If-None-Match value=" \t " status=400, mutation matches model
+HELD C31 http-model-delete-none-weak: seed=0 DELETE /b/k header=If-None-Match value="W/\"16bc069faac2f9ff63d5906a32787c043cfd1e2364b0dd67c65199e6c28c87e2\"" status=400, mutation matches model
+HELD C31 http-model-delete-none-list: seed=0 DELETE /b/k header=If-None-Match value="\"a\", \"b\"" status=400, mutation matches model
+HELD C31 http-model-tag-empty: seed=0 PUT /b/k?tag=t header=If-Match value="" status=412, mutation matches model
+HELD C31 http-model-tag-space: seed=0 PUT /b/k?tag=t header=If-Match value=" \t " status=412, mutation matches model
+HELD C31 http-model-tag-empty-tag: seed=0 PUT /b/k?tag=t header=If-Match value="\"\"" status=412, mutation matches model
+HELD C31 http-model-tag-bare: seed=0 PUT /b/k?tag=t header=If-Match value="garbage" status=400, mutation matches model
+HELD C31 http-model-tag-unclosed: seed=0 PUT /b/k?tag=t header=If-Match value="\"abc" status=400, mutation matches model
+HELD C31 http-model-tag-quotes: seed=0 PUT /b/k?tag=t header=If-Match value="\"\"\"\"" status=400, mutation matches model
+HELD C31 http-model-tag-unknown: seed=0 PUT /b/k?tag=t header=If-Match value="\"unknown\"" status=412, mutation matches model
+HELD C31 http-model-tag-weak: seed=0 PUT /b/k?tag=t header=If-Match value="W/\"9534c4dd53f7c8c0348f11caaa7f8df11d665337dbe62b3675480c14a1a66ba1\"" status=412, mutation matches model
+HELD C31 http-model-tag-star: seed=0 PUT /b/k?tag=t header=If-Match value="*" status=200, mutation matches model
+HELD C31 http-model-tag-match: seed=0 PUT /b/k?tag=t header=If-Match value="\"fb0fcbd8f3f69189b838f4b971e836a54da4144604de4ab9059f4932cf358044\"" status=200, mutation matches model
+HELD C31 http-model-tag-list-match: seed=0 PUT /b/k?tag=t header=If-Match value="\"unknown\", \"764982bec24bf3f6019121b5a65565bc5378a3312ade9955c82d95d5690927a5\"" status=200, mutation matches model
+BROKEN C31 http-model-tag-quoted-comma-list: seed=0 PUT /b/k?tag=t If-Match="\"a,b\", \"bf7f64af2619573389cd440c112323ceaa35daa61a42d159e6ee2f8911a9388c\"" status=400 want=200 body={"error":"storage: entity-tag \"\\\"a\" is not quoted: storage: invalid argument","status":400} 
+HELD C31 http-model-tag-list-no-match: seed=0 PUT /b/k?tag=t header=If-Match value="\"a\", \"b\"" status=412, mutation matches model
+HELD C31 http-model-tag-list-weak: seed=0 PUT /b/k?tag=t header=If-Match value="\"unknown\", W/\"cdfbbea4d6f8a610c8e35decfd53c7f7ff7cad5fa905b99fe3ebf826a2cbdb67\"" status=412, mutation matches model
+HELD C31 http-model-tag-empty-elements: seed=0 PUT /b/k?tag=t header=If-Match value=", , \"1f7e16f9bc51fa72cf0f0cb349b6e68bec351d3e49ad4c36dbc583d2528e43b8\"," status=200, mutation matches model
+HELD C31 http-model-tag-star-list: seed=0 PUT /b/k?tag=t header=If-Match value="*, \"16b4e6590c97428fab4c3c96ae818302f08b1159ae19132002f47cf1609ca0c7\"" status=400, mutation matches model
+HELD C31 http-model-tag-none-star: seed=0 PUT /b/k?tag=t header=If-None-Match value="*" status=412, mutation matches model
+HELD C31 http-model-tag-none-empty: seed=0 PUT /b/k?tag=t header=If-None-Match value="" status=400, mutation matches model
+HELD C31 http-model-tag-none-space: seed=0 PUT /b/k?tag=t header=If-None-Match value=" \t " status=400, mutation matches model
+HELD C31 http-model-tag-none-weak: seed=0 PUT /b/k?tag=t header=If-None-Match value="W/\"d6c630131bfb20ad666d107dd98ae996e915deabb8e00d425cfef59515f5817c\"" status=400, mutation matches model
+HELD C31 http-model-tag-none-list: seed=0 PUT /b/k?tag=t header=If-None-Match value="\"a\", \"b\"" status=400, mutation matches model
+HELD C31 http-model-acl-empty: seed=0 PUT /b?acl=p header=If-Match value="" status=412, mutation matches model
+HELD C31 http-model-acl-space: seed=0 PUT /b?acl=p header=If-Match value=" \t " status=412, mutation matches model
+HELD C31 http-model-acl-empty-tag: seed=0 PUT /b?acl=p header=If-Match value="\"\"" status=412, mutation matches model
+HELD C31 http-model-acl-bare: seed=0 PUT /b?acl=p header=If-Match value="garbage" status=400, mutation matches model
+HELD C31 http-model-acl-unclosed: seed=0 PUT /b?acl=p header=If-Match value="\"abc" status=400, mutation matches model
+HELD C31 http-model-acl-quotes: seed=0 PUT /b?acl=p header=If-Match value="\"\"\"\"" status=400, mutation matches model
+HELD C31 http-model-acl-unknown: seed=0 PUT /b?acl=p header=If-Match value="\"unknown\"" status=412, mutation matches model
+HELD C31 http-model-acl-weak: seed=0 PUT /b?acl=p header=If-Match value="W/\"714fc49cbab61f9620110da92079de4e990ca7053e8a94d58194865a250a961c\"" status=412, mutation matches model
+HELD C31 http-model-acl-star: seed=0 PUT /b?acl=p header=If-Match value="*" status=200, mutation matches model
+HELD C31 http-model-acl-match: seed=0 PUT /b?acl=p header=If-Match value="\"3f215db264f2b5d56386bb18beb8659ae19d9c572f240ae0817d9a93242ddf8c\"" status=200, mutation matches model
+HELD C31 http-model-acl-list-match: seed=0 PUT /b?acl=p header=If-Match value="\"unknown\", \"a449af3da61a4e34c8b584e2167d1a5b43501811de503599f8b78139b2d10a7e\"" status=200, mutation matches model
+BROKEN C31 http-model-acl-quoted-comma-list: seed=0 PUT /b?acl=p If-Match="\"a,b\", \"36c207b904284fb4095c05278aa30d88547cdb1dcb01425bd2d6865ef3bb795e\"" status=400 want=200 body={"error":"storage: entity-tag \"\\\"a\" is not quoted: storage: invalid argument","status":400} 
+HELD C31 http-model-acl-list-no-match: seed=0 PUT /b?acl=p header=If-Match value="\"a\", \"b\"" status=412, mutation matches model
+HELD C31 http-model-acl-list-weak: seed=0 PUT /b?acl=p header=If-Match value="\"unknown\", W/\"f39f632fac10bd159c0f4345eadb2a14d6d4f45507d2a7a09f9d1a6d377d7bbf\"" status=412, mutation matches model
+HELD C31 http-model-acl-empty-elements: seed=0 PUT /b?acl=p header=If-Match value=", , \"540d5747b5a5126e114a88fc07fb3a7e07dbdecb8bf430fb07d6ca7a5a320119\"," status=200, mutation matches model
+HELD C31 http-model-acl-star-list: seed=0 PUT /b?acl=p header=If-Match value="*, \"b967795e515ca1dfe8f043e504648eb6bc7ef3d6348591d9ac4ac58812ca9c6d\"" status=400, mutation matches model
+HELD C31 http-model-acl-none-star: seed=0 PUT /b?acl=p header=If-None-Match value="*" status=412, mutation matches model
+HELD C31 http-model-acl-none-empty: seed=0 PUT /b?acl=p header=If-None-Match value="" status=400, mutation matches model
+HELD C31 http-model-acl-none-space: seed=0 PUT /b?acl=p header=If-None-Match value=" \t " status=400, mutation matches model
+HELD C31 http-model-acl-none-weak: seed=0 PUT /b?acl=p header=If-None-Match value="W/\"3f074df75cfbf435b7071a1c1712215c6e2b228d0a001a91009e433f2f459b6b\"" status=400, mutation matches model
+HELD C31 http-model-acl-none-list: seed=0 PUT /b?acl=p header=If-None-Match value="\"a\", \"b\"" status=400, mutation matches model
+HELD C23,C22 loop-panic-closes-sockets: seed=0 Inspect panic terminated loop and listener before Close
+HELD C21,C22 shutdown-active-migration: seed=0 shutdown while running step held; Done closed, listener closed, service refuses calls
+HELD C1 existing-TestJoinedCodeTableHasNoCollision: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C1 existing-TestEveryCodeRoundTripsToItsSentinel: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C1 existing-TestNodeAndAPICodesStayInTheirBlock: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C2 existing-TestClusterPutGetDST: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C3,C4,C5 existing-TestClusterPartitionHealDST: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C6,C7 existing-TestClusterCrashRestartDST: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C8 existing-TestClusterBitRotDST: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C9 existing-TestClusterMigrationFailurePointsDST: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C10 existing-TestBucketMigratingAwayStopsItsWorkers: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C10 existing-TestNodeRefusesMalformedAndPostStopTraffic: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C13,C24 existing-TestConformanceOnTheSimulator: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C13,C24 existing-TestConformanceOnLoopback: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C13,C24 existing-TestLoopbackClusterServesObjectsAcrossNodes: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C14 existing-TestFrameRoundTrips: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C14 existing-TestFrameDecodersRejectMalformedInput: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C15 existing-TestFrameLimitCoversMerkleRepliesAndShardRequests: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C15 existing-TestConfigValidationRejectsEachBadField: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C15 existing-TestRuntimeConfigValidation: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C16 existing-TestStatusRowsThroughHTTPOnARealNode: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C16 existing-TestStatusTableRowByRowThroughHTTP: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C17 existing-TestHTTPObjectAPIAgainstTheModel: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C18 existing-TestServerBoundsHeadersBodiesAndSlowClients: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C19 existing-TestRuntimeLifecycleInABubble: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C19 existing-TestCloseWhileStartIsInProgress: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C19 existing-TestRuntimeStartHonoursItsContext: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C19 existing-TestRuntimeCallsBeforeStartAreNotReady: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C20 existing-TestACallCanceledBeforeItReachesTheLoopNeverApplies: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C20 existing-TestACallCanceledAfterTheLoopTookItAppliesOnceAndIsReported: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C21 existing-TestShutdownUnderLoadReturnsEveryCall: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C21 existing-TestShutdownDuringRepairAndRestartOnTheSameDisk: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C22 existing-TestRealRuntimeLeavesNoGoroutineBehind: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C22 existing-TestServeAndShutdownOnCancel: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C23 existing-TestRuntimeRecoversAPanicOnTheLoop: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C23 existing-TestRuntimeDatagramsToSelfAndQueueOverflow: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C24 existing-TestParseFlagsAndConfigFile: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C24 existing-TestInvalidConfigurationsExitTwo: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C24 existing-TestHelpListsEveryFlag: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C24 three-cli-peers: seed=0 three CLI subprocesses joined on container loopback, cross-peer GET exact, stale PUT 412, SIGTERM exits cleanly
+HELD C29,C4 migration-traffic-false: seed=7201 completed; traffic attempts=103 during migration=97 on peers 1..8, accepted=18 deletes=5; 22 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7201 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=91 deletes=24; 95 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7202 completed; traffic attempts=160 during migration=154 on peers 1..8, accepted=20 deletes=5; 24 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7202 compensated; traffic attempts=100 during migration=7 on peers 1..8, accepted=91 deletes=24; 95 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7203 completed; traffic attempts=162 during migration=156 on peers 1..8, accepted=23 deletes=6; 27 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7203 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7204 completed; traffic attempts=158 during migration=152 on peers 1..8, accepted=22 deletes=6; 26 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7204 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7205 completed; traffic attempts=158 during migration=152 on peers 1..8, accepted=24 deletes=6; 28 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7205 compensated; traffic attempts=100 during migration=8 on peers 1..8, accepted=93 deletes=26; 97 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7206 completed; traffic attempts=160 during migration=154 on peers 1..8, accepted=25 deletes=6; 29 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7206 compensated; traffic attempts=100 during migration=8 on peers 1..8, accepted=90 deletes=23; 94 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7207 completed; traffic attempts=105 during migration=99 on peers 1..8, accepted=22 deletes=6; 26 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7207 compensated; traffic attempts=100 during migration=8 on peers 1..8, accepted=91 deletes=24; 95 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7208 completed; traffic attempts=156 during migration=150 on peers 1..8, accepted=21 deletes=7; 25 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7208 compensated; traffic attempts=100 during migration=5 on peers 1..8, accepted=93 deletes=26; 97 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7209 completed; traffic attempts=153 during migration=147 on peers 1..8, accepted=18 deletes=5; 22 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7209 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=88 deletes=21; 92 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7210 completed; traffic attempts=102 during migration=96 on peers 1..8, accepted=15 deletes=4; 19 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7210 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7211 completed; traffic attempts=155 during migration=149 on peers 1..8, accepted=16 deletes=5; 20 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7211 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7212 completed; traffic attempts=165 during migration=159 on peers 1..8, accepted=24 deletes=6; 28 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7212 compensated; traffic attempts=100 during migration=5 on peers 1..8, accepted=90 deletes=23; 94 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7213 completed; traffic attempts=104 during migration=98 on peers 1..8, accepted=19 deletes=5; 23 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7213 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=91 deletes=24; 95 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7214 completed; traffic attempts=102 during migration=96 on peers 1..8, accepted=17 deletes=5; 21 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7214 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=87 deletes=20; 91 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7215 completed; traffic attempts=106 during migration=100 on peers 1..8, accepted=17 deletes=4; 21 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7215 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7216 completed; traffic attempts=157 during migration=151 on peers 1..8, accepted=18 deletes=5; 22 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7216 compensated; traffic attempts=100 during migration=7 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7217 completed; traffic attempts=101 during migration=95 on peers 1..8, accepted=20 deletes=7; 24 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7217 compensated; traffic attempts=100 during migration=8 on peers 1..8, accepted=90 deletes=23; 94 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7218 completed; traffic attempts=158 during migration=152 on peers 1..8, accepted=19 deletes=5; 23 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7218 compensated; traffic attempts=100 during migration=5 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7219 completed; traffic attempts=109 during migration=103 on peers 1..8, accepted=22 deletes=5; 26 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7219 compensated; traffic attempts=100 during migration=9 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7220 completed; traffic attempts=158 during migration=152 on peers 1..8, accepted=27 deletes=7; 31 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7220 compensated; traffic attempts=100 during migration=5 on peers 1..8, accepted=93 deletes=26; 97 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7221 completed; traffic attempts=102 during migration=96 on peers 1..8, accepted=20 deletes=6; 24 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7221 compensated; traffic attempts=100 during migration=8 on peers 1..8, accepted=92 deletes=25; 96 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7222 completed; traffic attempts=152 during migration=146 on peers 1..8, accepted=18 deletes=6; 22 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7222 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=90 deletes=23; 94 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7223 completed; traffic attempts=160 during migration=154 on peers 1..8, accepted=23 deletes=6; 27 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7223 compensated; traffic attempts=100 during migration=8 on peers 1..8, accepted=90 deletes=23; 94 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7224 completed; traffic attempts=101 during migration=95 on peers 1..8, accepted=15 deletes=4; 19 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7224 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=90 deletes=23; 94 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7225 completed; traffic attempts=102 during migration=96 on peers 1..8, accepted=18 deletes=6; 22 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7225 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7226 completed; traffic attempts=163 during migration=157 on peers 1..8, accepted=29 deletes=9; 33 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7226 compensated; traffic attempts=100 during migration=9 on peers 1..8, accepted=91 deletes=24; 95 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7227 completed; traffic attempts=156 during migration=150 on peers 1..8, accepted=23 deletes=7; 27 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7227 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=93 deletes=26; 97 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7228 completed; traffic attempts=155 during migration=149 on peers 1..8, accepted=21 deletes=6; 25 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7228 compensated; traffic attempts=100 during migration=7 on peers 1..8, accepted=91 deletes=24; 95 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7229 completed; traffic attempts=157 during migration=151 on peers 1..8, accepted=20 deletes=5; 24 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7229 compensated; traffic attempts=100 during migration=5 on peers 1..8, accepted=90 deletes=23; 94 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7230 completed; traffic attempts=163 during migration=157 on peers 1..8, accepted=27 deletes=8; 31 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7230 compensated; traffic attempts=100 during migration=7 on peers 1..8, accepted=90 deletes=23; 94 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7231 completed; traffic attempts=102 during migration=96 on peers 1..8, accepted=16 deletes=5; 20 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7231 compensated; traffic attempts=100 during migration=5 on peers 1..8, accepted=91 deletes=24; 95 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7232 completed; traffic attempts=161 during migration=155 on peers 1..8, accepted=22 deletes=6; 26 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7232 compensated; traffic attempts=100 during migration=7 on peers 1..8, accepted=87 deletes=20; 91 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7233 completed; traffic attempts=161 during migration=155 on peers 1..8, accepted=25 deletes=7; 29 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7233 compensated; traffic attempts=100 during migration=8 on peers 1..8, accepted=93 deletes=26; 97 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7234 completed; traffic attempts=156 during migration=150 on peers 1..8, accepted=18 deletes=5; 22 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7234 compensated; traffic attempts=100 during migration=5 on peers 1..8, accepted=90 deletes=23; 94 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7235 completed; traffic attempts=161 during migration=155 on peers 1..8, accepted=23 deletes=5; 27 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7235 compensated; traffic attempts=100 during migration=7 on peers 1..8, accepted=91 deletes=24; 95 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7236 completed; traffic attempts=105 during migration=99 on peers 1..8, accepted=15 deletes=3; 19 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7236 compensated; traffic attempts=100 during migration=5 on peers 1..8, accepted=90 deletes=23; 94 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7237 completed; traffic attempts=161 during migration=155 on peers 1..8, accepted=22 deletes=5; 26 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7237 compensated; traffic attempts=100 during migration=9 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7238 completed; traffic attempts=102 during migration=96 on peers 1..8, accepted=16 deletes=4; 20 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7238 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=90 deletes=23; 94 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7239 completed; traffic attempts=158 during migration=152 on peers 1..8, accepted=23 deletes=7; 27 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7239 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=91 deletes=24; 95 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7240 completed; traffic attempts=100 during migration=93 on peers 1..8, accepted=14 deletes=4; 18 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7240 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=90 deletes=23; 94 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7241 completed; traffic attempts=100 during migration=92 on peers 1..8, accepted=15 deletes=5; 19 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7241 compensated; traffic attempts=100 during migration=5 on peers 1..8, accepted=93 deletes=26; 97 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7242 completed; traffic attempts=158 during migration=152 on peers 1..8, accepted=17 deletes=4; 21 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7242 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7243 completed; traffic attempts=104 during migration=98 on peers 1..8, accepted=18 deletes=5; 22 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7243 compensated; traffic attempts=100 during migration=6 on peers 1..8, accepted=94 deletes=27; 98 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7244 completed; traffic attempts=101 during migration=95 on peers 1..8, accepted=17 deletes=5; 21 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7244 compensated; traffic attempts=100 during migration=7 on peers 1..8, accepted=90 deletes=23; 94 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7245 completed; traffic attempts=101 during migration=95 on peers 1..8, accepted=17 deletes=5; 21 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7245 compensated; traffic attempts=100 during migration=5 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7246 completed; traffic attempts=160 during migration=154 on peers 1..8, accepted=20 deletes=5; 24 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7246 compensated; traffic attempts=100 during migration=7 on peers 1..8, accepted=91 deletes=24; 95 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7247 completed; traffic attempts=101 during migration=95 on peers 1..8, accepted=21 deletes=7; 25 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7247 compensated; traffic attempts=100 during migration=9 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7248 completed; traffic attempts=156 during migration=150 on peers 1..8, accepted=23 deletes=7; 27 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7248 compensated; traffic attempts=100 during migration=5 on peers 1..8, accepted=92 deletes=25; 96 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7249 completed; traffic attempts=157 during migration=151 on peers 1..8, accepted=19 deletes=6; 23 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7249 compensated; traffic attempts=100 during migration=5 on peers 1..8, accepted=89 deletes=22; 93 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-false: seed=7250 completed; traffic attempts=105 during migration=99 on peers 1..8, accepted=22 deletes=6; 26 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C29,C4 migration-traffic-true: seed=7250 compensated; traffic attempts=100 during migration=7 on peers 1..8, accepted=91 deletes=24; 95 key-scoped acknowledgements explained, every live key read on nine nodes, quota recounted
+HELD C33,C4 isolated-writer-return: seed=7301 paused=false; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7301 manifest discards=4 quota discards before first object discard=0 later quota discards=12; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7301 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7301 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7302 paused=true; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7302 manifest discards=9 quota discards before first object discard=0 later quota discards=15; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7302 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7302 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7303 paused=false; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7303 manifest discards=9 quota discards before first object discard=0 later quota discards=15; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7303 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7303 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7304 paused=true; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7304 manifest discards=6 quota discards before first object discard=0 later quota discards=10; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7304 same_bucket=true states=completed/compensated; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7304 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7305 paused=false; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7305 manifest discards=3 quota discards before first object discard=0 later quota discards=5; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7305 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7305 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7306 paused=true; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7306 manifest discards=5 quota discards before first object discard=0 later quota discards=13; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7306 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7306 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7307 paused=false; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7307 manifest discards=5 quota discards before first object discard=0 later quota discards=6; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7307 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7307 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7308 paused=true; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7308 manifest discards=5 quota discards before first object discard=0 later quota discards=11; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7308 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7308 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7309 paused=false; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7309 manifest discards=4 quota discards before first object discard=0 later quota discards=8; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7309 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7309 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7310 paused=true; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7310 manifest discards=7 quota discards before first object discard=0 later quota discards=18; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7310 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7310 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7311 paused=false; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7311 manifest discards=8 quota discards before first object discard=0 later quota discards=18; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7311 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7311 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7312 paused=true; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7312 manifest discards=7 quota discards before first object discard=0 later quota discards=15; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7312 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7312 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7313 paused=false; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7313 manifest discards=3 quota discards before first object discard=0 later quota discards=5; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7313 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7313 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7314 paused=true; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7314 manifest discards=4 quota discards before first object discard=0 later quota discards=18; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7314 same_bucket=true states=completed/compensated; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7314 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7315 paused=false; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7315 manifest discards=7 quota discards before first object discard=0 later quota discards=2; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7315 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7315 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7316 paused=true; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7316 manifest discards=5 quota discards before first object discard=0 later quota discards=7; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7316 same_bucket=true states=completed/compensated; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7316 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7317 paused=false; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7317 manifest discards=4 quota discards before first object discard=0 later quota discards=14; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7317 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7317 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7318 paused=true; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7318 manifest discards=5 quota discards before first object discard=0 later quota discards=16; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7318 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7318 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7319 paused=false; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7319 manifest discards=5 quota discards before first object discard=0 later quota discards=15; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7319 same_bucket=true states=completed/compensated; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7319 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C33,C4 isolated-writer-return: seed=7320 paused=true; write invisible to eight peers during completed migration; all nine read exact bytes after return; quota recounted
+HELD C4 object-only-discard-quota: seed=7320 manifest discards=7 quota discards before first object discard=0 later quota discards=5; same-size overwrite did not update quota; nine independent recounts
+HELD C30 simultaneous-migrations-true: seed=7320 same_bucket=true states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C30 simultaneous-migrations-false: seed=7320 same_bucket=false states=completed/completed; identical metadata, nine exact reads and quota recounts
+HELD C32 disk-boundary: occ/state size=0 boundary=1 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=0 boundary=2 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=0 boundary=3 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=0 boundary=4 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=0 boundary=5 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=0 boundary=6 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=0 boundary=1 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=0 boundary=2 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=0 boundary=3 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=0 boundary=4 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=0 boundary=5 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=0 boundary=6 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=1 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=2 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=3 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=4 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=5 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=6 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=7 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=1 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=2 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=3 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=4 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=5 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=6 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=1 boundary=7 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=1 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=2 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=3 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=4 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=5 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=6 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=7 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=1 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=2 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=3 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=4 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=5 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=6 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=4097 boundary=7 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=1 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=2 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=3 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=4 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=5 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=6 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=7 fail=false two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=1 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=2 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=3 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=4 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=5 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=6 fail=true two recovery images
+HELD C32 disk-boundary: occ/state size=65537 boundary=7 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=0 boundary=1 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=0 boundary=2 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=0 boundary=3 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=0 boundary=4 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=0 boundary=5 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=0 boundary=6 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=0 boundary=1 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=0 boundary=2 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=0 boundary=3 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=0 boundary=4 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=0 boundary=5 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=0 boundary=6 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=1 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=2 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=3 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=4 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=5 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=6 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=7 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=1 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=2 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=3 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=4 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=5 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=6 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=1 boundary=7 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=1 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=2 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=3 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=4 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=5 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=6 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=7 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=1 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=2 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=3 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=4 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=5 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=6 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=4097 boundary=7 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=1 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=2 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=3 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=4 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=5 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=6 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=7 fail=false two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=1 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=2 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=3 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=4 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=5 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=6 fail=true two recovery images
+HELD C32 disk-boundary: shards/new/deep/version/0.0 size=65537 boundary=7 fail=true two recovery images
+HELD C32 supplemental-TestIndependentDiskCrashBoundaries: passed; DST seeds 7401..7420, disk exhaustive operation boundaries; evidence/repair.jsonl
+HELD C32 supplemental-TestFileDiskCrashLeavesOldOrNewBytes: passed; DST seeds 7401..7420, disk exhaustive operation boundaries; evidence/repair.jsonl
+HELD C29 supplemental-TestMigrationHoldsAWriteAcknowledgedJustBeforeTheFlipDST: passed; DST seeds 7401..7420, disk exhaustive operation boundaries; evidence/repair.jsonl
+HELD C33 supplemental-TestMigrationLateWriteOfAnIsolatedPeerStaysReadableDST: passed; DST seeds 7401..7420, disk exhaustive operation boundaries; evidence/repair.jsonl
+SUMMARY held=658 broken=4 setup_errors=0 elapsed_seconds=467

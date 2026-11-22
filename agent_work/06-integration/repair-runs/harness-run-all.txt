@@ -1,0 +1,59 @@
+ Container objstore-dev-run-25a900968dee Creating 
+ Container objstore-dev-run-25a900968dee Created 
+# github.com/nickstrad/decentralized-object-store/checkintegration
+./real.go:25:24: undefined: node.Runtime
+./real.go:31:16: undefined: node.NewRuntime
+./real.go:31:32: undefined: node.RuntimeConfig
+
+ Container objstore-dev-run-490bab3272ee Creating 
+ Container objstore-dev-run-490bab3272ee Created 
+# github.com/nickstrad/decentralized-object-store/checkintegration
+./real.go:25:24: undefined: node.Runtime
+./real.go:31:16: undefined: node.NewRuntime
+./real.go:31:32: undefined: node.RuntimeConfig
+
+setup error: no passing/failing result for TestConformanceOnTheSimulator
+setup error: no passing/failing result for TestConformanceOnLoopback
+setup error: no passing/failing result for TestLoopbackClusterServesObjectsAcrossNodes
+setup error: no passing/failing result for TestFrameRoundTrips
+setup error: no passing/failing result for TestFrameDecodersRejectMalformedInput
+setup error: no passing/failing result for TestFrameLimitCoversMerkleRepliesAndShardRequests
+setup error: no passing/failing result for TestRuntimeConfigValidation
+setup error: no passing/failing result for TestStatusRowsThroughHTTPOnARealNode
+setup error: no passing/failing result for TestRuntimeLifecycleInABubble
+setup error: no passing/failing result for TestRuntimeCloseDuringStartup
+setup error: no passing/failing result for TestRuntimeStartHonoursItsContext
+setup error: no passing/failing result for TestRuntimeCallsBeforeStartAreNotReady
+setup error: no passing/failing result for TestRuntimeCancelMidPutLeavesOnlyCollectableShards
+setup error: no passing/failing result for TestCancelMidGetAndMidMigrationReturnContextErrors
+setup error: no passing/failing result for TestShutdownUnderLoadReturnsEveryCall
+setup error: no passing/failing result for TestShutdownDuringRepairAndRestartOnTheSameDisk
+setup error: no passing/failing result for TestRealRuntimeLeavesNoGoroutineBehind
+setup error: no passing/failing result for TestRuntimeRecoversAPanicOnTheLoop
+setup error: no passing/failing result for TestRuntimeDatagramsToSelfAndQueueOverflow
+HELD C1 existing-TestJoinedCodeTableHasNoCollision: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C1 existing-TestEveryCodeRoundTripsToItsSentinel: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C1 existing-TestNodeAndAPICodesStayInTheirBlock: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C2 existing-TestClusterPutGetDST: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C3,C4,C5 existing-TestClusterPartitionHealDST: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C6,C7 existing-TestClusterCrashRestartDST: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C8 existing-TestClusterBitRotDST: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C9 existing-TestClusterMigrationFailurePointsDST: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C10 existing-TestBucketMigratingAwayStopsItsWorkers: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C10 existing-TestNodeRefusesMalformedAndPostStopTraffic: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C15 existing-TestConfigValidationRejectsEachBadField: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C16 existing-TestStatusTableRowByRowThroughHTTP: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C17 existing-TestHTTPObjectAPIAgainstTheModel: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C18 existing-TestServerBoundsHeadersBodiesAndSlowClients: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C22 existing-TestServeAndShutdownOnCancel: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C24 existing-TestParseFlagsAndConfigFile: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C24 existing-TestInvalidConfigurationsExitTwo: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+HELD C24 existing-TestHelpListsEveryFlag: existing suite passed with race detector, DST_SEED_BASE=6281 DST_SEEDS=2
+ Container objstore-dev-run-81d3435cf25f Creating 
+ Container objstore-dev-run-81d3435cf25f Created 
+# github.com/nickstrad/decentralized-object-store/checkintegration
+./real.go:25:24: undefined: node.Runtime
+./real.go:31:16: undefined: node.NewRuntime
+./real.go:31:32: undefined: node.RuntimeConfig
+
+SUMMARY held=18 broken=0 setup_errors=4 elapsed_seconds=112

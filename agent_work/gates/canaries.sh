@@ -246,11 +246,31 @@ func FuzzZZCanary(f *testing.F) {
 }
 EOF
 }
+plant_fuzzstall() {
+  base_pkg
+  cat > internal/sim/zz_fuzz_test.go <<'EOT'
+package sim
+
+import (
+	"testing"
+	"time"
+)
+
+func FuzzZZStall(f *testing.F) {
+	f.Add([]byte("seed"))
+	f.Fuzz(func(t *testing.T, b []byte) {
+		if len(b) > 0 && b[0] != 's' {
+			time.Sleep(time.Hour)
+		}
+	})
+}
+EOT
+}
 plant_race() {
-  mkdir -p internal/node
-  printf 'package node\n\nvar Shared int\n' > internal/node/zz_canary.go
-  cat > internal/node/zz_canary_test.go <<'EOF'
-package node
+  mkdir -p internal/zzrace
+  printf 'package zzrace\n\nvar Shared int\n' > internal/zzrace/zz_canary.go
+  cat > internal/zzrace/zz_canary_test.go <<'EOF'
+package zzrace
 
 import (
 	"sync"
@@ -342,6 +362,7 @@ canary property         G2 property        'planted'                      "a pro
 canary unnamed-property G2 property        'planted'                      "the same property without Prop or Laws in its name"       G2 plant_unnamed
 canary fuzz             G3 fuzz            'FUZZ FAIL'                    "a fuzz target that fails on any mutated input"            G3 plant_fuzz
 canary unicode-fuzz     G3 fuzz            'FUZZ FAIL'                    "the same target under a non-ASCII name"                   G3 plant_unifuzz
+canary fuzz-stall       G3 fuzz            'FUZZ FAIL'                    "a fuzz target that stalls on every mutated input (retried once, must still fail)" G3 plant_fuzzstall
 canary race             G4 race            'DATA RACE'                    "a data race"                                              G4 plant_race
 canary dst-seeds        G5 dst             'planted'                      "a test that fails only under the 500-seed sweep"          G5 plant_dst
 canary indirect-dst     G5 dst             'planted'                      "a scenario that reaches the simulator through a bridge"   G5 plant_indirect

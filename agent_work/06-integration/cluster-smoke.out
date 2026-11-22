@@ -1,0 +1,29 @@
+SMOKE: starting node-a1 node-b1 node-c1
+time="2026-11-22T08:12:43Z" level=warning msg="volume \"objstore-gomod\" already exists but was created for project \"objstore\" (expected \"objstore-smoke-850579-795dabd5\"). Use `external: true` to use an existing volume"
+time="2026-11-22T08:12:43Z" level=warning msg="volume \"objstore-gocache\" already exists but was created for project \"objstore\" (expected \"objstore-smoke-850579-795dabd5\"). Use `external: true` to use an existing volume"
+ Network objstore-smoke-850579-795dabd5_cluster Creating 
+ Network objstore-smoke-850579-795dabd5_cluster Creating 
+ Network objstore-smoke-850579-795dabd5_cluster Created 
+ Network objstore-smoke-850579-795dabd5_cluster Created 
+ Container objstore-smoke-850579-795dabd5-node-c1-1 Creating 
+ Container objstore-smoke-850579-795dabd5-node-b1-1 Creating 
+ Container objstore-smoke-850579-795dabd5-node-a1-1 Creating 
+ Container objstore-smoke-850579-795dabd5-node-c1-1 Created 
+ Container objstore-smoke-850579-795dabd5-node-b1-1 Created 
+ Container objstore-smoke-850579-795dabd5-node-a1-1 Created 
+ Container objstore-smoke-850579-795dabd5-node-c1-1 Starting 
+ Container objstore-smoke-850579-795dabd5-node-b1-1 Starting 
+ Container objstore-smoke-850579-795dabd5-node-a1-1 Starting 
+ Container objstore-smoke-850579-795dabd5-node-a1-1 Started 
+ Container objstore-smoke-850579-795dabd5-node-b1-1 Started 
+ Container objstore-smoke-850579-795dabd5-node-c1-1 Started 
+SMOKE: project objstore-smoke-850579-795dabd5; host ports a1=32834 b1=32835 c1=32836
+SMOKE: all three nodes answer /_health
+SMOKE: every node sees three alive members in regions a,b,c
+SMOKE: bucket created on node-a1 is visible on node-b1 and node-c1
+SMOKE: PUT 1500000 bytes on node-a1: ETag "a54bc177573d5979a6f74221fdb04472b5888fb57fe16963985388fba98fdf12" version 94feae97d8490265
+SMOKE: GET on node-c1 returns the same 1500000 bytes (sha256 38b7140af8a40f3894b61775857604148f0a5acf281b322f08c352bd178015ad)
+SMOKE: create-only PUT (If-None-Match: *) on node-b1 over the object: 412
+SMOKE: PUT If-Match the current ETag: 200; the same ETag again: 412
+SMOKE: health on node-a1 reports 0 last-writer-wins discards
+SMOKE: PASS

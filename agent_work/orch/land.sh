@@ -26,6 +26,11 @@ show() { git show "$tip:$1" 2>/dev/null; }
 res=$(show "agent_work/$chunk/gates/result.json") || { echo "land: no gate result on the branch" >&2; exit 1; }
 [ "$(jq -r '.overall + " " + (.in_container|tostring) + " " + (.partial|tostring) + " " + (.dirty_tree|tostring) + " " + (.counts_for_landing|tostring)' <<<"$res")" = "pass true false false true" ] \
   || { echo "land: gate result is not a clean full in-container pass that counts for landing" >&2; exit 1; }
+# Once the node binary exists, the host-side cluster check (G7) must be in the result and green.
+if git cat-file -e "$tip:cmd/objnode/main.go" 2>/dev/null; then
+  [ "$(jq -r '[.checks[] | select(.gate=="G7" and .check=="cluster")] | if length == 1 then .[0].status else "missing" end' <<<"$res")" = pass ] \
+    || { echo "land: the gate result has no passing G7 cluster check" >&2; exit 1; }
+fi
 gsha=$(jq -r .sha <<<"$res")
 [[ "$gsha" =~ ^[0-9a-f]{40}$ ]] || { echo "land: gate result names no commit ('$gsha')" >&2; exit 1; }
 git merge-base --is-ancestor "$gsha" "$tip" || { echo "land: gated commit $gsha is not on $branch" >&2; exit 1; }

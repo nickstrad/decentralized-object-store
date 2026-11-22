@@ -33,33 +33,18 @@ services:
   node-a1:
     <<: *node
     hostname: node-a1
-    command: ["go", "run", "./cmd/objnode", "-id", "a1", "-region", "a", "-data", "/data", "-http", ":8080", "-gossip", ":7946", "-rpc", ":7947", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
-    ports: ["18081:8080"]
-  node-a2:
-    <<: *node
-    hostname: node-a2
-    command: ["go", "run", "./cmd/objnode", "-id", "a2", "-region", "a", "-data", "/data", "-http", ":8080", "-gossip", ":7946", "-rpc", ":7947", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
-    ports: ["18082:8080"]
+    command: ["go", "run", "./cmd/objnode", "-id", "node-a1:7946", "-region", "a", "-listen", ":7946", "-data", "/data", "-http", ":8080", "-k", "2", "-m", "1", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
+    ports: ["127.0.0.1::8080"]
   node-b1:
     <<: *node
     hostname: node-b1
-    command: ["go", "run", "./cmd/objnode", "-id", "b1", "-region", "b", "-data", "/data", "-http", ":8080", "-gossip", ":7946", "-rpc", ":7947", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
-    ports: ["18083:8080"]
-  node-b2:
-    <<: *node
-    hostname: node-b2
-    command: ["go", "run", "./cmd/objnode", "-id", "b2", "-region", "b", "-data", "/data", "-http", ":8080", "-gossip", ":7946", "-rpc", ":7947", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
-    ports: ["18084:8080"]
+    command: ["go", "run", "./cmd/objnode", "-id", "node-b1:7946", "-region", "b", "-listen", ":7946", "-data", "/data", "-http", ":8080", "-k", "2", "-m", "1", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
+    ports: ["127.0.0.1::8080"]
   node-c1:
     <<: *node
     hostname: node-c1
-    command: ["go", "run", "./cmd/objnode", "-id", "c1", "-region", "c", "-data", "/data", "-http", ":8080", "-gossip", ":7946", "-rpc", ":7947", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
-    ports: ["18085:8080"]
-  node-c2:
-    <<: *node
-    hostname: node-c2
-    command: ["go", "run", "./cmd/objnode", "-id", "c2", "-region", "c", "-data", "/data", "-http", ":8080", "-gossip", ":7946", "-rpc", ":7947", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
-    ports: ["18086:8080"]
+    command: ["go", "run", "./cmd/objnode", "-id", "node-c1:7946", "-region", "c", "-listen", ":7946", "-data", "/data", "-http", ":8080", "-k", "2", "-m", "1", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
+    ports: ["127.0.0.1::8080"]
 
 networks:
   cluster: {}

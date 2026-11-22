@@ -1,0 +1,8 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  HTTP[httpapi.Server HTTP] --> RT[noderuntime.Runtime loop]
+  SIM[internal/sim engine] --> ENV[env.Env: Clock, Net, Disk, Rand]
+  RT --> ENV
+  ENV --> NODE[node.Node core + chanNet]
+  NODE --> META[gossip, OCC, merkle worker]
+  NODE --> DATA[storage, inventory, migration saga]

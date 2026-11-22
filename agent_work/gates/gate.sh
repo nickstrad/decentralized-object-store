@@ -93,7 +93,34 @@ if [ "$in_container" = false ] && [ "${GATE_NO_DOCKER:-}" != 1 ]; then
     -e GATE_ONLY="${GATE_ONLY:-}" -e GATE_STAGE="${GATE_STAGE:-build}" \
     -e FUZZ_SECONDS="${FUZZ_SECONDS:-30}" -e GATE_OUT="${GATE_OUT:-}" \
     dev agent_work/gates/gate.sh "$chunk"
-  exit $?
+  rc=$?
+  # G7, host side: the compose `cluster` profile must start three peers that join, serve an
+  # object across nodes and refuse a stale conditional write. It needs the Docker daemon,
+  # so it cannot run inside the dev container with the other gates; the host wrapper runs
+  # it after a FULL container run and writes its verdict into the same result. Once the
+  # node binary exists a full run without this check does not count for landing.
+  outdir=${GATE_OUT:-agent_work/$chunk/gates}
+  smoke=${GATE_CLUSTER_SMOKE-agent_work/06-integration/cluster-smoke.sh}
+  if [ -z "${GATE_ONLY:-}" ] && [ -d cmd/objnode ] && [ -f "$outdir/result.json" ]; then
+    t0=$SECONDS; status=pass; note=
+    if [ -n "$smoke" ] && [ -x "$smoke" ]; then
+      "$smoke" > "$outdir/G7-cluster.log" 2>&1 || status=fail
+    else
+      echo "no executable cluster smoke script at '$smoke'" > "$outdir/G7-cluster.log"; status=fail
+    fi
+    printf '%-3s %-14s %-4s %4ss %s\n' G7 cluster "$status" "$((SECONDS - t0))" "$note"
+    [ "$status" = pass ] || tail -n 25 "$outdir/G7-cluster.log" | sed 's/^/      | /'
+    tmp=$(mktemp) || exit 2
+    jq --arg s "$status" --argjson d "$((SECONDS - t0))" \
+      '.checks += [{gate:"G7", check:"cluster", status:$s, seconds:$d, note:""}]
+       | if $s == "fail" then .overall = "fail" | .counts_for_landing = false else . end' \
+      "$outdir/result.json" > "$tmp" && cat "$tmp" > "$outdir/result.json"
+    jrc=$?; rm -f "$tmp"
+    [ $jrc = 0 ] || { echo "gate: cannot record the cluster check" >&2; exit 2; }
+    [ "$status" = pass ] || rc=1
+    echo "gate: after the host-side cluster check: overall=$(jq -r .overall "$outdir/result.json") counts_for_landing=$(jq -r .counts_for_landing "$outdir/result.json")"
+  fi
+  exit $rc
 fi
 
 # ---------------------------------------------------------------- gate side
@@ -160,7 +187,7 @@ product_go_files() {
 # not, so a helper package cannot hide a clock.
 detlint_dirs() {
   local d roots=() dirs pkgs deps
-  for d in env sim gossip erasure merkle occ saga; do [ -d "internal/$d" ] && roots+=("internal/$d"); done
+  for d in env sim gossip erasure merkle occ saga node; do [ -d "internal/$d" ] && roots+=("internal/$d"); done
   [ ${#roots[@]} -gt 0 ] || return 0
   dirs=$(find "${roots[@]}" -type f -name '*.go' -not -path '*/testdata/*' -not -path 'internal/sim/simtest/*' -printf '%h\n' | sort -u)
   [ -n "$dirs" ] || return 0
@@ -222,7 +249,7 @@ g0_selfcontained() {
 }
 
 # ---- G1 unit + coverage floor
-floor_pkgs='internal/sim internal/gossip internal/erasure internal/merkle internal/occ internal/saga'
+floor_pkgs='internal/sim internal/gossip internal/erasure internal/storage internal/merkle internal/occ internal/saga internal/node internal/noderuntime internal/storage/httpapi'
 g1_unit() {
   local rc=0 p line pct
   go test -count=1 -timeout 30m -cover ./... > "$bin/cover.txt" 2>&1 || rc=1
@@ -260,7 +287,7 @@ g3_fuzz() { FUZZ_SECONDS=$fuzz_seconds agent_work/gates/fuzz-short.sh; }
 g4_race() {
   local rc=0 p
   go test -count=1 -timeout 45m -race ./... || rc=1
-  for p in internal/node internal/storage test/e2e; do
+  for p in internal/node internal/noderuntime internal/storage cmd/objnode test/e2e; do # internal/storage/... includes httpapi
     [ -d "$p" ] || continue
     go test -timeout 45m -race -count=3 "./$p/..." || rc=1
   done

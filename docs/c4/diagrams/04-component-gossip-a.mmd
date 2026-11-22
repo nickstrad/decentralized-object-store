@@ -6,6 +6,5 @@ graph LR
   SUSP[Suspicion state machine] -->|6| VIEW
   FSYNC[Full-state sync] -->|8| VIEW
   DISSEM[Piggybacked dissemination] -->|15| VIEW
-  STORAGE[Storage engine] -->|10| VIEW
-  OCC[OCC metadata] -->|11| VIEW
+  NODE[Node core] -->|10| VIEW
   VIEW -->|13| SUSP2[Suspicion state machine]

@@ -1,15 +1,13 @@
 # C4 Level 3 — Component: occ (`internal/occ`)
 
-**Partly as built.** The eleven components inside the package exist and match this diagram (checked against `internal/occ` when Chunk 4 landed, 2026-11-22). Relationships 5 and 20 to 22 are the target design: nothing outside the package calls it yet, and only test code supplies its `Membership` interface. The object API, the storage engine's manifests, the saga routing step, the gossip view as the peer list and the node runtime are wired in Chunk 6.
+**As built.** The eleven components inside the package exist and match this diagram (checked against `internal/occ` when Chunk 4 landed, 2026-11-22). Relationships 5 and 20 to 22 are as built since Chunk 6 (checked against `internal/node`, 2026-11-22). The one caller of the package is the Node core (`internal/node`): the object API, the storage engine and the saga engine do not call it, and the node core supplies the `Membership` interface from the gossip view. Chunk 6 added one method inside the package, `Node.Merge`.
 
 Model: diagram `component-occ` in [model.json](model.json). Source: PLAN.md sections 3, 4.2 (Chunk 4), 7.5 and the LWW ruling in 9.1; code in `errors.go`, `vv.go`, `hlc.go`, `version.go`, `record.go`, `doc.go`, `encoding.go`, `store.go`, `quota.go`, `meta.go`, `wire.go`, `node.go`.
 The package is optimistic concurrency control for metadata. Each key holds exactly one version on every replica. A conditional write (`If-Match` on an ETag, or `If-None-Match`) is refused when the key has moved on. When two concurrent versions of a key meet, last-writer-wins picks one as a function of the pair alone: the higher hybrid logical clock stamp, then the node ID, then the version ID. The other version is discarded, and every such discard is counted, logged and reported through a callback. Version vectors only tell an ordinary overwrite from a concurrent discard; they never pick the winner.
 
 ```mermaid
 flowchart TB
-  API["Object API<br/>internal/storage"]
-  STORAGE["Storage engine<br/>internal/storage"]
-  SAGA["Saga engine<br/>internal/saga"]
+  NC["Node core<br/>internal/node"]
   subgraph OCC["internal/occ"]
     NODE["Replicating node<br/>Node, Client, wire messages"]
     MEMBERSHIP["Membership interface"]
@@ -23,13 +21,12 @@ flowchart TB
     HLC["Hybrid logical clock"]
     ENC["Canonical encoding"]
   end
-  GOSSIP["Gossip membership<br/>internal/gossip"]
   ENV["Environment interfaces<br/>internal/env"]
   NODE -->|1| STORE
   NODE -->|2| ENV
   NODE -->|3| ENC
   NODE -->|4| MEMBERSHIP
-  MEMBERSHIP -->|5| GOSSIP
+  NC -->|5| MEMBERSHIP
   STORE -->|6| DOC
   STORE -->|7| VERSION
   STORE -->|8| DISCARD
@@ -44,33 +41,33 @@ flowchart TB
   QUOTA -->|17| STORE
   META -->|18| STORE
   META -->|19| QUOTA
-  API -->|20| NODE
-  STORAGE -->|21| META
-  SAGA -->|22| META
+  NC -->|20| NODE
+  NC -->|21| META
+  NC -->|22| QUOTA
   classDef ext stroke-dasharray:4 3
-  class API,STORAGE,SAGA,GOSSIP,ENV ext
+  class NC,ENV ext
 ```
 
 Terminal rendering, in 6 parts. Each numbered relationship appears in exactly one part.
 
-**Part a.** The replicating node and its peer list (1 to 5).
+**Part a.** The replicating node and its peer list (1 to 4).
 
 <!-- draw-visual: diagrams/07-component-occ-a.mmd -->
 ```text
-┌────────────────┐    ┌────────────────────┐    ┌─────────────────┐
-│Replicating node├─1─►│       Store        │    │Gossip membership│
-└────────┬───────┘    └────────────────────┘    └─────────────────┘
-         │                                               ▲
-         │            ┌────────────────────┐             │
-         ├─────────2─►│    internal/env    │             │
-         │            └────────────────────┘             │
-         │                                               │
-         │            ┌────────────────────┐             │
-         ├─────────3─►│ Canonical encoding │             │
-         │            └────────────────────┘             │
-         │                                               │
-         │            ┌────────────────────┐             │
-         └─────────4─►│Membership interface├──────5──────┘
+┌────────────────┐    ┌────────────────────┐
+│Replicating node├─1─►│       Store        │
+└────────┬───────┘    └────────────────────┘
+         │
+         │            ┌────────────────────┐
+         ├─────────2─►│    internal/env    │
+         │            └────────────────────┘
+         │
+         │            ┌────────────────────┐
+         ├─────────3─►│ Canonical encoding │
+         │            └────────────────────┘
+         │
+         │            ┌────────────────────┐
+         └─────────4─►│Membership interface│
                       └────────────────────┘
 ```
 
@@ -146,21 +143,25 @@ Terminal rendering, in 6 parts. Each numbered relationship appears in exactly on
                               └───────────────────┘
 ```
 
-**Part f.** The callers that Chunk 6 wires (20 to 22).
+**Part f.** What the Node core calls and implements (5, 20 to 22).
 
 <!-- draw-visual: diagrams/07-component-occ-f.mmd -->
 ```text
-┌──────────────┐     ┌───────────────────────┐
-│  Object API  ├─20─►│    Replicating node   │
-└──────────────┘     └───────────────────────┘
-
-┌──────────────┐     ┌───────────────────────┐
-│Storage engine├─21─►│Typed metadata document│
-└──────────────┘     └───────────────────────┘
-                                 ▲
-┌──────────────┐                 │
-│ Saga engine  ├───────22────────┘
-└──────────────┘
+┌─────────┐     ┌───────────────────────┐
+│Node core├─20─►│    Replicating node   │
+└────┬────┘     └───────────────────────┘
+     │
+     │          ┌───────────────────────┐
+     ├──────21─►│Typed metadata document│
+     │          └───────────────────────┘
+     │
+     │          ┌───────────────────────┐
+     ├──────22─►│  Quota check-and-set  │
+     │          └───────────────────────┘
+     │
+     │          ┌───────────────────────┐
+     └───────5─►│  Membership interface │
+                └───────────────────────┘
 ```
 
 | ID | Component | As built |
@@ -174,8 +175,8 @@ Terminal rendering, in 6 parts. Each numbered relationship appears in exactly on
 | `o-discard` | Discard record | In `store.go`; PLAN.md names the guarantee, the build added the parts. When a merge drops a version that the winner's writer had not seen, either a held version replaced or an incoming version rejected, the store records a `Discard{Key, Winner, Loser}`: it adds one to a persisted counter (`LWWDiscards`), keeps the record in a 64-entry tail (`DiscardTail`) and in a persisted outbox, and after the persist succeeds writes one log line through `Log` and calls `OnDiscard(key, winner, loser)`. A window of the last 256 `(key, loser)` pairs stops a re-sent loser from being recorded twice. The outbox is emitted again when a node opens its state, so a crash between the durable merge and the emission loses no record. Records are local to the node; they are not replicated |
 | `o-quota` | Quota check-and-set and recount | `quota.go`. `Usage{Bytes, Objects}`. `UpdateQuota` reads the usage with the precondition to write it back under, computes, and writes conditionally; it retries only on `ErrPreconditionFailed`, at most `attempts` times. `WriteQuota` refuses an unconditional write. `RecountQuota` takes a `Recount` hook and writes only when the stored usage differs from the recount. `AddUsage` enforces a limit with checked arithmetic. The package does not schedule recounts |
 | `o-meta` | Typed metadata document | `meta.go`. Seven key kinds over the same store: tags, ACL entries, quotas, object metadata, object manifests, a bucket's routing pointer and content type. Key builders and `ParseKey`; `Permission` bits; `ObjectMeta{Size, Hash, Created}`. Typed writes (`PutTag`, `PutACL`, `PutObjectMeta`, `PutManifest`, `SetRoute`, `SetContentType`) and typed reads on `Reader`. `Reader.RecountObjects` sums a bucket's live object sizes for a quota recount and returns `ErrUsageOverflow` instead of wrapping |
-| `o-node` | Replicating node | `Node` in `node.go` (an `env.Process`), `Client`, and the messages in `wire.go` and `errors.go`. Loads the state blob at start and retries on a read error. Each jittered period it sends its document digest to one random peer; the peer answers "match" or its whole document; the node merges it and pushes its own document back if the two still differ. After each local write it sends the changed key as a datagram to `Fanout` (2) random peers. Serves remote get, put and delete requests; `Client` sends them. All writes go through `Node` methods, which persist and then broadcast; `Reader()` is read-only. Wire error codes 128 to 136 in the package's block 128 to 143, with 131 unassigned |
-| `o-membership` | Membership interface | `Membership` in `node.go`, declared by the package: `Peers() []env.NodeID`. The node sorts the list and removes duplicates and its own ID. `StaticMembership` is a fixed list. Only test code supplies it so far |
+| `o-node` | Replicating node | `Node` in `node.go` (an `env.Process`), `Client`, and the messages in `wire.go` and `errors.go`. Loads the state blob at start and retries on a read error. Each jittered period it sends its document digest to one random peer; the peer answers "match" or its whole document; the node merges it and pushes its own document back if the two still differ. After each local write it sends the changed key as a datagram to `Fanout` (2) random peers. Serves remote get, put and delete requests; `Client` sends them. All writes go through `Node` methods, which persist and then broadcast; `Reader()` is read-only. Wire error codes 128 to 136 in the package's block 128 to 143, with 131 unassigned. Added in Chunk 6: `Merge` in `node_merge.go`, which folds a fetched document into the store with the same merge, discard record and persistence; the node core's metadata repairer calls it |
+| `o-membership` | Membership interface | `Membership` in `node.go`, declared by the package: `Peers() []env.NodeID`. The node sorts the list and removes duplicates and its own ID. `StaticMembership` is a fixed list. The node core supplies it from the gossip view |
 
 | # | From | To | Relationship |
 | --- | --- | --- | --- |
@@ -183,7 +184,7 @@ Terminal rendering, in 6 parts. Each numbered relationship appears in exactly on
 | 2 | Replicating node | Environment interfaces | Round and load-retry timers (Clock); period jitter and peer choice (Rand); digest requests, pushes, delta datagrams and client operations (Transport); reads, writes and syncs the state blob `occ/state` (Disk) |
 | 3 | Replicating node | Canonical encoding | Sends and receives documents in the canonical encoding; encodes client operations and results |
 | 4 | Replicating node | Membership interface | Reads the peer list for each round and each delta broadcast |
-| 5 | Membership interface | Gossip membership | Filled from the gossip view's live members (target design) |
+| 5 | Node core | Membership interface | Implements it: `gossipView.Peers`, the gossip view's live members other than the node itself |
 | 6 | Store | Document | Holds the node's document; merges a received document into it key by key |
 | 7 | Store | Version and record | Checks the precondition against the held record; builds the successor version; asks `Supersedes` to classify each replaced or rejected version |
 | 8 | Store | Discard record | Records every concurrent version the merge drops, replaced or rejected, in the same durable write as the merge; emits after the persist succeeds |
@@ -198,18 +199,19 @@ Terminal rendering, in 6 parts. Each numbered relationship appears in exactly on
 | 17 | Quota check-and-set | Store | Reads the usage and writes it back under `If-Match` or `If-None-Match`, through the store's or the node's `Put` |
 | 18 | Typed metadata document | Store | Typed keys and values, written through the store's or the node's `Put` and read through `Reader` |
 | 19 | Typed metadata document | Quota check-and-set | `RecountObjects` supplies the usage a recount writes |
-| 20 | Object API | Replicating node | Tags, ACL, quota and metadata edits as conditional writes; ETag on every response (target design) |
-| 21 | Storage engine | Typed metadata document | Stores each object manifest under its manifest key (target design) |
-| 22 | Saga engine | Typed metadata document | Migration step: flips the bucket's routing pointer (target design) |
+| 20 | Node core | Replicating node | Makes every metadata write through `Node` methods: `Put` and `Delete` under the precondition the API call carries (`IfMatch`, `IfNoneMatch`, or none) for object and bucket records, `SetScalar` for its system records, and `Merge` for a version fetched by metadata anti-entropy. Reads through `Reader()`. Receives each discard through `OnDiscard` and handles it after the merge has returned |
+| 21 | Node core | Typed metadata document | Uses the typed keys (`ManifestKey`, `QuotaKey`, `RouteKey`), the typed writes `PutTag`, `PutACL` and `SetRoute`, and `Route` on `Reader`. The object record, which is the storage manifest plus the content type, is one value under the manifest key, written with `Put`; `PutManifest`, `PutObjectMeta` and `SetContentType` are not used |
+| 22 | Node core | Quota check-and-set | `UpdateQuota` with `AddUsage` when an object is put or deleted. `RecountQuota` with the node's own recount over the live manifests: a settle time after a quota-key or manifest-key discard, and from the periodic quota audit |
 
-Not drawn, because the consumer is not a neighbour in this view: Chunk 6's node runtime wires `OnDiscard` to metrics and to a deferred `RecountQuota` for quota keys, and decides when a recount runs. The package only reports the discard.
+The package only reports a discard. The node core decides what follows (relationships 20 and 22): it counts the discard and passes it to its sink, schedules a quota recount for a discard on a quota key or a manifest key, and marks the losing object version dead so that its shards are collected.
 
 Differences from the target design:
 
 - **The CRDT design was replaced.** The first design of this component, drawn here until Chunk 4 landed, had four CRDT types (PN-Counter, OR-Set, LWW-Register, LWW-Element-Set) under a typed document. By owner ruling (the OCC amendment of 2026-11-21, PLAN.md 4.2 and 7.5), metadata is protected by optimistic concurrency control instead. None of the four types was built, and the package is `internal/occ`, not `internal/crdt`.
 - **Sibling versions were ruled out.** Keeping both concurrent versions of a key as siblings for a reader to resolve was built first and then ruled out by the owner (the LWW ruling, PLAN.md 9.1). Each key holds one version. Last-writer-wins picks it, and every discarded concurrent write is recorded: counted, logged and reported through `OnDiscard`. The system guarantees convergence and a record of the loss, not preservation of both writes.
 - The Store, the Discard record, Version and record, Version vectors and the Membership interface are new components. The hybrid logical clock, the canonical encoding, the typed metadata document and the replicator (now the Replicating node) keep their places from the first design.
-- The replicator read the gossip view directly in the first design. As built, the package declares its own `Membership` interface (relationships 4 and 5), so it does not import `internal/gossip`.
+- The replicator read the gossip view directly in the first design. As built, the package declares its own `Membership` interface (relationship 4) and the node core implements it (relationship 5), so the package does not import `internal/gossip`.
+- Relationships 20 to 22 started at the Object API, the Storage engine and the Saga engine in the target design. As built all three start at the Node core: the API calls the node through one service interface, storage returns the manifest and stores nothing, and the migration's routing flip is a `SetRoute` made by the node core's implementation of the saga step interfaces. Relationship 22 now ends at the quota code; the routing flip is part of relationship 21.
 - Relationship 2 named Clock, Rand and Transport. As built, the node also uses Disk, for one state blob.
 - Quotas were a PN-Counter. As built, a quota is one check-and-set value. Updates made on two sides of a partition settle by last-writer-wins, so the stored usage can be one side's figure until a recount corrects it.
 - Limits: tombstones are kept forever, and a mismatched round exchanges whole documents.

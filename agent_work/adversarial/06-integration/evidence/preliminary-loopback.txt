@@ -1,0 +1,9 @@
+ Container objstore-dev-run-7d60a667cdbf Creating 
+ Container objstore-dev-run-7d60a667cdbf Created 
+HELD C1 wire-codes: seed=0 all registered sentinels round-trip wrapped; every unassigned byte maps to remote error
+HELD C15 frame-capacity: seed=0 default and small layouts fit; Merkle reply fits; invalid config refused
+BROKEN C16,C17,C27 http-conditional-races: seed=0 race status=503 body=round1-writer0
+HELD C18 slow-and-large-http: seed=0 partial headers and bodies terminated within one second; oversized header got 431
+HELD C14,C28 tcp-fragments-resets: seed=0 bytewise valid frame rejected invalid channel; 17 reset prefixes and three malformed lengths; runtime alive
+HELD C19,C20,C21,C22 shutdown-churn: seed=0 10 runtime cycles, 160 overlapping PUT/GET calls, exact FD and goroutine baseline restored
+

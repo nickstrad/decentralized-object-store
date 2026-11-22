@@ -1,6 +1,6 @@
 # C4 diagrams
 
-**Target architecture, updated to as-built as each part lands.**
+**As built.** Every part of the system has landed, and every diagram was checked against the code when its part landed. The one element still drawn as planned is the Sync client, which is not to be built (OQ-7).
 
 | Part | State | Diagrams |
 | --- | --- | --- |
@@ -8,27 +8,28 @@
 | Environment interfaces (`internal/env`) | built | 3 |
 | Erasure coding (`internal/erasure`) | built | 2, 5 |
 | Storage engine (`internal/storage`): shard format, chunk store, striping, manifest, placement, shard request protocol, put and get paths | built | 2, 3, 9 |
-| HTTP object API (`internal/storage`) | target design | 2, 9 |
 | Gossip membership (`internal/gossip`): SWIM node (join and leave, probe, indirect probe, suspicion, dissemination, full-state sync), Membership view and events, wire codec | built | 2, 3, 4 |
-| Readers of the Membership view: storage placement, replication peer choice, the object API, the node runtime | target design | 2, 3, 4, 7, 9 |
 | Merkle anti-entropy (`internal/merkle`): hash tree, diff protocol, wire codec, anti-entropy worker with scrub, `Repairer` and `Membership` interfaces | built | 2, 3, 6 |
-| Users and suppliers of the Merkle package: the storage engine as `Repairer` and tree content, the gossip view as the peer list, the saga verify step, the node runtime | target design | 2, 3, 6, 8, 9 |
 | OCC metadata (`internal/occ`): hybrid logical clock, version vectors, versions with ETags and preconditions, last-writer-wins document merge, discard record, canonical encoding, store, quota check-and-set and recount, typed metadata document, replicating node, `Membership` interface | built | 2, 3, 7 |
-| Users and suppliers of the OCC package: the object API, the storage engine's manifests, the saga routing step, the gossip view as the peer list, the node runtime | target design | 2, 3, 4, 7, 8, 9 |
 | Saga engine (`internal/saga`): orchestrator, log, recovery, retry policy, bucket-migration workflow, step interfaces; model cluster (`internal/saga/sagasim`) | built | 2, 3, 8 |
-| Migration steps on the real storage, Merkle and metadata components | target design | 2, 6, 7, 8 |
-| Everything else | target design | 1–9 |
+| Node core (`internal/node`): the one node that the simulator and the real runtime both run. It builds the five protocol packages into a node and implements the interfaces they declare: `Membership` from the gossip view, `Repairer` over the metadata keys, `MigrationOps` on the real components. Object and bucket operations, shard inventory with repair and collection, loss declaration | built | 2, 3, and as the neighbour in 4, 6, 7, 8, 9 |
+| Node runtime (`internal/noderuntime`): UDP and TCP transports, frame codec, file disk, wall clock, the node loop, `Runtime` as the object service | built | 2, 3 |
+| HTTP object API (`internal/storage/httpapi`): handler, status table, limits, server, `Service` interface | built | 1, 2, 3 |
+| `cmd/objnode` | built | 1, 3 |
+| Sync client and `/v1/sync` | not to be built (OQ-7) | 1, 2 |
 
-These diagrams describe the architecture that [PLAN.md](../../PLAN.md) defines. As each
-part lands, its diagrams are checked against the code and updated in the same landing.
+These diagrams started as the target architecture that [PLAN.md](../../PLAN.md) defines.
+As each part landed, its diagrams were checked against the code and updated in the same
+landing. Where the build differs from the plan, the diagram shows the build and a
+"Differences from the target design" section says what changed.
 
 ## Diagrams
 
 | # | Level | File | Shows |
 | --- | --- | --- | --- |
 | 1 | System Context | [01-system-context.md](01-system-context.md) | The object store and sync system, its clients and operator, peer nodes, and the DST harness as a test system |
-| 2 | Container | [02-container.md](02-container.md) | Domain view: object API, storage engine, erasure coding, gossip membership, Merkle anti-entropy, OCC metadata, Saga engine |
-| 3 | Container | [03-container-runtime.md](03-container-runtime.md) | Runtime and environment view: `cmd/objnode`, `internal/node`, `internal/env`, node disk, peers, and the DST harness (`internal/sim`) |
+| 2 | Container | [02-container.md](02-container.md) | Domain view: object API, node runtime, node core, storage engine, erasure coding, gossip membership, Merkle anti-entropy, OCC metadata, Saga engine |
+| 3 | Container | [03-container-runtime.md](03-container-runtime.md) | Runtime and environment view: `cmd/objnode`, the object API, `internal/noderuntime`, `internal/node`, `internal/env`, node disk, peers, and the DST harness (`internal/sim`) |
 | 4 | Component | [04-component-gossip.md](04-component-gossip.md) | `internal/gossip`: join and leave, SWIM probe, indirect probe, suspicion state machine, dissemination, full-state sync, Membership view, wire codec |
 | 5 | Component | [05-component-erasure.md](05-component-erasure.md) | `internal/erasure`: GF(2^8) arithmetic, matrix inversion, Cauchy coding matrix, Encode, Reconstruct, Verify |
 | 6 | Component | [06-component-merkle.md](06-component-merkle.md) | `internal/merkle`: tree builder, diff protocol, wire codec, anti-entropy worker, Repairer and Membership interfaces |
@@ -63,8 +64,11 @@ Checked on 2026-11-22:
 | --- | --- | --- |
 | `model.json` decodes | `decodeArchitecture` from `c4-sdk@0.1.0` (`c4-sdk/core`) | `ok: true`, 0 errors, 0 warnings |
 | Every diagram builds a scene | `buildScene` from `c4-sdk/core`, all 9 diagrams | 9 of 9 succeed |
-| Mermaid blocks parse | `mermaid.parse`, Mermaid 11, all 9 blocks and all 34 sources | all parse |
-| Terminal embeds are current and fit | `render.py --check` with `DRAW_VISUAL_MAX_WIDTH=80` | 34 embeds pass |
+| Terminal sources render | `render.py --update`, all 37 sources | all render |
+| Terminal embeds are current and fit | `render.py --check` with `DRAW_VISUAL_MAX_WIDTH=80` | 37 embeds pass |
+| Mermaid blocks, edge by edge | a script compares each block's numbered edges with the model's edges, the terminal sources and the relationship table | 9 of 9 agree |
+
+The nine Mermaid blocks were last run through `mermaid.parse` (Mermaid 11) at the previous refresh of this set. The blocks changed for Chunk 6 use the same statements as before and were not re-parsed.
 
 To repeat the checks after a change:
 
@@ -83,16 +87,23 @@ DRAW_VISUAL_MAX_WIDTH=80 render.py --check docs/c4/0*.md
    container's component view only when the element carries the `external` tag, and
    the tag belongs to the element, not to the view. Tagging the real containers
    would draw them as external in the two Container views. The model therefore has
-   eight neighbour elements, `n-api`, `n-storage`, `n-erasure`, `n-gossip`,
-   `n-merkle`, `n-occ`, `n-saga` and `n-env`, tagged `external` and `neighbour`.
+   four neighbour elements, `n-node`, `n-storage`, `n-erasure` and `n-env`, tagged
+   `external` and `neighbour`. There were eight until Chunk 6: as built, no protocol
+   package calls another, so the only neighbours of a component view are the node
+   core, the environment interfaces and, for storage and erasure, each other.
    Each one stands for the container with the matching `c-` ID, is used only in
    component views, and links back to that container's views. This is a workaround
    for a limit in the tool. Nick decides whether to keep it or to change `c4-sdk`.
 2. **Planned key entry.** Every legend has a `Planned` entry, because `c4-sdk` draws
-   planned elements and relationships with dashed lines.
+   planned elements and relationships with dashed lines. Only the Sync client and its
+   relationships are still planned.
 3. **Technology on in-process relationships.** Relationships between Go packages in
    the one `objnode` process carry the technology `Go, in-process`. The DST harness
-   relationship to `internal/env` carries `Go interface implementation`.
+   and node runtime relationships to `internal/env` carry `Go interface implementation`.
+4. **Interface relationships.** A protocol package that declares an interface and has
+   the node core implement it is drawn with an arrow from the package to the node core,
+   technology `Go interface, in-process`: the arrow points to the supplier. The Go
+   import runs the other way, from `internal/node` to the package.
 
 ## Open items on this set
 

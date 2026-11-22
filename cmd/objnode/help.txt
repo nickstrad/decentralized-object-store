@@ -1,0 +1,12 @@
+id                advertised host:port peer identity (required; unauthenticated)
+region            placement zone label
+listen            local UDP/TCP bind socket (inherits id's address when empty)
+http              open HTTP API endpoint (:8080 default; no auth)
+data              directory holding shards, metadata, and saga log (required)
+seeds             comma-separated bootstrap gossip members
+k                 erasure-coding payload chunks per group (4 initially)
+m                 Reed-Solomon parity blocks (2 if unset)
+stripe            byte size of each band (1048576)
+max-object        largest PUT body in bytes (33554432 cap)
+shutdown-timeout  graceful stop deadline on signal (20s limit)
+config            JSON options file; CLI flags override its fields

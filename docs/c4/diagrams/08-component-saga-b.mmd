@@ -1,6 +1,6 @@
 %% draw-visual: -x 4 -y 1 -p 0
 graph LR
-  WORKFLOW[Bucket-migration workflow] -->|6| STEPS[Step interfaces]
-  STEPS -->|9| STORAGE[Storage engine]
-  STEPS -->|10| MERKLE[Merkle anti-entropy]
-  STEPS -->|11| OCC[OCC metadata]
+  NODE[Node core] -->|1| ORCH[Orchestrator]
+  NODE -->|9| STEPS[Step interfaces]
+  NODE -->|10| WORKFLOW[Bucket-migration workflow]
+  NODE -->|11| SIM[Model cluster]

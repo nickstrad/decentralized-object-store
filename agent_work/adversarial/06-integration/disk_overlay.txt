@@ -1,0 +1,32 @@
+package noderuntime
+
+import (
+ "bytes"
+ "fmt"
+ "testing"
+)
+
+// Use the package's test-only filesystem fault layer with new payloads and
+// independently enumerated boundaries. Nothing is written in the product tree.
+func TestIndependentDiskCrashBoundaries(t *testing.T) {
+ for _,name:=range []string{"occ/state","shards/new/deep/version/0.0"} {
+  for _,size:=range []int{0,1,4097,65537} {
+   old:=bytes.Repeat([]byte{0x53},1025); next:=bytes.Repeat([]byte{0xa9},size)
+   for _,fail:=range []bool{false,true} {
+    for boundary:=1;boundary<100;boundary++ {
+     m:=freshMemFS();d,e:=openFileDisk(m,"/d");if e!=nil{t.Fatal(e)}
+     if e=d.Write(name,old);e!=nil{t.Fatal(e)};if e=d.Sync(name);e!=nil{t.Fatal(e)}
+     m.ops=0;if fail {m.failAt=boundary}else{m.crashAt=boundary}
+     e=d.Write(name,next);if e==nil{e=d.Sync(name)};ops:=m.ops
+     for _,keep:=range []bool{false,true} {
+      b,ok,re:=readBack(m.afterCrash(keep),name)
+      if re!=nil||!ok||(!bytes.Equal(b,old)&&!bytes.Equal(b,next)) {t.Fatalf("name=%s size=%d boundary=%d fail=%v keep=%v read=%v present=%v bytes=%d",name,size,boundary,fail,keep,re,ok,len(b))}
+      if e==nil&&!bytes.Equal(b,next){t.Fatalf("successful sync lost data: %s size=%d boundary=%d",name,size,boundary)}
+     }
+     t.Logf("HELD C32 disk-boundary: %s size=%d boundary=%d fail=%v two recovery images",name,size,boundary,fail)
+     if boundary>ops {break};if boundary==99{t.Fatal(fmt.Sprint("boundary budget exhausted"))}
+    }
+   }
+  }
+ }
+}

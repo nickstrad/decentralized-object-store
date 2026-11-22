@@ -14,12 +14,13 @@ is `pgregory.net/rapid`, restricted to test files and checked by a gate.
 
 ## Current status
 
-The foundation tooling and every protocol building block — the deterministic
+The foundation tooling, every protocol building block — the deterministic
 simulator, SWIM gossip membership, Reed-Solomon erasure coding with the local
 chunk store, Merkle-tree anti-entropy, optimistic concurrency control for
-metadata, and the Saga engine with bucket migration — are built, along with
-chapters 1 through 6 of the book. Full-cluster integration (the node and HTTP
-object API), the end-to-end suite, and the finished book remain planned.
+metadata, and the Saga engine with bucket migration — and full-cluster
+integration (the wired node, real runtime, HTTP object API, and `objnode` CLI)
+are built, along with chapters 1 through 7 of the book. The end-to-end test
+suite with hardening and the finished book remain planned.
 
 | Building block | Status | Scope |
 | --- | --- | --- |
@@ -30,7 +31,9 @@ object API), the end-to-end suite, and the finished book remain planned.
 | Merkle-tree anti-entropy | Built | Persistent fanout-16 SHA-256 trie, level-by-level diff protocol with 1 MiB bounded replies and stateless responder, and periodic scrub-and-repair worker (`internal/merkle`) |
 | OCC metadata | Built | Conditional writes (ETags, `If-Match` / `If-None-Match`), version vectors to detect concurrency, last-writer-wins for concurrent writes with every discarded write counted and logged, and OCC-checked quotas (`internal/occ`) |
 | Sagas | Built | Compensating saga engine, checksummed log, crash recovery, and five-step bucket migration (`internal/saga`), plus model cluster and failure-point matrix runner (`internal/saga/sagasim`) |
-| Integration, E2E, and book | Planned (next) | Full-cluster integration (the node and HTTP object API), end-to-end suite, and finished book |
+| Integration | Built | Wired protocol node (`internal/node`), UDP/TCP and crash-safe disk runtime (`internal/noderuntime`), HTTP object API (`internal/storage`, `internal/storage/httpapi`), `cmd/objnode`, and three-node cluster profile |
+| E2E suite and hardening | Planned (next) | Simulated and real-process end-to-end scenarios (E1–E9), long nemesis cycles, and fuzz hardening (`test/e2e`) |
+| Finished book | Planned | Assembled book manuscript, final C4 pass, and publishing checks (`book/`) |
 
 ## Working through Docker
 
@@ -109,7 +112,8 @@ the owning gate to go red for the right reason.
   [Merkle-Tree Anti-Entropy](book/chapters/04-merkle-anti-entropy.md),
   Chapter 5,
   [Optimistic Concurrency Control](book/chapters/05-optimistic-concurrency-control.md),
-  and Chapter 6, [Sagas](book/chapters/06-sagas.md).
+  Chapter 6, [Sagas](book/chapters/06-sagas.md), and Chapter 7,
+  [The Object Store and Sync Engine](book/chapters/07-object-store-and-sync-engine.md).
 - **C4 diagrams:** [docs/c4/README.md](docs/c4/README.md) holds the C4
   architecture diagrams. They show the target design until each part is built.
 - **Plan and specification:** [PLAN.md](PLAN.md) is the full build and testing

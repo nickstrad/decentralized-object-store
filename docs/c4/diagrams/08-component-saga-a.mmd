@@ -1,6 +1,6 @@
 %% draw-visual: -x 4 -y 1 -p 0
 graph LR
-  API[Object API] -->|1| ORCH[Orchestrator]
-  ORCH -->|2| WORKFLOW[Bucket-migration workflow]
+  ORCH[Orchestrator] -->|2| WORKFLOW[Bucket-migration workflow]
+  WORKFLOW -->|6| STEPS[Step interfaces]
   ORCH -->|3| LOG[Saga log]
   ORCH -->|12| RECOVERY[Recovery]

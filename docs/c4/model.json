@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "id": "objstore",
-  "title": "Decentralized Object Store & Sync Engine \u2014 target architecture, as built where landed",
-  "revision": "as-built-occ-2026-11-22",
+  "title": "Decentralized Object Store & Sync Engine \u2014 architecture as built",
+  "revision": "as-built-integration-2026-11-22",
   "defaultDiagramId": "context",
   "model": {
     "elements": [
@@ -11,7 +11,7 @@
         "kind": "person",
         "name": "Object API client",
         "description": "S3-style API consumer. Puts, gets, heads, deletes and lists objects through any node.",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -39,7 +39,7 @@
         "kind": "person",
         "name": "Operator",
         "description": "Runs objnode processes, starts bucket migrations, reads membership and health.",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -52,7 +52,7 @@
         "kind": "person",
         "name": "Developer or reader",
         "description": "Runs simulation scenarios and replays a failing seed with the printed command.",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -64,8 +64,8 @@
         "id": "store",
         "kind": "softwareSystem",
         "name": "Decentralized Object Store & Sync Engine",
-        "description": "Leaderless, multi-region object store with a local-first metadata sync layer. A cluster of objnode peers; every node accepts reads and writes.",
-        "status": "planned",
+        "description": "Leaderless, multi-region object store with node-level metadata sync. A cluster of objnode peers; every node accepts reads and writes.",
+        "status": "existing",
         "technology": "Go, standard library only",
         "tags": [],
         "plannedNotes": [],
@@ -79,7 +79,7 @@
         "kind": "softwareSystem",
         "name": "Peer objnode nodes",
         "description": "Other instances of the same system, in the same region and in other regions, as seen from one node.",
-        "status": "planned",
+        "status": "existing",
         "tags": [
           "external"
         ],
@@ -112,9 +112,25 @@
         "parentId": "store",
         "containerType": "application",
         "name": "cmd/objnode",
-        "description": "CLI entry point for a storage and sync peer. Runs a node from flags or a config file.",
+        "description": "The node binary: reads flags or a JSON config file, builds the node runtime and the HTTP server, and stops both on a signal or when the node loop fails.",
         "technology": "Go CLI",
-        "status": "planned",
+        "status": "existing",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "c-runtime",
+        "kind": "container",
+        "parentId": "store",
+        "containerType": "application",
+        "name": "Node runtime (internal/noderuntime)",
+        "description": "The real environment and the node loop: UDP datagrams and TCP request/response frames, the file disk, the wall clock with loop-posted timers, and the one goroutine that owns all protocol state. Runtime implements the object API's Service interface by posting every call to that loop.",
+        "technology": "Go; UDP, TCP length-prefixed frames, files",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -127,10 +143,10 @@
         "kind": "container",
         "parentId": "store",
         "containerType": "application",
-        "name": "Node runtime (internal/node)",
-        "description": "Wires all primitives into one node and supplies the real runtime: UDP transport, TCP request/response transport, file-backed disk, wall clock, the node loop.",
-        "technology": "Go; UDP, TCP length-prefixed frames, files",
-        "status": "planned",
+        "name": "Node core (internal/node)",
+        "description": "The one single-threaded Node that both the simulator and the real runtime execute. It builds gossip, storage, OCC metadata, the metadata Merkle worker and the saga engine over one environment, each on its own channel of the one transport, and implements the interfaces they declare: Membership for storage, Merkle and OCC, Repairer over the metadata keys, and MigrationOps. It holds the object and bucket operations, the shard inventory with repair and collection, and the loss declaration.",
+        "technology": "Go; determinism-linted, no goroutines",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -143,14 +159,12 @@
         "kind": "container",
         "parentId": "store",
         "containerType": "application",
-        "name": "Object API (internal/storage)",
-        "description": "HTTP object API: put, get, head, delete, list, bucket create, tags and ACL, quota, metadata, migration start and status, membership and health. Metadata edits are conditional writes with an ETag on every response.",
-        "technology": "Go, HTTP, S3-like path-style",
-        "status": "planned",
+        "name": "Object API (internal/storage/httpapi)",
+        "description": "HTTP object API: the handler, the one status table, the request limits and the server. It declares the Service interface it calls. Bucket create, object put, get, head, delete and list, tags, ACL, quota, object metadata, migration start and status, members and health. Writes are conditional on If-Match or If-None-Match: *, and object responses carry an ETag. The request and response types and the API error sentinels are in internal/storage (api.go).",
+        "technology": "Go, net/http, path-style",
+        "status": "existing",
         "tags": [],
-        "plannedNotes": [
-          "API surface is PLAN.md OQ-6. There is no client sync endpoint: OQ-7 was decided as node-level sync only."
-        ],
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -199,7 +213,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "No other package reads the Membership view yet. Storage placement, replication peer choice and the node runtime are wired to it in the integration chunk (Chunk 6)."
+          "As built, the one reader of the Membership view is the node core (internal/node), which answers the Membership interfaces of storage, Merkle and OCC from it."
         ],
         "docIds": [],
         "sourceIds": [
@@ -217,8 +231,8 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "Only test stores implement Repairer and Membership so far. The chunk store and manifests as the tree's content, the gossip view as the peer list, the saga verify step and the node runtime are wired in the integration chunk (Chunk 6).",
-          "No tombstones: a pull-only repair would bring back a deleted key. Deletes are a stated limit for Chunk 6."
+          "As built, the node core (internal/node) implements Repairer over the OCC metadata keys and Membership from the gossip view; one worker per node covers all metadata. Shards are repaired by the node core with two local trees per bucket, not through the worker.",
+          "The package has no tombstones. The node core keeps a deleted key in the tree as its OCC tombstone version, which wins the merge against a stale live version."
         ],
         "docIds": [],
         "sourceIds": [
@@ -236,9 +250,9 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "Nothing outside the package calls it yet, and only test code supplies its Membership interface. The object API, the storage engine's manifests, the saga routing step, the gossip view as the peer list and the node runtime are wired in the integration chunk (Chunk 6).",
+          "As built, the one caller is the node core (internal/node), which also supplies the Membership interface from the gossip view.",
           "Replaces the CRDT metadata layer of the first design by owner ruling (OCC amendment, 2026-11-21). Keeping concurrent versions as siblings was ruled out in favour of last-writer-wins with every discard recorded.",
-          "The package reports quota-key discards through OnDiscard and offers RecountQuota; it does not schedule recounts. Chunk 6 decides when a recount runs.",
+          "The package reports quota-key discards through OnDiscard and offers RecountQuota; it does not schedule recounts. The node core decides when a recount runs.",
           "Tombstones are kept forever, and a mismatched replication round exchanges whole documents."
         ],
         "docIds": [],
@@ -257,7 +271,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "The migration steps run only against the model cluster. MigrationOps is bound to the storage, Merkle and metadata components in the integration chunk (Chunk 6)."
+          "As built, MigrationOps has two implementations: the model cluster's, and migrator in internal/node on the real storage, Merkle and metadata packages."
         ],
         "docIds": [],
         "sourceIds": [
@@ -286,9 +300,9 @@
         "parentId": "store",
         "containerType": "datastore",
         "name": "Node disk",
-        "description": "Named blobs on the node's own disk: shard files and the Saga log.",
-        "technology": "Files: temp file, fsync, rename",
-        "status": "planned",
+        "description": "Named blobs under the node's data directory: shard files, the OCC state blob and the saga logs.",
+        "technology": "Files: temp file, fsync, rename; directory fsync on Sync",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -572,7 +586,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "Only the test chunk store implements it so far. The storage engine implements it in Chunk 6."
+          "The node core implements it over the OCC metadata keys (metaRepairer); the package's tests implement it over a test chunk store."
         ],
         "docIds": [],
         "sourceIds": [
@@ -607,7 +621,7 @@
         "tags": [],
         "plannedNotes": [
           "Added by the build; PLAN.md does not name it.",
-          "Only test code implements it so far. Chunk 6 supplies the live peer list from the gossip view."
+          "The node core implements it from the gossip view."
         ],
         "docIds": [],
         "sourceIds": [
@@ -619,7 +633,7 @@
         "kind": "component",
         "parentId": "c-occ",
         "name": "Replicating node",
-        "description": "Node (an env.Process), Client and the wire messages (node.go, wire.go, errors.go). Loads the state blob at start. Each jittered period it sends its document digest to one random peer; the peer answers match or its whole document; the node merges it and pushes its own document back if the two still differ. After each local write it sends the changed key as a datagram to two random peers. Serves remote get, put and delete. All writes go through Node methods, which persist and then broadcast; Reader() is read-only. Wire error codes 128 to 136 in the block 128 to 143, with 131 unassigned.",
+        "description": "Node (an env.Process), Client and the wire messages (node.go, wire.go, errors.go). Loads the state blob at start. Each jittered period it sends its document digest to one random peer; the peer answers match or its whole document; the node merges it and pushes its own document back if the two still differ. After each local write it sends the changed key as a datagram to two random peers. Serves remote get, put and delete. All writes go through Node methods, which persist and then broadcast; Reader() is read-only. Wire error codes 128 to 136 in the block 128 to 143, with 131 unassigned. Added in Chunk 6: Node.Merge, which folds a fetched document into the store with the same merge, discard record and persistence, for the metadata anti-entropy of internal/node.",
         "technology": "Go",
         "status": "existing",
         "tags": [],
@@ -639,7 +653,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "Only test code supplies it so far."
+          "The node core supplies it from the gossip view."
         ],
         "docIds": [],
         "sourceIds": [
@@ -855,7 +869,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "Only the model cluster implements MigrationOps so far. It is bound to the storage, Merkle and metadata components in Chunk 6."
+          "Two implementations: the model cluster's Ops, and migrator in internal/node."
         ],
         "docIds": [],
         "sourceIds": [
@@ -872,7 +886,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "Added by the build; PLAN.md does not name it. It stands in for the storage, Merkle and metadata components until Chunk 6."
+          "Added by the build; PLAN.md does not name it. The node core's tests reuse its failure-matrix runner on real nodes."
         ],
         "docIds": [],
         "sourceIds": [
@@ -965,7 +979,7 @@
         "tags": [],
         "plannedNotes": [
           "Default k=4, m=2 and the k+1 write threshold are PLAN.md OQ-15.",
-          "Not built yet: storing the manifest, and delete as a tombstone manifest. They come with the object API (Chunk 6)."
+          "The package stores no manifest and has no object delete: the node core keeps the manifest in OCC metadata, and a delete is an OCC tombstone there."
         ],
         "docIds": [],
         "sourceIds": [
@@ -1028,96 +1042,13 @@
         ]
       },
       {
-        "id": "n-occ",
+        "id": "n-node",
         "kind": "container",
         "parentId": "store",
         "containerType": "application",
-        "name": "OCC metadata (internal/occ)",
-        "description": "The same package as element c-occ, shown as a neighbour in the component views of other packages. Optimistic concurrency control for metadata. Each key holds exactly one version on every replica. Conditional writes (If-Match on an ETag, If-None-Match) refuse stale writers. When two concurrent versions meet, last-writer-wins picks one as a function of the pair alone: the higher hybrid logical clock stamp, then the node ID, then the version ID. The other is discarded, and every such discard is counted, logged and reported through a callback. Version vectors only classify a replacement as a causal overwrite or a concurrent discard. Quota check-and-set with a recount hook, a typed metadata document, and a replicating node that exchanges digests and documents with peers from its own Membership interface. It uses Clock, Rand, Transport and Disk; the Disk holds one state blob.",
-        "technology": "Go, sans-IO state machine",
-        "status": "existing",
-        "tags": [
-          "external",
-          "neighbour"
-        ],
-        "plannedNotes": [
-          "Nothing outside the package calls it yet, and only test code supplies its Membership interface. The object API, the storage engine's manifests, the saga routing step, the gossip view as the peer list and the node runtime are wired in the integration chunk (Chunk 6).",
-          "Replaces the CRDT metadata layer of the first design by owner ruling (OCC amendment, 2026-11-21). Keeping concurrent versions as siblings was ruled out in favour of last-writer-wins with every discard recorded.",
-          "The package reports quota-key discards through OnDiscard and offers RecountQuota; it does not schedule recounts. Chunk 6 decides when a recount runs.",
-          "Tombstones are kept forever, and a mismatched replication round exchanges whole documents."
-        ],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ]
-      },
-      {
-        "id": "n-saga",
-        "kind": "container",
-        "parentId": "store",
-        "containerType": "application",
-        "name": "Saga engine (internal/saga)",
-        "description": "The same package as element c-saga, shown as a neighbour in the component views of other packages. Durable saga engine: orchestrator, checksummed log, recovery and retry policy; the five-step bucket-migration workflow, written against the MigrationOps interface; a model cluster (internal/saga/sagasim) that stands in for the real stores in tests.",
-        "technology": "Go, sans-IO state machine",
-        "status": "existing",
-        "tags": [
-          "external",
-          "neighbour"
-        ],
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ]
-      },
-      {
-        "id": "n-gossip",
-        "kind": "container",
-        "parentId": "store",
-        "containerType": "application",
-        "name": "Gossip membership (internal/gossip)",
-        "description": "The same package as element c-gossip, shown as a neighbour in the component views of other packages. SWIM membership as one single-threaded node: probe, indirect probe through relays, suspicion with refutation by incarnation, piggybacked dissemination with a retransmit limit, periodic push-pull sync, join and leave, and the Membership view with change events. Expired dead and left entries become bounded tombstones. It uses Clock, Rand and Transport and no Disk.",
-        "technology": "Go, sans-IO state machine",
-        "status": "existing",
-        "tags": [
-          "external",
-          "neighbour"
-        ],
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ]
-      },
-      {
-        "id": "n-api",
-        "kind": "container",
-        "parentId": "store",
-        "containerType": "application",
-        "name": "Object API (internal/storage)",
-        "description": "The same package as element c-api, shown as a neighbour in the component views of other packages. HTTP object API: put, get, head, delete, list, bucket create, tags and ACL, quota, metadata, migration start and status, membership and health. Metadata edits are conditional writes with an ETag on every response.",
-        "technology": "Go, HTTP, S3-like path-style",
-        "status": "planned",
-        "tags": [
-          "external",
-          "neighbour"
-        ],
-        "plannedNotes": [
-          "API surface is PLAN.md OQ-6. There is no client sync endpoint: OQ-7 was decided as node-level sync only."
-        ],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ]
-      },
-      {
-        "id": "n-merkle",
-        "kind": "container",
-        "parentId": "store",
-        "containerType": "application",
-        "name": "Merkle anti-entropy (internal/merkle)",
-        "description": "The same package as element c-merkle, shown as a neighbour in the component views of other packages. Fixed-depth 16-ary SHA-256 hash tree over a key-to-hash map with O(1) snapshots; a diff protocol that walks one tree level per round trip, with every reply at most 1 MiB; a wire codec; and an anti-entropy worker that scrubs local data by re-hashing it, diffs against one peer per period and pulls the keys that differ through the Repairer interface. It uses Clock, Rand and Transport and no Disk: stored bytes are reached only through the Repairer.",
-        "technology": "Go, sans-IO state machine",
+        "name": "Node core (internal/node)",
+        "description": "The same package as element c-node, shown as a neighbour in the component views of other packages. It builds the protocol packages into one node and implements the interfaces they declare.",
+        "technology": "Go",
         "status": "existing",
         "tags": [
           "external",
@@ -1154,9 +1085,9 @@
         "id": "r-client-store",
         "sourceId": "api-client",
         "targetId": "store",
-        "label": "Puts, gets, heads, deletes and lists objects; manages buckets, tags, ACL, quota and metadata",
-        "technology": "HTTP, S3-like path-style",
-        "status": "planned",
+        "label": "Creates buckets; puts, gets, heads, deletes and lists objects; edits tags, ACL entries and quota; reads object metadata",
+        "technology": "HTTP, path-style",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1183,8 +1114,8 @@
         "sourceId": "operator",
         "targetId": "store",
         "label": "Runs nodes; starts and checks bucket migrations; reads membership and health",
-        "technology": "CLI flags or config file; HTTP",
-        "status": "planned",
+        "technology": "CLI flags or JSON config file; HTTP",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1195,9 +1126,9 @@
         "id": "r-store-peers",
         "sourceId": "store",
         "targetId": "peers",
-        "label": "Gossips membership; sends and fetches shards; diffs Merkle trees; exchanges metadata versions; runs migration steps",
+        "label": "Gossips membership; sends and fetches shards; diffs the metadata Merkle tree and fetches the keys that differ; exchanges metadata versions; asks for pointer views and sends purge lists during a migration",
         "technology": "UDP datagrams; TCP length-prefixed frames",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1210,7 +1141,7 @@
         "targetId": "dst",
         "label": "Runs and replays scenarios from one int64 seed",
         "technology": "go test -seed, DST_SEED, cmd/objsim",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1221,9 +1152,9 @@
         "id": "r-dst-store",
         "sourceId": "dst",
         "targetId": "store",
-        "label": "Runs the system's protocol code on 20 to 100 simulated nodes under injected faults",
+        "label": "Runs the system's protocol code as simulated nodes under injected faults; the cluster scenarios run the whole node, 21 nodes in three regions",
         "technology": "internal/env interfaces, in process",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1234,9 +1165,9 @@
         "id": "k-client-api",
         "sourceId": "api-client",
         "targetId": "c-api",
-        "label": "Puts, gets, heads, deletes and lists objects; manages buckets, tags, ACL, quota and metadata",
-        "technology": "HTTP, S3-like path-style",
-        "status": "planned",
+        "label": "Creates buckets; puts, gets, heads, deletes and lists objects; edits tags, ACL entries and quota; reads object metadata",
+        "technology": "HTTP, path-style",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1264,66 +1195,12 @@
         "targetId": "c-api",
         "label": "Starts and checks migrations; reads membership and health",
         "technology": "HTTP",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
         ]
-      },
-      {
-        "id": "k-api-storage",
-        "sourceId": "c-api",
-        "targetId": "c-storage",
-        "label": "Object put, get, head, delete, list; bucket create",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "k-api-occ",
-        "sourceId": "c-api",
-        "targetId": "c-occ",
-        "label": "Tags, ACL, quota and metadata edits as conditional writes, with an ETag on every response",
-        "status": "planned",
-        "plannedNotes": [
-          "The occ package is built; this link is wired in the integration chunk (Chunk 6)."
-        ],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "k-api-saga",
-        "sourceId": "c-api",
-        "targetId": "c-saga",
-        "label": "Migration start and status",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "k-api-gossip",
-        "sourceId": "c-api",
-        "targetId": "c-gossip",
-        "label": "Membership and health",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
       },
       {
         "id": "k-storage-erasure",
@@ -1339,111 +1216,12 @@
         "technology": "Go, in-process"
       },
       {
-        "id": "k-storage-gossip",
-        "sourceId": "c-storage",
-        "targetId": "c-gossip",
-        "label": "Places shards by rendezvous hashing over the Membership view",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "k-storage-occ",
-        "sourceId": "c-storage",
-        "targetId": "c-occ",
-        "label": "Stores each object manifest as the one version of its manifest key",
-        "status": "planned",
-        "plannedNotes": [
-          "The occ package is built; this link is wired in the integration chunk (Chunk 6)."
-        ],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "k-merkle-storage",
-        "sourceId": "c-merkle",
-        "targetId": "c-storage",
-        "label": "Diffs manifest and shard-inventory trees; repairs through the Repairer interface",
-        "status": "planned",
-        "plannedNotes": [
-          "The merkle package is built over its own Repairer interface and a test chunk store. The storage engine is bound to it in the integration chunk (Chunk 6)."
-        ],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "k-occ-gossip",
-        "sourceId": "c-occ",
-        "targetId": "c-gossip",
-        "label": "Takes its replication peers from the Membership view",
-        "status": "planned",
-        "plannedNotes": [
-          "The occ package declares its own Membership interface, supplied only by test code so far; the gossip view is wired to it in the integration chunk (Chunk 6)."
-        ],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "k-saga-storage",
-        "sourceId": "c-saga",
-        "targetId": "c-storage",
-        "label": "Migration steps: allocate target, copy shards, delete source",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "k-saga-merkle",
-        "sourceId": "c-saga",
-        "targetId": "c-merkle",
-        "label": "Migration step: verify Merkle root",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "k-saga-occ",
-        "sourceId": "c-saga",
-        "targetId": "c-occ",
-        "label": "Migration step: flip the bucket's routing pointer",
-        "status": "planned",
-        "plannedNotes": [
-          "The occ package is built; this link is wired in the integration chunk (Chunk 6)."
-        ],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
         "id": "k-operator-objnode",
         "sourceId": "operator",
         "targetId": "c-objnode",
-        "label": "Starts a node from flags or a config file",
+        "label": "Starts a node from flags or a JSON config file",
         "technology": "CLI",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1451,24 +1229,11 @@
         ]
       },
       {
-        "id": "k-objnode-node",
-        "sourceId": "c-objnode",
-        "targetId": "c-node",
-        "label": "Runs one node",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
         "id": "k-node-env",
         "sourceId": "c-node",
         "targetId": "c-env",
-        "label": "Implements Clock, Rand, Transport, Disk for the real runtime",
-        "status": "planned",
+        "label": "Is an env.Process; acts only through Clock, Rand, Transport and Disk, and gives each protocol package its own channel of the one transport",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1480,8 +1245,8 @@
         "id": "k-node-gossip",
         "sourceId": "c-node",
         "targetId": "c-gossip",
-        "label": "Wires into the node; drives from the node loop",
-        "status": "planned",
+        "label": "Reads the live members, the full member list and the live count; subscribes to membership events; leaves when the node stops",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1493,8 +1258,8 @@
         "id": "k-node-storage",
         "sourceId": "c-node",
         "targetId": "c-storage",
-        "label": "Wires into the node; drives from the node loop",
-        "status": "planned",
+        "label": "Puts object bytes through the storage node of the bucket's placement scope and gets them by manifest; passes inbound shard requests on after its own checks; keeps the shard inventory, rebuilds and collects shards on the chunk store",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1506,8 +1271,8 @@
         "id": "k-node-merkle",
         "sourceId": "c-node",
         "targetId": "c-merkle",
-        "label": "Wires into the node; drives from the node loop",
-        "status": "planned",
+        "label": "Runs one anti-entropy worker over every metadata key; builds per-bucket shard-inventory trees and compares expected with actual; builds the two roots of a migration",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1519,11 +1284,9 @@
         "id": "k-node-occ",
         "sourceId": "c-node",
         "targetId": "c-occ",
-        "label": "Wires into the node; drives from the node loop",
-        "status": "planned",
-        "plannedNotes": [
-          "The occ package is built; this link is wired in the integration chunk (Chunk 6)."
-        ],
+        "label": "Keeps all metadata as OCC keys: object records (manifest and content type), bucket records, tags, ACL, quota usage, the routing pointer and its own system records; receives every discard through OnDiscard",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -1534,40 +1297,14 @@
         "id": "k-node-saga",
         "sourceId": "c-node",
         "targetId": "c-saga",
-        "label": "Wires into the node; drives from the node loop",
-        "status": "planned",
+        "label": "Creates the engine with the bucket migration, recovers unfinished sagas at start, begins migrations and reads their status",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
         ],
         "technology": "Go, in-process"
-      },
-      {
-        "id": "k-node-peers",
-        "sourceId": "c-node",
-        "targetId": "peers",
-        "label": "Sends and receives datagrams and request/response frames",
-        "technology": "UDP; TCP length-prefixed frames",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ]
-      },
-      {
-        "id": "k-node-disk",
-        "sourceId": "c-node",
-        "targetId": "c-disk",
-        "label": "Reads and writes named blobs (file-backed Disk)",
-        "technology": "temp file, fsync, rename",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ]
       },
       {
         "id": "k-gossip-env",
@@ -1639,7 +1376,7 @@
         "sourceId": "dst",
         "targetId": "c-env",
         "label": "Implements Clock, Rand, Transport, Disk for every simulated node; its event loop calls the same protocol handlers",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1766,13 +1503,11 @@
       },
       {
         "id": "g-r10",
-        "sourceId": "n-storage",
+        "sourceId": "n-node",
         "targetId": "g-view",
-        "label": "Reads Membership for shard placement",
-        "status": "planned",
-        "plannedNotes": [
-          "Storage placement is built over its own Membership interface with a static member list; the gossip view is wired to it in Chunk 6."
-        ],
+        "label": "Reads the live members through its gossipView adapter, which answers the Membership interfaces of storage, Merkle and OCC; reads all members and the live count for the members and health endpoints; subscribes to change events",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -1781,13 +1516,11 @@
       },
       {
         "id": "g-r11",
-        "sourceId": "n-occ",
-        "targetId": "g-view",
-        "label": "Reads the live members as its replication peers",
-        "status": "planned",
-        "plannedNotes": [
-          "The occ package declares its own Membership interface, supplied only by test code so far; the gossip view is wired to it in the integration chunk (Chunk 6)."
-        ],
+        "sourceId": "n-node",
+        "targetId": "g-join",
+        "label": "Passes the seed list in Config.Seeds; calls Leave when the node stops",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2173,13 +1906,11 @@
       },
       {
         "id": "m-r4",
-        "sourceId": "n-storage",
+        "sourceId": "n-node",
         "targetId": "m-repairer",
-        "label": "Implements: rebuilds rotted or missing shards from any k good shards",
-        "status": "planned",
-        "plannedNotes": [
-          "Only the test chunk store implements Repairer so far."
-        ],
+        "label": "Implements it as metaRepairer over every OCC metadata key, tombstones and system keys included; Put merges the fetched version with last-writer-wins and refuses one that loses",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2188,13 +1919,11 @@
       },
       {
         "id": "m-r5",
-        "sourceId": "n-storage",
+        "sourceId": "n-node",
         "targetId": "m-tree",
-        "label": "Supplies manifest and shard-inventory key-to-hash maps",
-        "status": "planned",
-        "plannedNotes": [
-          "As built, the worker fills its tree itself: it hashes what Repairer.Keys and Repairer.Read return, and takes writes through Record and Forget. Build accepts a ready key-to-hash list."
-        ],
+        "label": "Builds trees of its own with New, Set and Build: the per-bucket shard inventory (blob name to shard checksum) and the two roots of a migration",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2229,13 +1958,11 @@
       },
       {
         "id": "m-r8",
-        "sourceId": "n-saga",
+        "sourceId": "n-node",
         "targetId": "m-diff",
-        "label": "Migration verify step: compares source and target roots",
-        "status": "planned",
-        "plannedNotes": [
-          "Tree.Root and Compare exist; nothing outside the package calls them yet."
-        ],
+        "label": "Compare: diffs the tree a bucket's manifests expect against the tree of the shards on disk, in memory on one node",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2322,13 +2049,11 @@
       },
       {
         "id": "o-r5",
-        "sourceId": "o-membership",
-        "targetId": "n-gossip",
-        "label": "Filled from the gossip view's live members",
-        "status": "planned",
-        "plannedNotes": [
-          "Only test code supplies Membership so far; the gossip view is wired to it in the integration chunk (Chunk 6)."
-        ],
+        "sourceId": "n-node",
+        "targetId": "o-membership",
+        "label": "Implements it: gossipView.Peers, the live members other than the node itself",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2519,13 +2244,11 @@
       },
       {
         "id": "o-r20",
-        "sourceId": "n-api",
+        "sourceId": "n-node",
         "targetId": "o-node",
-        "label": "Tags, ACL, quota and metadata edits as conditional writes; ETag on every response",
-        "status": "planned",
-        "plannedNotes": [
-          "The object API is built in the integration chunk (Chunk 6)."
-        ],
+        "label": "Makes every metadata write through Node methods: Put and Delete under a precondition, SetScalar for system records, Merge for versions fetched by metadata anti-entropy; reads through Reader; receives each discard through OnDiscard",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2534,13 +2257,11 @@
       },
       {
         "id": "o-r21",
-        "sourceId": "n-storage",
+        "sourceId": "n-node",
         "targetId": "o-meta",
-        "label": "Stores each object manifest under its manifest key",
-        "status": "planned",
-        "plannedNotes": [
-          "PutManifest exists; the storage engine is bound to it in the integration chunk (Chunk 6)."
-        ],
+        "label": "Typed keys and writes: ManifestKey, QuotaKey and RouteKey, PutTag, PutACL, SetRoute, and Route on Reader. The object record under the manifest key is written with Put, not PutManifest",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2549,13 +2270,11 @@
       },
       {
         "id": "o-r22",
-        "sourceId": "n-saga",
-        "targetId": "o-meta",
-        "label": "Migration step: flips the bucket's routing pointer",
-        "status": "planned",
-        "plannedNotes": [
-          "SetRoute exists; the saga step is bound to it in the integration chunk (Chunk 6)."
-        ],
+        "sourceId": "n-node",
+        "targetId": "o-quota",
+        "label": "UpdateQuota with AddUsage on a put or delete; RecountQuota with its own recount over the live manifests, after a discard and in the quota audit",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2564,10 +2283,10 @@
       },
       {
         "id": "s-r1",
-        "sourceId": "n-api",
+        "sourceId": "n-node",
         "targetId": "s-orch",
-        "label": "Migration start and status",
-        "status": "planned",
+        "label": "Creates the engine, recovers at start, begins a migration and reads its status; OnEnd reports a finished saga",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2668,10 +2387,10 @@
       },
       {
         "id": "s-r9",
-        "sourceId": "s-steps",
-        "targetId": "n-storage",
-        "label": "Allocate target, copy shards, delete source",
-        "status": "planned",
+        "sourceId": "n-node",
+        "targetId": "s-steps",
+        "label": "Implements MigrationOps as migrator: claims and registrations as metadata keys, the copy through a storage node of its own, the roots with merkle.Build, the flip with SetRoute, pointer agreement with every live peer, seal, retire with a purge of named dead versions, promote",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2681,13 +2400,11 @@
       },
       {
         "id": "s-r10",
-        "sourceId": "s-steps",
-        "targetId": "n-merkle",
-        "label": "Verify Merkle root",
-        "status": "planned",
-        "plannedNotes": [
-          "The merkle package is built. The verify step is bound to it in the integration chunk (Chunk 6)."
-        ],
+        "sourceId": "n-node",
+        "targetId": "s-workflow",
+        "label": "Registers Migration(migrator) as the engine's definition; decodes the MigrationInput of each call",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2696,18 +2413,16 @@
       },
       {
         "id": "s-r11",
-        "sourceId": "s-steps",
-        "targetId": "n-occ",
-        "label": "Flip the bucket's routing pointer",
-        "status": "planned",
-        "plannedNotes": [
-          "The occ package is built (SetRoute, an unconditional write settled by last-writer-wins). The step is bound to it in the integration chunk (Chunk 6)."
-        ],
+        "sourceId": "n-node",
+        "targetId": "s-sim",
+        "label": "Its tests implement Harness.Build over real nodes and run the 78-cell failure matrix with Run",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
         ],
-        "technology": "Go, in-process"
+        "technology": "Go, in-process; test code"
       },
       {
         "id": "s-r12",
@@ -2789,10 +2504,10 @@
       },
       {
         "id": "t-r1",
-        "sourceId": "n-api",
+        "sourceId": "n-node",
         "targetId": "t-paths",
-        "label": "Object put, get, head, delete, list",
-        "status": "planned",
+        "label": "Put on the storage node of the bucket's placement scope, Get by manifest; hands inbound shard requests to OnRequest after its own checks",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2842,17 +2557,15 @@
       {
         "id": "t-r5",
         "sourceId": "t-place",
-        "targetId": "n-gossip",
-        "label": "Rendezvous hashing over Membership; at most m shards of a stripe per region",
-        "status": "planned",
-        "plannedNotes": [
-          "Placement is built over the Membership interface with a static member list. The gossip package is built; its live view is wired to placement in the integration chunk (Chunk 6)."
-        ],
+        "targetId": "n-node",
+        "label": "Reads the candidate members through the Membership interface; the node core's gossipView and regionView answer from the gossip view",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
         ],
-        "technology": "Go, in-process"
+        "technology": "Go interface, in-process"
       },
       {
         "id": "t-r6",
@@ -2912,9 +2625,7 @@
         "targetId": "t-manifest",
         "label": "PUT fills in and returns the manifest; GET takes each shard's node and checksum from it",
         "status": "existing",
-        "plannedNotes": [
-          "Not built yet: storing the manifest, and the tombstone manifest on delete (Chunk 6)."
-        ],
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2923,13 +2634,11 @@
       },
       {
         "id": "t-r11",
-        "sourceId": "t-manifest",
-        "targetId": "n-occ",
-        "label": "Stored as the one version of the object's manifest key",
-        "status": "planned",
-        "plannedNotes": [
-          "The occ package is built (PutManifest, a conditional write). The storage engine is bound to it in the integration chunk (Chunk 6)."
-        ],
+        "sourceId": "n-node",
+        "targetId": "t-manifest",
+        "label": "Stores the encoded manifest inside its object record in OCC metadata and decodes it for every read; the storage package stores no manifest",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2938,13 +2647,11 @@
       },
       {
         "id": "t-r12",
-        "sourceId": "n-merkle",
+        "sourceId": "n-node",
         "targetId": "t-chunk",
-        "label": "Repairs rotted or missing shards (Repairer)",
-        "status": "planned",
-        "plannedNotes": [
-          "The merkle package is built over its own Repairer interface and a test chunk store. The chunk store is bound to it in the integration chunk (Chunk 6)."
-        ],
+        "label": "Shard inventory and repair through Node.Store: lists and reads shards for the scrub, writes a rebuilt shard, deletes collected and purged shards",
+        "status": "existing",
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2989,6 +2696,214 @@
           "plan"
         ],
         "technology": "Go, in-process"
+      },
+      {
+        "id": "k-api-runtime",
+        "sourceId": "c-api",
+        "targetId": "c-runtime",
+        "label": "Calls the object service: each route is a method of the Service interface, which the API package declares and Runtime implements",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go interface, in-process"
+      },
+      {
+        "id": "k-runtime-node",
+        "sourceId": "c-runtime",
+        "targetId": "c-node",
+        "label": "Builds the one Node over the real environment; delivers datagrams and requests to it; posts each service call to the node loop, where it runs as a Node method",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-storage-node",
+        "sourceId": "c-storage",
+        "targetId": "c-node",
+        "label": "Reads the members to place shards on, through the Membership interface it declares; the node core answers from the gossip view, for all regions or for one",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go interface, in-process"
+      },
+      {
+        "id": "k-occ-node",
+        "sourceId": "c-occ",
+        "targetId": "c-node",
+        "label": "Reads its replication peers through the Membership interface it declares; the node core answers from the gossip view",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go interface, in-process"
+      },
+      {
+        "id": "k-merkle-node",
+        "sourceId": "c-merkle",
+        "targetId": "c-node",
+        "label": "Reads its peers through Membership and reaches the stored metadata through Repairer; the node core implements both",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go interface, in-process"
+      },
+      {
+        "id": "k-saga-node",
+        "sourceId": "c-saga",
+        "targetId": "c-node",
+        "label": "Runs the migration steps through MigrationOps; the node core's migrator implements them on storage, Merkle roots and OCC metadata",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go interface, in-process"
+      },
+      {
+        "id": "k-objnode-runtime",
+        "sourceId": "c-objnode",
+        "targetId": "c-runtime",
+        "label": "Builds the runtime from its options, starts it, waits for a signal or a loop failure, and shuts it down",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-objnode-api",
+        "sourceId": "c-objnode",
+        "targetId": "c-api",
+        "label": "Starts the HTTP server over the runtime, with the node core's status rows; shuts it down before the runtime",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "k-runtime-env",
+        "sourceId": "c-runtime",
+        "targetId": "c-env",
+        "label": "Implements Clock, Rand, Transport and Disk for the real runtime",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go interface implementation"
+      },
+      {
+        "id": "k-runtime-peers",
+        "sourceId": "c-runtime",
+        "targetId": "peers",
+        "label": "Sends and receives datagrams and request/response frames; one TCP connection per request",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "UDP; TCP length-prefixed frames"
+      },
+      {
+        "id": "k-runtime-disk",
+        "sourceId": "c-runtime",
+        "targetId": "c-disk",
+        "label": "Reads and writes named blobs (file-backed Disk)",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "temp file, fsync, rename"
+      },
+      {
+        "id": "k-dst-node",
+        "sourceId": "dst",
+        "targetId": "c-node",
+        "label": "Runs the same Node as a simulated process (node.NewFactory) in the full-node simulation tests and the conformance test",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process; test code"
+      },
+      {
+        "id": "m-r11",
+        "sourceId": "n-node",
+        "targetId": "m-worker",
+        "label": "Creates one worker per node for metadata, starts and stops it, records each written key, and passes it the peers' diff requests",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "m-r12",
+        "sourceId": "n-node",
+        "targetId": "m-membership",
+        "label": "Implements it: gossipView.Peers, the live members other than the node itself",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r16",
+        "sourceId": "n-node",
+        "targetId": "t-stripe",
+        "label": "Rebuild: DecodeStripe from the other holders' shards against the manifest checksums, then EncodeStripe to get its own shard back",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "t-r17",
+        "sourceId": "n-node",
+        "targetId": "t-proto",
+        "label": "Encodes get-shard requests for a rebuild; decodes inbound requests to refuse shard deletes and writes of a shard it recorded absent",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
       }
     ]
   },
@@ -2998,7 +2913,7 @@
       "kind": "context",
       "scopeId": "store",
       "status": "mixed",
-      "title": "System Context \u2014 as built for the simulator and the environment interfaces; the rest is the target design",
+      "title": "System Context \u2014 as built; the sync client is not to be built",
       "nodes": [
         {
           "elementId": "api-client"
@@ -3118,7 +3033,7 @@
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, domain view \u2014 as built for erasure coding, the storage engine, the saga engine, gossip membership, Merkle anti-entropy and OCC metadata; the rest is the target design",
+      "title": "Container, domain view \u2014 as built; the sync client is not to be built",
       "nodes": [
         {
           "elementId": "api-client"
@@ -3131,6 +3046,12 @@
         },
         {
           "elementId": "c-api"
+        },
+        {
+          "elementId": "c-runtime"
+        },
+        {
+          "elementId": "c-node"
         },
         {
           "elementId": "c-storage",
@@ -3180,40 +3101,40 @@
           "relationshipId": "k-operator-api"
         },
         {
-          "relationshipId": "k-api-storage"
+          "relationshipId": "k-api-runtime"
         },
         {
-          "relationshipId": "k-api-occ"
+          "relationshipId": "k-runtime-node"
         },
         {
-          "relationshipId": "k-api-saga"
+          "relationshipId": "k-node-storage"
         },
         {
-          "relationshipId": "k-api-gossip"
+          "relationshipId": "k-node-occ"
+        },
+        {
+          "relationshipId": "k-node-saga"
+        },
+        {
+          "relationshipId": "k-node-gossip"
+        },
+        {
+          "relationshipId": "k-node-merkle"
         },
         {
           "relationshipId": "k-storage-erasure"
         },
         {
-          "relationshipId": "k-storage-gossip"
+          "relationshipId": "k-storage-node"
         },
         {
-          "relationshipId": "k-storage-occ"
+          "relationshipId": "k-occ-node"
         },
         {
-          "relationshipId": "k-merkle-storage"
+          "relationshipId": "k-merkle-node"
         },
         {
-          "relationshipId": "k-occ-gossip"
-        },
-        {
-          "relationshipId": "k-saga-storage"
-        },
-        {
-          "relationshipId": "k-saga-merkle"
-        },
-        {
-          "relationshipId": "k-saga-occ"
+          "relationshipId": "k-saga-node"
         }
       ],
       "legend": {
@@ -3275,17 +3196,23 @@
       "id": "container-runtime",
       "kind": "container",
       "scopeId": "store",
-      "status": "mixed",
+      "status": "existing",
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, runtime and environment view \u2014 as built for the simulator, the environment interfaces, the storage engine, the saga engine, gossip membership, Merkle anti-entropy and OCC metadata; the rest is the target design",
+      "title": "Container, runtime and environment view \u2014 as built",
       "nodes": [
         {
           "elementId": "operator"
         },
         {
           "elementId": "c-objnode"
+        },
+        {
+          "elementId": "c-api"
+        },
+        {
+          "elementId": "c-runtime"
         },
         {
           "elementId": "c-node"
@@ -3323,7 +3250,25 @@
           "relationshipId": "k-operator-objnode"
         },
         {
-          "relationshipId": "k-objnode-node"
+          "relationshipId": "k-objnode-runtime"
+        },
+        {
+          "relationshipId": "k-objnode-api"
+        },
+        {
+          "relationshipId": "k-api-runtime"
+        },
+        {
+          "relationshipId": "k-runtime-node"
+        },
+        {
+          "relationshipId": "k-runtime-env"
+        },
+        {
+          "relationshipId": "k-runtime-peers"
+        },
+        {
+          "relationshipId": "k-runtime-disk"
         },
         {
           "relationshipId": "k-node-env"
@@ -3344,12 +3289,6 @@
           "relationshipId": "k-node-saga"
         },
         {
-          "relationshipId": "k-node-peers"
-        },
-        {
-          "relationshipId": "k-node-disk"
-        },
-        {
           "relationshipId": "k-gossip-env"
         },
         {
@@ -3366,6 +3305,9 @@
         },
         {
           "relationshipId": "k-dst-env"
+        },
+        {
+          "relationshipId": "k-dst-node"
         }
       ],
       "legend": {
@@ -3447,11 +3389,11 @@
       "id": "component-gossip",
       "kind": "component",
       "scopeId": "c-gossip",
-      "status": "mixed",
+      "status": "existing",
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, gossip \u2014 as built for the SWIM node, the view, the wire codec and their use of the environment interfaces; the links from storage and OCC metadata are the target design",
+      "title": "Component, gossip \u2014 as built",
       "nodes": [
         {
           "elementId": "g-join"
@@ -3488,30 +3430,12 @@
           ]
         },
         {
-          "elementId": "n-storage",
+          "elementId": "n-node",
           "related": [
             {
               "diagramId": "container",
-              "elementId": "c-storage",
+              "elementId": "c-node",
               "label": "Container view"
-            },
-            {
-              "diagramId": "component-storage",
-              "label": "Component view"
-            }
-          ]
-        },
-        {
-          "elementId": "n-occ",
-          "related": [
-            {
-              "diagramId": "container",
-              "elementId": "c-occ",
-              "label": "Container view"
-            },
-            {
-              "diagramId": "component-occ",
-              "label": "Component view"
             }
           ]
         }
@@ -3788,11 +3712,11 @@
       "id": "component-merkle",
       "kind": "component",
       "scopeId": "c-merkle",
-      "status": "mixed",
+      "status": "existing",
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, merkle \u2014 as built for the tree, the diff protocol, the wire codec, the worker and its two interfaces; the links from storage and the saga engine are the target design",
+      "title": "Component, merkle \u2014 as built",
       "nodes": [
         {
           "elementId": "m-worker"
@@ -3813,20 +3737,6 @@
           "elementId": "m-membership"
         },
         {
-          "elementId": "n-storage",
-          "related": [
-            {
-              "diagramId": "container",
-              "elementId": "c-storage",
-              "label": "Container view"
-            },
-            {
-              "diagramId": "component-storage",
-              "label": "Component view"
-            }
-          ]
-        },
-        {
           "elementId": "n-env",
           "related": [
             {
@@ -3837,16 +3747,12 @@
           ]
         },
         {
-          "elementId": "n-saga",
+          "elementId": "n-node",
           "related": [
             {
               "diagramId": "container",
-              "elementId": "c-saga",
+              "elementId": "c-node",
               "label": "Container view"
-            },
-            {
-              "diagramId": "component-saga",
-              "label": "Component view"
             }
           ]
         }
@@ -3881,6 +3787,12 @@
         },
         {
           "relationshipId": "m-r10"
+        },
+        {
+          "relationshipId": "m-r11"
+        },
+        {
+          "relationshipId": "m-r12"
         }
       ],
       "legend": {
@@ -3942,11 +3854,11 @@
       "id": "component-occ",
       "kind": "component",
       "scopeId": "c-occ",
-      "status": "mixed",
+      "status": "existing",
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, occ \u2014 as built for the replicating node, the store, the discard record, the document, versions, version vectors, the clock, the encoding, quotas, the typed document and the Membership interface; the links from the object API, storage, the saga engine and to gossip are the target design",
+      "title": "Component, occ \u2014 as built",
       "nodes": [
         {
           "elementId": "o-node"
@@ -3982,20 +3894,6 @@
           "elementId": "o-enc"
         },
         {
-          "elementId": "n-gossip",
-          "related": [
-            {
-              "diagramId": "container",
-              "elementId": "c-gossip",
-              "label": "Container view"
-            },
-            {
-              "diagramId": "component-gossip",
-              "label": "Component view"
-            }
-          ]
-        },
-        {
           "elementId": "n-env",
           "related": [
             {
@@ -4006,40 +3904,12 @@
           ]
         },
         {
-          "elementId": "n-api",
+          "elementId": "n-node",
           "related": [
             {
               "diagramId": "container",
-              "elementId": "c-api",
+              "elementId": "c-node",
               "label": "Container view"
-            }
-          ]
-        },
-        {
-          "elementId": "n-storage",
-          "related": [
-            {
-              "diagramId": "container",
-              "elementId": "c-storage",
-              "label": "Container view"
-            },
-            {
-              "diagramId": "component-storage",
-              "label": "Component view"
-            }
-          ]
-        },
-        {
-          "elementId": "n-saga",
-          "related": [
-            {
-              "diagramId": "container",
-              "elementId": "c-saga",
-              "label": "Container view"
-            },
-            {
-              "diagramId": "component-saga",
-              "label": "Component view"
             }
           ]
         }
@@ -4171,22 +4041,12 @@
       "id": "component-saga",
       "kind": "component",
       "scopeId": "c-saga",
-      "status": "mixed",
+      "status": "existing",
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, saga \u2014 as built for the engine, the log, recovery, the migration workflow and the model cluster; the object API and the links to storage, Merkle and OCC metadata are the target design",
+      "title": "Component, saga \u2014 as built",
       "nodes": [
-        {
-          "elementId": "n-api",
-          "related": [
-            {
-              "diagramId": "container",
-              "elementId": "c-api",
-              "label": "Container view"
-            }
-          ]
-        },
         {
           "elementId": "s-orch"
         },
@@ -4216,53 +4076,21 @@
           ]
         },
         {
-          "elementId": "n-storage",
-          "related": [
-            {
-              "diagramId": "container",
-              "elementId": "c-storage",
-              "label": "Container view"
-            },
-            {
-              "diagramId": "component-storage",
-              "label": "Component view"
-            }
-          ]
-        },
-        {
-          "elementId": "n-merkle",
-          "related": [
-            {
-              "diagramId": "container",
-              "elementId": "c-merkle",
-              "label": "Container view"
-            },
-            {
-              "diagramId": "component-merkle",
-              "label": "Component view"
-            }
-          ]
-        },
-        {
-          "elementId": "n-occ",
-          "related": [
-            {
-              "diagramId": "container",
-              "elementId": "c-occ",
-              "label": "Container view"
-            },
-            {
-              "diagramId": "component-occ",
-              "label": "Component view"
-            }
-          ]
-        },
-        {
           "elementId": "dst",
           "related": [
             {
               "diagramId": "container-runtime",
               "elementId": "dst",
+              "label": "Container view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-node",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-node",
               "label": "Container view"
             }
           ]
@@ -4380,22 +4208,12 @@
       "id": "component-storage",
       "kind": "component",
       "scopeId": "c-storage",
-      "status": "mixed",
+      "status": "existing",
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, storage \u2014 as built for the chunk store, striping, manifest, placement and the node; the object API and the links to gossip, OCC metadata and Merkle are the target design",
+      "title": "Component, storage \u2014 as built",
       "nodes": [
-        {
-          "elementId": "n-api",
-          "related": [
-            {
-              "diagramId": "container",
-              "elementId": "c-api",
-              "label": "Container view"
-            }
-          ]
-        },
         {
           "elementId": "t-paths"
         },
@@ -4432,53 +4250,21 @@
           ]
         },
         {
-          "elementId": "n-gossip",
-          "related": [
-            {
-              "diagramId": "container",
-              "elementId": "c-gossip",
-              "label": "Container view"
-            },
-            {
-              "diagramId": "component-gossip",
-              "label": "Component view"
-            }
-          ]
-        },
-        {
-          "elementId": "n-occ",
-          "related": [
-            {
-              "diagramId": "container",
-              "elementId": "c-occ",
-              "label": "Container view"
-            },
-            {
-              "diagramId": "component-occ",
-              "label": "Component view"
-            }
-          ]
-        },
-        {
-          "elementId": "n-merkle",
-          "related": [
-            {
-              "diagramId": "container",
-              "elementId": "c-merkle",
-              "label": "Container view"
-            },
-            {
-              "diagramId": "component-merkle",
-              "label": "Component view"
-            }
-          ]
-        },
-        {
           "elementId": "n-env",
           "related": [
             {
               "diagramId": "container-runtime",
               "elementId": "c-env",
+              "label": "Container view"
+            }
+          ]
+        },
+        {
+          "elementId": "n-node",
+          "related": [
+            {
+              "diagramId": "container",
+              "elementId": "c-node",
               "label": "Container view"
             }
           ]
@@ -4529,6 +4315,12 @@
         },
         {
           "relationshipId": "t-r15"
+        },
+        {
+          "relationshipId": "t-r16"
+        },
+        {
+          "relationshipId": "t-r17"
         }
       ],
       "legend": {
