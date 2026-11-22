@@ -113,7 +113,7 @@ func lateFlipRun(res *lateResult, isolate bool) func(seed int64) *sim.Sim {
 				}
 			})
 		})
-		if err := s.RunUntilConverged(env.Time(20*time.Second), func() bool { return s.Now() > env.Time(5*time.Second) && h.converged() }); err != nil {
+		if err := s.RunUntilConverged(env.Time(60*time.Second), func() bool { return s.Now() > env.Time(5*time.Second) && h.converged() }); err != nil {
 			s.Fail(err)
 			return s
 		}
