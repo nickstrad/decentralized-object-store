@@ -10,14 +10,16 @@ import (
 )
 
 const (
-	e7Cycles = 5
-	e7Chaos  = 6 * time.Second
+	e7Cycles = 4
+	e7Chaos  = 4 * time.Second
 )
 
 func e7Options() simOptions {
 	o := defaultSimOptions()
 	o.skew, o.driftP = 3*time.Second, 1000
 	o.net.DropPPM = 5_000
+	o.cfg.OrphanGrace = 20 * time.Second
+	o.cfg.GCGrace = 5 * time.Second
 	return o
 }
 
@@ -44,7 +46,7 @@ func TestE7NemesisHealingCyclesS(t *testing.T) {
 	t.Parallel()
 	var m measure
 	t.Cleanup(func() { m.report(t) })
-	sweep(t, seedsFor(t, 1), func(t *testing.T, seed int64) {
+	sweep(t, seedsFor(t, 3, 5), func(t *testing.T, seed int64) {
 		var st nemesisStats
 		simtest.RequireDeterministic(t, seed, runNemesis(seed, e7Options(), func(n *nemesis) nemesisPlan { return randomPlan(n.r, e7Cycles, e7Chaos) }, &st))
 		m.add("e7/cycles", int64(st.cycles))

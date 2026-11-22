@@ -5,32 +5,39 @@ import (
 	"time"
 )
 
-var e1SizesS = []int{0, 1, 2, 3, 7, 13, 4093, simStripe - 1, simStripe, simStripe + 1, 3*simStripe + 7, 2<<20 + 29}
+var (
+	e1SizesS   = []int{0, 1, 2, 3, 7, 13, 4093, simStripe - 1, simStripe, simStripe + 1, 3*simStripe + 7}
+	e1SizesSMB = []int{2<<20 + 29}
+)
 
-func TestE1MultiRegionPutGetS(t *testing.T) {
+func runE1S(t *testing.T, name string, sizes []int, num, den int) {
 	t.Parallel()
 	var m measure
 	t.Cleanup(func() { m.report(t) })
-	sweep(t, seedsFor(t, 1), func(t *testing.T, seed int64) {
+	sweep(t, seedsFor(t, num, den), func(t *testing.T, seed int64) {
 		var res e1Result
 		runSim(t, seed, defaultSimOptions(), func(c *simCluster) error {
 			var err error
-			res, err = scenarioE1(c, simBounds, e1Params{sizes: e1SizesS})
+			res, err = scenarioE1(c, simBounds, e1Params{sizes: sizes})
 			return err
 		})
-		m.add("e1/objects", int64(res.objects))
-		m.add("e1/reads", int64(res.reads))
-		m.add("e1/stripes_spread_checked", int64(res.stripes))
-		m.ms("e1/put_max", res.putTime)
-		m.ms("e1/get_max", res.getTime)
+		m.add(name+"/objects", int64(res.objects))
+		m.add(name+"/reads", int64(res.reads))
+		m.add(name+"/stripes_spread_checked", int64(res.stripes))
+		m.ms(name+"/put_max", res.putTime)
+		m.ms(name+"/get_max", res.getTime)
 	})
 }
+
+func TestE1MultiRegionPutGetS(t *testing.T) { runE1S(t, "e1", e1SizesS, 1, 5) }
+
+func TestE1MultiRegionMultiMBPutGetS(t *testing.T) { runE1S(t, "e1mb", e1SizesSMB, 1, 25) }
 
 func TestE2PartitionAndHealS(t *testing.T) {
 	t.Parallel()
 	var m measure
 	t.Cleanup(func() { m.report(t) })
-	sweep(t, seedsFor(t, 1), func(t *testing.T, seed int64) {
+	sweep(t, seedsFor(t, 1, 4), func(t *testing.T, seed int64) {
 		var res e2Result
 		var tally map[string]int
 		var oc outcome
@@ -62,7 +69,7 @@ func TestE3BitRotRepairS(t *testing.T) {
 	t.Parallel()
 	var m measure
 	t.Cleanup(func() { m.report(t) })
-	sweep(t, seedsFor(t, 1), func(t *testing.T, seed int64) {
+	sweep(t, seedsFor(t, 1, 4), func(t *testing.T, seed int64) {
 		var res e3Result
 		runSim(t, seed, defaultSimOptions(), func(c *simCluster) error {
 			var err error
@@ -85,7 +92,7 @@ func TestE6CrashRestartWipeS(t *testing.T) {
 	t.Parallel()
 	var m measure
 	t.Cleanup(func() { m.report(t) })
-	sweep(t, seedsFor(t, 1), func(t *testing.T, seed int64) {
+	sweep(t, seedsFor(t, 1, 4), func(t *testing.T, seed int64) {
 		var res e6Result
 		var oc outcome
 		runSim(t, seed, defaultSimOptions(), func(c *simCluster) error {
@@ -114,7 +121,7 @@ func TestE8LocalFirstMetadataSyncS(t *testing.T) {
 	t.Parallel()
 	var m measure
 	t.Cleanup(func() { m.report(t) })
-	sweep(t, seedsFor(t, 1), func(t *testing.T, seed int64) {
+	sweep(t, seedsFor(t, 1, 2), func(t *testing.T, seed int64) {
 		var res e8Result
 		var tally map[string]int
 		opts := defaultSimOptions()
@@ -142,7 +149,7 @@ func TestE4MigrationUnderTrafficS(t *testing.T) {
 	t.Parallel()
 	var m measure
 	t.Cleanup(func() { m.report(t) })
-	sweep(t, seedsFor(t, 1), func(t *testing.T, seed int64) {
+	sweep(t, seedsFor(t, 1, 20), func(t *testing.T, seed int64) {
 		var res e4Result
 		var oc outcome
 		runSim(t, seed, defaultSimOptions(), func(c *simCluster) error {

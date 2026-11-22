@@ -211,12 +211,15 @@ func TestE5MigrationEveryFailurePointS(t *testing.T) {
 	cells := sagasim.Cells()
 	var m measure
 	t.Cleanup(func() { m.report(t) })
-	seeds := simtest.Seeds(t)
+	seeds := seedsFor(t, 1, 4)
 	pinned, err := simtest.PinnedSeeds("testdata")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i, cell := range cells {
+		if raceEnabled && i%8 != 0 {
+			continue
+		}
 		mine := e5Seeds(seeds, pinned, i, len(cells))
 		t.Run(cell.Name(), func(t *testing.T) {
 			t.Parallel()

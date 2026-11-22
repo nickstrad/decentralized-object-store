@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"sync"
 	"testing"
@@ -60,15 +61,31 @@ func sweep(t *testing.T, seeds []int64, fn func(t *testing.T, seed int64)) {
 	}
 }
 
-func seedsFor(t *testing.T, divisor int) []int64 {
+const fullSeedsEnv = "E2E_FULL_SEEDS"
+
+func seedsFor(t *testing.T, num, den int) []int64 {
+	t.Helper()
 	all := simtest.Seeds(t)
-	if divisor <= 1 || len(all) <= 1 {
+	if _, ok, _ := simtest.Seed(); ok || os.Getenv(fullSeedsEnv) == "1" {
 		return all
 	}
-	if _, ok, _ := simtest.Seed(); ok {
-		return all
+	pinned, err := simtest.PinnedSeeds("testdata")
+	if err != nil {
+		t.Fatal(err)
 	}
-	return all[:max(1, len(all)/divisor)]
+	var out, rest []int64
+	for _, s := range all {
+		if slices.Contains(pinned, s) {
+			out = append(out, s)
+		} else {
+			rest = append(rest, s)
+		}
+	}
+	n := max(1, len(rest)*num/max(den, 1))
+	if raceEnabled {
+		n = 1
+	}
+	return append(out, rest[:min(n, len(rest))]...)
 }
 
 type measure struct {

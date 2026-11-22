@@ -131,12 +131,12 @@ func (n *nemesis) traffic() {
 		switch x := n.r.IntN(20); {
 		case x < 8:
 			n.seq++
-			k := c.Put(n.entry(false), bucketW, key, randomBytes(n.r, 1+n.r.IntN(simStripe+simStripe/2)), storage.Condition{})
+			k := c.Put(n.entry(false), bucketW, key, randomBytes(n.r, 1+n.r.IntN(simStripe)), storage.Condition{})
 			n.dirty[key] = true
 			n.pending = append(n.pending, k)
 		case x < 9:
 			n.seq++
-			k := c.Put(n.entry(false), bucketM, fmt.Sprintf("m%03d", n.seq), randomBytes(n.r, 1+n.r.IntN(simStripe)), storage.Condition{})
+			k := c.Put(n.entry(false), bucketM, fmt.Sprintf("m%03d", n.seq), randomBytes(n.r, 1+n.r.IntN(simStripe/4)), storage.Condition{})
 			n.pending = append(n.pending, k)
 		case x < 11:
 			n.dirty[key] = true

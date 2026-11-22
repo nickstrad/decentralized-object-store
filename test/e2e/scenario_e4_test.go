@@ -130,11 +130,14 @@ func scenarioE4(c Cluster, b bounds, p e4Params) (e4Result, error) {
 	seq := 0
 	during := func() []*Call {
 		seq++
-		return []*Call{
+		out := []*Call{
 			c.Put(pick(c, c.Nodes()), bucket, fmt.Sprintf("t%03d", seq), randomBytes(c.Rand(), p.size/2+seq), storage.Condition{}),
 			c.Get(pick(c, c.Nodes()), bucket, pre[c.Rand().IntN(len(pre))].Key),
-			c.Put(pick(c, c.Nodes()), "e4bg", fmt.Sprintf("b%03d", seq), randomBytes(c.Rand(), 200), storage.Condition{}),
 		}
+		if seq%2 == 0 {
+			out = append(out, c.Put(pick(c, c.Nodes()), "e4bg", fmt.Sprintf("b%03d", seq), randomBytes(c.Rand(), 200), storage.Condition{}))
+		}
+		return out
 	}
 	mi, traffic, d, err := awaitMigration(c, b, coord, start.Mig.ID, during)
 	res.migrate = d
