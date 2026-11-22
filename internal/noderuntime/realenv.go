@@ -3,8 +3,8 @@ package noderuntime
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -74,11 +74,46 @@ func (tm *realTimer) Reset(d time.Duration) bool {
 }
 
 type fileDisk struct {
-	dir string
-	seq uint64
+	fs    vfs
+	dir   string
+	seq   uint64
+	fresh map[string]bool
 }
 
 const tmpDir = ".tmp"
+
+func openFileDisk(fsys vfs, dir string) (*fileDisk, error) {
+	d := &fileDisk{fs: fsys, dir: filepath.Clean(dir), fresh: map[string]bool{}}
+	tmp := filepath.Join(d.dir, tmpDir)
+	if err := d.mkdirs(tmp); err != nil {
+		return nil, ioErr("open", dir, err)
+	}
+	var stale []string
+	err := fsys.WalkDir(tmp, func(p string, e fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if p != tmp {
+			stale = append(stale, p)
+			if e.IsDir() {
+				return filepath.SkipDir
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, ioErr("open", dir, err)
+	}
+	for _, p := range stale {
+		if err := fsys.Remove(p); err != nil {
+			return nil, ioErr("open", dir, err)
+		}
+	}
+	if err := d.syncChain(tmp); err != nil {
+		return nil, ioErr("open", dir, err)
+	}
+	return d, nil
+}
 
 func (d *fileDisk) path(name string) (string, error) {
 	if name == "" || len(name) > 4096 || strings.HasPrefix(name, "/") || strings.ContainsRune(name, 0) || strings.Contains(name, "\\") {
@@ -99,12 +134,69 @@ func ioErr(op, name string, err error) error {
 	return fmt.Errorf("node: disk %s %q: %v: %w", op, name, err, env.ErrIO)
 }
 
+func (d *fileDisk) mkdirs(dir string) error {
+	rel, err := filepath.Rel(d.dir, dir)
+	if err != nil {
+		return err
+	}
+	cur := d.dir
+	if rel == "." {
+		rel = ""
+	}
+	for _, seg := range append([]string{""}, strings.Split(rel, string(filepath.Separator))...) {
+		if seg != "" {
+			cur = filepath.Join(cur, seg)
+		}
+		err := d.fs.Mkdir(cur)
+		switch {
+		case err == nil:
+			d.fresh[cur] = true
+		case !errors.Is(err, fs.ErrExist):
+			return err
+		}
+	}
+	return nil
+}
+
+func writeAll(f vfile, data []byte) error {
+	for len(data) > 0 {
+		n, err := f.Write(data)
+		if err != nil {
+			return err
+		}
+		if n <= 0 {
+			return io.ErrShortWrite
+		}
+		data = data[n:]
+	}
+	return nil
+}
+
+func (d *fileDisk) syncChain(dir string) error {
+	if err := d.syncDir(dir); err != nil {
+		return err
+	}
+	for cur := dir; d.fresh[cur] && cur != d.dir; cur = filepath.Dir(cur) {
+		if err := d.syncDir(filepath.Dir(cur)); err != nil {
+			return err
+		}
+		delete(d.fresh, cur)
+	}
+	if d.fresh[d.dir] {
+		if err := d.syncDir(filepath.Dir(d.dir)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		delete(d.fresh, d.dir)
+	}
+	return nil
+}
+
 func (d *fileDisk) Read(name string) ([]byte, error) {
 	p, err := d.path(name)
 	if err != nil {
 		return nil, err
 	}
-	b, err := os.ReadFile(p)
+	b, err := d.fs.ReadFile(p)
 	if err != nil {
 		return nil, ioErr("read", name, err)
 	}
@@ -116,19 +208,27 @@ func (d *fileDisk) Write(name string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+	if err := d.mkdirs(filepath.Dir(p)); err != nil {
 		return ioErr("write", name, err)
 	}
-	if err := os.MkdirAll(filepath.Join(d.dir, tmpDir), 0o755); err != nil {
+	if err := d.mkdirs(filepath.Join(d.dir, tmpDir)); err != nil {
 		return ioErr("write", name, err)
 	}
 	d.seq++
 	tmp := filepath.Join(d.dir, tmpDir, strconv.FormatUint(d.seq, 10))
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	f, err := d.fs.Create(tmp)
+	if err != nil {
 		return ioErr("write", name, err)
 	}
-	if err := os.Rename(tmp, p); err != nil {
-		return ioErr("write", name, errors.Join(err, os.Remove(tmp)))
+	werr := writeAll(f, data)
+	if werr == nil {
+		werr = f.Sync()
+	}
+	if err := errors.Join(werr, f.Close()); err != nil {
+		return ioErr("write", name, errors.Join(err, d.fs.Remove(tmp)))
+	}
+	if err := d.fs.Rename(tmp, p); err != nil {
+		return ioErr("write", name, errors.Join(err, d.fs.Remove(tmp)))
 	}
 	return nil
 }
@@ -138,22 +238,24 @@ func (d *fileDisk) Append(name string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return ioErr("append", name, err)
+	if _, err := d.fs.ReadFile(p); errors.Is(err, fs.ErrNotExist) {
+		if err := d.Write(name, data); err != nil {
+			return fmt.Errorf("node: disk append %q: first record: %w", name, err)
+		}
+		return nil
 	}
-	f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, _, err := d.fs.OpenAppend(p)
 	if err != nil {
 		return ioErr("append", name, err)
 	}
-	_, werr := f.Write(data)
-	if err := errors.Join(werr, f.Close()); err != nil {
+	if err := errors.Join(writeAll(f, data), f.Close()); err != nil {
 		return ioErr("append", name, err)
 	}
 	return nil
 }
 
-func syncDir(dir string) error {
-	f, err := os.Open(dir)
+func (d *fileDisk) syncDir(dir string) error {
+	f, err := d.fs.Open(dir)
 	if err != nil {
 		return err
 	}
@@ -165,7 +267,7 @@ func (d *fileDisk) Sync(name string) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(p, os.O_RDWR, 0)
+	f, err := d.fs.Open(p)
 	switch {
 	case err == nil:
 		if err := errors.Join(f.Sync(), f.Close()); err != nil {
@@ -175,7 +277,7 @@ func (d *fileDisk) Sync(name string) error {
 	default:
 		return ioErr("sync", name, err)
 	}
-	if err := syncDir(filepath.Dir(p)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := d.syncChain(filepath.Dir(p)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return ioErr("sync", name, err)
 	}
 	return nil
@@ -186,7 +288,7 @@ func (d *fileDisk) Delete(name string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.Remove(p); err != nil {
+	if err := d.fs.Remove(p); err != nil {
 		return ioErr("delete", name, err)
 	}
 	return nil
@@ -194,7 +296,7 @@ func (d *fileDisk) Delete(name string) error {
 
 func (d *fileDisk) List(prefix string) ([]string, error) {
 	var out []string
-	err := filepath.WalkDir(d.dir, func(p string, e fs.DirEntry, err error) error {
+	err := d.fs.WalkDir(d.dir, func(p string, e fs.DirEntry, err error) error {
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				return nil

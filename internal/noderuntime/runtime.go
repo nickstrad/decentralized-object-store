@@ -206,7 +206,11 @@ func (rt *Runtime) Start(ctx context.Context) error {
 	if err := os.MkdirAll(rt.cfg.DataDir, 0o755); err != nil {
 		return errors.Join(fmt.Errorf("node: start %s: data dir: %w", rt.cfg.ID, err), rt.Close())
 	}
-	e := env.Env{ID: rt.cfg.ID, Region: rt.cfg.Region, Clock: realClock{rt: rt}, Rand: newRand(), Net: &realNet{rt: rt}, Disk: &fileDisk{dir: rt.cfg.DataDir}}
+	disk, err := openFileDisk(osFS{}, rt.cfg.DataDir)
+	if err != nil {
+		return errors.Join(fmt.Errorf("node: start %s: %w", rt.cfg.ID, err), rt.Close())
+	}
+	e := env.Env{ID: rt.cfg.ID, Region: rt.cfg.Region, Clock: realClock{rt: rt}, Rand: newRand(), Net: &realNet{rt: rt}, Disk: disk}
 	n, err := node.New(e, rt.cfg.Node)
 	if err != nil {
 		return errors.Join(err, rt.Close())

@@ -14,7 +14,10 @@ import (
 )
 
 func TestFileDiskMeetsTheDiskContract(t *testing.T) {
-	d := &fileDisk{dir: t.TempDir()}
+	d, err := openFileDisk(osFS{}, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := d.Read("a/b"); !errors.Is(err, env.ErrNotFound) {
 		t.Fatalf("read of a missing blob: %v", err)
 	}
