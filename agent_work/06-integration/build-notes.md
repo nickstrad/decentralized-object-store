@@ -1234,3 +1234,36 @@ because its manifest is tombstoned.
 **Requests to the orchestrator.** (1) If a distinct status for a lost object is wanted (for example
 410 with the `~lost` record), it is a PLAN table change. (2) `absent_records` and `absent_refused` are
 new health counters for the prose seat.
+
+## 15. Second-eyes round (NEON-SECOND-EYES: FAIL, four MAJORS, two NITS)
+
+The owner ordered a second independent pass over the section 14 fix: a code review plus the
+reviewer's own scenarios (20 of them; 17 held). Record: `agent_work/06-integration/NEON-SECOND-EYES.md`;
+the scenarios as written: `agent_work/adversarial/06-integration/neon-second-eyes/`. All six findings
+were accepted. Fixed by the orchestrator seat as this round's builder.
+
+| # | Finding | Change | Test (in `internal/node`) |
+|---|---|---|---|
+| 1 MAJOR | A disk read error on the holder's own shard was taken as "holds none": `stateAbsent` wrote a binding absence record for an intact shard, and a healthy object could be declared lost (k=2, m=0 with two read errors; k=2, m=1 with one rotted shard and read errors on the two good holders). | `stateAbsent` writes a record only when its own read of the shard answers not found, corrupt, or a blob whose checksum is not the manifest's. Any other error writes nothing. The scrub is unchanged: it still drops an unreadable shard from the inventory so a rebuild is tried, which rewrites the shard when k others verify. | `TestLocalTransientDiskIOErrorMustNotDeclareHealthyObjectLost` (both layouts); failed before |
+| 2 MAJOR | A rebuild already waiting for replies stored its shard even when the holder's own absence record had arrived meanwhile (a wiped holder that gets the manifest before its record). The record did not bind on that path. | The rebuild's completion reads the metadata again and stores nothing when the holder has an absence record for the shard, the version has death evidence, or the metadata is not loaded. | `TestWipedHolderRebuildRacesOwnAbsenceRecord`; failed before |
+| 3 MAJOR | The converse oracle failed any migrated version that was declared lost: a migration installs its manifest without the commit callback, so the oracle had never seen the version. | Test oracle only: for a version it has not seen, `onCommitLoss` reads the manifest the declaring node still holds (the loss record is written before the tombstone) and checks the disks against it. | `TestLossDeclarationAfterBucketMigration`; failed before |
+| 4 MAJOR | The refusal of shard writes before metadata loads had no test. | Test added. With the refusal removed (temporary edit, not committed) it fails with `OpPutShard before metadata loaded returned <nil>`. | `TestServeStorageRefusesShardWriteBeforeMetadataLoads` |
+| 5 NIT | `expectedAll` read absence records from tags of any scope. | Only bucket-scoped tags (empty object part) count. | covered by the existing record tests |
+| 6 NIT | The refusal test did not restart the holder; the write-order test did not crash between the two writes. | Both behaviours now have their own scenarios. | `TestHolderIntactRestartPreservesAbsenceRefusal`, `TestDeclarerCrashBetweenLossRecordAndTombstone` (declarer restarts; declarer stays down and a successor finishes) |
+
+The reviewer's other scenarios are kept as regression tests in `secondeyes_*_test.go`: late shards
+(after orphan collection, during a rebuild, after an absence record, residual case (b) with the oracle
+catching it), declarations racing an overwrite and a delete, two declarers in a split cluster,
+non-holder and cross-stripe records ignored, a staged migration copy never recorded absent, node IDs
+containing `/` end to end, staggered orphan collection, a manifest arriving just inside the grace
+period, edge layouts (k=1, m=0; k=2, m=0; k=1, m=1; short last stripe; empty object), pause and resume.
+
+**Section 14 claims corrected by this round.** "A timeout, an unreachable node, a not-ready node or
+any other error is not an answer" was true of the other holders and false of the holder's own disk
+until finding 1 was fixed; "H never rebuilds (v, s, i)" was false for a rebuild in flight until
+finding 2 was fixed. Both now hold as written.
+
+**Residual added.** A holder whose own disk keeps failing reads of a shard (not "not found", not
+"corrupt") never writes an absence record for it, so it blocks a loss declaration for that stripe the
+same way an unreachable holder does: the key stays live and unreadable until the disk answers or the
+shard is rewritten by a successful rebuild.
