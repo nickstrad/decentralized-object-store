@@ -415,3 +415,106 @@ func TestMigrationStatusOfAnUnknownSagaIsUnknownSaga(t *testing.T) {
 		t.Fatalf("status of an unknown migration: %v", err)
 	}
 }
+
+func TestPointerDecidesFromTheAgreedFlipOwner(t *testing.T) {
+	h := smallCluster(t, 1)
+	n := h.node(h.ids[0])
+	if err := n.CreateBucket(storage.BucketSpec{Name: "f", Region: "r0"}); err != nil {
+		t.Fatal(err)
+	}
+	in := saga.MigrationInput{Bucket: "f", From: "r0", To: "r1"}
+	call := saga.Call{Key: saga.Key{Saga: "me", Step: 4}, Input: in.Encode()}
+	settle := func() {
+		t.Helper()
+		if err := h.s.RunFor(10 * time.Second); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.s.RunUntilConverged(h.s.Now().Add(20*time.Second), h.converged); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pointer := func() (string, error) {
+		t.Helper()
+		var loc string
+		var perr error
+		done := false
+		n.PointerForTest(call, "f", func(l string, err error) { loc, perr, done = l, err, true })
+		if err := h.s.RunUntilConverged(h.s.Now().Add(5*time.Second), func() bool { return done }); err != nil {
+			t.Fatal(err)
+		}
+		return loc, perr
+	}
+	settle()
+	if _, err := pointer(); !errors.Is(err, node.ErrUnsettled) {
+		t.Fatalf("pointer with no flip recorded: %v", err)
+	}
+	if _, err := n.OCC().SetScalar(node.FlipKeyForTest("f"), []byte("other|r1")); err != nil {
+		t.Fatal(err)
+	}
+	n.RecordMeta(node.FlipKeyForTest("f"))
+	settle()
+	if loc, err := pointer(); err != nil || loc == "r1" || loc == "" {
+		t.Fatalf("pointer with another owner: %q %v, want a superseded location", loc, err)
+	}
+	if _, err := n.OCC().SetScalar(node.FlipKeyForTest("f"), []byte("me|r1")); err != nil {
+		t.Fatal(err)
+	}
+	n.RecordMeta(node.FlipKeyForTest("f"))
+	settle()
+	if _, err := pointer(); !errors.Is(err, node.ErrUnsettled) {
+		t.Fatalf("pointer owning the flip with the route behind: %v", err)
+	}
+	settle()
+	if loc, err := pointer(); err != nil || loc != "r1" {
+		t.Fatalf("pointer after the route caught up: %q %v", loc, err)
+	}
+	bad := call
+	bad.Input = saga.MigrationInput{Bucket: "g", From: "r0", To: "r1"}.Encode()
+	var perr error
+	done := false
+	n.PointerForTest(bad, "f", func(_ string, err error) { perr, done = err, true })
+	if err := h.s.RunUntilConverged(h.s.Now().Add(5*time.Second), func() bool { return done }); err != nil || !errors.Is(perr, saga.ErrPermanent) {
+		t.Fatalf("pointer with an input for another bucket: %v %v", perr, err)
+	}
+}
+
+func TestNodeSurfaceAccessors(t *testing.T) {
+	h := smallCluster(t, 1)
+	n := h.node(h.ids[0])
+	if len(n.Members()) != 3 || len(node.StatusRows()) != 10 || n.Collected() != nil && len(n.Collected()) < 0 {
+		t.Fatalf("members %v rows %d", n.Members(), len(node.StatusRows()))
+	}
+	if err := n.CreateBucket(storage.BucketSpec{Name: "t"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.syncPut(t, h.ids[0], storage.PutRequest{Bucket: "t", Key: "k", Data: []byte("v")}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a", "b"} {
+		if _, err := n.PutTag("t", "k", name, "x", storage.Condition{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := n.OCC().SetScalar(occ.TagKey("t", "k", "~lost/x"), []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	tags, err := n.Tags("t", "k")
+	if err != nil || len(tags) != 2 {
+		t.Fatalf("tags %v %v, want the two user tags only", tags, err)
+	}
+	if _, err := n.Tags("t", "missing"); err == nil {
+		t.Fatal("tags of a missing object")
+	}
+	var lost uint64
+	for _, c := range n.Health().Counters {
+		if c.Name == "lost_objects" {
+			lost = c.Value
+		}
+	}
+	if lost != 1 {
+		t.Fatalf("lost_objects %d, want 1", lost)
+	}
+	f := node.NewFactory(node.Config{MetaDepth: -1})(env.Env{})
+	f.Start()
+	f.OnDatagram("x", nil)
+}
