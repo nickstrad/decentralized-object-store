@@ -247,10 +247,10 @@ func FuzzZZCanary(f *testing.F) {
 EOF
 }
 plant_race() {
-  mkdir -p internal/node
-  printf 'package node\n\nvar Shared int\n' > internal/node/zz_canary.go
-  cat > internal/node/zz_canary_test.go <<'EOF'
-package node
+  mkdir -p internal/zzrace
+  printf 'package zzrace\n\nvar Shared int\n' > internal/zzrace/zz_canary.go
+  cat > internal/zzrace/zz_canary_test.go <<'EOF'
+package zzrace
 
 import (
 	"sync"
