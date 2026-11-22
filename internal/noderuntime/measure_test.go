@@ -1,4 +1,4 @@
-package node_test
+package noderuntime_test
 
 import (
 	"bytes"

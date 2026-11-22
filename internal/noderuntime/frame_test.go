@@ -1,4 +1,4 @@
-package node
+package noderuntime
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/merkle"
+	"github.com/nickstrad/decentralized-object-store/internal/node"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
@@ -54,26 +55,26 @@ func TestFrameDecodersRejectMalformedInput(t *testing.T) {
 		run  func() error
 		want error
 	}{
-		{"an empty request", func() error { _, err := decodeRequest(nil); return err }, ErrFrame},
-		{"a request with a wrong version", func() error { b := bytes.Clone(good); b[0] = 9; _, err := decodeRequest(b); return err }, ErrFrame},
-		{"a request with a response kind", func() error { b := bytes.Clone(good); b[1] = kindResponse; _, err := decodeRequest(b); return err }, ErrFrame},
-		{"a request whose sender runs past the end", func() error { b := bytes.Clone(good[:11]); b[10] = 40; _, err := decodeRequest(b); return err }, ErrFrame},
-		{"a request with an empty sender", func() error { b := bytes.Clone(good); b[10] = 0; _, err := decodeRequest(b); return err }, ErrFrame},
-		{"a short response", func() error { _, err := decodeResponse([]byte{1, 2, 3}); return err }, ErrFrame},
+		{"an empty request", func() error { _, err := decodeRequest(nil); return err }, node.ErrFrame},
+		{"a request with a wrong version", func() error { b := bytes.Clone(good); b[0] = 9; _, err := decodeRequest(b); return err }, node.ErrFrame},
+		{"a request with a response kind", func() error { b := bytes.Clone(good); b[1] = kindResponse; _, err := decodeRequest(b); return err }, node.ErrFrame},
+		{"a request whose sender runs past the end", func() error { b := bytes.Clone(good[:11]); b[10] = 40; _, err := decodeRequest(b); return err }, node.ErrFrame},
+		{"a request with an empty sender", func() error { b := bytes.Clone(good); b[10] = 0; _, err := decodeRequest(b); return err }, node.ErrFrame},
+		{"a short response", func() error { _, err := decodeResponse([]byte{1, 2, 3}); return err }, node.ErrFrame},
 		{"a response whose message runs past the end", func() error {
 			b := encodeResponse(responseFrame{ID: 1, Code: 3, Msg: "abc"})
 			b[12] = 200
 			_, err := decodeResponse(b)
 			return err
-		}, ErrFrame},
+		}, node.ErrFrame},
 		{"an error response carrying a body", func() error {
 			_, err := decodeResponse(append(encodeResponse(responseFrame{ID: 1, Code: 3}), 1))
 			return err
-		}, ErrFrame},
-		{"a datagram with a wrong version", func() error { _, _, err := decodeDatagram([]byte{2, 1, 'a'}); return err }, ErrFrame},
-		{"a datagram whose sender runs past the end", func() error { _, _, err := decodeDatagram([]byte{1, 9, 'a'}); return err }, ErrFrame},
-		{"a truncated frame header", func() error { _, err := readFrame(bytes.NewReader([]byte{0, 0}), MaxFrame); return err }, ErrFrame},
-		{"a truncated frame body", func() error { _, err := readFrame(bytes.NewReader([]byte{0, 0, 0, 5, 1}), MaxFrame); return err }, ErrFrame},
+		}, node.ErrFrame},
+		{"a datagram with a wrong version", func() error { _, _, err := decodeDatagram([]byte{2, 1, 'a'}); return err }, node.ErrFrame},
+		{"a datagram whose sender runs past the end", func() error { _, _, err := decodeDatagram([]byte{1, 9, 'a'}); return err }, node.ErrFrame},
+		{"a truncated frame header", func() error { _, err := readFrame(bytes.NewReader([]byte{0, 0}), MaxFrame); return err }, node.ErrFrame},
+		{"a truncated frame body", func() error { _, err := readFrame(bytes.NewReader([]byte{0, 0, 0, 5, 1}), MaxFrame); return err }, node.ErrFrame},
 		{"a frame over the limit", func() error { _, err := readFrame(bytes.NewReader([]byte{0, 0, 0, 9}), 8); return err }, env.ErrTooLarge},
 		{"a payload over the frame limit", func() error { _, err := appendFrame(nil, make([]byte, MaxFrame+1)); return err }, env.ErrTooLarge},
 		{"a datagram over the size limit", func() error { _, err := encodeDatagram("a", make([]byte, MaxDatagram)); return err }, env.ErrTooLarge},
@@ -97,11 +98,11 @@ func TestFrameLimitCoversMerkleRepliesAndShardRequests(t *testing.T) {
 	blob := make([]byte, storage.HeaderSize+l.StripeSize/l.K)
 	id := storage.ShardID{Bucket: string(bytes.Repeat([]byte("b"), storage.MaxBucketLen)), Version: 1, Stripe: 1 << 31, Index: 255}
 	req := storage.EncodeShardRequest(storage.OpPutShard, id, blob)
-	if got := len(req) + 1 + requestHeader + 255; got > ShardRequestSize(l)+requestHeader+255 || got > MaxFrame {
-		t.Fatalf("a default shard request of %d bytes exceeds its bound %d or the frame %d", got, ShardRequestSize(l), MaxFrame)
+	if got := len(req) + 1 + requestHeader + 255; got > node.ShardRequestSize(l)+requestHeader+255 || got > MaxFrame {
+		t.Fatalf("a default shard request of %d bytes exceeds its bound %d or the frame %d", got, node.ShardRequestSize(l), MaxFrame)
 	}
 	big := storage.Layout{K: 1, M: 0, StripeSize: storage.MaxStripeSize}
-	if err := (Config{Layout: big}).Validate(); !errors.Is(err, ErrConfig) {
+	if err := (node.Config{Layout: big}).Validate(); !errors.Is(err, node.ErrConfig) {
 		t.Fatalf("a layout whose shard request exceeds the frame was accepted: %v", err)
 	}
 }
@@ -131,8 +132,8 @@ func FuzzFrame(f *testing.F) {
 					t.Fatalf("response does not re-encode to its bytes")
 				}
 			}
-		} else if !errors.Is(err, ErrFrame) && !errors.Is(err, env.ErrTooLarge) {
-			t.Fatalf("frame error %v is neither ErrFrame nor ErrTooLarge", err)
+		} else if !errors.Is(err, node.ErrFrame) && !errors.Is(err, env.ErrTooLarge) {
+			t.Fatalf("frame error %v is neither node.ErrFrame nor ErrTooLarge", err)
 		}
 		if from, body, err := decodeDatagram(b); err == nil {
 			again, err := encodeDatagram(from, body)

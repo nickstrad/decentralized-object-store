@@ -1,6 +1,9 @@
 package node
 
-import "github.com/nickstrad/decentralized-object-store/internal/storage"
+import (
+	"github.com/nickstrad/decentralized-object-store/internal/saga"
+	"github.com/nickstrad/decentralized-object-store/internal/storage"
+)
 
 func SetCanaryNoDiscardRecount(v bool) { canaryNoDiscardRecount = v }
 func SetCanaryIgnoreTombstones(v bool) { canaryIgnoreTombstones = v }
@@ -14,8 +17,6 @@ func ManifestOfRecord(b []byte) (*storage.Manifest, error) {
 	}
 	return r.Manifest, nil
 }
-
-func SetCanaryUntrackedGoroutine(release chan struct{}) { canaryUntrackedGoroutine = release }
 
 func DecodeRecordsForTest(b []byte) []error {
 	_, e1 := decodeObject(b)
@@ -48,3 +49,7 @@ const (
 	OpPointer   = opPointer
 	OpPurge     = opPurge
 )
+
+func (n *Node) ClaimForTest(c saga.Call, in saga.MigrationInput, done func(error)) {
+	n.mig.Claim(c, in, done)
+}

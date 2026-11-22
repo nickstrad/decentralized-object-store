@@ -1,21 +1,22 @@
-package node
+package noderuntime
 
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/saga"
+	"github.com/nickstrad/decentralized-object-store/internal/node"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
 func TestRuntimeServiceSurfaceInABubble(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var logged []string
-		rt, err := NewRuntime(RuntimeConfig{ID: "solo", Region: "r0", DataDir: t.TempDir(), NoNetwork: true, Node: Config{Layout: soloLayout()},
+		rt, err := NewRuntime(RuntimeConfig{ID: "solo", Region: "r0", DataDir: t.TempDir(), NoNetwork: true, Node: node.Config{Layout: soloLayout()},
 			Logf: func(f string, a ...any) { logged = append(logged, f) }})
 		if err != nil {
 			t.Fatal(err)
@@ -77,7 +78,7 @@ func TestRuntimeServiceSurfaceInABubble(t *testing.T) {
 
 func TestRuntimeDatagramsToSelfAndQueueOverflow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		rt, err := NewRuntime(RuntimeConfig{ID: "solo", DataDir: t.TempDir(), NoNetwork: true, DatagramQueue: 1, Node: Config{Layout: soloLayout()}})
+		rt, err := NewRuntime(RuntimeConfig{ID: "solo", DataDir: t.TempDir(), NoNetwork: true, DatagramQueue: 1, Node: node.Config{Layout: soloLayout()}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -88,7 +89,7 @@ func TestRuntimeDatagramsToSelfAndQueueOverflow(t *testing.T) {
 		rt.post(func() { <-hold })
 		net := &realNet{rt: rt}
 		for range 3 {
-			if err := net.Send("solo", []byte{chGossip, 1}); err != nil {
+			if err := net.Send("solo", []byte{1, 1}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -131,31 +132,28 @@ func TestRuntimeRecoversAPanicOnTheLoop(t *testing.T) {
 	})
 }
 
-func TestMigrationClaimOfAWronglyRoutedBucketIsPermanent(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		rt := newLoopRuntime(t)
-		ctx := context.Background()
-		if err := rt.Start(ctx); err != nil {
-			t.Fatal(err)
+func TestRuntimeConfigValidation(t *testing.T) {
+	base := RuntimeConfig{ID: "h:1", Region: "r", DataDir: "/d", Node: node.Config{Layout: storage.Layout{K: 2, M: 1, StripeSize: 1024}}}
+	if err := base.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	rows := []func(*RuntimeConfig){
+		func(c *RuntimeConfig) { c.ID = "" },
+		func(c *RuntimeConfig) { c.Region = env.Region(strings.Repeat("r", 256)) },
+		func(c *RuntimeConfig) { c.DataDir = "" },
+		func(c *RuntimeConfig) { c.ControlQueue = -1 },
+		func(c *RuntimeConfig) { c.ID = "nohostport" },
+		func(c *RuntimeConfig) { c.Listen = "bad" },
+		func(c *RuntimeConfig) { c.Node.ScrubBatch = -1 },
+	}
+	for i, mut := range rows {
+		c := base
+		mut(&c)
+		if err := c.Validate(); !errors.Is(err, node.ErrConfig) {
+			t.Errorf("row %d: %v", i, err)
 		}
-		if err := rt.CreateBucket(ctx, storage.BucketSpec{Name: "b", Region: "r0"}); err != nil {
-			t.Fatal(err)
+		if _, err := NewRuntime(c); err == nil {
+			t.Errorf("row %d: runtime built", i)
 		}
-		in := saga.MigrationInput{Bucket: "b", From: "r2", To: "r1"}
-		errc := make(chan error, 2)
-		rt.post(func() {
-			c := saga.Call{Key: saga.Key{Saga: "s", Step: 0}, Input: in.Encode()}
-			rt.node.mig.Claim(c, in, func(err error) { errc <- err })
-			bad := saga.MigrationInput{Bucket: "nob", From: "r0", To: "r1"}
-			rt.node.mig.Claim(c, bad, func(err error) { errc <- err })
-		})
-		for range 2 {
-			if err := <-errc; !errors.Is(err, saga.ErrPermanent) {
-				t.Fatalf("claim: %v, want a permanent refusal", err)
-			}
-		}
-		if err := rt.Close(); err != nil {
-			t.Fatal(err)
-		}
-	})
+	}
 }

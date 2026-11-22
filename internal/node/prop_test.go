@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/decentralized-object-store/internal/gossip"
 	"github.com/nickstrad/decentralized-object-store/internal/node"
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
@@ -183,4 +184,16 @@ func (h *harness) quotaAgreesWith(bucket string, want occ.Usage) bool {
 		}
 	}
 	return true
+}
+
+func realConfig() node.Config {
+	return node.Config{
+		Layout:         storage.Layout{K: 2, M: 1, StripeSize: 64 << 10},
+		Gossip:         gossip.Config{ProbeInterval: 200 * time.Millisecond, ProbeTimeout: 80 * time.Millisecond, SyncInterval: time.Second},
+		OCCPeriod:      500 * time.Millisecond,
+		MetaPeriod:     300 * time.Millisecond,
+		MaintainPeriod: 200 * time.Millisecond,
+		ViewSettle:     500 * time.Millisecond,
+		GCGrace:        2 * time.Second,
+	}
 }

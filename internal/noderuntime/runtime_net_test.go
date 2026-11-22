@@ -1,4 +1,4 @@
-package node_test
+package noderuntime_test
 
 import (
 	"bytes"
@@ -14,6 +14,7 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/gossip"
 	"github.com/nickstrad/decentralized-object-store/internal/node"
+	"github.com/nickstrad/decentralized-object-store/internal/noderuntime"
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 	"github.com/nickstrad/decentralized-object-store/internal/testutil/leakcheck"
@@ -57,7 +58,7 @@ func realConfig() node.Config {
 }
 
 type realCluster struct {
-	rts []*node.Runtime
+	rts []*noderuntime.Runtime
 }
 
 func startReal(t *testing.T, n int, cfg node.Config) *realCluster {
@@ -69,7 +70,7 @@ func startReal(t *testing.T, n int, cfg node.Config) *realCluster {
 	cfg.Seeds = ids
 	c := &realCluster{}
 	for i, id := range ids {
-		rt, err := node.NewRuntime(node.RuntimeConfig{ID: id, Region: env.Region(fmt.Sprintf("r%d", i%3)), DataDir: t.TempDir(), Node: cfg})
+		rt, err := noderuntime.NewRuntime(noderuntime.RuntimeConfig{ID: id, Region: env.Region(fmt.Sprintf("r%d", i%3)), DataDir: t.TempDir(), Node: cfg})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -204,9 +205,9 @@ func TestShutdownUnderLoadReturnsEveryCall(t *testing.T) {
 func TestCanaryShutdownLeak(t *testing.T) {
 	before := leakcheck.Take()
 	release := make(chan struct{})
-	node.SetCanaryUntrackedGoroutine(release)
-	t.Cleanup(func() { node.SetCanaryUntrackedGoroutine(nil) })
-	rt, err := node.NewRuntime(node.RuntimeConfig{ID: env.NodeID(freeAddr(t)), Region: "r0", DataDir: t.TempDir(), Node: realConfig()})
+	noderuntime.SetCanaryUntrackedGoroutine(release)
+	t.Cleanup(func() { noderuntime.SetCanaryUntrackedGoroutine(nil) })
+	rt, err := noderuntime.NewRuntime(noderuntime.RuntimeConfig{ID: env.NodeID(freeAddr(t)), Region: "r0", DataDir: t.TempDir(), Node: realConfig()})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/node"
+	"github.com/nickstrad/decentralized-object-store/internal/noderuntime"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
@@ -104,14 +105,14 @@ func merge(file, flags options, set map[string]bool) options {
 	return out
 }
 
-func (o options) configs(logf func(string, ...any)) (node.RuntimeConfig, storage.Limits, error) {
+func (o options) configs(logf func(string, ...any)) (noderuntime.RuntimeConfig, storage.Limits, error) {
 	var seeds []env.NodeID
 	for _, s := range strings.Split(o.Seeds, ",") {
 		if s = strings.TrimSpace(s); s != "" {
 			seeds = append(seeds, env.NodeID(s))
 		}
 	}
-	cfg := node.RuntimeConfig{
+	cfg := noderuntime.RuntimeConfig{
 		ID: env.NodeID(o.ID), Region: env.Region(o.Region), Listen: o.Listen, DataDir: o.Data, Logf: logf,
 		Node: node.Config{
 			Seeds: seeds, Layout: storage.Layout{K: o.K, M: o.M, StripeSize: o.Stripe}, MaxObjectSize: o.MaxObject,
@@ -132,7 +133,7 @@ func serve(ctx context.Context, o options, logger *log.Logger, ready func(httpAd
 	if err != nil {
 		return err
 	}
-	rt, err := node.NewRuntime(cfg)
+	rt, err := noderuntime.NewRuntime(cfg)
 	if err != nil {
 		return err
 	}

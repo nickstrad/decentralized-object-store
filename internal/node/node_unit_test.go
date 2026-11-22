@@ -203,32 +203,6 @@ func TestConfigValidationRejectsEachBadField(t *testing.T) {
 	}
 }
 
-func TestRuntimeConfigValidation(t *testing.T) {
-	base := node.RuntimeConfig{ID: "h:1", Region: "r", DataDir: "/d", Node: smallConfig()}
-	if err := base.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	rows := []func(*node.RuntimeConfig){
-		func(c *node.RuntimeConfig) { c.ID = "" },
-		func(c *node.RuntimeConfig) { c.Region = env.Region(strings.Repeat("r", 256)) },
-		func(c *node.RuntimeConfig) { c.DataDir = "" },
-		func(c *node.RuntimeConfig) { c.ControlQueue = -1 },
-		func(c *node.RuntimeConfig) { c.ID = "nohostport" },
-		func(c *node.RuntimeConfig) { c.Listen = "bad" },
-		func(c *node.RuntimeConfig) { c.Node.ScrubBatch = -1 },
-	}
-	for i, mut := range rows {
-		c := base
-		mut(&c)
-		if err := c.Validate(); !errors.Is(err, node.ErrConfig) {
-			t.Errorf("row %d: %v", i, err)
-		}
-		if _, err := node.NewRuntime(c); err == nil {
-			t.Errorf("row %d: runtime built", i)
-		}
-	}
-}
-
 func TestRecordDecodersRejectMalformedBytes(t *testing.T) {
 	for _, b := range [][]byte{nil, {9}, {1}, {1, 0x80}} {
 		for i, err := range node.DecodeRecordsForTest(b) {
@@ -342,6 +316,31 @@ func TestBucketMigratingAwayStopsItsWorkers(t *testing.T) {
 		n.Stop()
 		if n.RunningWorkers() != 0 {
 			t.Errorf("node %s runs %d workers after Stop", n.ID(), n.RunningWorkers())
+		}
+	}
+}
+
+func TestMigrationClaimOfAWronglyRoutedBucketIsPermanent(t *testing.T) {
+	h := smallCluster(t, 1)
+	n := h.node(h.ids[0])
+	if err := n.CreateBucket(storage.BucketSpec{Name: "b", Region: "r0"}); err != nil {
+		t.Fatal(err)
+	}
+	c := saga.Call{Key: saga.Key{Saga: "s", Step: 0}}
+	var errs []error
+	for _, in := range []saga.MigrationInput{{Bucket: "b", From: "r2", To: "r1"}, {Bucket: "nob", From: "r0", To: "r1"}} {
+		c.Input = in.Encode()
+		n.ClaimForTest(c, in, func(err error) { errs = append(errs, err) })
+	}
+	if err := h.s.RunFor(time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if len(errs) != 2 {
+		t.Fatalf("%d claim replies, want 2", len(errs))
+	}
+	for _, err := range errs {
+		if !errors.Is(err, saga.ErrPermanent) {
+			t.Fatalf("claim: %v, want a permanent refusal", err)
 		}
 	}
 }

@@ -1,4 +1,4 @@
-package node_test
+package noderuntime_test
 
 import (
 	"bytes"
@@ -150,7 +150,30 @@ var scenarios = []scenario{
 	}},
 }
 
-type simDriver struct{ h *harness }
+type simCluster struct {
+	s   *sim.Sim
+	ids []env.NodeID
+}
+
+func newSimCluster(seed int64, n int, cfg node.Config) (*simCluster, error) {
+	table, err := node.CodeTable()
+	if err != nil {
+		return nil, err
+	}
+	c := &simCluster{s: sim.New(sim.Config{Seed: seed, Codes: table, Net: sim.DefaultNetConfig()}), ids: sim.NodeIDs(n)}
+	cfg.Seeds = c.ids
+	if err := c.s.AddCluster(c.ids, 3, node.NewFactory(cfg)); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func (c *simCluster) node(id env.NodeID) *node.Node {
+	n, _ := c.s.Process(id).(*node.Node)
+	return n
+}
+
+type simDriver struct{ h *simCluster }
 
 func (d simDriver) size() int { return len(d.h.ids) }
 
@@ -255,7 +278,7 @@ func TestConformanceOnTheSimulator(t *testing.T) {
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
 			cfg := realConfig()
-			h, err := newHarness(1, 3, cfg, sim.DefaultNetConfig())
+			h, err := newSimCluster(1, 3, cfg)
 			if err != nil {
 				t.Fatal(err)
 			}

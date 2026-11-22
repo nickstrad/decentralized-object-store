@@ -1,7 +1,6 @@
 package node
 
 import (
-	"cmp"
 	"encoding/hex"
 	"fmt"
 	"slices"
@@ -14,7 +13,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
-func sortedKeys[K cmp.Ordered, V any](m map[K]V) []K {
+type sortable interface{ ~string | ~uint64 | ~int }
+
+func sortedKeys[K sortable, V any](m map[K]V) []K {
 	out := make([]K, 0, len(m))
 	for k := range m {
 		out = append(out, k)

@@ -85,3 +85,5 @@ func (r regionView) Members() []storage.Member {
 	}
 	return out
 }
+
+const MaxFrame = 16 << 20

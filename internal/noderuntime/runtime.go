@@ -1,4 +1,4 @@
-package node
+package noderuntime
 
 import (
 	"context"
@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/decentralized-object-store/internal/node"
 )
 
 const (
@@ -30,7 +31,7 @@ type RuntimeConfig struct {
 	Region        env.Region
 	Listen        string
 	DataDir       string
-	Node          Config
+	Node          node.Config
 	DatagramQueue int
 	ControlQueue  int
 	MaxConns      int
@@ -68,20 +69,20 @@ func (c RuntimeConfig) Validate() error {
 	c = c.withDefaults()
 	switch {
 	case c.ID == "" || len(c.ID) > 255:
-		return fmt.Errorf("node: runtime: id %q: %w", c.ID, ErrConfig)
+		return fmt.Errorf("node: runtime: id %q: %w", c.ID, node.ErrConfig)
 	case len(c.Region) > 255:
-		return fmt.Errorf("node: runtime: region of %d bytes: %w", len(c.Region), ErrConfig)
+		return fmt.Errorf("node: runtime: region of %d bytes: %w", len(c.Region), node.ErrConfig)
 	case c.DataDir == "":
-		return fmt.Errorf("node: runtime: no data directory: %w", ErrConfig)
+		return fmt.Errorf("node: runtime: no data directory: %w", node.ErrConfig)
 	case c.DatagramQueue < 0 || c.ControlQueue < 1 || c.MaxConns < 1 || c.IOTimeout < 0 || c.ServeTimeout < 0:
-		return fmt.Errorf("node: runtime: queue, connection or timeout bound out of range: %w", ErrConfig)
+		return fmt.Errorf("node: runtime: queue, connection or timeout bound out of range: %w", node.ErrConfig)
 	}
 	if !c.NoNetwork {
 		if _, _, err := net.SplitHostPort(string(c.ID)); err != nil {
-			return fmt.Errorf("node: runtime: id %q is not host:port: %w", c.ID, ErrConfig)
+			return fmt.Errorf("node: runtime: id %q is not host:port: %w", c.ID, node.ErrConfig)
 		}
 		if _, _, err := net.SplitHostPort(c.Listen); err != nil {
-			return fmt.Errorf("node: runtime: listen %q: %w", c.Listen, ErrConfig)
+			return fmt.Errorf("node: runtime: listen %q: %w", c.Listen, node.ErrConfig)
 		}
 	}
 	return c.Node.Validate()
@@ -124,7 +125,7 @@ type Runtime struct {
 	badFrames atomic.Uint64
 	panicked  atomic.Bool
 
-	node    *Node
+	nd      *node.Node
 	timers  map[*realTimer]struct{}
 	pending map[uint64]bool
 	nextID  uint64
@@ -137,7 +138,7 @@ func NewRuntime(cfg RuntimeConfig) (*Runtime, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	codes, err := CodeTable()
+	codes, err := node.CodeTable()
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +196,7 @@ func (rt *Runtime) Start(ctx context.Context) error {
 	case stateNew:
 	default:
 		rt.mu.Unlock()
-		return fmt.Errorf("node: start %s twice: %w", rt.cfg.ID, ErrConfig)
+		return fmt.Errorf("node: start %s twice: %w", rt.cfg.ID, node.ErrConfig)
 	}
 	rt.state = stateStarting
 	rt.mu.Unlock()
@@ -206,11 +207,11 @@ func (rt *Runtime) Start(ctx context.Context) error {
 		return errors.Join(fmt.Errorf("node: start %s: data dir: %w", rt.cfg.ID, err), rt.Close())
 	}
 	e := env.Env{ID: rt.cfg.ID, Region: rt.cfg.Region, Clock: realClock{rt: rt}, Rand: newRand(), Net: &realNet{rt: rt}, Disk: &fileDisk{dir: rt.cfg.DataDir}}
-	n, err := New(e, rt.cfg.Node)
+	n, err := node.New(e, rt.cfg.Node)
 	if err != nil {
 		return errors.Join(err, rt.Close())
 	}
-	rt.node = n
+	rt.nd = n
 	var udp *net.UDPConn
 	var tcp net.Listener
 	if !rt.cfg.NoNetwork {
@@ -250,7 +251,7 @@ func (rt *Runtime) Start(ctx context.Context) error {
 	}
 	rt.mu.Unlock()
 	ready := make(chan struct{})
-	if !rt.post(func() { rt.node.Start(); close(ready) }) {
+	if !rt.post(func() { rt.nd.Start(); close(ready) }) {
 		return fmt.Errorf("node: start %s: %w", rt.cfg.ID, env.ErrClosed)
 	}
 	select {
@@ -284,7 +285,7 @@ func (rt *Runtime) loop() {
 		case f := <-rt.ctrl:
 			f()
 		case d := <-rt.dgrams:
-			rt.node.OnDatagram(d.from, d.body)
+			rt.nd.OnDatagram(d.from, d.body)
 		}
 	}
 }
@@ -381,7 +382,7 @@ func (rt *Runtime) serve(c net.Conn) {
 	ch := make(chan responseFrame, 1)
 	ok := rt.post(func() {
 		replied := false
-		rt.node.OnRequest(req.From, req.Body, func(resp []byte, err error) {
+		rt.nd.OnRequest(req.From, req.Body, func(resp []byte, err error) {
 			if replied {
 				return
 			}
@@ -475,7 +476,7 @@ func (t *realNet) Request(to env.NodeID, req []byte, timeout time.Duration, cb f
 	if to == rt.cfg.ID {
 		body := slices.Clone(req)
 		rt.afterFunc(0, func() {
-			rt.node.OnRequest(to, body, func(resp []byte, err error) {
+			rt.nd.OnRequest(to, body, func(resp []byte, err error) {
 				r := slices.Clone(resp)
 				if err != nil {
 					r, err = nil, rt.codes.Decode(rt.codes.Encode(err))
@@ -542,7 +543,7 @@ func (rt *Runtime) roundTrip(to env.NodeID, id uint64, frame []byte, deadline ti
 		return nil, err
 	}
 	if f.ID != id {
-		return nil, fmt.Errorf("node: response %d to request %d from %s: %w", f.ID, id, to, ErrFrame)
+		return nil, fmt.Errorf("node: response %d to request %d from %s: %w", f.ID, id, to, node.ErrFrame)
 	}
 	if f.Code != env.CodeOK {
 		return nil, rt.codes.Decode(f.Code, f.Msg)
@@ -564,7 +565,7 @@ func (rt *Runtime) Shutdown(ctx context.Context) error {
 	var graceful error
 	if prev == stateRunning {
 		stopped := make(chan struct{})
-		if rt.post(func() { rt.node.Stop(); close(stopped) }) {
+		if rt.post(func() { rt.nd.Stop(); close(stopped) }) {
 			select {
 			case <-stopped:
 			case <-ctx.Done():

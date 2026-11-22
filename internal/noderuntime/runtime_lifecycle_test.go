@@ -1,4 +1,4 @@
-package node
+package noderuntime
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/decentralized-object-store/internal/node"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
@@ -20,7 +21,7 @@ func TestRuntimeLifecycleInABubble(t *testing.T) {
 		if err := rt.Start(ctx); err != nil {
 			t.Fatal(err)
 		}
-		if err := rt.Start(ctx); !errors.Is(err, ErrConfig) {
+		if err := rt.Start(ctx); !errors.Is(err, node.ErrConfig) {
 			t.Fatalf("second start: %v", err)
 		}
 		time.Sleep(time.Second)
@@ -89,63 +90,10 @@ func TestRuntimeStartHonoursItsContext(t *testing.T) {
 
 func TestRuntimeCallsBeforeStartAreNotReady(t *testing.T) {
 	rt := newLoopRuntime(t)
-	if _, err := rt.Health(context.Background()); !errors.Is(err, ErrNotReady) {
+	if _, err := rt.Health(context.Background()); !errors.Is(err, node.ErrNotReady) {
 		t.Fatalf("health before start: %v", err)
 	}
 	if err := rt.Close(); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func TestRuntimeCancelMidPutLeavesOnlyCollectableShards(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		rt := newLoopRuntime(t)
-		rt.cfg.Node.GCGrace = time.Minute
-		bg := context.Background()
-		if err := rt.Start(bg); err != nil {
-			t.Fatal(err)
-		}
-		if err := rt.CreateBucket(bg, storage.BucketSpec{Name: "b"}); err != nil {
-			t.Fatal(err)
-		}
-		ctx, cancel := context.WithCancel(bg)
-		hold := make(chan struct{})
-		rt.post(func() { <-hold })
-		errc := make(chan error, 1)
-		go func() {
-			_, err := rt.PutObject(ctx, storage.PutRequest{Bucket: "b", Key: "k", Data: make([]byte, 4096)})
-			errc <- err
-		}()
-		synctest.Wait()
-		cancel()
-		if err := <-errc; !errors.Is(err, context.Canceled) {
-			t.Fatalf("canceled put: %v", err)
-		}
-		close(hold)
-		time.Sleep(time.Second)
-		synctest.Wait()
-		if _, err := rt.HeadObject(bg, "b", "k"); err != nil && !isNotFound(err) {
-			t.Fatalf("head after a canceled put: %v", err)
-		}
-		time.Sleep(2 * time.Minute)
-		synctest.Wait()
-		orphans, err := syncCall(bg, rt, "check", func(n *Node) (int, error) {
-			names, err := n.e.Disk.List("shards/")
-			if err != nil {
-				return 0, err
-			}
-			rd, _ := n.occ.Reader()
-			live := 0
-			for _, o := range n.liveObjects(rd, "b") {
-				live += len(o.rec.Manifest.Stripes)
-			}
-			return len(names) - live, nil
-		})
-		if err != nil || orphans != 0 {
-			t.Fatalf("%d shards no manifest refers to remain after the grace period (%v)", orphans, err)
-		}
-		if err := rt.Close(); err != nil {
-			t.Fatal(err)
-		}
-	})
 }

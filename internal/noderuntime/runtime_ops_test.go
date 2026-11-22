@@ -1,4 +1,4 @@
-package node_test
+package noderuntime_test
 
 import (
 	"bytes"
@@ -15,6 +15,7 @@ import (
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/node"
+	"github.com/nickstrad/decentralized-object-store/internal/noderuntime"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
@@ -69,8 +70,8 @@ func TestShutdownDuringRepairAndRestartOnTheSameDisk(t *testing.T) {
 	}
 	cfg.Seeds = ids
 	dirs := []string{t.TempDir(), t.TempDir(), t.TempDir()}
-	start := func(i int) *node.Runtime {
-		rt, err := node.NewRuntime(node.RuntimeConfig{ID: ids[i], Region: env.Region(fmt.Sprintf("r%d", i)), DataDir: dirs[i], Node: cfg})
+	start := func(i int) *noderuntime.Runtime {
+		rt, err := noderuntime.NewRuntime(noderuntime.RuntimeConfig{ID: ids[i], Region: env.Region(fmt.Sprintf("r%d", i)), DataDir: dirs[i], Node: cfg})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,7 +80,7 @@ func TestShutdownDuringRepairAndRestartOnTheSameDisk(t *testing.T) {
 		}
 		return rt
 	}
-	c := &realCluster{rts: []*node.Runtime{start(0), start(1), start(2)}}
+	c := &realCluster{rts: []*noderuntime.Runtime{start(0), start(1), start(2)}}
 	bg := context.Background()
 	eventually(t, 20*time.Second, "joined", func() bool { return c.joined(3) })
 	if err := c.rts[0].CreateBucket(bg, storage.BucketSpec{Name: "b"}); err != nil {

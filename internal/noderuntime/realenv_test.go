@@ -1,4 +1,4 @@
-package node
+package noderuntime
 
 import (
 	"errors"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/decentralized-object-store/internal/node"
 )
 
 func TestFileDiskMeetsTheDiskContract(t *testing.T) {
@@ -76,7 +77,7 @@ func TestFileDiskMeetsTheDiskContract(t *testing.T) {
 
 func newLoopRuntime(t *testing.T) *Runtime {
 	t.Helper()
-	rt, err := NewRuntime(RuntimeConfig{ID: "solo", Region: "r0", DataDir: t.TempDir(), NoNetwork: true, Node: Config{Layout: soloLayout()}})
+	rt, err := NewRuntime(RuntimeConfig{ID: "solo", Region: "r0", DataDir: t.TempDir(), NoNetwork: true, Node: node.Config{Layout: soloLayout()}})
 	if err != nil {
 		t.Fatal(err)
 	}

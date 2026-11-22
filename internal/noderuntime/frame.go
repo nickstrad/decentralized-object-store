@@ -1,4 +1,4 @@
-package node
+package noderuntime
 
 import (
 	"encoding/binary"
@@ -6,10 +6,11 @@ import (
 	"io"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/decentralized-object-store/internal/node"
 )
 
 const (
-	MaxFrame       = 16 << 20
+	MaxFrame       = node.MaxFrame
 	MaxDatagram    = 65507
 	frameLenSize   = 4
 	frameVersion   = 1
@@ -44,7 +45,7 @@ func appendFrame(dst, payload []byte) ([]byte, error) {
 func readFrame(r io.Reader, limit int) ([]byte, error) {
 	var hdr [frameLenSize]byte
 	if _, err := io.ReadFull(r, hdr[:]); err != nil {
-		return nil, fmt.Errorf("node: frame header: %w: %w", err, ErrFrame)
+		return nil, fmt.Errorf("node: frame header: %w: %w", err, node.ErrFrame)
 	}
 	n := binary.BigEndian.Uint32(hdr[:])
 	if uint64(n) > uint64(limit) {
@@ -52,7 +53,7 @@ func readFrame(r io.Reader, limit int) ([]byte, error) {
 	}
 	buf := make([]byte, n)
 	if _, err := io.ReadFull(r, buf); err != nil {
-		return nil, fmt.Errorf("node: frame body: %w: %w", err, ErrFrame)
+		return nil, fmt.Errorf("node: frame body: %w: %w", err, node.ErrFrame)
 	}
 	return buf, nil
 }
@@ -71,13 +72,13 @@ func encodeRequest(f requestFrame) ([]byte, error) {
 
 func decodeRequest(b []byte) (requestFrame, error) {
 	if len(b) < requestHeader || b[0] != frameVersion || b[1] != kindRequest {
-		return requestFrame{}, fmt.Errorf("node: request frame: %w", ErrFrame)
+		return requestFrame{}, fmt.Errorf("node: request frame: %w", node.ErrFrame)
 	}
 	id := binary.BigEndian.Uint64(b[2:10])
 	n := int(b[10])
 	rest := b[11:]
 	if n == 0 || len(rest) < n {
-		return requestFrame{}, fmt.Errorf("node: request frame sender: %w", ErrFrame)
+		return requestFrame{}, fmt.Errorf("node: request frame sender: %w", node.ErrFrame)
 	}
 	return requestFrame{ID: id, From: env.NodeID(rest[:n]), Body: rest[n:]}, nil
 }
@@ -98,18 +99,18 @@ func encodeResponse(f responseFrame) []byte {
 
 func decodeResponse(b []byte) (responseFrame, error) {
 	if len(b) < responseHeader || b[0] != frameVersion || b[1] != kindResponse {
-		return responseFrame{}, fmt.Errorf("node: response frame: %w", ErrFrame)
+		return responseFrame{}, fmt.Errorf("node: response frame: %w", node.ErrFrame)
 	}
 	f := responseFrame{ID: binary.BigEndian.Uint64(b[2:10]), Code: env.Code(b[10])}
 	n := int(binary.BigEndian.Uint16(b[11:13]))
 	rest := b[13:]
 	if n > env.MaxErrorMessage || len(rest) < n {
-		return responseFrame{}, fmt.Errorf("node: response frame message: %w", ErrFrame)
+		return responseFrame{}, fmt.Errorf("node: response frame message: %w", node.ErrFrame)
 	}
 	f.Msg = string(rest[:n])
 	f.Body = rest[n:]
 	if f.Code != env.CodeOK && len(f.Body) != 0 {
-		return responseFrame{}, fmt.Errorf("node: response frame: error with body: %w", ErrFrame)
+		return responseFrame{}, fmt.Errorf("node: response frame: error with body: %w", node.ErrFrame)
 	}
 	return f, nil
 }
@@ -129,11 +130,11 @@ func encodeDatagram(from env.NodeID, body []byte) ([]byte, error) {
 
 func decodeDatagram(b []byte) (env.NodeID, []byte, error) {
 	if len(b) < datagramHeader || b[0] != frameVersion {
-		return "", nil, fmt.Errorf("node: datagram: %w", ErrFrame)
+		return "", nil, fmt.Errorf("node: datagram: %w", node.ErrFrame)
 	}
 	n := int(b[1])
 	if n == 0 || len(b)-datagramHeader < n {
-		return "", nil, fmt.Errorf("node: datagram sender: %w", ErrFrame)
+		return "", nil, fmt.Errorf("node: datagram sender: %w", node.ErrFrame)
 	}
 	return env.NodeID(b[2 : 2+n]), b[2+n:], nil
 }

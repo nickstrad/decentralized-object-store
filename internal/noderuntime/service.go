@@ -1,4 +1,4 @@
-package node
+package noderuntime
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"runtime"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/decentralized-object-store/internal/node"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
@@ -14,7 +15,7 @@ type result[T any] struct {
 	err error
 }
 
-func call[T any](ctx context.Context, rt *Runtime, op string, fn func(n *Node, done func(T, error))) (T, error) {
+func call[T any](ctx context.Context, rt *Runtime, op string, fn func(n *node.Node, done func(T, error))) (T, error) {
 	var zero T
 	rt.mu.Lock()
 	state := rt.state
@@ -24,12 +25,12 @@ func call[T any](ctx context.Context, rt *Runtime, op string, fn func(n *Node, d
 		return zero, fmt.Errorf("node: %s on %s: %w", op, rt.cfg.ID, env.ErrClosed)
 	case stateRunning:
 	default:
-		return zero, fmt.Errorf("node: %s on %s: %w", op, rt.cfg.ID, ErrNotReady)
+		return zero, fmt.Errorf("node: %s on %s: %w", op, rt.cfg.ID, node.ErrNotReady)
 	}
 	ch := make(chan result[T], 1)
 	f := func() {
 		once := false
-		fn(rt.node, func(v T, err error) {
+		fn(rt.nd, func(v T, err error) {
 			if once {
 				return
 			}
@@ -54,23 +55,23 @@ func call[T any](ctx context.Context, rt *Runtime, op string, fn func(n *Node, d
 	}
 }
 
-func syncCall[T any](ctx context.Context, rt *Runtime, op string, fn func(n *Node) (T, error)) (T, error) {
-	return call(ctx, rt, op, func(n *Node, done func(T, error)) { done(fn(n)) })
+func syncCall[T any](ctx context.Context, rt *Runtime, op string, fn func(n *node.Node) (T, error)) (T, error) {
+	return call(ctx, rt, op, func(n *node.Node, done func(T, error)) { done(fn(n)) })
 }
 
 var _ storage.Service = (*Runtime)(nil)
 
 func (rt *Runtime) CreateBucket(ctx context.Context, spec storage.BucketSpec) error {
-	_, err := syncCall(ctx, rt, "create bucket", func(n *Node) (struct{}, error) { return struct{}{}, n.CreateBucket(spec) })
+	_, err := syncCall(ctx, rt, "create bucket", func(n *node.Node) (struct{}, error) { return struct{}{}, n.CreateBucket(spec) })
 	return err
 }
 
 func (rt *Runtime) ListObjects(ctx context.Context, bucket, prefix string, limit int) ([]storage.ObjectInfo, error) {
-	return syncCall(ctx, rt, "list", func(n *Node) ([]storage.ObjectInfo, error) { return n.ListObjects(bucket, prefix, limit) })
+	return syncCall(ctx, rt, "list", func(n *node.Node) ([]storage.ObjectInfo, error) { return n.ListObjects(bucket, prefix, limit) })
 }
 
 func (rt *Runtime) PutObject(ctx context.Context, req storage.PutRequest) (storage.ObjectInfo, error) {
-	return call(ctx, rt, "put", func(n *Node, done func(storage.ObjectInfo, error)) { n.PutObject(req, done) })
+	return call(ctx, rt, "put", func(n *node.Node, done func(storage.ObjectInfo, error)) { n.PutObject(req, done) })
 }
 
 type getResult struct {
@@ -79,58 +80,58 @@ type getResult struct {
 }
 
 func (rt *Runtime) GetObject(ctx context.Context, bucket, key string) (storage.ObjectInfo, []byte, error) {
-	r, err := call(ctx, rt, "get", func(n *Node, done func(getResult, error)) {
+	r, err := call(ctx, rt, "get", func(n *node.Node, done func(getResult, error)) {
 		n.GetObject(bucket, key, func(oi storage.ObjectInfo, data []byte, err error) { done(getResult{info: oi, data: data}, err) })
 	})
 	return r.info, r.data, err
 }
 
 func (rt *Runtime) HeadObject(ctx context.Context, bucket, key string) (storage.ObjectInfo, error) {
-	return syncCall(ctx, rt, "head", func(n *Node) (storage.ObjectInfo, error) { return n.HeadObject(bucket, key) })
+	return syncCall(ctx, rt, "head", func(n *node.Node) (storage.ObjectInfo, error) { return n.HeadObject(bucket, key) })
 }
 
 func (rt *Runtime) DeleteObject(ctx context.Context, bucket, key string, cond storage.Condition) (storage.ObjectInfo, error) {
-	return syncCall(ctx, rt, "delete", func(n *Node) (storage.ObjectInfo, error) { return n.DeleteObject(bucket, key, cond) })
+	return syncCall(ctx, rt, "delete", func(n *node.Node) (storage.ObjectInfo, error) { return n.DeleteObject(bucket, key, cond) })
 }
 
 func (rt *Runtime) PutTag(ctx context.Context, bucket, key, name, value string, cond storage.Condition) (storage.TagInfo, error) {
-	return syncCall(ctx, rt, "put tag", func(n *Node) (storage.TagInfo, error) { return n.PutTag(bucket, key, name, value, cond) })
+	return syncCall(ctx, rt, "put tag", func(n *node.Node) (storage.TagInfo, error) { return n.PutTag(bucket, key, name, value, cond) })
 }
 
 func (rt *Runtime) Tags(ctx context.Context, bucket, key string) ([]storage.TagInfo, error) {
-	return syncCall(ctx, rt, "tags", func(n *Node) ([]storage.TagInfo, error) { return n.Tags(bucket, key) })
+	return syncCall(ctx, rt, "tags", func(n *node.Node) ([]storage.TagInfo, error) { return n.Tags(bucket, key) })
 }
 
 func (rt *Runtime) PutACL(ctx context.Context, bucket, principal, perm string, cond storage.Condition) (storage.ACLInfo, error) {
-	return syncCall(ctx, rt, "put acl", func(n *Node) (storage.ACLInfo, error) { return n.PutACL(bucket, principal, perm, cond) })
+	return syncCall(ctx, rt, "put acl", func(n *node.Node) (storage.ACLInfo, error) { return n.PutACL(bucket, principal, perm, cond) })
 }
 
 func (rt *Runtime) ACL(ctx context.Context, bucket, principal string) (storage.ACLInfo, error) {
-	return syncCall(ctx, rt, "acl", func(n *Node) (storage.ACLInfo, error) { return n.ACL(bucket, principal) })
+	return syncCall(ctx, rt, "acl", func(n *node.Node) (storage.ACLInfo, error) { return n.ACL(bucket, principal) })
 }
 
 func (rt *Runtime) Quota(ctx context.Context, bucket string) (storage.QuotaInfo, error) {
-	return syncCall(ctx, rt, "quota", func(n *Node) (storage.QuotaInfo, error) { return n.Quota(bucket) })
+	return syncCall(ctx, rt, "quota", func(n *node.Node) (storage.QuotaInfo, error) { return n.Quota(bucket) })
 }
 
 func (rt *Runtime) SetQuota(ctx context.Context, bucket string, bytes, objects uint64) (storage.QuotaInfo, error) {
-	return syncCall(ctx, rt, "set quota", func(n *Node) (storage.QuotaInfo, error) { return n.SetQuota(bucket, bytes, objects) })
+	return syncCall(ctx, rt, "set quota", func(n *node.Node) (storage.QuotaInfo, error) { return n.SetQuota(bucket, bytes, objects) })
 }
 
 func (rt *Runtime) StartMigration(ctx context.Context, bucket, to string) (storage.MigrationInfo, error) {
-	return syncCall(ctx, rt, "migrate", func(n *Node) (storage.MigrationInfo, error) { return n.StartMigration(bucket, to) })
+	return syncCall(ctx, rt, "migrate", func(n *node.Node) (storage.MigrationInfo, error) { return n.StartMigration(bucket, to) })
 }
 
 func (rt *Runtime) Migration(ctx context.Context, id string) (storage.MigrationInfo, error) {
-	return syncCall(ctx, rt, "migration", func(n *Node) (storage.MigrationInfo, error) { return n.Migration(id) })
+	return syncCall(ctx, rt, "migration", func(n *node.Node) (storage.MigrationInfo, error) { return n.Migration(id) })
 }
 
 func (rt *Runtime) Members(ctx context.Context) ([]storage.MemberInfo, error) {
-	return syncCall(ctx, rt, "members", func(n *Node) ([]storage.MemberInfo, error) { return n.Members(), nil })
+	return syncCall(ctx, rt, "members", func(n *node.Node) ([]storage.MemberInfo, error) { return n.Members(), nil })
 }
 
 func (rt *Runtime) Health(ctx context.Context) (storage.Health, error) {
-	h, err := syncCall(ctx, rt, "health", func(n *Node) (storage.Health, error) { return n.Health(), nil })
+	h, err := syncCall(ctx, rt, "health", func(n *node.Node) (storage.Health, error) { return n.Health(), nil })
 	if err != nil {
 		return h, err
 	}
@@ -144,20 +145,4 @@ func (rt *Runtime) Health(ctx context.Context) (storage.Health, error) {
 		storage.Counter{Name: "heap_alloc_bytes", Value: ms.HeapAlloc},
 	)
 	return h, nil
-}
-
-func StatusRows() []storage.StatusRow {
-	return []storage.StatusRow{
-		{Err: ErrNotReady, Status: 503},
-		{Err: ErrStopped, Status: 503},
-		{Err: ErrUnsettled, Status: 503},
-		{Err: ErrNoMigration, Status: 400},
-		{Err: ErrUnknownSaga, Status: 404},
-		{Err: ErrFenced, Status: 409},
-		{Err: ErrStale, Status: 409},
-		{Err: ErrStaleRequest, Status: 409},
-		{Err: ErrMalformed, Status: 400},
-		{Err: ErrFrame, Status: 400},
-		{Err: ErrConfig, Status: 400},
-	}
 }
