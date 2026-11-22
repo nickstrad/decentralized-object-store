@@ -114,30 +114,22 @@ func (n *Node) serveNode(from env.NodeID, req []byte, reply env.Reply) {
 			reply(nil, err)
 			return
 		}
-		var w wbuf
-		route, _ := rd.Route(bucket)
-		w.str(string(route))
-		reply(w.b, nil)
+		reply(n.pointerView(rd, bucket).encode(), nil)
 	case opPurge:
 		bucket := r.str()
-		region := r.str()
 		cnt := r.uvarint()
 		if cnt > uint64(len(req)) {
 			r.fail("purge count")
 		}
-		keep := map[storage.VersionID]bool{}
+		var vs []storage.VersionID
 		for i := uint64(0); i < cnt && r.err == nil; i++ {
-			keep[storage.VersionID(r.uvarint())] = true
+			vs = append(vs, storage.VersionID(r.uvarint()))
 		}
 		if err := r.end("purge"); err != nil {
 			reply(nil, err)
 			return
 		}
-		if region != "" && string(n.e.Region) != region {
-			reply(encodeCount(0), nil)
-			return
-		}
-		c, err := n.purge(bucket, keep)
+		c, err := n.purge(bucket, vs)
 		if err != nil {
 			reply(nil, err)
 			return

@@ -295,4 +295,13 @@ func TestCanaryNodeSkipsDiscardRecount(t *testing.T) {
 	if failed == 0 {
 		t.Fatal("with the recount after a quota discard switched off, the quota check still passed on every seed")
 	}
+	drift := 0
+	for _, seed := range []int64{1, 2} {
+		if quotaDriftRun(seed).Err() != nil {
+			drift++
+		}
+	}
+	if drift == 0 {
+		t.Fatal("with the recount after a discard switched off, the unequal-size overwrite across a partition still left usage right")
+	}
 }

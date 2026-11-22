@@ -211,8 +211,8 @@ func TestRecordDecodersRejectMalformedBytes(t *testing.T) {
 			}
 		}
 	}
-	if errs := node.DecodeRecordsForTest(append(node.EncodeSetForTest([]string{"a"}), 1)); !errors.Is(errs[3], node.ErrMalformed) {
-		t.Errorf("a set with a trailing byte: %v", errs[3])
+	if errs := node.DecodeRecordsForTest(append(node.EncodePointerViewForTest("r0", "s|r1"), 1)); !errors.Is(errs[3], node.ErrMalformed) {
+		t.Errorf("a pointer view with a trailing byte: %v", errs[3])
 	}
 	if errs := node.DecodeRecordsForTest(node.EncodeStagedForTest("s", []byte{1, 2})[:5]); !errors.Is(errs[2], node.ErrMalformed) {
 		t.Errorf("a truncated staged record: %v", errs[2])
@@ -230,7 +230,7 @@ func TestNodeRefusesMalformedAndPostStopTraffic(t *testing.T) {
 		n.OnRequest("x", req, func(_ []byte, err error) { got = err })
 		return got
 	}
-	for _, req := range [][]byte{nil, {99}, {5, 99}, {5, node.OpMetaFetch}, {5, node.OpPointer}, {5, node.OpPurge, 1, 'b'}, append(node.NodeRequestForTest(node.OpPurge, "b", "r0"), 0x80)} {
+	for _, req := range [][]byte{nil, {99}, {5, 99}, {5, node.OpMetaFetch}, {5, node.OpPointer}, {5, node.OpPurge, 1, 'b'}, append(node.NodeRequestForTest(node.OpPurge, "b"), 0x80)} {
 		if err := reply(req); !errors.Is(err, node.ErrMalformed) {
 			t.Errorf("request %x: %v", req, err)
 		}

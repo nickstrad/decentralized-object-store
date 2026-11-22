@@ -81,7 +81,7 @@ type bucketState struct {
 
 func (b bucketState) writable() bool {
 	if b.route == "" {
-		return !b.hasLiv || b.live != ""
+		return b.rec.Region == "" && (!b.hasLiv || b.live != "")
 	}
 	return b.hasLiv && b.live == b.route
 }
@@ -638,11 +638,48 @@ func (n *Node) Members() []storage.MemberInfo {
 	return out
 }
 
+func readableKey(key string) string {
+	kind, parts, err := occ.ParseKey(key)
+	if err != nil {
+		return hex.EncodeToString([]byte(key))
+	}
+	return kindName(kind) + ":" + strings.Join(parts, "/")
+}
+
+func kindName(k occ.Kind) string {
+	switch k {
+	case occ.KindManifest:
+		return "manifest"
+	case occ.KindQuota:
+		return "quota"
+	case occ.KindTag:
+		return "tag"
+	case occ.KindACL:
+		return "acl"
+	case occ.KindRoute:
+		return "route"
+	case occ.KindObject:
+		return "object"
+	}
+	return fmt.Sprintf("kind%d", k)
+}
+
 func (n *Node) Health() storage.Health {
 	h := storage.Health{Node: string(n.e.ID), Region: string(n.e.Region), Ready: n.Ready(), LiveMembers: n.gossip.LiveCount()}
 	h.Discards = n.occ.LWWDiscards()
 	for _, d := range n.occ.DiscardTail() {
-		h.RecentDiscards = append(h.RecentDiscards, storage.DiscardInfo{Key: fmt.Sprintf("%q", d.Key), Winner: d.Winner.ID().String(), Loser: d.Loser.ID().String()})
+		h.RecentDiscards = append(h.RecentDiscards, storage.DiscardInfo{Key: readableKey(d.Key), Winner: d.Winner.ID().String(), Loser: d.Loser.ID().String()})
+	}
+	var lost uint64
+	if rd, err := n.occ.Reader(); err == nil {
+		for _, k := range rd.Keys() {
+			if len(k) == 0 || occ.Kind(k[0]) != occ.KindTag || !rd.Record(k).Live() {
+				continue
+			}
+			if _, parts, err := occ.ParseKey(k); err == nil && strings.HasPrefix(parts[2], tagLost) {
+				lost++
+			}
+		}
 	}
 	s := n.stats
 	ms := n.meta.Stats()
@@ -656,6 +693,8 @@ func (n *Node) Health() storage.Health {
 		{Name: "collected_shards", Value: s.Collected}, {Name: "collected_loser_shards", Value: s.CollectedLoser},
 		{Name: "meta_rounds", Value: ms.Rounds}, {Name: "meta_repaired", Value: ms.Repaired},
 		{Name: "malformed", Value: s.Malformed}, {Name: "member_deaths", Value: s.MemberDeaths},
+		{Name: "lost_objects", Value: lost}, {Name: "orphan_records", Value: s.OrphanRecords},
+		{Name: "purged_shards", Value: s.Purged}, {Name: "purge_refused", Value: s.PurgeRefused},
 	} {
 		h.Counters = append(h.Counters, c)
 	}

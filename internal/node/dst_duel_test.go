@@ -3,6 +3,8 @@ package node_test
 import (
 	"bytes"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -161,7 +163,8 @@ func duelRun(res *duelResult) func(seed int64) *sim.Sim {
 					return s
 				}
 			}
-			for key, want := range data[b] {
+			for _, key := range slices.Sorted(maps.Keys(data[b])) {
+				want := data[b][key]
 				val, _, err := rd.Get(occ.ManifestKey(b, key))
 				if err != nil {
 					s.Fail(fmt.Errorf("%s/%s lost in the duel: %w", b, key, err))

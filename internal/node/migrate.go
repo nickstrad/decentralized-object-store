@@ -5,7 +5,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
@@ -15,15 +17,22 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+type presetSource struct{ next uint64 }
+
+func (p *presetSource) Uint64() uint64 { return p.next }
+
 type migrator struct {
 	n       *Node
 	fenced  map[string]bool
 	copying map[string]int
 	waiting map[string][]func()
+	src     presetSource
+	copiers map[env.Region]*storage.Node
 }
 
 func newMigrator(n *Node) *migrator {
-	return &migrator{n: n, fenced: map[string]bool{}, copying: map[string]int{}, waiting: map[string][]func(){}}
+	return &migrator{n: n, fenced: map[string]bool{}, copying: map[string]int{}, waiting: map[string][]func(){},
+		copiers: map[env.Region]*storage.Node{}}
 }
 
 func permanent(err error) error { return fmt.Errorf("%w: %w", err, saga.ErrPermanent) }
@@ -57,26 +66,6 @@ func (g *migrator) staged(rd occ.Reader, bucket string) []stagedEntry {
 		out = append(out, stagedEntry{object: parts[1], key: k, rec: st, obj: obj})
 	}
 	return out
-}
-
-func (g *migrator) set(rd occ.Reader, key string) []string {
-	val, _, err := rd.Get(key)
-	if err != nil {
-		return nil
-	}
-	s, err := decodeSet(val)
-	if err != nil {
-		return nil
-	}
-	return s
-}
-
-func (g *migrator) writeSet(key string, ids []string) error {
-	if _, err := g.n.occ.SetScalar(key, encodeSet(ids)); err != nil {
-		return err
-	}
-	g.n.RecordMeta(key)
-	return nil
 }
 
 func (g *migrator) scalar(rd occ.Reader, key string) (string, bool) {
@@ -116,6 +105,40 @@ func (g *migrator) state(m saga.MigrationInput) (occ.Reader, bucketState, error)
 	return rd, bs, err
 }
 
+func regKey(bucket, id string) string { return bucketKey(bucket, tagReg+id) }
+
+func intentKey(bucket, id string, v storage.VersionID) string {
+	return bucketKey(bucket, tagIntent+id+"/"+v.String())
+}
+
+func (g *migrator) registered(rd occ.Reader, bucket string) []string {
+	var out []string
+	for _, t := range sysTags(rd, bucket, tagReg) {
+		if t.object == "" {
+			out = append(out, t.rest)
+		}
+	}
+	return out
+}
+
+func (g *migrator) intents(rd occ.Reader, bucket, id string) []storage.VersionID {
+	var out []storage.VersionID
+	for _, t := range sysTags(rd, bucket, tagIntent+id+"/") {
+		if v, err := strconv.ParseUint(t.rest, 16, 64); err == nil && t.object == "" {
+			out = append(out, storage.VersionID(v))
+		}
+	}
+	return out
+}
+
+func (g *migrator) liveVersions(rd occ.Reader, bucket string) map[storage.VersionID]bool {
+	out := map[storage.VersionID]bool{}
+	for _, o := range g.n.liveObjects(rd, bucket) {
+		out[o.rec.Manifest.Version] = true
+	}
+	return out
+}
+
 func (g *migrator) Claim(c saga.Call, m saga.MigrationInput, done func(error)) {
 	g.n.later(func() { done(g.claim(c, m)) })
 }
@@ -137,10 +160,8 @@ func (g *migrator) claim(c saga.Call, m saga.MigrationInput) error {
 			return err
 		}
 	}
-	rk := bucketKey(m.Bucket, tagReg)
-	reg := g.set(rd, rk)
-	if !slices.Contains(reg, id) {
-		return g.writeSet(rk, append(reg, id))
+	if !rd.Record(regKey(m.Bucket, id)).Live() {
+		return g.setScalar(regKey(m.Bucket, id), id)
 	}
 	return nil
 }
@@ -165,12 +186,36 @@ func (g *migrator) unclaim(c saga.Call, m saga.MigrationInput) error {
 }
 
 func (g *migrator) deregister(rd occ.Reader, bucket, id string) error {
-	rk := bucketKey(bucket, tagReg)
-	reg := g.set(rd, rk)
-	if !slices.Contains(reg, id) {
+	if !rd.Record(regKey(bucket, id)).Live() {
 		return nil
 	}
-	return g.writeSet(rk, slices.DeleteFunc(reg, func(s string) bool { return s == id }))
+	return g.del(regKey(bucket, id))
+}
+
+func (g *migrator) copier(region string) *storage.Node {
+	r := env.Region(region)
+	if s, ok := g.copiers[r]; ok {
+		return s
+	}
+	e := g.n.e.WithNet(chanNet{net: g.n.e.Net, ch: chStorage})
+	e.Rand = rand.New(&g.src)
+	s, err := storage.NewNode(e, storage.Config{
+		Layout: g.n.cfg.Layout, Members: regionView{v: g.n.view, region: r}, AckQuorum: g.n.cfg.AckQuorum, RequestTimeout: g.n.cfg.RequestTimeout,
+	})
+	if err != nil {
+		return nil
+	}
+	g.copiers[r] = s
+	return s
+}
+
+func (g *migrator) newVersion(rd occ.Reader, bucket string) storage.VersionID {
+	for {
+		v := storage.VersionID(g.n.e.Rand.Uint64())
+		if v != 0 && !rd.Record(gcKey(bucket, v)).Present() {
+			return v
+		}
+	}
 }
 
 func (g *migrator) Copy(c saga.Call, m saga.MigrationInput, done func([]byte, error)) {
@@ -185,11 +230,19 @@ func (g *migrator) Copy(c saga.Call, m saga.MigrationInput, done func([]byte, er
 	if err == nil && bs.route != m.From && bs.route != m.To {
 		err = permanent(fmt.Errorf("node: copy %q: routed to %q: %w", m.Bucket, bs.route, ErrNoMigration))
 	}
+	cp := g.copier(m.To)
+	if err == nil && cp == nil {
+		err = fmt.Errorf("node: copy %q: no copier for %q: %w", m.Bucket, m.To, ErrConfig)
+	}
 	if err != nil {
 		g.n.later(func() { done(nil, err) })
 		return
 	}
 	objs := g.n.liveObjects(rd, m.Bucket)
+	mine := map[storage.VersionID]bool{}
+	for _, v := range g.intents(rd, m.Bucket, id) {
+		mine[v] = true
+	}
 	g.copying[id]++
 	finish := func(err error) {
 		g.copying[id]--
@@ -232,10 +285,15 @@ func (g *migrator) Copy(c saga.Call, m saga.MigrationInput, done func([]byte, er
 			finish(err)
 			return
 		}
+		next := func() { g.n.later(func() { step(i + 1) }) }
+		if mine[o.rec.Manifest.Version] {
+			next()
+			return
+		}
 		sk := stageKey(m.Bucket, o.key, id)
 		if val, _, err := rd.Get(sk); err == nil {
 			if st, err := decodeStaged(val); err == nil && st.SrcETag == o.etag {
-				g.n.later(func() { step(i + 1) })
+				next()
 				return
 			}
 		}
@@ -244,7 +302,22 @@ func (g *migrator) Copy(c saga.Call, m saga.MigrationInput, done func([]byte, er
 				finish(fmt.Errorf("node: copy %s/%s: read: %w", m.Bucket, o.key, err))
 				return
 			}
-			g.n.scope(m.To).Put(m.Bucket, o.key, res.Data, func(man *storage.Manifest, err error) {
+			if g.fenced[id] {
+				finish(permanent(fmt.Errorf("node: copy %q for %s: %w", m.Bucket, id, ErrFenced)))
+				return
+			}
+			rd, err := g.n.reader()
+			if err != nil {
+				finish(err)
+				return
+			}
+			v := g.newVersion(rd, m.Bucket)
+			if err := g.setScalar(intentKey(m.Bucket, id, v), m.To); err != nil {
+				finish(err)
+				return
+			}
+			g.src.next = uint64(v)
+			cp.Put(m.Bucket, o.key, res.Data, func(man *storage.Manifest, err error) {
 				if err != nil {
 					finish(fmt.Errorf("node: copy %s/%s: write: %w", m.Bucket, o.key, err))
 					return
@@ -265,7 +338,7 @@ func (g *migrator) Copy(c saga.Call, m saga.MigrationInput, done func([]byte, er
 			})
 		})
 	}
-	step(0)
+	g.n.later(func() { step(0) })
 }
 
 func (g *migrator) dropStale(bucket, id string) error {
@@ -299,6 +372,15 @@ func (g *migrator) root(rd occ.Reader, m saga.MigrationInput, loc, id string) []
 	entries := map[string]merkle.Entry{}
 	switch loc {
 	case m.To:
+		mine := map[storage.VersionID]bool{}
+		for _, v := range g.intents(rd, m.Bucket, id) {
+			mine[v] = true
+		}
+		for _, o := range g.n.liveObjects(rd, m.Bucket) {
+			if mine[o.rec.Manifest.Version] {
+				entries[o.key] = rootEntry(o.key, o.rec.Manifest)
+			}
+		}
 		for _, s := range g.staged(rd, m.Bucket) {
 			if s.rec.Saga == id {
 				entries[s.object] = rootEntry(s.object, s.obj.Manifest)
@@ -362,59 +444,69 @@ func (g *migrator) discard(id string, m saga.MigrationInput, done func(error)) {
 			}
 		}
 	}
-	g.purgeRegion(m.Bucket, m.To, done)
+	live := g.liveVersions(rd, m.Bucket)
+	var dead []storage.VersionID
+	for _, v := range g.intents(rd, m.Bucket, id) {
+		if !live[v] {
+			g.n.markDead(m.Bucket, v)
+			dead = append(dead, v)
+		}
+	}
+	g.purge(m.Bucket, dead, func(err error) {
+		if err != nil {
+			done(err)
+			return
+		}
+		done(g.dropIntents(m.Bucket, id))
+	})
 }
 
-func (g *migrator) keep(bucket string) (map[storage.VersionID]bool, error) {
+func (g *migrator) dropIntents(bucket, id string) error {
 	rd, err := g.n.reader()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	keep := map[storage.VersionID]bool{}
-	for _, o := range g.n.liveObjects(rd, bucket) {
-		keep[o.rec.Manifest.Version] = true
+	for _, v := range g.intents(rd, bucket, id) {
+		if err := g.del(intentKey(bucket, id, v)); err != nil {
+			return err
+		}
 	}
-	for _, s := range g.staged(rd, bucket) {
-		keep[s.obj.Manifest.Version] = true
-	}
-	return keep, nil
+	return nil
 }
 
-func (g *migrator) purgeRegion(bucket, region string, done func(error)) {
+func (g *migrator) purge(bucket string, versions []storage.VersionID, done func(error)) {
 	if !g.n.ViewSettled() {
 		g.n.later(func() {
-			done(fmt.Errorf("node: purge %q in %q: membership view still settling: %w", bucket, region, ErrUnsettled))
+			done(fmt.Errorf("node: purge %q: membership view still settling: %w", bucket, ErrUnsettled))
 		})
 		return
 	}
-	keep, err := g.keep(bucket)
-	if err != nil {
-		done(err)
+	vs := slices.Clone(versions)
+	slices.Sort(vs)
+	vs = slices.Compact(vs)
+	if len(vs) == 0 {
+		g.n.later(func() { done(nil) })
 		return
 	}
 	var w wbuf
 	w.byte(opPurge)
 	w.str(bucket)
-	w.str(region)
-	vs := sortedKeys(keep)
 	w.uvarint(uint64(len(vs)))
 	for _, v := range vs {
 		w.uvarint(uint64(v))
 	}
-	targets := g.n.view.InRegion(env.Region(region))
+	if _, err := g.n.purge(bucket, vs); err != nil {
+		g.n.later(func() { done(err) })
+		return
+	}
+	peers := g.n.view.Peers()
+	slices.Sort(peers)
 	var errs []error
-	pending := 0
-	for _, t := range targets {
-		if t == g.n.e.ID {
-			if _, err := g.n.purge(bucket, keep); err != nil {
-				errs = append(errs, err)
-			}
-			continue
-		}
-		pending++
-		g.n.net.Request(t, w.b, g.n.cfg.RPCTimeout, func(_ []byte, err error) {
+	pending := len(peers)
+	for _, p := range peers {
+		g.n.net.Request(p, w.b, g.n.cfg.RPCTimeout, func(_ []byte, err error) {
 			if err != nil {
-				errs = append(errs, fmt.Errorf("node: purge %q on %s: %w", bucket, t, err))
+				errs = append(errs, fmt.Errorf("node: purge %q on %s: %w", bucket, p, err))
 			}
 			pending--
 			if pending == 0 {
@@ -423,19 +515,31 @@ func (g *migrator) purgeRegion(bucket, region string, done func(error)) {
 		})
 	}
 	if pending == 0 {
-		g.n.later(func() { done(errors.Join(errs...)) })
+		g.n.later(func() { done(nil) })
 	}
 }
 
+func flipValue(id, to string) string { return id + "|" + to }
+
 func (g *migrator) Flip(c saga.Call, m saga.MigrationInput, done func(error)) {
 	g.n.later(func() {
-		_, bs, err := g.state(m)
+		rd, bs, err := g.state(m)
 		if err != nil {
 			done(err)
 			return
 		}
-		if bs.route == m.To {
+		id := string(c.Key.Saga)
+		owner, _ := g.scalar(rd, bucketKey(m.Bucket, tagFlip))
+		if bs.route == m.To && owner == flipValue(id, m.To) {
 			done(nil)
+			return
+		}
+		if bs.route != m.From {
+			done(permanent(fmt.Errorf("node: flip %q to %q: routed to %q by %q: %w", m.Bucket, m.To, bs.route, owner, ErrNoMigration)))
+			return
+		}
+		if err := g.setScalar(bucketKey(m.Bucket, tagFlip), flipValue(id, m.To)); err != nil {
+			done(err)
 			return
 		}
 		if _, err := g.n.occ.SetRoute(m.Bucket, env.Region(m.To)); err != nil {
@@ -447,47 +551,103 @@ func (g *migrator) Flip(c saga.Call, m saga.MigrationInput, done func(error)) {
 	})
 }
 
-func (g *migrator) Pointer(c saga.Call, bucket string, done func(string, error)) {
+type pointerView struct {
+	route  string
+	owner  string
+	digest [32]byte
+}
+
+func (n *Node) pointerView(rd occ.Reader, bucket string) pointerView {
+	var p pointerView
+	if r, err := rd.Route(bucket); err == nil {
+		p.route = string(r)
+	}
+	if v, _, err := rd.Get(bucketKey(bucket, tagFlip)); err == nil {
+		p.owner = string(v)
+	}
+	h := sha256.New()
+	for _, k := range prefixKeys(rd.Keys(), occ.BucketPrefix(occ.KindManifest, bucket)) {
+		if v, ok := rd.Record(k).Version(); ok {
+			id := v.ID()
+			h.Write(binary.BigEndian.AppendUint32(nil, uint32(len(k))))
+			h.Write([]byte(k))
+			h.Write(id[:])
+		}
+	}
+	copy(p.digest[:], h.Sum(nil))
+	return p
+}
+
+func (p pointerView) encode() []byte {
+	var w wbuf
+	w.str(p.route)
+	w.str(p.owner)
+	w.b = append(w.b, p.digest[:]...)
+	return w.b
+}
+
+func decodePointerView(b []byte) (pointerView, error) {
+	r := rbuf{b: b}
+	p := pointerView{route: r.str(), owner: r.str()}
+	if r.err == nil && len(r.b) != len(p.digest) {
+		r.fail("pointer digest")
+	}
+	if r.err == nil {
+		copy(p.digest[:], r.b)
+		r.b = nil
+	}
+	return p, r.end("pointer view")
+}
+
+func (g *migrator) agree(bucket string, done func(pointerView, error)) {
 	rd, err := g.n.reader()
 	if err != nil {
-		g.n.later(func() { done("", err) })
+		g.n.later(func() { done(pointerView{}, err) })
 		return
 	}
 	if !g.n.ViewSettled() {
 		g.n.later(func() {
-			done("", fmt.Errorf("node: pointer of %q: membership view still settling: %w", bucket, ErrUnsettled))
+			done(pointerView{}, fmt.Errorf("node: pointer of %q: membership view still settling: %w", bucket, ErrUnsettled))
 		})
 		return
 	}
-	local, _ := rd.Route(bucket)
 	var w wbuf
 	w.byte(opPointer)
 	w.str(bucket)
 	peers := g.n.view.Peers()
 	slices.Sort(peers)
 	var errs []error
-	agreed := true
 	pending := len(peers)
+	views := map[env.NodeID]pointerView{}
 	reply := func() {
-		switch {
-		case len(errs) > 0:
-			done("", errors.Join(errs...))
-		case !agreed:
-			done("", fmt.Errorf("node: pointer of %q: %w", bucket, ErrUnsettled))
-		default:
-			done(string(local), nil)
+		rd, err := g.n.reader()
+		if err != nil {
+			done(pointerView{}, err)
+			return
 		}
+		local := g.n.pointerView(rd, bucket)
+		if len(errs) > 0 {
+			done(local, errors.Join(errs...))
+			return
+		}
+		for _, p := range peers {
+			if views[p] != local {
+				done(local, fmt.Errorf("node: pointer of %q: %s disagrees: %w", bucket, p, ErrUnsettled))
+				return
+			}
+		}
+		done(local, nil)
 	}
 	for _, p := range peers {
 		g.n.net.Request(p, w.b, g.n.cfg.RPCTimeout, func(resp []byte, err error) {
+			if err == nil {
+				var v pointerView
+				if v, err = decodePointerView(resp); err == nil {
+					views[p] = v
+				}
+			}
 			if err != nil {
 				errs = append(errs, fmt.Errorf("node: pointer from %s: %w", p, err))
-			} else {
-				r := rbuf{b: resp}
-				loc := r.str()
-				if r.end("pointer reply") != nil || loc != string(local) {
-					agreed = false
-				}
 			}
 			pending--
 			if pending == 0 {
@@ -495,9 +655,42 @@ func (g *migrator) Pointer(c saga.Call, bucket string, done func(string, error))
 			}
 		})
 	}
+	_ = rd
 	if pending == 0 {
 		g.n.later(reply)
 	}
+}
+
+func (g *migrator) Pointer(c saga.Call, bucket string, done func(string, error)) {
+	m, err := saga.DecodeMigrationInput(c.Input)
+	if err != nil || m.Bucket != bucket {
+		g.n.later(func() {
+			done("", permanent(fmt.Errorf("node: pointer of %q: input %+v: %w", bucket, m, ErrMalformed)))
+		})
+		return
+	}
+	id := string(c.Key.Saga)
+	g.agree(bucket, func(p pointerView, err error) {
+		if err != nil {
+			done("", err)
+			return
+		}
+		switch {
+		case p.owner == "":
+			done("", fmt.Errorf("node: pointer of %q: no flip recorded: %w", bucket, ErrUnsettled))
+		case p.owner != flipValue(id, m.To):
+			done(sysPrefix+p.owner, nil)
+		case p.route != m.To:
+			if _, err := g.n.occ.SetRoute(bucket, env.Region(m.To)); err != nil {
+				done("", err)
+				return
+			}
+			g.n.RecordMeta(occ.RouteKey(bucket))
+			done("", fmt.Errorf("node: pointer of %q: route %q behind the flip: %w", bucket, p.route, ErrUnsettled))
+		default:
+			done(m.To, nil)
+		}
+	})
 }
 
 func (g *migrator) Seal(c saga.Call, m saga.MigrationInput, done func(bool, error)) {
@@ -512,7 +705,7 @@ func (g *migrator) Seal(c saga.Call, m saga.MigrationInput, done func(bool, erro
 			done(true, nil)
 			return
 		}
-		for _, other := range g.set(rd, bucketKey(m.Bucket, tagReg)) {
+		for _, other := range g.registered(rd, m.Bucket) {
 			if other != id {
 				done(false, fmt.Errorf("node: seal %q: %s also registered: %w", m.Bucket, other, storage.ErrBusy))
 				return
@@ -548,24 +741,35 @@ func (g *migrator) Retire(c saga.Call, m saga.MigrationInput, done func(error)) 
 			mk := occ.ManifestKey(m.Bucket, s.object)
 			cur := rd.Record(mk)
 			if cur.Live() && cur.ETag() == s.rec.SrcETag {
+				old, _, oerr := g.n.object(rd, mk)
 				if _, err := g.n.occ.Put(mk, s.rec.Object, occ.IfMatch(s.rec.SrcETag)); err != nil {
 					done(err)
 					return
 				}
 				g.n.RecordMeta(mk)
+				if oerr == nil {
+					g.n.markDead(m.Bucket, old.Manifest.Version)
+				}
 			}
 			if err := g.del(s.key); err != nil {
 				done(err)
 				return
 			}
 		}
-		g.purgeRegion(m.Bucket, m.From, func(err error) {
-			if err != nil {
-				done(err)
-				return
+		rd, err = g.n.reader()
+		if err != nil {
+			done(err)
+			return
+		}
+		live := g.liveVersions(rd, m.Bucket)
+		for _, v := range g.intents(rd, m.Bucket, id) {
+			if !live[v] {
+				g.n.markDead(m.Bucket, v)
 			}
-			if err := g.setScalar(rk, id); err != nil {
-				done(err)
+		}
+		g.agree(m.Bucket, func(_ pointerView, err error) {
+			if err != nil {
+				done(fmt.Errorf("node: retire %q: waiting for every peer to hold the swapped manifests: %w", m.Bucket, err))
 				return
 			}
 			rd, err := g.n.reader()
@@ -573,7 +777,26 @@ func (g *migrator) Retire(c saga.Call, m saga.MigrationInput, done func(error)) 
 				done(err)
 				return
 			}
-			done(g.deregister(rd, m.Bucket, id))
+			g.purge(m.Bucket, g.n.deadVersions(rd, m.Bucket), func(err error) {
+				if err != nil {
+					done(err)
+					return
+				}
+				if err := g.dropIntents(m.Bucket, id); err != nil {
+					done(err)
+					return
+				}
+				if err := g.setScalar(rk, id); err != nil {
+					done(err)
+					return
+				}
+				rd, err := g.n.reader()
+				if err != nil {
+					done(err)
+					return
+				}
+				done(g.deregister(rd, m.Bucket, id))
+			})
 		})
 	})
 }

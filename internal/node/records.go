@@ -15,11 +15,15 @@ const (
 	sysPrefix     = "~"
 	tagBucket     = "~bucket"
 	tagLive       = "~live"
-	tagReg        = "~reg"
+	tagReg        = "~reg/"
 	tagRetired    = "~retired"
 	tagClaim      = "~claim/"
 	tagStage      = "~stage/"
 	tagGC         = "~gc/"
+	tagFlip       = "~flip"
+	tagIntent     = "~cv/"
+	tagOrphan     = "~orphan/"
+	tagLost       = "~lost/"
 	maxField      = 1 << 16
 )
 
@@ -184,33 +188,25 @@ func decodeStaged(b []byte) (stagedRecord, error) {
 	return s, r.end("staged record")
 }
 
-func encodeSet(ids []string) []byte {
-	s := slices.Clone(ids)
-	slices.Sort(s)
-	s = slices.Compact(s)
-	var w wbuf
-	w.byte(recordVersion)
-	w.uvarint(uint64(len(s)))
-	for _, id := range s {
-		w.str(id)
-	}
-	return w.b
+type sysTag struct {
+	key    string
+	object string
+	rest   string
 }
 
-func decodeSet(b []byte) ([]string, error) {
-	r := rbuf{b: b}
-	if r.byte() != recordVersion {
-		r.fail("set version")
+func sysTags(rd occ.Reader, bucket, prefix string) []sysTag {
+	var out []sysTag
+	for _, k := range prefixKeys(rd.Keys(), occ.BucketPrefix(occ.KindTag, bucket)) {
+		if !rd.Record(k).Live() {
+			continue
+		}
+		_, parts, err := occ.ParseKey(k)
+		if err != nil || !strings.HasPrefix(parts[2], prefix) {
+			continue
+		}
+		out = append(out, sysTag{key: k, object: parts[1], rest: strings.TrimPrefix(parts[2], prefix)})
 	}
-	n := r.uvarint()
-	if n > uint64(len(b)) {
-		r.fail("set length")
-	}
-	var out []string
-	for i := uint64(0); i < n && r.err == nil; i++ {
-		out = append(out, r.str())
-	}
-	return out, r.end("set")
+	return out
 }
 
 func bucketKey(bucket, name string) string { return occ.TagKey(bucket, "", name) }

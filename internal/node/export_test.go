@@ -22,11 +22,9 @@ func DecodeRecordsForTest(b []byte) []error {
 	_, e1 := decodeObject(b)
 	_, e2 := decodeBucket(b)
 	_, e3 := decodeStaged(b)
-	_, e4 := decodeSet(b)
+	_, e4 := decodePointerView(b)
 	return []error{e1, e2, e3, e4}
 }
-
-func EncodeSetForTest(ids []string) []byte { return encodeSet(ids) }
 
 func EncodeStagedForTest(saga string, obj []byte) []byte {
 	return encodeStaged(stagedRecord{Saga: saga, Object: obj})
@@ -60,4 +58,8 @@ func ManifestOfStaged(b []byte) (*storage.Manifest, error) {
 		return nil, err
 	}
 	return ManifestOfRecord(st.Object)
+}
+
+func EncodePointerViewForTest(route, owner string) []byte {
+	return pointerView{route: route, owner: owner}.encode()
 }
