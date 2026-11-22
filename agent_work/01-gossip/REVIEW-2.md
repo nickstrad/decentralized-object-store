@@ -62,3 +62,5 @@ VERDICT: NITS
   - `agent_work/adversarial/01-gossip/{RESULTS.md,main.go,extra.go,evidence/run-all.txt}`.
   - `internal/gossip/{config.go,errors.go,member.go,wire.go,node.go,export_test.go,node_test.go,prop_test.go,fuzz_test.go,dst_test.go,repair_test.go}`.
   - `internal/env/errors.go`, `internal/sim/{net.go,handle.go}`, `internal/sim/simtest/{seeds.go,determinism.go}`, `agent_work/orch/land.sh`.
+
+NITS CLOSED (orchestrator, 2026-11-22): nits 1 and 2 and note 3 fixed in the nit-fix commits that follow this review on the branch (non-empty fuzz seeds with a test; the tombstone bound stated in the build notes; View.Apply compacts its ID list, with a test). Note 4: the final gate is re-run on the rebased tip before landing.
