@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -49,6 +50,8 @@ type harness struct {
 	discards []discardRec
 	acks     *ackOracle
 	gc       *gcOracle
+	mans     map[string]*storage.Manifest
+	declared []string
 }
 
 func newHarness(seed int64, n int, cfg node.Config, net sim.NetConfig) (*harness, error) {
@@ -56,7 +59,7 @@ func newHarness(seed int64, n int, cfg node.Config, net sim.NetConfig) (*harness
 	if err != nil {
 		return &harness{s: sim.New(sim.Config{Seed: seed})}, err
 	}
-	h := &harness{s: sim.New(sim.Config{Seed: seed, Codes: table, Net: net}), ids: sim.NodeIDs(n), acks: newAckOracle()}
+	h := &harness{s: sim.New(sim.Config{Seed: seed, Codes: table, Net: net}), ids: sim.NodeIDs(n), acks: newAckOracle(), mans: map[string]*storage.Manifest{}}
 	h.gc = newGCOracle(h)
 	cfg.Seeds = []env.NodeID{h.ids[0], h.ids[1], h.ids[2]}
 	sink := cfg.DiscardSink
@@ -75,6 +78,7 @@ func newHarness(seed int64, n int, cfg node.Config, net sim.NetConfig) (*harness
 		c.CommitSink = func(key string, held occ.Record, v occ.Version) {
 			h.acks.commit(id, key, held, v)
 			h.gc.onCommit(key, v)
+			h.onCommitLoss(id, key, v)
 			if commits != nil {
 				commits(key, held, v)
 			}
@@ -336,4 +340,54 @@ func (h *harness) checkLiveReadableOrLost(s *sim.Sim) {
 	if err := s.RunUntilConverged(s.Now().Add(30*time.Second), func() bool { return pending == 0 }); err != nil {
 		s.Fail(fmt.Errorf("%d reads of live keys never completed: %w", pending, err))
 	}
+}
+
+func (h *harness) onCommitLoss(id env.NodeID, key string, v occ.Version) {
+	if len(key) == 0 || v.Tombstone() {
+		return
+	}
+	switch occ.Kind(key[0]) {
+	case occ.KindManifest:
+		if man, err := manifestOf(v.Value()); err == nil {
+			h.mans[man.Version.String()] = man
+		}
+	case occ.KindTag:
+		_, parts, err := occ.ParseKey(key)
+		if err != nil || !strings.HasPrefix(parts[2], "~lost/") {
+			return
+		}
+		ver := strings.TrimPrefix(parts[2], "~lost/")
+		h.declared = append(h.declared, ver)
+		man := h.mans[ver]
+		if man == nil {
+			h.s.Fail(fmt.Errorf("%s declared version %s of %s/%s lost, a version no node ever committed", id, ver, parts[0], parts[1]))
+			return
+		}
+		if _, ok := h.unrecoverableStripe(man); !ok {
+			h.s.Fail(fmt.Errorf("%s declared %s/%s version %s lost while every stripe still had at least k=%d verifiable shards on its holders' disks", id, man.Bucket, man.Key, ver, man.Layout.K))
+		}
+	}
+}
+
+func (h *harness) verifiableShards(man *storage.Manifest, stripe int) int {
+	c := 0
+	for i, ref := range man.Stripes[stripe].Shards {
+		blob, ok := h.s.Disk(ref.Node).Peek(man.ShardID(stripe, i).BlobName())
+		if !ok {
+			continue
+		}
+		if _, _, err := storage.DecodeShard(blob); err == nil && storage.BlobChecksum(blob) == ref.Checksum {
+			c++
+		}
+	}
+	return c
+}
+
+func (h *harness) unrecoverableStripe(man *storage.Manifest) (int, bool) {
+	for s := range man.Stripes {
+		if h.verifiableShards(man, s) < man.Layout.K {
+			return s, true
+		}
+	}
+	return 0, false
 }
