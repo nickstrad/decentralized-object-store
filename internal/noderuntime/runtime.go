@@ -562,6 +562,18 @@ func (rt *Runtime) resolve(to env.NodeID) error {
 
 func (t *realNet) Request(to env.NodeID, req []byte, timeout time.Duration, cb func([]byte, error)) {
 	rt := t.rt
+	if timeout <= 0 {
+		rt.afterFunc(0, func() {
+			cb(nil, fmt.Errorf("node: request to %s with timeout %v: %w", to, timeout, env.ErrInvalidArgument))
+		})
+		return
+	}
+	if to == rt.cfg.ID && len(req) > node.MaxFrame {
+		rt.afterFunc(0, func() {
+			cb(nil, fmt.Errorf("node: request of %d bytes over %d: %w", len(req), node.MaxFrame, env.ErrTooLarge))
+		})
+		return
+	}
 	rt.nextID++
 	id := rt.nextID
 	rt.pending[id] = true
@@ -579,19 +591,7 @@ func (t *realNet) Request(to env.NodeID, req []byte, timeout time.Duration, cb f
 	tm = rt.afterFunc(timeout, func() {
 		complete(nil, fmt.Errorf("node: request %d to %s after %v: %w", id, to, timeout, env.ErrTimeout))
 	})
-	if timeout <= 0 {
-		rt.afterFunc(0, func() {
-			cb(nil, fmt.Errorf("node: request to %s with timeout %v: %w", to, timeout, env.ErrInvalidArgument))
-		})
-		return
-	}
 	if to == rt.cfg.ID {
-		if len(req) > node.MaxFrame {
-			rt.afterFunc(0, func() {
-				cb(nil, fmt.Errorf("node: request of %d bytes over %d: %w", len(req), node.MaxFrame, env.ErrTooLarge))
-			})
-			return
-		}
 		body := slices.Clone(req)
 		rt.afterFunc(0, func() {
 			rt.nd.OnRequest(to, body, func(resp []byte, err error) {
