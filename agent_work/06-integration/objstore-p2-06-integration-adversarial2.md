@@ -12,6 +12,8 @@ An earlier engineer wrote the harness in `agent_work/adversarial/06-integration/
 round changed the product (`git log --oneline -24`, account in section 10 "Repair round"
 of `agent_work/06-integration/build-notes.md`, findings in
 `agent_work/06-integration/REVIEW-1.md`):
+- the HTTP server moved from `internal/storage` to a new package `internal/storage/httpapi`
+  (status rows, request/response types and API error codes stay in `internal/storage`);
 - the real runtime moved from `internal/node` to a new package `internal/noderuntime`
   (the harness still refers to `node.Runtime`, so `run-all.sh` now ends with set-up
   errors: 18 held, 0 broken, 4 set-up errors);
