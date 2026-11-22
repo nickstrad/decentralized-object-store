@@ -1143,8 +1143,14 @@ never returns, such as a node removed for good, keeps it so forever: the code ca
 holder from a partitioned one. A wiped disk (`WipeRejoin`) loses the holder's own copy of its record
 until metadata sync returns it, and with it the refusal of that shard. A writer's shard request sent
 before the wipe and delivered to the new incarnation in that window is stored. The simulator
-delivers such a request (it addresses a node, not an incarnation); the real runtime does not (the
-connection dies with the process). Two cases follow.
+delivers such a request (it addresses a node, not an incarnation). In the real runtime a TCP
+connection already established cannot survive the receiving process's restart, but a request
+carries no destination incarnation and dials after it is scheduled
+(`internal/noderuntime/runtime.go`, `Request`), so one still waiting for scheduling, address
+resolution or its connection can reach the restarted holder before its deadline (read from the
+code, not reproduced on the real runtime). The refusal therefore assumes the holder keeps its
+absence metadata; losing that metadata plus a late enough shard request is the residual on either
+transport. Two cases follow.
 (a) The version is already declared lost: the stored shard belongs to a version that is dead on
 record. The holder gets the death marker by metadata sync and collects the shard after `GCGrace`; the
 key stays not live with its loss record on every node
@@ -1156,7 +1162,8 @@ k-1 good shards exist, the stripe can be read and rebuilt, and no further absenc
 for it; if more than m records were already written, the version is declared lost although k shards
 exist at that moment. This needs a disk loss on a record-holding holder of a stripe already below k
 and a shard write held in the network across that holder's wipe and restart. Not closed and not
-tested. A closure was built and withdrawn: a node that starts with empty metadata refused shard
+tested in the package; the confirm pass reproduced it independently (ARBITRATION-2.md, "Independent
+residual check": the converse oracle fails the run, as it should). A closure was built and withdrawn: a node that starts with empty metadata refused shard
 writes until its first metadata sync round, which also refused the first writes of every new
 cluster (`TestMigrationHoldsAWriteAcknowledgedJustBeforeTheFlipDST` failed on all three shards).
 The tombstone
