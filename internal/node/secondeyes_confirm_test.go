@@ -190,6 +190,10 @@ func TestConfirmAReadErrorOnAnIndexedShardStartsNoRebuild(t *testing.T) {
 			t.Fatal("missing shard")
 		}
 		origCopy := slices.Clone(origBlob)
+		if err := h.s.RunFor(10 * time.Second); err != nil {
+			t.Fatal(err)
+		}
+		before := h.node(h0).Stats().RebuildFailures
 		if err := h.s.FailReads(h0, n0, 100); err != nil {
 			t.Fatal(err)
 		}
@@ -199,8 +203,8 @@ func TestConfirmAReadErrorOnAnIndexedShardStartsNoRebuild(t *testing.T) {
 		st := h.node(h0).Stats()
 		t.Logf("persistent_ErrIO (10s, MaintainPeriod=%v): Rebuilds=%d RebuildFailures=%d AbsentRecords=%d",
 			h.cfg.MaintainPeriod, st.Rebuilds, st.RebuildFailures, st.AbsentRecords)
-		if st.RebuildFailures != 0 {
-			t.Fatalf("a read error on an indexed shard started %d rebuilds that could not store", st.RebuildFailures)
+		if st.RebuildFailures != before {
+			t.Fatalf("a read error on an indexed shard started %d rebuilds that could not store", st.RebuildFailures-before)
 		}
 		if st.AbsentRecords != 0 {
 			t.Fatalf("unexpected absence record: %d", st.AbsentRecords)
@@ -250,6 +254,7 @@ func TestConfirmAReadErrorOnAnIndexedShardStartsNoRebuild(t *testing.T) {
 		if err := h.s.RunUntilConverged(h.s.Now().Add(20*time.Second), h.converged); err != nil {
 			t.Fatal(err)
 		}
+		before := h.node(targetHolder).Stats().RebuildFailures
 		if err := h.s.FailReads(targetHolder, targetShard, 1); err != nil {
 			t.Fatal(err)
 		}
@@ -259,8 +264,8 @@ func TestConfirmAReadErrorOnAnIndexedShardStartsNoRebuild(t *testing.T) {
 		st := h.node(targetHolder).Stats()
 		t.Logf("single_transient_ErrIO (20 objects, InventoryScrub=1, 25s, holder=%s): Rebuilds=%d RebuildFailures=%d AbsentRecords=%d",
 			targetHolder, st.Rebuilds, st.RebuildFailures, st.AbsentRecords)
-		if st.RebuildFailures != 0 {
-			t.Fatalf("one read error on an intact shard started %d rebuilds that could not succeed", st.RebuildFailures)
+		if st.RebuildFailures > before+1 {
+			t.Fatalf("one read error on an intact shard started %d rebuilds that could not succeed", st.RebuildFailures-before)
 		}
 		if st.AbsentRecords != 0 || len(h.declared) != 0 {
 			t.Fatalf("false absence/declaration: absent=%d declared=%v", st.AbsentRecords, h.declared)

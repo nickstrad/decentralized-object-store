@@ -1244,7 +1244,7 @@ were accepted. Fixed by the orchestrator seat as this round's builder.
 
 | # | Finding | Change | Test (in `internal/node`) |
 |---|---|---|---|
-| 1 MAJOR | A disk read error on the holder's own shard was taken as "holds none": `stateAbsent` wrote a binding absence record for an intact shard, and a healthy object could be declared lost (k=2, m=0 with two read errors; k=2, m=1 with one rotted shard and read errors on the two good holders). | `stateAbsent` writes a record only when its own read of the shard answers not found, corrupt, or a blob whose checksum is not the manifest's. Any other error writes nothing. The scrub is unchanged: it still drops an unreadable shard from the inventory so a rebuild is tried, which rewrites the shard when k others verify. | `TestLocalTransientDiskIOErrorMustNotDeclareHealthyObjectLost` (both layouts); failed before |
+| 1 MAJOR | A disk read error on the holder's own shard was taken as "holds none": `stateAbsent` wrote a binding absence record for an intact shard, and a healthy object could be declared lost (k=2, m=0 with two read errors; k=2, m=1 with one rotted shard and read errors on the two good holders). | `stateAbsent` writes a record only when its own read of the shard answers not found, corrupt, or a blob whose checksum is not the manifest's. Any other error writes nothing. The scrub drops a shard from the inventory only when its read answers not found or corrupt; a read error leaves the inventory entry as it was (see the focused confirm below). | `TestLocalTransientDiskIOErrorMustNotDeclareHealthyObjectLost` (both layouts); failed before |
 | 2 MAJOR | A rebuild already waiting for replies stored its shard even when the holder's own absence record had arrived meanwhile (a wiped holder that gets the manifest before its record). The record did not bind on that path. | The rebuild's completion reads the metadata again and stores nothing when the holder has an absence record for the shard, the version has death evidence, or the metadata is not loaded. | `TestWipedHolderRebuildRacesOwnAbsenceRecord`; failed before |
 | 3 MAJOR | The converse oracle failed any migrated version that was declared lost: a migration installs its manifest without the commit callback, so the oracle had never seen the version. | Test oracle only: for a version it has not seen, `onCommitLoss` reads the manifest the declaring node still holds (the loss record is written before the tombstone) and checks the disks against it. | `TestLossDeclarationAfterBucketMigration`; failed before |
 | 4 MAJOR | The refusal of shard writes before metadata loads had no test. | Test added. With the refusal removed (temporary edit, not committed) it fails with `OpPutShard before metadata loaded returned <nil>`. | `TestServeStorageRefusesShardWriteBeforeMetadataLoads` |
@@ -1265,5 +1265,20 @@ finding 2 was fixed. Both now hold as written.
 
 **Residual added.** A holder whose own disk keeps failing reads of a shard (not "not found", not
 "corrupt") never writes an absence record for it, so it blocks a loss declaration for that stripe the
-same way an unreachable holder does: the key stays live and unreadable until the disk answers or the
-shard is rewritten by a successful rebuild.
+same way an unreachable holder does: the key stays live and unreadable until the disk answers. A
+rebuild cannot rewrite such a shard, because the chunk store reads the existing blob before it writes.
+
+**Focused confirm (NEON-CONFIRM.md: NITS).** All six findings confirmed closed with nine further
+scenarios (kept as `secondeyes_confirm_test.go`); full package, race, 2,000-check properties and a
+50-seed sweep passed. One new nit, accepted and fixed: the first version of fix 1 kept the scrub
+dropping a shard from the inventory on any read error, which this section wrongly said let a rebuild
+rewrite it. It could not, and a rebuild that could not store ran on every maintenance tick (10
+failures in 10 s in both of the reviewer's schedules; safety was unaffected). Two changes: the scrub
+leaves the inventory entry alone on a read error; and a rebuild that fails while the holder's own
+shard reads back intact now enters that shard in the inventory instead of trying again every tick
+(this second loop predates the round: with m=0 a rebuild can never succeed without the holder's own
+shard, so an intact shard not yet scrubbed was retried until the scrub reached it).
+`TestConfirmAReadErrorOnAnIndexedShardStartsNoRebuild` fails without the two changes (10 and 10
+needless rebuilds) and passes with them (0 and 1). Still true and stated: a shard that is not yet in
+the inventory and whose reads keep failing is retried, and fails, once per maintenance tick until the
+disk answers.

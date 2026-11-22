@@ -177,6 +177,8 @@ func (n *Node) scrubShard(inv *inventory, name string) {
 	if err != nil {
 		if isCorrupt(err) {
 			n.stats.ScrubCorrupt++
+		} else if !isNotFound(err) {
+			return
 		}
 		inv.actual.Delete(name)
 		return
@@ -551,6 +553,12 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 				if _, _, derr := storage.DecodeShard(b); derr == nil && storage.BlobChecksum(b) == want[j] {
 					verifiable++
 				}
+			}
+			if b, rerr := n.store.Store().GetBlob(man.ShardID(es.stripe, es.idx)); rerr == nil && storage.BlobChecksum(b) == want[es.idx] {
+				if serr := inv.actual.Set(name, merkle.Hash(want[es.idx])); serr != nil {
+					n.logf("rebuild %s: %v", name, serr)
+				}
+				return
 			}
 			if verifiable < man.Layout.K && !slices.Contains(answered, false) {
 				n.stateAbsent(man, es.stripe, es.idx, verifiable)
