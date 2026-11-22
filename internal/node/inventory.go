@@ -274,22 +274,30 @@ func (n *Node) recordOrphans(bucket string, names []string) bool {
 		byVersion[id.Version] = append(byVersion[id.Version], id)
 	}
 	for _, v := range sortedKeys(byVersion) {
-		var w wbuf
-		w.byte(recordVersion)
-		w.uvarint(uint64(len(byVersion[v])))
 		for _, id := range byVersion[v] {
-			w.uvarint(uint64(id.Stripe))
-			w.uvarint(uint64(id.Index))
+			k := orphanKey(bucket, id, n.e.ID)
+			if _, err := n.occ.SetScalar(k, orphanValue(id)); err != nil {
+				n.logf("orphan record %s: %v", k, err)
+				return false
+			}
+			n.RecordMeta(k)
+			n.stats.OrphanRecords++
 		}
-		k := bucketKey(bucket, tagOrphan+v.String()+"/"+string(n.e.ID))
-		if _, err := n.occ.SetScalar(k, w.b); err != nil {
-			n.logf("orphan record %s: %v", k, err)
-			return false
-		}
-		n.RecordMeta(k)
-		n.stats.OrphanRecords++
 	}
 	return true
+}
+
+func orphanKey(bucket string, id storage.ShardID, holder env.NodeID) string {
+	return bucketKey(bucket, tagOrphan+id.Version.String()+"/"+strconv.FormatUint(uint64(id.Stripe), 10)+"."+strconv.FormatUint(uint64(id.Index), 10)+"/"+string(holder))
+}
+
+func orphanValue(id storage.ShardID) []byte {
+	var w wbuf
+	w.byte(recordVersion)
+	w.uvarint(1)
+	w.uvarint(uint64(id.Stripe))
+	w.uvarint(uint64(id.Index))
+	return w.b
 }
 
 func (n *Node) noteOrphan(rd occ.Reader, key, name string) {
