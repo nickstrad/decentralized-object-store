@@ -4,8 +4,12 @@ Branch `chunk/04-occ`. Spec: PLAN.md 4.2 "Chunk 4", 7.5, 2.2/2.3/2.6, and the "L
 in 9.1. The first build (Opus, 2026-11-21) kept concurrent versions as siblings. The owner's
 ruling of the same day replaced siblings with last-writer-wins. The repair round
 (`objstore-p2-04-occ-repair1.md`) rewrote the package to that ruling and fixed the six
-review-1 findings. This file describes the package **as it now is**. The "Repair round"
-section at the end lists what changed and which test proves each point.
+review-1 findings. Review 2 (`REVIEW-2.md`) and the independent test report
+(`agent_work/adversarial/04-occ/ATTACKS.md`) found two schedules where a loss left no record,
+a crash window that could drop a record, and two quota bugs; LWW round 2
+(`objstore-p2-04-occ-lww-round2.md`) closed them. This file describes the package **as it now
+is**. The "Repair round" and "LWW round 2" sections at the end list what changed in each round
+and which test proves each point.
 
 ## The design in plain words
 
@@ -30,11 +34,30 @@ byte-identical.
 The system guarantees convergence and a record of the loss, not preservation. Every such loss
 (an *LWW discard*) is counted in a per-node counter, written to a log line naming the key,
 the losing version, its stamp and its writer, and the winning version and its stamp, and
-reported to a callback. A loss can happen, but it is never invisible.
+reported to a callback. A loss to a concurrent write can happen, but it is never invisible.
 
-Version vectors stay, but only to *detect* concurrency. When a node replaces the version it
-holds, it asks one question: had the winner's writer seen the loser? If yes, the replacement
-is an ordinary overwrite and nothing was lost. If no, it is a discard and goes on the record.
+**Where a loss is recorded.** A node records a discard whenever LWW makes it drop a version
+that its winner never saw, in either of the two ways that can happen on one node:
+- it *replaces* the version it holds with an incoming concurrent winner, or
+- it *rejects* an incoming version because the one it holds wins, and the held version never
+  saw the incoming one.
+
+So every node that ever held or received a losing version records it, as long as that node
+had the loser in hand when the winner met it. The writer's own node is not needed for the
+record: a writer that crashes for good, is wiped, or loses its state blob after its version
+reached any other node leaves the record on that other node.
+
+**The one remaining limit.** A write acknowledged by a node whose disk is lost before the
+version reached any other node is lost with that disk and has no record. That is a disk
+loss, not a concurrency loss: no node ever saw the version lose. The general form is: a
+version is unrecorded only if every node that ever received it (its writer included) lost
+its state while still holding it. The tests' oracle allows exactly this case and no other
+(see "LWW round 2", item 2).
+
+Version vectors stay, but only to *detect* concurrency. When LWW drops one of two versions,
+the node asks one question: had the winner's writer seen the loser? If yes, the drop is an
+ordinary overwrite (or old news arriving late) and nothing was lost. If no, it is a discard
+and goes on the record.
 
 "Last" means the highest HLC stamp, not the latest in real time. With skewed clocks, a write
 made later in real time can lose to a concurrent write from a node whose clock runs ahead.
@@ -45,14 +68,14 @@ skew, because a write takes a stamp strictly above the version it replaces.
 
 | File | Contents |
 |---|---|
-| `errors.go` | sentinels `ErrPreconditionFailed`, `ErrMalformed`, `ErrNotFound`, `ErrQuotaExceeded`, `ErrClockExhausted`, `ErrClockAhead`, `ErrNotReady`; wire codes in the occ block 128–143 (`CodeBlockMin/Max`): 128 precondition, 129 malformed, 130 not found, **131 unassigned** (the retired conflict code), 132 quota, 133 clock exhausted, 134 clock ahead, 135 not ready; `CodeEntries`, `Codes()` |
+| `errors.go` | sentinels `ErrPreconditionFailed`, `ErrMalformed`, `ErrNotFound`, `ErrQuotaExceeded`, `ErrClockExhausted`, `ErrClockAhead`, `ErrNotReady`, `ErrUsageOverflow`; wire codes in the occ block 128–143 (`CodeBlockMin/Max`): 128 precondition, 129 malformed, 130 not found, **131 unassigned** (the retired conflict code), 132 quota, 133 clock exhausted, 134 clock ahead, 135 not ready, 136 usage overflow; `CodeEntries`, `Codes()` |
 | `vv.go` | `Actor{Node, Epoch}`, `Entry`, `VersionVector` (sorted, zero entries dropped), `Compare` → Equal/Before/After/Concurrent, `Descends`, `Join`, `Get` |
 | `hlc.go` | `Stamp{Wall, Logical, Node}` with a total `Compare`, `After` (on `(wall, logical)` only) and an internal `successor`; `HLC` over `env.Clock` (`Now`, `Observe`, `Last`), `MaxClockLead = 1h` |
 | `version.go` | `Dot`, `Version` (dot, causal context, tombstone flag, value, stamp, cached `VersionID`); `Compare` = the LWW total order; `ETag()`; `Descends`/`Supersedes` (event-set inclusion, a linear scan) |
 | `record.go` | `ETag`, `ParseETag`; `Record` (one optional version): `Version`, `Present`, `Live`, `ETag`, `Equal`, `Merge` (the LWW maximum); `Precondition` (`IfMatch`, `IfNoneMatch`, `Unconditional`, `Holds`) |
 | `doc.go` | `Doc` (key → one `Version`, cached sorted keys and encoding): `Record`, `Keys`, `KeysWithPrefix`, `MergeVersion`, `Merge`, `Clone`, `Subset`, `Stamps`, `MaxStamp() (Stamp, bool)`, `Encode`, `Digest`, `Equal`, strict `Decode` |
 | `encoding.go` | encoder and decoder primitives. The decoder counts its work and stops building as soon as an error is set. |
-| `store.go` | `Store` (embeds `Reader`): `Put`, `Delete`, `SetScalar`, `Merge` (returns `(changed, error)`), `EncodeState`; `LWWDiscards`, `DiscardTail`, `Counter`, `Actor`, `HLC`, `Rotations`, `AheadStamps`; `StoreConfig` with `Persist`, `Log`, `OnDiscard`; `Discard{Key, Winner, Loser}` and its log line; the transaction (snapshot, persist, restore); `Reader` (`Get`, `Record`, `Keys`, `Doc` (a copy), `Digest`, `Scalar`) |
+| `store.go` | `Store` (embeds `Reader`): `Put`, `Delete`, `SetScalar`, `Merge` (returns `(document changed, error)`), `EncodeState`; `NewStore`, `OpenStore(cfg, state)` (open from a state blob and emit the outbox); `LWWDiscards`, `DiscardTail`, `Counter`, `Actor`, `HLC`, `Rotations`, `AheadStamps`; `StoreConfig` with `Persist`, `Log`, `OnDiscard`; `Discard{Key, Winner, Loser}` and its log line; `DiscardTailLen`, `DiscardDedupLen`, `DiscardOutboxLen`; the transaction (snapshot, persist, restore, emit, drain); classification of replaced and rejected versions; the state blob; `Reader` (`Get`, `Record`, `Keys`, `Doc` (a copy), `Digest`, `Scalar`) |
 | `quota.go` | `Usage`, `DecodeUsage`, `Reader.ReadQuota`, `Store.WriteQuota`, `UpdateQuota(key, attempts, fn)`, `RecountQuota(key, attempts, recount) (Usage, wrote bool, error)`, `AddUsage` |
 | `meta.go` | typed document: `Kind`, key builders, `ParseKey`, `Permission`, `ObjectMeta`; typed reads on `Reader`, typed writes on `Store` and `Node` (`PutTag`, `PutACL`, `PutObjectMeta`, `PutManifest`, `SetRoute`, `SetContentType`), `Reader.RecountObjects` |
 | `wire.go` | message kinds, client op encoding, `Result` |
@@ -83,20 +106,37 @@ old `Scalar` type, its separate map and its tie-break on value bytes are gone.
 
 **Classification (version vectors detect, they do not decide).** Each version carries a dot
 (actor, counter) and a causal context (the vector of what its writer had seen). Its event set
-is `downset(context) ∪ {dot}`. When a store replaces a version it *holds* (in a merge), it
-tests whether the winner's event set strictly includes the loser's (`Supersedes`):
-- strictly included: an ordinary overwrite; nothing is recorded;
+is `downset(context) ∪ {dot}`. In a merge, for every key whose incoming version differs from
+the held one, the store tests whether the LWW winner's event set strictly includes the
+loser's (`Supersedes`):
+- strictly included: an ordinary overwrite (held replaced) or old news (incoming rejected);
+  nothing is recorded;
 - anything else (concurrent; equal event sets, which only forged input produces; or the
   higher-stamped winner causally *below* the loser, also only on forged input): a discard
   that is counted and logged. In doubt, the store records the loss.
 
-Only replacements of a held version are classified. When an incoming version loses to what
-the node holds, nothing is recorded on that node: it never held the loser. Its writer's node
-holds the loser until something replaces it, and that replacement is recorded or is an
-overwrite by a writer that saw it. So every loss is on at least one node's record, and the
-same discard is not re-counted each time gossip delivers the loser again. One lost version
-held by several replicas is counted once on each of them. That is why the discard counters
-(events) exceed the number of distinct lost versions in the numbers below.
+Both directions are classified: a held version replaced (`Store.replaced`) and an incoming
+version rejected (`Store.rejected`). The test that the classification is right is an
+independent oracle built only from what each write actually held when it was made
+(`TestPropClassificationMatchesOracle`, below).
+
+**De-duplication of records.** Anti-entropy re-sends a losing version until its sender
+catches up, and every node still holding a loser offers it again. Each node keeps the last
+`DiscardDedupLen` (256) recorded `(key, losing version ID)` pairs, as 16-byte hashes, in its
+persisted state, and records a pair it finds there no second time. The window is a FIFO.
+Beyond it, a loser that is offered again after 256 newer records is recorded again: an
+over-count of events, never an under-count, and every repeated record names the same losing
+version ID. A wiped node starts with an empty window (and a zero counter).
+
+**What the counter counts.** `LWWDiscards` is *discard events observed by this node*: the
+number of distinct `(key, loser)` pairs this node recorded, by replacement or by rejection,
+within the window. It is not the number of distinct lost versions. One lost version is
+typically recorded on every node that held or received it, so the sum of the counters over
+the nodes exceeds the number of distinct lost versions (the numbers below give both). To
+count distinct losses, join the log lines on `loser=<version ID>`; every record carries the
+losing version's ID, its stamp and its writer. A record can also name a version that some
+other writer had causally overwritten elsewhere (the record is made where that overwrite
+had not arrived yet). That is an over-count of losses, not a missing one.
 
 **A write always beats what it replaced (A3).** A local write's context is the held version's
 clock, so the write causally supersedes it. Its stamp is `max(HLC.Now(), successor(held))`,
@@ -115,13 +155,40 @@ recorded) until real time passes the stamp, and every other key on the node keep
 stamps. At the absolute end of the stamp space (`(MaxInt64, MaxUint32)`) there is no
 successor; the write is refused with `ErrClockExhausted` and changes nothing.
 
-**Dots are never reused.** The dot counter comes from one per-actor counter, persisted in the
-state blob with the document. A per-key `max+1` would reissue the dot of a write that was
-discarded, and a later write by the same node would then look like a causal successor of
-the discarded write on other replicas. `TestDotsAreNeverReused` shows the counter moving past
-the discarded dot, and that a replica still holding the discarded write records it as a
-discard. A hostile context carrying `MaxUint64` for the node's actor makes the store rotate
-to a fresh epoch before writing.
+**Dots are never reused, and a clock never claims a dot its writer did not see.** The dot
+counter comes from one per-actor counter, persisted in the state blob with the document. A
+per-key `max+1` would reissue the dot of a write that was discarded. That alone is not
+enough. A version vector entry `a:N` means *all* of `a`'s dots `1..N`. After node `a`'s own
+version `(a,2)` is discarded for a concurrent winner that never saw it, `a`'s next write
+`(a,3)` is fine (its context holds `a:1`), but the write after that takes `(a,3)`'s clock
+`{a:3, …}` as its context, which claims `(a,2)`. A third node still holding `(a,2)` would then
+classify the replacement as a causal overwrite and record nothing (REVIEW-2 finding 1).
+
+The fix: **a node retires its actor epoch when a discard leaves a gap in its own dots.**
+When a merge replaces a held version with a concurrent winner, and the loser's clock holds
+more of this node's current actor's dots than the winner's clock does
+(`loser.clockAt(actor) > winner.clockAt(actor)`), the node draws a fresh epoch and restarts
+its counter at 0 (`Rotations` counts it). Every later write uses the new actor, so no later
+clock can reach the discarded dot through a downset. The test for the condition is on the
+current actor only, because retired epochs never issue dots again.
+
+Why this rule is enough: a write by `a` claims `a`'s dots below its own counter. Such a claim
+is false only for a dot of a version of the same key that this write did not see. `a`
+created that version and held it, so it left `a`'s replica through a chain of replacements.
+If every step was causal, the current held version saw it and its clock already includes the
+dot. So some step was a concurrent replacement whose loser's clock had the dot and whose
+winner's clock (exact, by induction) did not: exactly the condition that retires the epoch.
+
+Chosen over the alternative (an exact context that does not inflate over gaps, i.e. dotted
+version vectors with an exception set): retiring the epoch keeps vectors as plain downsets,
+keeps the encoding, the linear `descends` scan and every decoder bound unchanged, and is a
+few lines in one place. Its cost is one more vector entry per gap-creating discard on the
+writer's node (measured below as the largest context in the final documents). The exact
+context would avoid that growth but changes the encoding, `descends`, `Join` and the
+hostile-input work bounds, and would need its own review round.
+
+A hostile context carrying `MaxUint64` for the node's actor still makes the store rotate to
+a fresh epoch before writing.
 
 **Actor epochs and the wipe hazard (A9).** Actor = `(NodeID, Epoch)`. The epoch is stored
 with the state. A node that starts without readable state (new, wiped, or bit-rotted) draws a
@@ -145,10 +212,11 @@ scalar, quota write, merge, including inbound pushes, digest replies and deltas)
 transaction. The store records the previous record of each key it touches, the actor (epoch),
 the dot counter, the rotation count, the HLC state, the ahead count and the discard count.
 It applies the change, encodes the state blob and calls the `Persist` hook (the node's
-`Disk.Write` + `Disk.Sync`). If persist fails, everything listed is restored, and the call
-returns the disk error. Pending discards are published (tail, log line, callback) only after
-the persist succeeded. A failed persist therefore leaves no trace in reads, ETags, later
-preconditions, replication, the counter, the tail or the log. I chose snapshot-and-restore
+`Disk.Write` + `Disk.Sync`). If persist fails, everything listed is restored, together with
+the tail, the outbox and the de-duplication window, and the call returns the disk error.
+Pending discards are emitted (log line, callback) only after the persist succeeded. A failed
+persist therefore leaves no trace in reads, ETags, later preconditions, replication, the
+counter, the tail, the window or the log. I chose snapshot-and-restore
 over persist-then-install because the document is mutated in place and a copy of it per
 write would cost O(document). The undo log costs O(keys changed). Restoring the HLC is not
 needed for safety (a clock that moved forward is harmless), but it makes "state from before
@@ -158,10 +226,27 @@ the call" exact.
 `occ: lww discard key="…" loser=<id> loser_stamp=<wall.logical@node> loser_writer=<node@epoch>
 winner=<id> winner_stamp=<…>`. It is deterministic and holds no wall time. The counter
 (`LWWDiscards`, saturating at `MaxUint64`) is persisted in the local state blob. It survives
-restarts and never enters the replicated document. The last `DiscardTailLen` (64) records are
-kept in a ring for tests and operators. The `Log` sink and the `OnDiscard(key, winner,
-loser)` callback are optional `Config`/`StoreConfig` fields. Both run after the persist, in
-the order the discards were decided.
+restarts and never enters the replicated document. The last `DiscardTailLen` (64) records
+are the readable tail (`DiscardTail`, oldest first); it is persisted with the state, so it
+survives restarts. The `Log` sink and the `OnDiscard(key, winner, loser)` callback are
+optional `Config`/`StoreConfig` fields. Both run after the persist, in the order the
+discards were decided.
+
+**The outbox: records survive a crash before they are emitted.** The records a transaction
+makes are written into a persisted *outbox* in the same durable write as the merge (and the
+counter). After that write succeeds, the store emits them (log line, callback) and then
+*drains* the outbox with a second state write. When a node opens its state (`Node.Start`,
+`OpenStore`), it emits whatever the outbox still holds and drains it. So a crash anywhere
+between the durable merge and the drain loses no record: the restarted node emits it.
+Delivery is therefore **at least once** across crashes: a record is emitted twice only if
+the process dies after emitting and before the drain write lands, or if the drain write
+fails (the record stays in the outbox and is emitted again at the next open). A repeated
+record carries the same losing version ID, and the counter is never incremented twice (it
+was persisted with the merge). Bound: the outbox holds the records of the current
+transaction (at most one per key of the incoming document) plus, after failed drain writes,
+up to `DiscardOutboxLen` (1,024) already-emitted records; beyond that the oldest
+already-emitted ones are dropped, which can only cost a re-emission after a crash, never a
+first emission. In normal operation the drained outbox is empty on disk.
 
 **ETag.** `ETag(v) = v.ID()`: a deterministic function of the one version, equal on every node
 holding it, different for every different version, including a new version with the same
@@ -182,10 +267,14 @@ sorting. A dot counter of zero, a tombstone carrying a value, a flag byte outsid
 logical counter above 32 bits, a count larger than the remaining input and trailing bytes are
 all rejected. The decoder stops building as soon as an error is set (no version IDs hashed
 after an error). Finally it requires `Encode(result) == input`, so `encode∘decode` and
-`decode∘encode` are both the identity. State blob = `"OCCS" ‖ SHA-256(payload) ‖ payload`,
-payload = `epoch ‖ counter ‖ discards ‖ document`. Goldens: `testdata/doc-v2.golden`,
-`state-v2.golden`, `op-v1.golden` (the op format is unchanged; its golden bytes changed
-because the ETag inside changed). Rewrite with `-update-golden`.
+`decode∘encode` are both the identity. State blob = `"OCS2" ‖ SHA-256(payload) ‖ payload`,
+payload = `epoch ‖ counter ‖ discards ‖ tail ‖ outbox ‖ window ‖ document`, where tail and
+outbox are counted lists of `(key, winner version, loser version)` and window is a counted
+list of 16-byte loss hashes. The decoder bounds every count by the remaining bytes and
+rejects a tail over 64 or a window over 256 entries. A blob in the round-1 format (`OCCS`)
+is unreadable, so the node treats it as corrupt and starts fresh (no deployed data exists).
+Goldens: `testdata/doc-v2.golden`, `state-v3.golden`, `op-v1.golden`. Rewrite with
+`-update-golden`.
 
 **Quotas (A8).** `UpdateQuota` = read (usage + the precondition to write with), compute,
 conditional write, retrying only on `ErrPreconditionFailed`, at most `attempts` times; it
@@ -197,9 +286,18 @@ callback names the key, and the integrated node (Chunk 6) calls
 the hook and **writes nothing when the stored usage already equals it**. Without that, nodes
 recounting at the same time would write identical figures as different versions, discard
 each other's, and recount again forever. With it, the second round writes nothing. The quota
-DST shows this on 500 seeds: always exactly 2 rounds. `Reader.RecountObjects(bucket)` sums
-live `ObjectMeta` sizes. It is the recount this package can offer, and Chunk 6 plugs in its
-manifest recount.
+DST shows this on 500 seeds: always exactly 2 rounds. The no-op is held to the same
+check-and-set discipline as a write: the recount reads the stored usage and its version,
+runs the hook, and if the result equals what it read it reads the key again and returns the
+no-op only if the version is still the one it read. If the key changed in between (the hook
+or anything it called wrote it), the attempt counts as stale and the loop retries, within
+the same `attempts` bound; after the last attempt it returns `ErrPreconditionFailed`.
+`Reader.RecountObjects(bucket)` sums live `ObjectMeta` sizes with checked addition and
+returns `ErrUsageOverflow` (wire code 136) when the byte or object total does not fit in 64
+bits; it never wraps and never saturates, so an impossible total cannot be written as a
+quota. The other sum on the quota path, `AddUsage`, was already checked (overflow and
+underflow return `env.ErrInvalidArgument`). It is the recount this package can offer, and
+Chunk 6 plugs in its manifest recount.
 
 **Replicator (`Node`).** Single-threaded, acts only through `env`. Every `Period` (500 ms,
 jittered ±50%) it sends its digest to a random peer, chosen from the *sorted*,
@@ -219,10 +317,20 @@ broadcasts.
 | Single replica against a reference model: success iff the precondition holds; one ETag ↔ one version; a new version never keeps the ETag; no discards on one replica | `TestPropCheckAndSetModel` |
 | ETag is a function of the version: equal across nodes and merge orders, different for different versions with equal values, tombstones carry one, absent is zero, parse round trip | `TestETagDeterministic` |
 | LWW winner: wall, then logical, then node, then version-ID bytes on forged equal stamps; tombstone vs value both ways; the higher stamp wins even when causally below (forged); same answer through `Compare`, `Record.Merge` and `Doc.Merge` in both orders | `TestLWWWinnerTable` |
-| A concurrent replacement is counted, logged (key, loser ID, loser stamp, loser writer, winner ID, winner stamp), kept in the tail and reported to the hook; an incoming loser is not a replacement; re-merging does not re-count; deletes discard puts and the reverse; the counter saturates; the tail is bounded | `TestLWWDiscardCountedAndLogged` |
+| A concurrent replacement is counted, logged (key, loser ID, loser stamp, loser writer, winner ID, winner stamp), kept in the tail and reported to the hook; a rejected concurrent incoming loser is recorded too; re-merging does not re-count on either node; deletes discard puts and the reverse; the counter saturates; the tail is bounded | `TestLWWDiscardCountedAndLogged` |
+| A node that rejects an incoming concurrent version records it once (counter, log line naming the loser, hook, tail); five re-sends add nothing; old news one and two steps below the held version records nothing; a failed persist of the rejection leaves no trace (state blob byte-identical) and the retry records once | `TestIncomingConcurrentLoserIsRecorded`; `TestFailedPersistLeavesNoTrace` row "merge rejecting a concurrent incoming loser" |
+| The de-duplication window: 257 distinct losers give 257 records; re-sends inside the window add nothing, also after a restart from the persisted state; a loser re-sent after it left the window is recorded again (the stated over-count) | `TestDiscardDedupIsBounded` |
 | Causal overwrites (conditional and unconditional, across three nodes) are never counted or logged | `TestCausalOverwriteIsNotADiscard`; property `TestPropNoDiscardWithoutConcurrency` |
-| A discarded write's dot is never reissued | `TestDotsAreNeverReused` |
-| Every acknowledged version ends current on all replicas, or seen by a later acknowledged write, or named as a loser in some node's discard log. Checked against an independent seen-set oracle (not the product's classifier) at every step and after full exchange, on 2–4 replicas with random conditional/blind writes, deletes, merges and clock moves; counters equal log entries | `TestPropEveryLossRecorded`, fuzz `FuzzOCCConditionalWrite` (same property) |
+| A discarded write's dot is never reissued, and no later version (six writes, by the discarding node and by another node on top of them) claims it; a node still holding the discarded version records its replacement after each of them | `TestDotsAreNeverReused` |
+| REVIEW-2 finding 1, exact: after `a` discards its own `lost`, `next2` (written by `a`, and separately by `b` after syncing `next1`) does not supersede `lost`, and `c`, which held `lost`, records exactly one discard naming it | `TestDiscardGapNeverClaimed` |
+| Classification equals an independent oracle: on 3–4 replicas with conditional and blind writes, deletes, full and one-key merges, clock moves both ways and wipes, for every replaced held version and every rejected incoming version, the product's causal/concurrent answer (`Supersedes`) equals the oracle's (built only from the version each write held, never from vectors), and the records the merge emits are exactly the oracle's concurrent ones, in key order, minus pairs already recorded on that replica | `TestPropClassificationMatchesOracle` |
+| Every acknowledged version ends current on all replicas, or seen by a later acknowledged write, or named as a loser in some node's discard log, or lost with every disk that ever received it (the one limit). Checked against an independent seen-set oracle (not the product's classifier) at every step and after full exchange, on 2–4 replicas with random conditional/blind writes, deletes, merges, clock moves, **wipes** (a replica restarts empty under a fresh epoch) and **permanent crashes** (a replica leaves for good); the oracle tracks which incarnation received each version from the merges themselves; counters (live plus those on lost disks) equal hook records | `TestPropEveryLossRecorded`, fuzz `FuzzOCCConditionalWrite` (same property) |
+| REVIEW-2 finding 2, exact: `n1` (clock 5 s behind) delivers a concurrent `v1` to `n2`, which keeps its later `v2`; `n1` then crashes for good, or is wiped and rejoins, or has its state blob bit-rotted and restarts; after the heal `n2`'s log names `v1` and the oracle (with `n1`'s disk loss declared) finds every write explained | `TestIncomingLoserRecordedWhenWriterIsLost` |
+| The one remaining limit is the only unrecorded case: a version no other node received, lost with its writer's wiped disk, has no record anywhere and the oracle flags it (and only it) until the disk loss is declared, then calls it `lost-with-disk`; a version that reached a surviving holder is not allowed by a declared disk loss; a later incarnation that received it voids the allowance again | `TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss` |
+| Records survive a crash between the durable merge and the emission: opening the state written by the merge emits the record (line, hook, tail, counter 1) and drains it; opening the drained state emits nothing; the 64-entry tail survives restarts; a malformed blob is refused with `ErrMalformed` | `TestDiscardRecordSurvivesCrashBeforePublish` |
+| Node level: the drain write fails, the node crashes and restarts: it emits the record again (same line), keeps counter and tail, drains; a further restart emits nothing | `TestNodeReplaysOutboxAfterRestart` |
+| `RecountObjects` never wraps: `MaxUint64` alone is exact, `MaxUint64 + 1` returns `ErrUsageOverflow` and a zero usage; a recount through it writes nothing; code 136 round-trips | `TestRecountObjectsNeverWraps` |
+| A recount whose result equals its first read but whose key changed meanwhile retries (attempt 2 writes the right figure); a key that never holds still gives up with `ErrPreconditionFailed` and writes nothing; an already-right quota is a one-call no-op | `TestRecountNoopRechecksCurrentVersion` |
 | A write that saw a version beats it (and strictly supersedes it), at any skew up to `sim.MaxSkew`, with forged stamps anywhere in that range | `TestPropCausalWriteAlwaysWins` |
 | Merge laws (commutative, associative, idempotent) and the result is the per-key LWW maximum (independent order in the test), on honest and generated hostile states, including extreme walls and forged equal stamps | `TestPropMergeLaws`, fuzz `FuzzOCCMergeLaws`, `TestMergeIsTotalOnDecodedStates` |
 | Any delivery order with duplicates of full states and deltas → identical bytes, digest and ETags | `TestPropConvergence` |
@@ -240,91 +348,114 @@ broadcasts.
 | Every code in 128–143, no duplicate, 131 unassigned; every code round-trips over the wire | `TestErrorCodesRoundTrip` |
 | Crash keeps acknowledged writes, the epoch and the dot counter; bit-rot → fresh epoch; read errors → not ready, retry, load own state | `TestNodePersistsAndReloadsItsEpoch`, `TestCorruptStateTakesAFreshEpoch`, `TestNodeRetriesLoadAfterReadErrors` |
 | Wipe → fresh epoch, the loss recorded as concurrent; the reuse hazard is visible with the switch | `TestWipedNodeTakesAFreshEpoch` |
+| A restart with a drained outbox emits nothing and keeps the epoch, counter and data | `TestNodePersistsAndReloadsItsEpoch`, `TestNodeReplaysOutboxAfterRestart` |
 | Wire: malformed requests/datagrams, not-found, precondition failures cross as codes; client get and delete results | `TestNodeWireProtocol` |
 | The peer drawn does not depend on the membership's order | `TestPeerChoiceIgnoresMembershipOrder` |
-| DST, 6 nodes / 3 regions, skew ±400 ms, drift ±2,000 ppm, 2% drop, 5% duplication, 3 nemesis phases (crash, torn crash, restart, pause, partitions incl. one-way and region, isolate, link loss, clog, read errors), mixed workload (conditional, create, delete, blind, stale `If-Match`, scalars). Every 250 events: every-loss-recorded over live and durable states. After the final heal: converged within `ConvergeBound`, byte-identical documents and equal ETags, every acknowledged key holds one version, every-loss-recorded on the final state, counters = hook records = oracle log | `TestMultiRegionConvergenceDST` |
+| DST, 6 nodes / 3 regions, skew ±400 ms, drift ±2,000 ppm, 2% drop, 5% duplication, 3 nemesis phases (crash, torn crash, restart, pause, partitions incl. one-way and region, isolate, link loss, clog, read errors), mixed workload (conditional, create, delete, blind, stale `If-Match`, scalars), plus 3 scheduled **disk losses** per run at seeded times on seeded nodes, one of each kind: wipe and rejoin, state-blob bit rot then restart, and crash for good with the disk wiped (the node comes back empty only at the next heal, as a replacement machine). A test wrapper around each node reports every document the node actually processed (delta, push, digest reply) to the oracle, so the oracle knows which incarnation received which version. Every 250 events: every-loss-recorded over live and durable states. After the final heal: converged within `ConvergeBound`, byte-identical documents and equal ETags, every acknowledged key holds one version (unless a version of it was lost with a disk), every-loss-recorded on the final state, counters (live plus lost with disks) = hook records = oracle log | `TestMultiRegionConvergenceDST` |
+| DST aimed at REVIEW-2 finding 2: 4 nodes in 2 regions, node 1 with its clock 3 s behind; background workload; 6 rounds in which node 1's inbound links are cut, a rival writes every key, node 1 writes every key (concurrent, lower stamps; its deltas reach the others and are rejected there), then node 1 loses its disk (the three kinds in turn) and the network heals. Every-loss-recorded holds throughout and after convergence, with node 1's lost versions explained by the other nodes' records; every seed has recorded discards | `TestWriterLostAfterDeliveryDST` |
 | DST: region c offline 60 s while both sides write conditionally, two forced contests (c's later write on `k0`, the other side's on `k1`); every offline write wins, is superseded by a write that saw it, or is recorded as discarded; both kinds occur on every seed; c's later write on `k0` wins | `TestOfflineRegionDST` |
 | DST: two writers with one ETag. On one node exactly one wins, the other gets `ErrPreconditionFailed` over the wire, and no discard is recorded. Across a partition both are acknowledged, after the heal both servers hold the same single version (one of the two), and the other's discard is on a server's record | `TestConditionalWriteRaceDST` |
 | DST: quota under partition; a quota-key discard is recorded (the scenario really contested it); recounts driven by those discards settle (no node pending, a further recount writes nothing); every node's stored usage = the recount; overshoot ≤ `MaxOvershoot` | `TestQuotaOvershootUnderPartitionDST` |
 | Canary: a discard that is neither counted nor logged fails the deterministic two-writer case and the convergence DST | `TestCanaryDiscardNotRecorded` (switch `canaryUnrecordedDiscard`) |
+| Canary: rejecting an incoming loser silently (the round-1 behaviour) fails the two-node scenario for each writer fate and the writer-loss DST | `TestCanaryIncomingLoserSilent`, `TestCanaryIncomingLoserSilentDST` (switch `canaryIncomingLoserSilent`) |
 | Canary: a merge that keeps the local version (arrival-order winner) fails the merge laws and the convergence DST | `TestCanaryMergePrefersLocal` (switch `canaryMergePrefersLocal`) |
 
 ## Named bounds and measured values
 
-Measured with `DST_SEEDS=500` (base 1) in the dev container on the shared 4-core droplet
-(load average about 6 during the runs).
+Measured in LWW round 2 with `DST_SEEDS=500` (base 1) in the dev container on the shared
+4-core droplet, from the `MEASURE` lines of `go test -v`.
 
 | Constant | Value | Measured |
 |---|---|---|
-| `ConvergeBound` (from the final heal) | 15 s | multi-region p50 2.29 s, p99 4.41 s, max 5.16 s; offline region p50 0.76 s, p99 1.56 s, max 2.22 s; quota p50 0.49 s, max 1.35 s |
-| `invariantEvery` | 250 events | multi-region runs 835–1,199 events, offline 2,231–2,415 |
+| `ConvergeBound` (from the final heal) | 15 s | multi-region p50 2.25 s, p99 4.32 s, max 4.69 s; offline region p50 0.77 s, p99 1.65 s, max 1.79 s; writer-loss p50 0.81 s, p99 3.02 s, max 3.97 s; quota p50 0.51 s, max 1.42 s |
+| `invariantEvery` | 250 events | multi-region runs 826–1,174 events, offline 2,209–2,429, writer-loss 639–879 |
+| `diskLosses` (multi-region) | 3 per run, one of each kind | 1,500 over 500 seeds, all applied |
+| `writerLossRounds` | 6 | 3,000 disk losses of the writer over 500 seeds |
 | `raceConverge` | 10 s | passes on every seed |
 | `MaxOvershoot = (quotaWriters-1) × quotaLimit` | 3,000 bytes (4 writers, limit 1,000) | see below |
 | `maxRecountRounds` | 6 | always 2 (round 1 writes the recount, round 2 writes nothing) |
-| `canarySeeds` | 3 | each canary fails the convergence DST on 3 of 3 seeds |
+| `DiscardTailLen` / `DiscardDedupLen` / `DiscardOutboxLen` | 64 / 256 / 1,024 | no DST run comes near the window (largest per-node counter well under 256 per run) |
+| `canarySeeds` | 3 | each canary fails its DST on 3 of 3 seeds |
 
-**Discards per partitioned workload.**
-- *Multi-region DST* (6 writers, partitions and crashes, blind writes and stale `If-Match`
-  included). Of 51,781 acknowledged writes over 500 seeds, 3,959 are current at the end,
-  33,397 were superseded by a later write that saw them, and **14,425 (27.9%) were lost to
-  concurrent writes, each named in a discard log**. Per seed, distinct lost versions
-  p50 36 (min 23, max 55) of p50 104 acknowledged writes. Discard events (sum of the node
-  counters) p50 75, p99 109, max 136. A lost version is counted once on each replica that
-  held it.
-- *Offline-region DST* (conditional writes only). Of 74,466 acknowledged writes, 2,000
-  current, 61,557 superseded, **10,909 (14.6%) recorded as discarded**. Per seed, distinct
-  lost versions p50 24 (12–38), discard events p50 47 (21–76). The offline region's writes:
-  830 ended current and 3,335 were recorded as discarded across the 500 seeds; per seed it
-  won 1–3 keys and lost 2–12 writes.
-- In every seed, counter sum = callback records = oracle log, and no acknowledged write was
-  lost without a record.
+**Discards per partitioned workload.** "Events" is the sum of the node counters (each node
+records each (key, loser) once; on lost disks included). "Distinct" is the number of distinct
+losing version IDs named in any record. Events now include rejections of incoming losers,
+which round 1 did not record.
+- *Multi-region DST* (6 writers, partitions and crashes, blind writes and stale `If-Match`,
+  3 disk losses per run). 51,161 acknowledged writes over 500 seeds: 3,959 current at the
+  end, 32,452 superseded by a later write that saw them, **13,999 explained by a discard
+  record**, **751 lost with a disk**: every node that had received them lost its state while
+  holding them (the one limit; 0.5 per disk loss on average; not broken down further). Per seed: discard events
+  p50 100, p99 145, max 152 (round 1, without disk losses and without rejections recorded:
+  p50 75, max 136); distinct lost versions p50 36, p99 50, max 54 (round 1: p50 36, max 55).
+- *Offline-region DST* (conditional writes only, no disk loss). 74,443 acknowledged
+  writes: 2,000 current, 61,645 superseded, **10,798 explained by a discard record**, none
+  unexplained. Per seed: events p50 60, p99 90, max 100 (round 1: p50 47, max 76); distinct
+  p50 24, p99 35, max 39 (round 1: p50 24, max 38). The offline region won 834 keys and had
+  3,296 writes recorded as discarded; per seed it won 1–3 keys and lost 2–14 writes.
+- *Writer-loss DST* (the finding-2 schedule, 6 writer disk losses per run). 62,175
+  acknowledged writes: 3,878 current, 41,007 superseded, **17,287 explained by a discard
+  record**, 3 lost with the disk (no surviving node had received them). Events p50 81, max 111; distinct p50 41, max 51.
+- *Quota DST*: events p50 16, max 27; distinct p50 8, max 14.
+- In every seed of every DST, counter sum (live plus lost disks) = callback records = oracle
+  log, and no acknowledged write was gone without a record except as allowed by the one
+  limit.
 
-**Quota overshoot** (4 writers, two per side, limit 1,000 bytes, 100-byte objects):
-distribution {1,000: 9, 1,100: 22, 1,200: 63, 1,300: 90, 1,400: 89, 1,500: 82, 1,600: 65,
-1,700: 37, 1,800: 22, 1,900: 14, 2,000: 4, 2,100: 1, 2,200: 1, 2,400: 1}; p50 1,400, max
-2,400. At least 1,000 because each side fills the limit on its own. More comes from two
-nodes on one side updating from the same read before their deltas cross. Those updates now
-settle by LWW, the lower update is lost, and the side under-counts and admits more objects.
-That is why the tail is longer than under siblings (old max 1,700). Quota-key discard events
-per run (heal plus recounts) p50 9, min 3, max 16. After the recounts every node stores the
-true usage.
+**Cost of retiring the actor epoch** (largest causal context in the final documents, the
+same 500 seeds, with the retirement switched off for comparison by a temporary edit, not
+committed): multi-region p50 6 → 9 entries, max 9 → 15; offline region p50 4 → 11, max 4 →
+16; writer-loss p50 6 → 10, max 8 → 16. With the retirement switched off, all three DSTs
+still pass on 500 seeds: the DSTs do not produce the finding-1 shape (it needs a node that
+still holds the lost version to receive the *second* write after the discard before any
+other replacement). The directed tests and the oracle property catch it (see "LWW round 2").
+
+**State blob size** (largest durable state blob at the end of a run; it now carries the
+64-entry tail, the outbox and the window): multi-region p50 4,799 bytes, max 7,896
+(4,147 / 6,725 without the retirement, i.e. with smaller contexts); offline p50 4,364, max
+7,920; writer-loss p50 7,147, max 10,572. The tail is bounded at 64 discards of two versions
+each, so its share is bounded by 128 version encodings whatever the workload; the window is
+at most 256 × 16 bytes.
+
+**Quota overshoot** (4 writers, two per side, limit 1,000 bytes, 100-byte objects): p50
+1,400, p99 2,100, max 2,300 over 500 seeds (round 1: p50 1,400, max 2,400). At least 1,000
+because each side fills the limit on its own. More comes from two nodes on one side updating
+from the same read before their deltas cross; those updates settle by LWW, the lower update
+is lost, and the side under-counts and admits more objects. After the recounts every node
+stores the true usage.
 
 **Merge cost** (`BenchmarkMergeDoc`, 10% of keys written concurrently on both sides, loaded
-droplet). Doc merge (clone + merge) 1e3 records 2.3 ms / 0.21 MB, 1e4 records 22 ms / 2.0 MB.
-Store merge (observe + LWW + classify + undo log, with ~10% discards) 1e3 records 1.0 ms,
-1e4 records 19 ms. Encode + strict decode 1e3 records 8.6 ms, 1e4 records 70 ms; decode
-recomputes two SHA-256 per version and re-encodes for the canonical check, which dominates.
+droplet, 20 iterations). Doc merge (clone + merge) 1e3 records 2.1 ms / 0.21 MB, 1e4 records
+18 ms / 2.0 MB. Store merge (observe + LWW + classify + undo log, ~10% discards, now with the
+records, the window and two state writes skipped because the bench has no persist hook) 1e3
+records 4.1 ms / 0.32 MB, 1e4 records 21 ms / 3.4 MB (round 1: 1.0 ms and 19 ms on a differently loaded droplet; the difference was not
+profiled). Encode + strict
+decode 1e3 records 8.1 ms, 1e4 records 71 ms.
 
-**Hostile-message work** (`TestHostileMessagesBoundedWork`, counted operations). Many keys
-(16,777,138 bytes, about 800,000 keys): decode 31.2 M operations (1.86 per byte), merge with
-every key a forged discard 1.6 M. Big contexts (16,776,993 bytes, 4 keys × about 700,000
-context entries): decode 25.2 M (1.50 per byte), merge 11.2 M. Same ratios at 2 MiB. Wall
-time on the loaded droplet: 27–38 s for the 16 MiB many-keys case (dominated by allocation
-and GC for 800,000 versions), about 3 s for big contexts.
+**Hostile-message work** (`TestHostileMessagesBoundedWork`, counted operations): unchanged.
+Many keys (16,777,138 bytes): decode 31.2 M operations (1.86 per byte), merge 1.6 M. Big
+contexts (16,776,993 bytes): decode 25.2 M (1.50 per byte), merge 11.2 M. A rejected incoming
+version now costs one `supersedes` scan, counted in the same work figure, which the test
+already bounds.
 
-**Wall times** (loaded droplet). `go test ./internal/occ` 31–38 s (the 16 MiB hostile test is
-most of it); `-race` 10 s; rapid at 2,000 checks 37 s; `DST_SEEDS=500` for DST + canaries
-90 s (multi-region 33 s, offline 41 s, race 1.4 s, quota 15 s).
+**Wall times** (loaded droplet). `go test ./internal/occ` 37–43 s; `-race` 34 s; rapid at
+2,000 checks 45 s; `DST_SEEDS=500 go test -v ./internal/occ` (everything) 242 s
+(multi-region 45 s, offline 63 s, writer-loss 90 s, quota 12 s, race 1 s).
 
-**Fuzz** (loaded droplet). 30 s each: `FuzzOCCConditionalWrite` 6,515 execs,
-`FuzzOCCMergeLaws` 5,336, `FuzzOCCDecode` 247,067. `FuzzOCCDecode` for 120 s (the target
-whose first gate run died with `context deadline exceeded`): 1,335,639 execs, about 11,000
-per second at the end, ended `PASS`. No crasher. The property targets run fewer execs than in the first build because
-their seeds are 32 KiB (so none is skipped) and the corpus grows from them.
+**Fuzz** (loaded droplet, 30 s each): `FuzzOCCConditionalWrite` 11,740 execs,
+`FuzzOCCMergeLaws` 17,659, `FuzzOCCDecode` 263,594. No crasher.
 
 ## Uncovered branches
 
-Coverage of `internal/occ`: 98.4% of statements. Uncovered:
-- `decodeDoc`: the non-canonical-document failure after a clean parse. Every field is now
-  checked as it is read (strict key order, strict context order, minimal varints are checked
-  by the re-encode only), so a reachable input needs a non-minimal varint inside an
-  otherwise valid document; the malformed table has one at the document level, not inside a
-  version. Kept as the final guard.
+Coverage of `internal/occ`: 98.5% of statements (`store.go` 100%). Uncovered:
+- `decodeDoc`: the non-canonical-document failure after a clean parse. Every field is
+  checked as it is read, so a reachable input needs a non-minimal varint inside an otherwise
+  valid document; the malformed table has one at the document level, not inside a version.
+  Kept as the final guard.
 - `Node.onDigestReply` reply-kind and decode-failure branches and the not-ready guard; an
   honest peer never sends them and replies to a previous incarnation are cancelled.
-- `Node.broadcast`: the delta-too-large skip and `Send` errors.
-- `Node.peers` with nil `Membership`; `Node.OnDatagram` before ready; `Node.EncodeState`
-  for a not-ready node.
+- `Node.OnRequest`: one malformed-push branch; `Node.broadcast`: the delta-too-large skip
+  and `Send` errors.
+- `Node.peers` with nil `Membership`; `Node.EncodeState` for a not-ready node.
 - `ParseKey` / `DecodeObjectMeta` / `decodeOp` non-canonical re-encode branches.
 - `recountQuota`: a non-precondition write error (only a clock exhaustion between read and
   write).
@@ -337,6 +468,10 @@ Coverage of `internal/occ`: 98.4% of statements. Uncovered:
 - `node.go` `Node.OnDatagram`: `_, _ = n.store.Merge(doc)`. A delta that cannot be
   persisted is rolled back (the transaction restores the state) and counted in
   `Stats.DiskErrors`. The next digest round brings the data again.
+- Not ignored but not returned: `Store.drain`'s state write. Its failure is handled (the
+  emitted records stay in the outbox, capped, and are emitted again at the next open); the
+  operation that produced them already succeeded durably, so it does not fail the caller.
+  The node counts the failure in `Stats.DiskErrors`.
 - Test files use `_, _ =` for writes whose outcome the property does not depend on.
 
 ## Panics added
@@ -428,25 +563,85 @@ Discards, Persist, Log, OnDiscard}`, `Config.{Log, OnDiscard}`, `LWWDiscards`, `
 ### Chosen not to do
 
 - The node does not schedule recounts itself (see "Not done").
-- An incoming loser is not recorded on the node that rejects it (see "Classification"); the
-  loss is recorded where the loser was held.
+- (Round 1 chose not to record an incoming loser on the node that rejects it. REVIEW-2
+  finding 2 showed that this loses the only record when the writer's state is lost; LWW
+  round 2 records it.)
+
+## LWW round 2 (2026-11-22): REVIEW-2 and the independent test report
+
+Brief: `objstore-p2-04-occ-lww-round2.md`. The owner's rule this round defends: an
+acknowledged write may be lost to a concurrent write, but never invisibly. Commits:
+`1802130` (tests first, against a compile-only skeleton of the new names; every new test
+failed on the round-1 code), `3d9a80b` (implementation), `f4d4471` (DST oracle fix for
+rotted state found by the 500-seed sweep, hostile state-blob test, measurements), then these
+notes.
+
+| Item | What changed | Proving test(s) |
+|---|---|---|
+| 1. A clock never claims a dot its writer did not see (REVIEW-2 finding 1) | A node retires its actor epoch (fresh epoch, counter 0, `Rotations`+1) when a merge replaces a held version with a concurrent winner and the loser's clock holds more of the node's current actor's dots than the winner's (`Version.clockAt`). Chosen over an exact, gap-aware context; the reasoning and the cost are under "Dots are never reused" and in the measurements | `TestDiscardGapNeverClaimed` (the reviewer's `next2`, second write by `a` and by `b`); `TestDotsAreNeverReused` (six writes, by both nodes; a fresh replica holding `lost` records its replacement after each); `TestPropClassificationMatchesOracle`. With the retirement switched off (temporary edit): the two directed tests fail every time, and the property fails in 5 of 8 runs at the default 100 checks and always at 2,000 checks (`-rapid.checks=2000`, which the gate runs). The DSTs do not catch it (see measurements) |
+| 2. A rejected incoming concurrent loser is recorded (finding 2) | `Doc.mergeVersion` reports rejections; `Store.rejected` records `(key, held winner, incoming loser)` unless the held version descends from the incoming one (old news) or the pair is in the persisted de-duplication window. (a) repeated delivery: window of the last 256 recorded `(key, loser ID)` hashes, persisted, FIFO; a pair offered again after leaving the window is recorded again (over-count only). (b) the same loss is now recorded on several nodes; every record carries `loser=<version ID>`; the counter means discard events observed by this node, not distinct lost versions (see "What the counter counts"). (c) old news records nothing. (d) a failed persist of a rejection leaves no trace, the window included | `TestIncomingConcurrentLoserIsRecorded` (records once, 5 re-sends, old news one and two steps down, failed persist byte-identical then one record); `TestDiscardDedupIsBounded`; `TestIncomingLoserRecordedWhenWriterIsLost` (the reviewer's two-node schedule; writer crashed for good, wiped and rejoined, state blob rotted; after the heal `n2`'s log names the lost version); `TestPropEveryLossRecorded` and `TestMultiRegionConvergenceDST` now with wipes and permanent crashes; `TestWriterLostAfterDeliveryDST`; canaries `TestCanaryIncomingLoserSilent` and `TestCanaryIncomingLoserSilentDST` |
+| 2. The one remaining limit, and that it is the only one | Stated under "The one remaining limit". The oracle (`helpers_test.go`) tracks, per version, every node *incarnation* that received it (writes, and every document a node actually processed: merges in the property, a wrapper around delta, push and digest-reply delivery in the DSTs) and every incarnation that lost its disk while holding it; an unexplained version is allowed only if the two sets are equal | `TestDiskLossBeforeReachIsTheOnlyUnrecordedLoss`: the unreached, wiped version has no record anywhere and is flagged (only it) until the loss is declared, then allowed as `lost-with-disk`; a surviving holder voids the allowance; a later incarnation receiving it voids it again. The item-2 canaries prove the allowance does not hide a silent rejection: those runs declare the writer's disk loss too and still fail |
+| 3. Records survive a crash between the durable merge and emission (finding 3) | Persisted outbox written with the merge, emitted, then drained by a second write; emitted and drained again on open (`OpenStore`, `Node.Start`). The 64-entry tail is persisted. At-least-once emission across crashes; the counter never double-counts. State blob magic `OCS2` | `TestDiscardRecordSurvivesCrashBeforePublish` (the state written by the merge, i.e. the disk at the instant the sync succeeded and before emission, opened by a new store: the record is emitted, counted, in the tail, then drained); `TestNodeReplaysOutboxAfterRestart` (drain write fails, crash, restart: emitted again, then drained; a further restart emits nothing); `TestOpenStoreRejectsHostileState` |
+| 4. C23 `recount-overflow` | `RecountObjects` uses checked addition for bytes and objects and returns `ErrUsageOverflow` (new, code 136); never wraps. Audit of the quota path: `AddUsage` already checked both directions; `RecountObjects` was the only unchecked sum; no other sum over sizes or counts exists in the package | `TestRecountObjectsNeverWraps` |
+| 5. C17 `recount-stale-noop` | The no-op path re-reads the key after the hook and returns the no-op only if the version is unchanged; otherwise the attempt is stale and the loop retries within `attempts`, ending in `ErrPreconditionFailed` | `TestRecountNoopRechecksCurrentVersion` (the report's exact sequence: two calls, the second writes 5) |
+| Canaries | `canaryIncomingLoserSilent` (test switch) restores the round-1 silent rejection; `TestCanaryDiscardNotRecorded` kept and still fails its DST on 3 of 3 seeds | `TestCanaryIncomingLoserSilent`, `TestCanaryIncomingLoserSilentDST` (3 of 3 seeds), `TestCanaryDiscardNotRecorded`, `TestCanaryMergePrefersLocal` |
+
+Test changes: `TestLWWDiscardCountedAndLogged` now requires the rejecting node to record
+(round 1 asserted that it did not); `TestDotsAreNeverReused` moved to `lww2_test.go` and no
+longer requires a larger counter (after retirement the next dot is `(new epoch, 1)`), it
+requires a dot never issued twice and never claimed; `TestFailedPersistLeavesNoTrace`
+compares the full state blob and gains a rejection row; `occNode` unwraps the DST's
+delivery-tracking wrapper; the golden `state-v2.golden` is replaced by `state-v3.golden`.
+
+### API changes
+
+Added: `OpenStore(cfg, state) (*Store, error)`; `DiscardDedupLen`, `DiscardOutboxLen`;
+`ErrUsageOverflow`, `CodeUsageOverflow` (136). Changed: `Store.Merge`'s bool now means "the
+document changed" (a merge that only records a rejected loser returns `false` but persists);
+the state blob format (`OCS2`, with tail, outbox and window) and so `Store.EncodeState`'s
+bytes; `DiscardTail` is now persisted and returned oldest first from a slice (same
+contents); `RecountObjects` can return `ErrUsageOverflow`; `RecountQuota` can return
+`ErrPreconditionFailed` where it used to return a stale no-op. `StoreConfig`, `Config`,
+`Discard` and its log line are unchanged.
+
+### Chosen not to do, and why
+
+- **An exact (gap-aware) causal context** instead of retiring the epoch: see "Dots are never
+  reused". It would change the encoding and the hostile-input bounds for a saving of a few
+  vector entries.
+- **A durable de-duplication set without a bound.** It would grow with every loss forever.
+  The window trades a bounded state for a possible over-count after 256 newer records;
+  undercounting is never possible.
+- **Exactly-once emission across crashes.** It would need the log sink and the callback to
+  take part in the store's transaction. At-least-once with the loser ID in every record lets
+  a consumer de-duplicate.
+- **Making the property test find finding 1 at the default check count every time.** The
+  shape needs about eight specific steps; the generator is biased toward it (two keys, 3–4
+  replicas, 80–240 steps) and the directed tests cover it exactly.
+- **A cap on the records of one transaction.** A merge can record one discard per key of
+  the incoming document, bounded by the message size limit; capping it would drop first
+  emissions.
 
 ## Gate and commands
 
-All through `docker compose run --rm dev` unless noted.
+All through `docker compose run --rm dev` unless noted. Round 2 runs (on `3d9a80b` and its
+test-only follow-up `f4d4471`):
 
 | Command | Result |
 |---|---|
 | `gofmt -l .` | empty |
 | `go vet ./...`, `go build ./...` | clean |
-| `go test -count=1 -cover ./internal/occ` | ok, 98.4% |
-| `go test -count=1 -race ./internal/occ` | ok, 10 s |
-| `go test -count=1 ./internal/occ -rapid.checks=2000` | ok, 37 s |
-| `DST_SEEDS=500 go test -count=1 -v -run 'DST\|Canary' ./internal/occ` | ok, 90 s (quota re-run after the reporting change: ok, 11 s) |
-| `go test ./internal/occ -run '^$' -fuzz '^<T>$' -fuzztime 30s -fuzzminimizetime 5s` | `FuzzOCCConditionalWrite` 6,515 execs, `FuzzOCCMergeLaws` 5,336, `FuzzOCCDecode` 247,067; no crasher |
-| `go test ./internal/occ -run '^$' -fuzz '^FuzzOCCDecode$' -fuzztime 120s -fuzzminimizetime 5s` | 1,335,639 execs, `PASS`, ended cleanly |
+| `go test -count=1 ./...` | ok (`internal/occ` 40.8 s) |
+| `go test -race -count=1 ./...` | ok (`internal/occ` 34.0 s, `internal/sim` 41.6 s) |
+| `go test -count=1 -cover ./...` | ok; `internal/occ` 98.5% after `f4d4471` (98.2% before it), `internal/sim` 95.4% |
+| `go test -count=1 ./internal/occ -rapid.checks=2000` | ok, 45.3 s |
+| `DST_SEEDS=500 go test -count=1 ./internal/occ` | first run (`3d9a80b`): FAIL on 4 seeds of `TestWriterLostAfterDeliveryDST` and 1 of `TestMultiRegionConvergenceDST`, all the same test-oracle error (reading the deliberately bit-rotted state blob of a node between `Restart` and `Start`); fixed in the test in `f4d4471`; the five REPLAY commands then passed, and the full rerun `DST_SEEDS=500 go test -count=1 -v ./internal/occ` passed, 241.8 s |
+| `go test ./internal/occ -run '^$' -fuzz '^<T>$' -fuzztime 30s -fuzzminimizetime 5s` | `FuzzOCCConditionalWrite` 11,740 execs, `FuzzOCCMergeLaws` 17,659, `FuzzOCCDecode` 263,594; PASS, no crasher |
 | `go test -run '^$' -bench BenchmarkMergeDoc -benchmem -benchtime 20x ./internal/occ` | numbers above |
-| `agent_work/gates/gate.sh 04-occ` (host, first run, `94cb2ca`) | `overall=fail`: everything green except G0 detlint, which flagged `Doc.sortedKeys` ranging over the map into a struct field (detlint accepts collect-into-a-local-then-sort) and the `//go:build race` / `!race` test files (build constraints are not allowed anywhere). Fixed in `0879e71`: a local slice, and the race-only message size read from the test binary's build settings (`-race`) |
-| `agent_work/gates/gate.sh 04-occ` (host, `0879e715eeb97f4ed600050eaa97038920ed4ff9`, clean tree) | `gate: overall=pass counts_for_landing=true`. G0 all pass (comments against baseline `a184b38`); G1 pass, `internal/occ` 98.4%, `internal/sim` 95.4%; G2 rapid 2,000 checks (seed 9319661039289) pass, 158 s; G3 fuzz 30 s pass: `FuzzOCCConditionalWrite` 18,893 execs, `FuzzOCCMergeLaws` 8,160, `FuzzOCCDecode` 179,457, `FuzzSimSchedule` 8,761; G4 race pass (`internal/occ` 16 s); G5 500 seeds pass (`internal/occ` 164 s); G6 pass. The commit after it changes only this file; the gate is re-run on the branch tip before hand-back |
+| retirement switched off by a temporary edit (not committed), `DST_SEEDS=500 go test -v -run 'TestMultiRegionConvergenceDST\|TestWriterLostAfterDeliveryDST\|TestOfflineRegionDST'` | all pass; context sizes above |
+| `agent_work/gates/gate.sh 04-occ` (host) | GATE_RESULT |
+| `agent_work/adversarial/04-occ/run-all.sh` (host) | HARNESS_RESULT |
+
+Round 1 for reference: the gate passed on `0879e715` (`overall=pass counts_for_landing=true`).
 
 The result files under `agent_work/04-occ/gates/` are left uncommitted, as the brief allows.
