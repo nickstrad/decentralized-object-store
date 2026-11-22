@@ -513,9 +513,11 @@ strconv strings time` plus `internal/env`.
 4. The independent harness check `partition-two-writer` (`agent_work/adversarial/04-occ/sim.go`)
    asserts one hook in total per lost version, the round-1 rule that LWW round 2 item 2(b)
    replaces. It now reports BROKEN although the behaviour is the one the brief requires (see
-   "Gate and commands"). Its author should change `w.hooks == 1` to compare with the number
-   of nodes that held or received the loser (here 2), or drop it in favour of
-   `len(w.lost) == 1`.
+   "Gate and commands"). Corrected after arbitration: the check should keep the expected
+   loser-ID assertion, `len(w.lost) == 1` and `w.counts()`, and drop `w.hooks == 1` — but
+   NOT replace it with `hooks == 2`: a node records only a pair it actually compares, and
+   the winner's node need not receive the losing version before the writer learns the
+   winner and stops sending it, so one or two records are both correct.
 
 ## Repair round (2026-11-21): the LWW ruling and review 1
 
@@ -648,7 +650,7 @@ test-only follow-up `f4d4471`):
 | `go test -run '^$' -bench BenchmarkMergeDoc -benchmem -benchtime 20x ./internal/occ` | numbers above |
 | retirement switched off by a temporary edit (not committed), `DST_SEEDS=500 go test -v -run 'TestMultiRegionConvergenceDST\|TestWriterLostAfterDeliveryDST\|TestOfflineRegionDST'` | all pass; context sizes above |
 | `agent_work/gates/gate.sh 04-occ` (host, `3094597`, clean tree) | `gate: overall=pass counts_for_landing=true`. G0 all pass (comments against baseline `6d44948`); G1 unit 31 s; G2 rapid 2,000 checks (seed 53413714705202), 2 packages, 97 s; G3 fuzz 4 targets × 30 s, 134 s; G4 race 35 s; G5 500 seeds from base 53413714705202, 239 s; G6 pass |
-| `agent_work/adversarial/04-occ/run-all.sh` (host, `3094597`, harness not edited) | `SUMMARY held=60 broken=1 setup_errors=0 elapsed_seconds=45`. Both round-1 BROKEN checks now hold: `HELD C17 recount-stale-noop` and `HELD C23 recount-overflow`. The one BROKEN is `C6,C9,C31 partition-two-writer` (`seed=4701 seed=4702 missing/excess discard`), which held in round 1. It asserts `w.lost[loser] && len(w.lost) == 1 && w.hooks == 1`: exactly one record in total for the one lost version. Item 2(b) of this round's brief replaces that rule: the winner's node now records the rejected loser too. A throwaway probe of the same schedule (same seeds, network and period; not committed) showed on all 10 seeds one lost version, recorded once on each node (counters 1 and 1, two hooks naming the same version ID): `len(lost) == 1` and counter = hooks = logs hold, `hooks == 1` cannot. The check needs `hooks` compared with the number of nodes that held or received the loser, or `len(lost) == 1` alone; the harness is not this seat's to edit (see "Requests to the orchestrator"). The harness's committed evidence files were restored after the run so its own record stays as its author left it |
+| `agent_work/adversarial/04-occ/run-all.sh` (host, `3094597`, harness not edited) | `SUMMARY held=60 broken=1 setup_errors=0 elapsed_seconds=45`. Both round-1 BROKEN checks now hold: `HELD C17 recount-stale-noop` and `HELD C23 recount-overflow`. The one BROKEN is `C6,C9,C31 partition-two-writer` (`seed=4701 seed=4702 missing/excess discard`), which held in round 1. It asserts `w.lost[loser] && len(w.lost) == 1 && w.hooks == 1`: exactly one record in total for the one lost version. Item 2(b) of this round's brief replaces that rule: the winner's node now records the rejected loser too. Measured by the arbiter on the committed harness schedule (ARBITRATION-1.md; this corrects an earlier sentence here that claimed two records on all ten seeds): all ten seeds have exactly one distinct lost version; seeds 4701, 4703, 4707 and 4708 produce one hook and counters (1,0) — the winner's node never received the loser — and seeds 4702, 4704, 4705, 4706, 4709 and 4710 produce two hooks and counters (1,1). So `len(lost) == 1` and counter = hooks = logs hold on every seed, and `hooks == 1` holds only when one node compared the pair. The check should assert the loser ID, `len(lost) == 1` and the counts, with one or two records accepted; the harness is not this seat's to edit (see "Requests to the orchestrator"). The harness's committed evidence files were restored after the run so its own record stays as its author left it |
 
 Round 1 for reference: the gate passed on `0879e715` (`overall=pass counts_for_landing=true`).
 
