@@ -1,0 +1,7 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  MUT[Apply mutation + append outbox] --> SYNC[Persist OCS2 blob to Disk]
+  SYNC -->|error| ROLL[Rollback doc, clock, counters]
+  SYNC -->|ok| EMIT[Emit Log + OnDiscard]
+  EMIT --> DRAIN[Drain outbox: second persist]
+  EMIT -->|crash before drain| REPLAY[OpenStore replays outbox]
