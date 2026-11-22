@@ -82,6 +82,9 @@ func (v *View) Apply(u Member) bool {
 		v.live++
 	}
 	v.byID[u.ID] = u
+	if len(v.ids) > 2*len(v.byID) {
+		v.order()
+	}
 	return true
 }
 
