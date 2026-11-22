@@ -30,6 +30,13 @@
       "status": "published"
     },
     {
+      "n": 5,
+      "slug": "optimistic-concurrency-control",
+      "title": "Optimistic Concurrency Control",
+      "file": "chapters/05-optimistic-concurrency-control.md",
+      "status": "published"
+    },
+    {
       "n": 6,
       "slug": "sagas",
       "title": "Sagas",

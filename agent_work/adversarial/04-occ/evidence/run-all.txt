@@ -1,0 +1,62 @@
+HELD C1 vector-model: 10000 duplicate/zero/epoch vector pairs matched pointwise maxima and ordering
+HELD C2 precondition-table-delete-false: all 15 state/precondition rows matched independent acceptance table and rollback bytes
+HELD C2 precondition-table-delete-true: all 15 state/precondition rows matched independent acceptance table and rollback bytes
+HELD C3,C4,C8 etag-sequence: 12000 same-value writes had unique ETags/dots, parse round trips and stale-write rejection
+HELD C5,C11,C12,C18 decoded-permutations: 1500 decoded triples in all six orders with duplicate deliveries matched an independent stamp/ID maximum
+HELD C6,C7 discard-accounting: 90 concurrent replacements produced 90 logs/hooks, 64 retained entries, no duplicate or causal count
+HELD C10,C13,C14 clock-boundaries: negative skew, maximum skew, logical carry and end-of-time rejection obeyed key-local clock rules
+HELD C15 persist-rollback: failed merge and delete left state, clock, hook and tail unchanged; retry succeeded
+HELD C16,C17 quota-retry-recount: stale callback retried on fresh usage, identical recount did not write and invalid updates were rejected
+HELD C19,C20,C22 decode-corpus: 20000 random/mutated byte strings and every valid-document prefix rejected correctly or round-tripped canonically
+HELD C23 typed-roundtrips: empty, slash, NUL and Unicode bucket names retained distinct keys and exact recounts
+HELD C23 recount-overflow: unrepresentable total was rejected or saturated
+HELD C24 wire-code-table: all assigned codes are unique, in range, skip 131 and preserve errors.Is
+HELD C17 recount-stale-noop: recount rechecked unchanged-result precondition after intervening update
+HELD C3,C7 single-replica-model: 5000 mixed put/delete/CAS operations matched independent present/live/value/etag state
+HELD C6,C8 saturating-count-and-dot-rotation: maximum dot counter rotated epoch and maximum discard count saturated while retaining the callback/tail
+HELD C4,C18 encoding-copy-isolation: encoded bytes, value slices, key lists and cloned docs could be mutated without changing source state
+HELD C19,C20,C21 repeated-key-large-input: 2, 8 and 16 MiB canonical-record repetition inputs were rejected; operation counts are checked separately by existing instrumented tests
+HELD C10,C14 hlc-observe-many: 10000 negative-to-positive clock observations and writes remained strictly monotone; ahead rejection preserved state
+HELD C28 peer-permutation-digests: 10 seeds with reversed and duplicated membership lists produced identical event and state digests
+HELD C25 read-errors-and-bitrot: two transient reads kept node unready then restored acknowledged state; bit-rot produced a fresh epoch
+HELD C9,C12,C29,C30 partition-loss-oracle: 40 seeds x 100 operations converged; 3413 acknowledgements and 1178 unique logged losses, with exact counter/log/hook equality
+HELD C31 same-node-wire-race: two wire clients with one ETag produced one success and one precondition error
+BROKEN C6,C9,C31 partition-two-writer: seed=4701 seed=4702 missing/excess discard
+HELD C8,C25,C26 crash-wipe-epochs: 20 crash/restart/wipe cycles retained crash state, changed wiped epochs and logged concurrent losses
+HELD C32,C17 quota-partition-measurement: 40 accepted allocations total 1000 bytes at limit 250: overshoot 750 exactly (writers-1)*limit; 7 discard events; recount settled
+HELD C27 malformed-node-wire: six malformed request/datagram pairs rejected without document mutation
+HELD C1 builder-regression: 3 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C2 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C3 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C4 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C5 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C6 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C7 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C8 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C9 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C10 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C11 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C12 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C13 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C14 builder-regression: 3 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C15 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C16 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C17 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C18 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C19 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C20 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C21 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C22 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C23 builder-regression: 3 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C24 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C25 builder-regression: 3 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C26 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C27 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C28 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C29 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C30 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C31 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C32 builder-regression: 2 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C33 builder-regression: 1 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+HELD C34 builder-regression: 1 existing named tests passed with DST seeds 4701..4708 and 200 property cases
+SUMMARY held=60 broken=1 setup_errors=0 elapsed_seconds=45

@@ -1,0 +1,5 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  API[Object API] -->|20| NODE[Replicating node]
+  STORAGE[Storage engine] -->|21| META[Typed metadata document]
+  SAGA[Saga engine] -->|22| META

@@ -1,0 +1,9 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  CMP[LWW compare: stamp, node, ID] --> WIN[Pick winner and loser]
+  WIN --> SUP[Winner Supersedes loser?]
+  SUP -->|yes| CAUSAL[Causal overwrite or old news]
+  SUP -->|no| GAP[Held gap in own actor dots?]
+  GAP -->|yes| ROT[Retire actor epoch]
+  GAP -->|no| REC[Record discard if unseen]
+  ROT --> REC

@@ -1,6 +1,6 @@
 # C4 Level 2 — Container, runtime and environment view
 
-**Partly as built.** The DST harness (`internal/sim`, `internal/sim/simtest`, `cmd/objsim`), the environment interfaces (`internal/env`), Gossip membership (`internal/gossip`, relationship 11; it uses Clock, Rand and Transport and no Disk), the Storage engine (`internal/storage`, relationship 12), Merkle anti-entropy (`internal/merkle`, relationship 13; it uses Clock, Rand and Transport and no Disk: stored bytes are reached only through its `Repairer` interface) and the Saga engine (`internal/saga`, relationship 15; the engine itself uses Clock, Rand and Disk) exist and match this diagram. Everything else is the target design.
+**Partly as built.** The DST harness (`internal/sim`, `internal/sim/simtest`, `cmd/objsim`), the environment interfaces (`internal/env`), Gossip membership (`internal/gossip`, relationship 11; it uses Clock, Rand and Transport and no Disk), the Storage engine (`internal/storage`, relationship 12), Merkle anti-entropy (`internal/merkle`, relationship 13; it uses Clock, Rand and Transport and no Disk: stored bytes are reached only through its `Repairer` interface), OCC metadata (`internal/occ`, relationship 14; it uses Clock, Rand, Transport and Disk, the Disk for one state blob, `occ/state`) and the Saga engine (`internal/saga`, relationship 15; the engine itself uses Clock, Rand and Disk) exist and match this diagram. Everything else is the target design.
 
 Model: diagram `container-runtime` in [model.json](model.json). Source: PLAN.md sections 2.1, 2.5, 3, 7.1.
 One protocol core, two environments: `internal/node` (real) and the DST harness
@@ -16,7 +16,7 @@ flowchart TB
     GOSSIP["Gossip membership<br/>internal/gossip"]
     STORAGE["Storage engine<br/>internal/storage"]
     MERKLE["Merkle anti-entropy<br/>internal/merkle"]
-    CRDT["CRDT metadata<br/>internal/crdt"]
+    OCC["OCC metadata<br/>internal/occ"]
     SAGA["Saga engine<br/>internal/saga"]
     ENV["Environment interfaces<br/>internal/env"]
     DISK[("Node disk<br/>shard files, Saga log")]
@@ -29,14 +29,14 @@ flowchart TB
   NODE -->|4| GOSSIP
   NODE -->|5| STORAGE
   NODE -->|6| MERKLE
-  NODE -->|7| CRDT
+  NODE -->|7| OCC
   NODE -->|8| SAGA
   NODE -->|9| PEERS
   NODE -->|10| DISK
   GOSSIP -->|11| ENV
   STORAGE -->|12| ENV
   MERKLE -->|13| ENV
-  CRDT -->|14| ENV
+  OCC -->|14| ENV
   SAGA -->|15| ENV
   DST -->|16| ENV
   classDef ext stroke-dasharray:4 3
@@ -79,7 +79,7 @@ Terminal rendering, in 3 parts. Each numbered relationship appears in exactly on
        │          └───────┘
        │
        │          ┌───────┐
-       ├───────7─►│  CRDT │
+       ├───────7─►│  OCC  │
        │          └───────┘
        │
        │          ┌───────┐
@@ -104,7 +104,7 @@ Terminal rendering, in 3 parts. Each numbered relationship appears in exactly on
 └───────────┘            │
                          │
 ┌───────────┐            │
-│    CRDT   ├────14──────┤
+│    OCC    ├────14──────┤
 └───────────┘            │
                          │
 ┌───────────┐            │
@@ -122,7 +122,7 @@ Terminal rendering, in 3 parts. Each numbered relationship appears in exactly on
 | `c-node` | Node runtime | `internal/node`: UDP, TCP length-prefixed frames, file disk, wall clock, node loop |
 | `c-env` | Environment interfaces | `internal/env`: `Clock`, `Rand`, `Transport`, `Disk` |
 | `c-disk` | Node disk (data store) | files: temp file, fsync, rename |
-| `c-gossip`, `c-storage`, `c-merkle`, `c-crdt`, `c-saga` | Protocol packages | see [02-container.md](02-container.md) |
+| `c-gossip`, `c-storage`, `c-merkle`, `c-occ`, `c-saga` | Protocol packages | see [02-container.md](02-container.md) |
 | `peers` | Peer objnode nodes | external |
 | `dst` | DST harness (`internal/sim`, `internal/sim/simtest`, `cmd/objsim`) | external, test system |
 
@@ -131,8 +131,8 @@ Terminal rendering, in 3 parts. Each numbered relationship appears in exactly on
 | 1 | Operator | cmd/objnode | Starts a node from flags or a config file |
 | 2 | cmd/objnode | Node runtime | Runs one node |
 | 3 | Node runtime | Environment interfaces | Implements Clock, Rand, Transport, Disk for the real runtime |
-| 4–8 | Node runtime | Gossip, Storage, Merkle, CRDT, Saga | Wires into the node; drives from the node loop |
+| 4–8 | Node runtime | Gossip, Storage, Merkle, OCC, Saga | Wires into the node; drives from the node loop |
 | 9 | Node runtime | Peer objnode nodes | Sends and receives datagrams and request/response frames (UDP; TCP) |
 | 10 | Node runtime | Node disk | Reads and writes named blobs (file-backed Disk) |
-| 11–15 | Gossip, Storage, Merkle, CRDT, Saga | Environment interfaces | Acts only through Clock, Rand, Transport, Disk |
+| 11–15 | Gossip, Storage, Merkle, OCC, Saga | Environment interfaces | Acts only through Clock, Rand, Transport, Disk |
 | 16 | DST harness | Environment interfaces | Implements Clock, Rand, Transport, Disk for every simulated node; its event loop calls the same protocol handlers |

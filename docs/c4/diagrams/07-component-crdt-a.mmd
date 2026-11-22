@@ -1,9 +1,0 @@
-%% draw-visual: -x 4 -y 1 -p 0
-graph LR
-  DOC[Typed metadata document] -->|3| LWWREG[LWW-Register]
-  LWWREG -->|5| HLC[Hybrid logical clock]
-  DOC -->|4| LWWSET[LWW-Element-Set]
-  LWWSET -->|6| HLC
-  DOC -->|1| PN[PN-Counter]
-  DOC -->|2| ORSET[OR-Set]
-  DOC -->|7| ENC[Canonical encoding]

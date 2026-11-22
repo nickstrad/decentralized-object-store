@@ -1,6 +1,6 @@
 # C4 Level 2 — Container, domain view
 
-**Partly as built.** Erasure coding (`internal/erasure`) and the Storage engine (`internal/storage`: shard format, chunk store, striping, manifest, placement, put and get paths) exist, and relationship 8 matches the code. The Saga engine (`internal/saga`: orchestrator, log, recovery, bucket-migration workflow) exists too, but its migration steps run only against a model cluster (`internal/saga/sagasim`): relationships 13 to 15 stay the target design until Chunk 6 binds the steps to the real components. Gossip membership (`internal/gossip`: SWIM probe, indirect probe, suspicion, dissemination, full-state sync, Membership view) exists as well, but no other package reads its view yet: relationships 7, 9 and 12 stay the target design until Chunk 6 wires the consumers. Merkle anti-entropy (`internal/merkle`: hash tree, diff protocol, wire codec, anti-entropy worker) exists too, over its own `Repairer` and `Membership` interfaces and a test chunk store: relationships 11 and 14 stay the target design until Chunk 6 binds it to the storage engine and the saga verify step. The Object API, the other containers and the other relationships are the target design.
+**Partly as built.** Erasure coding (`internal/erasure`) and the Storage engine (`internal/storage`: shard format, chunk store, striping, manifest, placement, put and get paths) exist, and relationship 8 matches the code. The Saga engine (`internal/saga`: orchestrator, log, recovery, bucket-migration workflow) exists too, but its migration steps run only against a model cluster (`internal/saga/sagasim`): relationships 13 to 15 stay the target design until Chunk 6 binds the steps to the real components. Gossip membership (`internal/gossip`: SWIM probe, indirect probe, suspicion, dissemination, full-state sync, Membership view) exists as well, but no other package reads its view yet: relationships 7, 9 and 12 stay the target design until Chunk 6 wires the consumers. Merkle anti-entropy (`internal/merkle`: hash tree, diff protocol, wire codec, anti-entropy worker) exists too, over its own `Repairer` and `Membership` interfaces and a test chunk store: relationships 11 and 14 stay the target design until Chunk 6 binds it to the storage engine and the saga verify step. OCC metadata (`internal/occ`: optimistic concurrency control with conditional writes, one version per key, last-writer-wins between concurrent versions with every discard recorded, quota check-and-set, a typed metadata document and a replicating node) exists as well, but nothing outside the package calls it and only test code supplies its `Membership` interface: relationships 5, 10, 12 and 15 stay the target design until Chunk 6 wires the object API, the manifests, the gossip view and the saga step. It replaces the CRDT metadata layer of the first design by owner ruling; see [07-component-occ.md](07-component-occ.md). The Object API, the other containers and the other relationships are the target design.
 
 Model: diagram `container` in [model.json](model.json). Source: PLAN.md sections 3, 4.2, 7.2, 7.4, 7.5, 7.8.
 Containers are Go packages inside one `objnode` process. The runtime and environment
@@ -17,24 +17,24 @@ flowchart TB
     ERASURE["Erasure coding<br/>internal/erasure"]
     GOSSIP["Gossip membership<br/>internal/gossip"]
     MERKLE["Merkle anti-entropy<br/>internal/merkle"]
-    CRDT["CRDT metadata<br/>internal/crdt"]
+    OCC["OCC metadata<br/>internal/occ"]
     SAGA["Saga engine<br/>internal/saga"]
   end
   CLIENT -->|1| API
   SYNC -->|2| API
   OPER -->|3| API
   API -->|4| STORAGE
-  API -->|5| CRDT
+  API -->|5| OCC
   API -->|6| SAGA
   API -->|7| GOSSIP
   STORAGE -->|8| ERASURE
   STORAGE -->|9| GOSSIP
-  STORAGE -->|10| CRDT
+  STORAGE -->|10| OCC
   MERKLE -->|11| STORAGE
-  CRDT -->|12| GOSSIP
+  OCC -->|12| GOSSIP
   SAGA -->|13| STORAGE
   SAGA -->|14| MERKLE
-  SAGA -->|15| CRDT
+  SAGA -->|15| OCC
 ```
 
 Terminal rendering, in 4 parts. Each numbered relationship appears in exactly one part.
@@ -65,7 +65,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 └─────┬────┘    └─────────────────┘
       │
       │         ┌─────────────────┐
-      ├──────5─►│  CRDT metadata  │
+      ├──────5─►│   OCC metadata  │
       │         └─────────────────┘
       │
       │         ┌─────────────────┐
@@ -90,16 +90,16 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
                                   │            └─────────────────┘
                                   │
                                   │            ┌─────────────────┐
-                                  └────────10─►│  CRDT metadata  │
+                                  └────────10─►│   OCC metadata  │
                                                └─────────────────┘
 ```
 
-**Part d.** Saga engine steps, and CRDT peer choice (12 to 15).
+**Part d.** Saga engine steps, and the metadata replicator's peer choice (12 to 15).
 
 <!-- draw-visual: diagrams/02-container-d.mmd -->
 ```text
 ┌───────────┐     ┌───────────────────┐     ┌─────────────────┐
-│Saga engine├─15─►│   CRDT metadata   ├─12─►│Gossip membership│
+│Saga engine├─15─►│    OCC metadata   ├─12─►│Gossip membership│
 └─────┬─────┘     └───────────────────┘     └─────────────────┘
       │
       │           ┌───────────────────┐
@@ -118,23 +118,23 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | `c-erasure` | Erasure coding | `internal/erasure` | [05](05-component-erasure.md) |
 | `c-gossip` | Gossip membership | `internal/gossip` | [04](04-component-gossip.md) |
 | `c-merkle` | Merkle anti-entropy | `internal/merkle` | [06](06-component-merkle.md) |
-| `c-crdt` | CRDT metadata | `internal/crdt` | [07](07-component-crdt.md) |
+| `c-occ` | OCC metadata | `internal/occ` | [07](07-component-occ.md) |
 | `c-saga` | Saga engine | `internal/saga` | [08](08-component-saga.md) |
 
 | # | From | To | Relationship |
 | --- | --- | --- | --- |
 | 1 | Object API client | Object API | Puts, gets, heads, deletes and lists objects; manages buckets, tags, ACL, quota and metadata (HTTP, S3-like path-style) |
-| 2 | Sync client | Object API | Syncs a client-side CRDT document (HTTP `/v1/sync`, OQ-7) |
+| 2 | Sync client | Object API | Syncs a client-side metadata document (HTTP `/v1/sync`). Not to be built: OQ-7 was decided as node-level sync only, with no client replica |
 | 3 | Operator | Object API | Starts and checks migrations; reads membership and health (HTTP) |
 | 4 | Object API | Storage engine | Object put, get, head, delete, list; bucket create |
-| 5 | Object API | CRDT metadata | Tags, ACL, quota, metadata; metadata sync endpoint |
+| 5 | Object API | OCC metadata | Tags, ACL, quota and metadata edits as conditional writes (`If-Match`, `If-None-Match`), with an ETag on every response |
 | 6 | Object API | Saga engine | Migration start and status |
 | 7 | Object API | Gossip membership | Membership and health |
 | 8 | Storage engine | Erasure coding | Encode and Reconstruct per stripe |
 | 9 | Storage engine | Gossip membership | Places shards by rendezvous hashing over the Membership view |
-| 10 | Storage engine | CRDT metadata | Stores each object manifest as an LWW-Register value |
+| 10 | Storage engine | OCC metadata | Stores each object manifest as the one version of its manifest key (`PutManifest`) |
 | 11 | Merkle anti-entropy | Storage engine | Diffs manifest and shard-inventory trees; repairs through the Repairer interface |
-| 12 | CRDT metadata | Gossip membership | Picks replication peers from the Membership view |
+| 12 | OCC metadata | Gossip membership | Takes its replication peers from the Membership view, through the `Membership` interface the package declares |
 | 13 | Saga engine | Storage engine | Migration steps: allocate target, copy shards, delete source |
 | 14 | Saga engine | Merkle anti-entropy | Migration step: verify Merkle root |
-| 15 | Saga engine | CRDT metadata | Migration step: flip routing pointer (LWW-Register) |
+| 15 | Saga engine | OCC metadata | Migration step: flip the bucket's routing pointer (`SetRoute`, an unconditional write settled by last-writer-wins) |

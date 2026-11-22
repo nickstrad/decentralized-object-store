@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "objstore",
   "title": "Decentralized Object Store & Sync Engine \u2014 target architecture, as built where landed",
-  "revision": "as-built-merkle-2026-11-22",
+  "revision": "as-built-occ-2026-11-22",
   "defaultDiagramId": "context",
   "model": {
     "elements": [
@@ -23,11 +23,11 @@
         "id": "sync-client",
         "kind": "person",
         "name": "Sync client",
-        "description": "Client replica that edits a CRDT metadata document offline and syncs it.",
+        "description": "Client replica that would edit a metadata document offline and sync it.",
         "status": "planned",
         "tags": [],
         "plannedNotes": [
-          "Proposed in PLAN.md OQ-7; not decided."
+          "Not to be built: PLAN.md OQ-7 was decided as node-level sync only, with no client replica and no /v1/sync client document."
         ],
         "docIds": [],
         "sourceIds": [
@@ -144,12 +144,12 @@
         "parentId": "store",
         "containerType": "application",
         "name": "Object API (internal/storage)",
-        "description": "HTTP object API: put, get, head, delete, list, bucket create, tags and ACL, quota, metadata, migration start and status, membership and health; metadata sync endpoint.",
+        "description": "HTTP object API: put, get, head, delete, list, bucket create, tags and ACL, quota, metadata, migration start and status, membership and health. Metadata edits are conditional writes with an ETag on every response.",
         "technology": "Go, HTTP, S3-like path-style",
         "status": "planned",
         "tags": [],
         "plannedNotes": [
-          "API surface is PLAN.md OQ-6; metadata sync endpoint is OQ-7."
+          "API surface is PLAN.md OQ-6. There is no client sync endpoint: OQ-7 was decided as node-level sync only."
         ],
         "docIds": [],
         "sourceIds": [
@@ -226,16 +226,21 @@
         ]
       },
       {
-        "id": "c-crdt",
+        "id": "c-occ",
         "kind": "container",
         "parentId": "store",
         "containerType": "application",
-        "name": "CRDT metadata (internal/crdt)",
-        "description": "State-based CRDTs, hybrid logical clock, replication of CRDT state.",
+        "name": "OCC metadata (internal/occ)",
+        "description": "Optimistic concurrency control for metadata. Each key holds exactly one version on every replica. Conditional writes (If-Match on an ETag, If-None-Match) refuse stale writers. When two concurrent versions meet, last-writer-wins picks one as a function of the pair alone: the higher hybrid logical clock stamp, then the node ID, then the version ID. The other is discarded, and every such discard is counted, logged and reported through a callback. Version vectors only classify a replacement as a causal overwrite or a concurrent discard. Quota check-and-set with a recount hook, a typed metadata document, and a replicating node that exchanges digests and documents with peers from its own Membership interface. It uses Clock, Rand, Transport and Disk; the Disk holds one state blob.",
         "technology": "Go, sans-IO state machine",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
-        "plannedNotes": [],
+        "plannedNotes": [
+          "Nothing outside the package calls it yet, and only test code supplies its Membership interface. The object API, the storage engine's manifests, the saga routing step, the gossip view as the peer list and the node runtime are wired in the integration chunk (Chunk 6).",
+          "Replaces the CRDT metadata layer of the first design by owner ruling (OCC amendment, 2026-11-21). Keeping concurrent versions as siblings was ruled out in favour of last-writer-wins with every discard recorded.",
+          "The package reports quota-key discards through OnDiscard and offers RecountQuota; it does not schedule recounts. Chunk 6 decides when a recount runs.",
+          "Tombstones are kept forever, and a mismatched replication round exchanges whole documents."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -610,13 +615,13 @@
         ]
       },
       {
-        "id": "x-pn",
+        "id": "o-node",
         "kind": "component",
-        "parentId": "c-crdt",
-        "name": "PN-Counter",
-        "description": "Storage quotas.",
+        "parentId": "c-occ",
+        "name": "Replicating node",
+        "description": "Node (an env.Process), Client and the wire messages (node.go, wire.go, errors.go). Loads the state blob at start. Each jittered period it sends its document digest to one random peer; the peer answers match or its whole document; the node merges it and pushes its own document back if the two still differ. After each local write it sends the changed key as a datagram to two random peers. Serves remote get, put and delete. All writes go through Node methods, which persist and then broadcast; Reader() is read-only. Wire error codes 128 to 136 in the block 128 to 143, with 131 unassigned.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -625,16 +630,16 @@
         ]
       },
       {
-        "id": "x-orset",
+        "id": "o-membership",
         "kind": "component",
-        "parentId": "c-crdt",
-        "name": "OR-Set",
-        "description": "Bucket tags, ACL memberships. Classic form: unique add-tags plus a tombstone set.",
+        "parentId": "c-occ",
+        "name": "Membership interface",
+        "description": "Membership (node.go), declared by the package: Peers returns the candidate peer IDs; the node sorts them and removes duplicates and its own ID. StaticMembership is a fixed list.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "Variant is PLAN.md OQ-12."
+          "Only test code supplies it so far."
         ],
         "docIds": [],
         "sourceIds": [
@@ -642,73 +647,13 @@
         ]
       },
       {
-        "id": "x-lwwreg",
+        "id": "o-meta",
         "kind": "component",
-        "parentId": "c-crdt",
-        "name": "LWW-Register",
-        "description": "Object metadata, routing pointers, object manifests.",
-        "technology": "Go",
-        "status": "planned",
-        "tags": [],
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ]
-      },
-      {
-        "id": "x-lwwset",
-        "kind": "component",
-        "parentId": "c-crdt",
-        "name": "LWW-Element-Set",
-        "description": "The fourth CRDT type in the spec's structure list.",
-        "technology": "Go",
-        "status": "planned",
-        "tags": [],
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ]
-      },
-      {
-        "id": "x-hlc",
-        "kind": "component",
-        "parentId": "c-crdt",
-        "name": "Hybrid logical clock",
-        "description": "LWW timestamps (wall, counter, node ID) with node-ID tie-break.",
-        "technology": "Go",
-        "status": "planned",
-        "tags": [],
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ]
-      },
-      {
-        "id": "x-enc",
-        "kind": "component",
-        "parentId": "c-crdt",
-        "name": "Canonical encoding",
-        "description": "Encoding in which equal states are equal bytes.",
-        "technology": "Go",
-        "status": "planned",
-        "tags": [],
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ]
-      },
-      {
-        "id": "x-doc",
-        "kind": "component",
-        "parentId": "c-crdt",
+        "parentId": "c-occ",
         "name": "Typed metadata document",
-        "description": "A typed metadata document composed of the CRDT types.",
+        "description": "meta.go. Seven key kinds over the same store: tags, ACL entries, quotas, object metadata, object manifests, a bucket's routing pointer and content type. Key builders and ParseKey, typed writes and typed reads. RecountObjects sums a bucket's live object sizes for a quota recount and returns an overflow error instead of wrapping.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -717,13 +662,122 @@
         ]
       },
       {
-        "id": "x-repl",
+        "id": "o-quota",
         "kind": "component",
-        "parentId": "c-crdt",
-        "name": "Replicator",
-        "description": "Exchanges state with random peers from a Membership interface: digest first, state on mismatch.",
+        "parentId": "c-occ",
+        "name": "Quota check-and-set and recount",
+        "description": "quota.go. UpdateQuota reads the usage with the precondition to write it back under, computes, and writes conditionally, retrying only on a failed precondition and at most a given number of times. An unconditional quota write is refused. RecountQuota takes a recount hook and writes only when the stored usage differs.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
+        "tags": [],
+        "plannedNotes": [
+          "The package does not schedule recounts. Updates on two sides of a partition settle by last-writer-wins, and the quota-key discard is the signal for a recount."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "o-store",
+        "kind": "component",
+        "parentId": "c-occ",
+        "name": "Store",
+        "description": "Store and Reader (store.go). Put, Delete and SetScalar check the precondition against the held version and install its causal successor with a stamp above the one it replaces. Merge takes in a peer's document. Every mutation is a transaction: apply, encode the state blob, call the Persist hook, and restore everything if the persist fails. Dots come from one counter per actor; the actor epoch is drawn at random without readable state and retired for a fresh one when a discard leaves a gap in the node's own dots. The state blob is checksummed; an unreadable one is treated as no state.",
+        "technology": "Go",
+        "status": "existing",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "o-discard",
+        "kind": "component",
+        "parentId": "c-occ",
+        "name": "Discard record",
+        "description": "In store.go. When a merge drops a version that the winner's writer had not seen, either a held version replaced or an incoming version rejected, the store records it: a persisted counter, a 64-entry readable tail, a persisted outbox, and, after the persist succeeds, one log line and the OnDiscard callback. A window of the last 256 (key, loser) pairs stops a re-sent loser from being recorded twice. The outbox is emitted again when a node opens its state, so a crash before the emission loses no record.",
+        "technology": "Go",
+        "status": "existing",
+        "tags": [],
+        "plannedNotes": [
+          "Records are local to the node and are not replicated. One lost version can be recorded on several nodes; every record names the losing version ID."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "o-doc",
+        "kind": "component",
+        "parentId": "c-occ",
+        "name": "Document, last-writer-wins merge",
+        "description": "Doc (doc.go): a map from key to one Version. A merge keeps, per key, the greater version under the last-writer-wins order; it is commutative, associative, idempotent and has no error path. The digest is the SHA-256 of the canonical encoding. There is one version per key in memory, in the encoding and in the API.",
+        "technology": "Go",
+        "status": "existing",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "o-version",
+        "kind": "component",
+        "parentId": "c-occ",
+        "name": "Version and record",
+        "description": "version.go and record.go. A Version has a dot, a causal context, a tombstone flag, a value, a stamp and a version ID (a SHA-256). Version.Compare is the last-writer-wins order: stamp, then version ID. Supersedes asks whether one version's writer had seen the other. A Record is the one optional version of a key. The ETag is the version ID. Preconditions: IfMatch, IfNoneMatch, Unconditional.",
+        "technology": "Go",
+        "status": "existing",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "o-vv",
+        "kind": "component",
+        "parentId": "c-occ",
+        "name": "Version vectors and dots",
+        "description": "vv.go, and Dot in version.go. An actor is a node ID and an epoch; a version vector maps actors to counters, with Compare, Descends and Join. Used for classification only: they tell whether the winner's writer had seen the loser, and never choose the winner.",
+        "technology": "Go",
+        "status": "existing",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "o-hlc",
+        "kind": "component",
+        "parentId": "c-occ",
+        "name": "Hybrid logical clock",
+        "description": "hlc.go. Stamp (wall, logical counter, node ID) with a total order. HLC over env.Clock: Now returns a stamp above every earlier one; Observe takes in a remote stamp and refuses one more than an hour ahead of the local clock.",
+        "technology": "Go",
+        "status": "existing",
+        "tags": [],
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "o-enc",
+        "kind": "component",
+        "parentId": "c-occ",
+        "name": "Canonical encoding",
+        "description": "encoding.go, with Doc.Encode and Decode. Replicas holding the same versions produce the same bytes. Decoding is strict and bounded: a repeated or out-of-order key, a non-minimal varint, an oversized count and trailing bytes are rejected, and the result must re-encode to the input.",
+        "technology": "Go",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -974,19 +1028,24 @@
         ]
       },
       {
-        "id": "n-crdt",
+        "id": "n-occ",
         "kind": "container",
         "parentId": "store",
         "containerType": "application",
-        "name": "CRDT metadata (internal/crdt)",
-        "description": "The same package as element c-crdt, shown as a neighbour in the component views of other packages. State-based CRDTs, hybrid logical clock, replication of CRDT state.",
+        "name": "OCC metadata (internal/occ)",
+        "description": "The same package as element c-occ, shown as a neighbour in the component views of other packages. Optimistic concurrency control for metadata. Each key holds exactly one version on every replica. Conditional writes (If-Match on an ETag, If-None-Match) refuse stale writers. When two concurrent versions meet, last-writer-wins picks one as a function of the pair alone: the higher hybrid logical clock stamp, then the node ID, then the version ID. The other is discarded, and every such discard is counted, logged and reported through a callback. Version vectors only classify a replacement as a causal overwrite or a concurrent discard. Quota check-and-set with a recount hook, a typed metadata document, and a replicating node that exchanges digests and documents with peers from its own Membership interface. It uses Clock, Rand, Transport and Disk; the Disk holds one state blob.",
         "technology": "Go, sans-IO state machine",
-        "status": "planned",
+        "status": "existing",
         "tags": [
           "external",
           "neighbour"
         ],
-        "plannedNotes": [],
+        "plannedNotes": [
+          "Nothing outside the package calls it yet, and only test code supplies its Membership interface. The object API, the storage engine's manifests, the saga routing step, the gossip view as the peer list and the node runtime are wired in the integration chunk (Chunk 6).",
+          "Replaces the CRDT metadata layer of the first design by owner ruling (OCC amendment, 2026-11-21). Keeping concurrent versions as siblings was ruled out in favour of last-writer-wins with every discard recorded.",
+          "The package reports quota-key discards through OnDiscard and offers RecountQuota; it does not schedule recounts. Chunk 6 decides when a recount runs.",
+          "Tombstones are kept forever, and a mismatched replication round exchanges whole documents."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -1036,7 +1095,7 @@
         "parentId": "store",
         "containerType": "application",
         "name": "Object API (internal/storage)",
-        "description": "The same package as element c-api, shown as a neighbour in the component views of other packages. HTTP object API: put, get, head, delete, list, bucket create, tags and ACL, quota, metadata, migration start and status, membership and health; metadata sync endpoint.",
+        "description": "The same package as element c-api, shown as a neighbour in the component views of other packages. HTTP object API: put, get, head, delete, list, bucket create, tags and ACL, quota, metadata, migration start and status, membership and health. Metadata edits are conditional writes with an ETag on every response.",
         "technology": "Go, HTTP, S3-like path-style",
         "status": "planned",
         "tags": [
@@ -1044,7 +1103,7 @@
           "neighbour"
         ],
         "plannedNotes": [
-          "API surface is PLAN.md OQ-6; metadata sync endpoint is OQ-7."
+          "API surface is PLAN.md OQ-6. There is no client sync endpoint: OQ-7 was decided as node-level sync only."
         ],
         "docIds": [],
         "sourceIds": [
@@ -1108,11 +1167,11 @@
         "id": "r-sync-store",
         "sourceId": "sync-client",
         "targetId": "store",
-        "label": "Edits metadata offline, then syncs CRDT state",
+        "label": "Edits metadata offline, then syncs it",
         "technology": "HTTP /v1/sync",
         "status": "planned",
         "plannedNotes": [
-          "Proposed in PLAN.md OQ-7; not decided."
+          "Not to be built: PLAN.md OQ-7 was decided as node-level sync only."
         ],
         "docIds": [],
         "sourceIds": [
@@ -1136,7 +1195,7 @@
         "id": "r-store-peers",
         "sourceId": "store",
         "targetId": "peers",
-        "label": "Gossips membership; sends and fetches shards; diffs Merkle trees; exchanges CRDT state; runs migration steps",
+        "label": "Gossips membership; sends and fetches shards; diffs Merkle trees; exchanges metadata versions; runs migration steps",
         "technology": "UDP datagrams; TCP length-prefixed frames",
         "status": "planned",
         "plannedNotes": [],
@@ -1188,11 +1247,11 @@
         "id": "k-sync-api",
         "sourceId": "sync-client",
         "targetId": "c-api",
-        "label": "Syncs a client-side CRDT document",
+        "label": "Syncs a client-side metadata document",
         "technology": "HTTP /v1/sync",
         "status": "planned",
         "plannedNotes": [
-          "Proposed in PLAN.md OQ-7; not decided."
+          "Not to be built: PLAN.md OQ-7 was decided as node-level sync only."
         ],
         "docIds": [],
         "sourceIds": [
@@ -1226,12 +1285,14 @@
         "technology": "Go, in-process"
       },
       {
-        "id": "k-api-crdt",
+        "id": "k-api-occ",
         "sourceId": "c-api",
-        "targetId": "c-crdt",
-        "label": "Tags, ACL, quota, metadata; metadata sync endpoint",
+        "targetId": "c-occ",
+        "label": "Tags, ACL, quota and metadata edits as conditional writes, with an ETag on every response",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "The occ package is built; this link is wired in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -1291,12 +1352,14 @@
         "technology": "Go, in-process"
       },
       {
-        "id": "k-storage-crdt",
+        "id": "k-storage-occ",
         "sourceId": "c-storage",
-        "targetId": "c-crdt",
-        "label": "Stores each object manifest as an LWW-Register value",
+        "targetId": "c-occ",
+        "label": "Stores each object manifest as the one version of its manifest key",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "The occ package is built; this link is wired in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -1319,12 +1382,14 @@
         "technology": "Go, in-process"
       },
       {
-        "id": "k-crdt-gossip",
-        "sourceId": "c-crdt",
+        "id": "k-occ-gossip",
+        "sourceId": "c-occ",
         "targetId": "c-gossip",
-        "label": "Picks replication peers from the Membership view",
+        "label": "Takes its replication peers from the Membership view",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "The occ package declares its own Membership interface, supplied only by test code so far; the gossip view is wired to it in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -1358,12 +1423,14 @@
         "technology": "Go, in-process"
       },
       {
-        "id": "k-saga-crdt",
+        "id": "k-saga-occ",
         "sourceId": "c-saga",
-        "targetId": "c-crdt",
-        "label": "Migration step: flip routing pointer (LWW-Register)",
+        "targetId": "c-occ",
+        "label": "Migration step: flip the bucket's routing pointer",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "The occ package is built; this link is wired in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -1449,12 +1516,14 @@
         "technology": "Go, in-process"
       },
       {
-        "id": "k-node-crdt",
+        "id": "k-node-occ",
         "sourceId": "c-node",
-        "targetId": "c-crdt",
+        "targetId": "c-occ",
         "label": "Wires into the node; drives from the node loop",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "The occ package is built; this link is wired in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -1540,11 +1609,11 @@
         "technology": "Go, in-process"
       },
       {
-        "id": "k-crdt-env",
-        "sourceId": "c-crdt",
+        "id": "k-occ-env",
+        "sourceId": "c-occ",
         "targetId": "c-env",
         "label": "Acts only through Clock, Rand, Transport, Disk",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -1712,12 +1781,12 @@
       },
       {
         "id": "g-r11",
-        "sourceId": "n-crdt",
+        "sourceId": "n-occ",
         "targetId": "g-view",
-        "label": "Reads Membership for replication peer choice",
+        "label": "Reads the live members as its replication peers",
         "status": "planned",
         "plannedNotes": [
-          "Wired in Chunk 6."
+          "The occ package declares its own Membership interface, supplied only by test code so far; the gossip view is wired to it in the integration chunk (Chunk 6)."
         ],
         "docIds": [],
         "sourceIds": [
@@ -2200,11 +2269,11 @@
         "technology": "Go, in-process"
       },
       {
-        "id": "x-r1",
-        "sourceId": "x-doc",
-        "targetId": "x-pn",
-        "label": "Storage quotas",
-        "status": "planned",
+        "id": "o-r1",
+        "sourceId": "o-node",
+        "targetId": "o-store",
+        "label": "Runs every local write and every received document as a store transaction; supplies the Persist hook and passes on Log and OnDiscard",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2213,129 +2282,250 @@
         "technology": "Go, in-process"
       },
       {
-        "id": "x-r2",
-        "sourceId": "x-doc",
-        "targetId": "x-orset",
-        "label": "Bucket tags, ACL memberships",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "x-r3",
-        "sourceId": "x-doc",
-        "targetId": "x-lwwreg",
-        "label": "Object metadata, routing pointers, manifests",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "x-r4",
-        "sourceId": "x-doc",
-        "targetId": "x-lwwset",
-        "label": "Composed of",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "x-r5",
-        "sourceId": "x-lwwreg",
-        "targetId": "x-hlc",
-        "label": "LWW timestamps",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "x-r6",
-        "sourceId": "x-lwwset",
-        "targetId": "x-hlc",
-        "label": "LWW timestamps",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "x-r7",
-        "sourceId": "x-doc",
-        "targetId": "x-enc",
-        "label": "Equal states encode to equal bytes",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "x-r8",
-        "sourceId": "x-repl",
-        "targetId": "x-doc",
-        "label": "Sends a digest first; merges full state on mismatch",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "x-r9",
-        "sourceId": "x-repl",
-        "targetId": "n-gossip",
-        "label": "Picks a random live peer from Membership",
-        "status": "planned",
-        "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ],
-        "technology": "Go, in-process"
-      },
-      {
-        "id": "x-r10",
-        "sourceId": "x-repl",
+        "id": "o-r2",
+        "sourceId": "o-node",
         "targetId": "n-env",
-        "label": "Periodic push-pull exchange with the peer",
-        "technology": "Clock, Rand, Transport",
-        "status": "planned",
+        "label": "Round and load-retry timers; period jitter and peer choice; digest requests, pushes, delta datagrams and client operations; reads, writes and syncs the state blob",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
-        ]
+        ],
+        "technology": "Clock, Rand, Transport, Disk"
       },
       {
-        "id": "x-r11",
+        "id": "o-r3",
+        "sourceId": "o-node",
+        "targetId": "o-enc",
+        "label": "Sends and receives documents in the canonical encoding; encodes client operations and results",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r4",
+        "sourceId": "o-node",
+        "targetId": "o-membership",
+        "label": "Reads the peer list for each round and each delta broadcast",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r5",
+        "sourceId": "o-membership",
+        "targetId": "n-gossip",
+        "label": "Filled from the gossip view's live members",
+        "status": "planned",
+        "plannedNotes": [
+          "Only test code supplies Membership so far; the gossip view is wired to it in the integration chunk (Chunk 6)."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r6",
+        "sourceId": "o-store",
+        "targetId": "o-doc",
+        "label": "Holds the node's document; merges a received document into it key by key",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r7",
+        "sourceId": "o-store",
+        "targetId": "o-version",
+        "label": "Checks the precondition against the held record; builds the successor version; asks Supersedes to classify each replaced or rejected version",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r8",
+        "sourceId": "o-store",
+        "targetId": "o-discard",
+        "label": "Records every concurrent version the merge drops, replaced or rejected, in the same durable write as the merge; emits after the persist succeeds",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r9",
+        "sourceId": "o-store",
+        "targetId": "o-hlc",
+        "label": "Takes a stamp for each write; observes every stamp of a received or loaded document",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r10",
+        "sourceId": "o-store",
+        "targetId": "o-enc",
+        "label": "Encodes and decodes the checksummed state blob",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r11",
+        "sourceId": "o-doc",
+        "targetId": "o-version",
+        "label": "Holds one version per key; a merge keeps the greater version under the last-writer-wins order",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r12",
+        "sourceId": "o-doc",
+        "targetId": "o-enc",
+        "label": "Equal documents encode to equal bytes; the digest is their SHA-256",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r13",
+        "sourceId": "o-version",
+        "targetId": "o-vv",
+        "label": "Carries a dot and a causal context; Supersedes compares them. Classification only",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r14",
+        "sourceId": "o-version",
+        "targetId": "o-hlc",
+        "label": "Carries a stamp; the last-writer-wins order compares stamps first",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r15",
+        "sourceId": "o-hlc",
+        "targetId": "n-env",
+        "label": "Reads the node's clock",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Clock"
+      },
+      {
+        "id": "o-r16",
+        "sourceId": "o-store",
+        "targetId": "n-env",
+        "label": "Draws a fresh actor epoch. The store makes no Disk call: it persists through the hook the node supplies",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Rand"
+      },
+      {
+        "id": "o-r17",
+        "sourceId": "o-quota",
+        "targetId": "o-store",
+        "label": "Reads the usage and writes it back under If-Match or If-None-Match, through the store's or the node's Put",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r18",
+        "sourceId": "o-meta",
+        "targetId": "o-store",
+        "label": "Typed keys and values, written through the store's or the node's Put and read through Reader",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r19",
+        "sourceId": "o-meta",
+        "targetId": "o-quota",
+        "label": "RecountObjects supplies the usage a recount writes",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "o-r20",
         "sourceId": "n-api",
-        "targetId": "x-doc",
-        "label": "Tags, ACL, quota and metadata edits",
+        "targetId": "o-node",
+        "label": "Tags, ACL, quota and metadata edits as conditional writes; ETag on every response",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "The object API is built in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2343,12 +2533,14 @@
         "technology": "Go, in-process"
       },
       {
-        "id": "x-r12",
+        "id": "o-r21",
         "sourceId": "n-storage",
-        "targetId": "x-doc",
-        "label": "Object manifests",
+        "targetId": "o-meta",
+        "label": "Stores each object manifest under its manifest key",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "PutManifest exists; the storage engine is bound to it in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2356,12 +2548,14 @@
         "technology": "Go, in-process"
       },
       {
-        "id": "x-r13",
+        "id": "o-r22",
         "sourceId": "n-saga",
-        "targetId": "x-doc",
-        "label": "Routing pointer flip",
+        "targetId": "o-meta",
+        "label": "Migration step: flips the bucket's routing pointer",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "SetRoute exists; the saga step is bound to it in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2503,10 +2697,12 @@
       {
         "id": "s-r11",
         "sourceId": "s-steps",
-        "targetId": "n-crdt",
-        "label": "Flip routing pointer (LWW-Register)",
+        "targetId": "n-occ",
+        "label": "Flip the bucket's routing pointer",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "The occ package is built (SetRoute, an unconditional write settled by last-writer-wins). The step is bound to it in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2728,10 +2924,12 @@
       {
         "id": "t-r11",
         "sourceId": "t-manifest",
-        "targetId": "n-crdt",
-        "label": "Value of the key's LWW-Register",
+        "targetId": "n-occ",
+        "label": "Stored as the one version of the object's manifest key",
         "status": "planned",
-        "plannedNotes": [],
+        "plannedNotes": [
+          "The occ package is built (PutManifest, a conditional write). The storage engine is bound to it in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2920,7 +3118,7 @@
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, domain view \u2014 as built for erasure coding, the storage engine, the saga engine, gossip membership and Merkle anti-entropy; the rest is the target design",
+      "title": "Container, domain view \u2014 as built for erasure coding, the storage engine, the saga engine, gossip membership, Merkle anti-entropy and OCC metadata; the rest is the target design",
       "nodes": [
         {
           "elementId": "api-client"
@@ -2959,9 +3157,9 @@
           }
         },
         {
-          "elementId": "c-crdt",
+          "elementId": "c-occ",
           "detail": {
-            "diagramId": "component-crdt"
+            "diagramId": "component-occ"
           }
         },
         {
@@ -2985,7 +3183,7 @@
           "relationshipId": "k-api-storage"
         },
         {
-          "relationshipId": "k-api-crdt"
+          "relationshipId": "k-api-occ"
         },
         {
           "relationshipId": "k-api-saga"
@@ -3000,13 +3198,13 @@
           "relationshipId": "k-storage-gossip"
         },
         {
-          "relationshipId": "k-storage-crdt"
+          "relationshipId": "k-storage-occ"
         },
         {
           "relationshipId": "k-merkle-storage"
         },
         {
-          "relationshipId": "k-crdt-gossip"
+          "relationshipId": "k-occ-gossip"
         },
         {
           "relationshipId": "k-saga-storage"
@@ -3015,7 +3213,7 @@
           "relationshipId": "k-saga-merkle"
         },
         {
-          "relationshipId": "k-saga-crdt"
+          "relationshipId": "k-saga-occ"
         }
       ],
       "legend": {
@@ -3081,7 +3279,7 @@
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, runtime and environment view \u2014 as built for the simulator, the environment interfaces, the storage engine, the saga engine, gossip membership and Merkle anti-entropy; the rest is the target design",
+      "title": "Container, runtime and environment view \u2014 as built for the simulator, the environment interfaces, the storage engine, the saga engine, gossip membership, Merkle anti-entropy and OCC metadata; the rest is the target design",
       "nodes": [
         {
           "elementId": "operator"
@@ -3102,7 +3300,7 @@
           "elementId": "c-merkle"
         },
         {
-          "elementId": "c-crdt"
+          "elementId": "c-occ"
         },
         {
           "elementId": "c-saga"
@@ -3140,7 +3338,7 @@
           "relationshipId": "k-node-merkle"
         },
         {
-          "relationshipId": "k-node-crdt"
+          "relationshipId": "k-node-occ"
         },
         {
           "relationshipId": "k-node-saga"
@@ -3161,7 +3359,7 @@
           "relationshipId": "k-merkle-env"
         },
         {
-          "relationshipId": "k-crdt-env"
+          "relationshipId": "k-occ-env"
         },
         {
           "relationshipId": "k-saga-env"
@@ -3253,7 +3451,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, gossip \u2014 as built for the SWIM node, the view, the wire codec and their use of the environment interfaces; the links from storage and CRDT metadata are the target design",
+      "title": "Component, gossip \u2014 as built for the SWIM node, the view, the wire codec and their use of the environment interfaces; the links from storage and OCC metadata are the target design",
       "nodes": [
         {
           "elementId": "g-join"
@@ -3304,15 +3502,15 @@
           ]
         },
         {
-          "elementId": "n-crdt",
+          "elementId": "n-occ",
           "related": [
             {
               "diagramId": "container",
-              "elementId": "c-crdt",
+              "elementId": "c-occ",
               "label": "Container view"
             },
             {
-              "diagramId": "component-crdt",
+              "diagramId": "component-occ",
               "label": "Component view"
             }
           ]
@@ -3741,38 +3939,47 @@
       }
     },
     {
-      "id": "component-crdt",
+      "id": "component-occ",
       "kind": "component",
-      "scopeId": "c-crdt",
+      "scopeId": "c-occ",
       "status": "mixed",
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, crdt \u2014 TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "title": "Component, occ \u2014 as built for the replicating node, the store, the discard record, the document, versions, version vectors, the clock, the encoding, quotas, the typed document and the Membership interface; the links from the object API, storage, the saga engine and to gossip are the target design",
       "nodes": [
         {
-          "elementId": "x-doc"
+          "elementId": "o-node"
         },
         {
-          "elementId": "x-pn"
+          "elementId": "o-membership"
         },
         {
-          "elementId": "x-orset"
+          "elementId": "o-meta"
         },
         {
-          "elementId": "x-lwwreg"
+          "elementId": "o-quota"
         },
         {
-          "elementId": "x-lwwset"
+          "elementId": "o-store"
         },
         {
-          "elementId": "x-hlc"
+          "elementId": "o-discard"
         },
         {
-          "elementId": "x-enc"
+          "elementId": "o-doc"
         },
         {
-          "elementId": "x-repl"
+          "elementId": "o-version"
+        },
+        {
+          "elementId": "o-vv"
+        },
+        {
+          "elementId": "o-hlc"
+        },
+        {
+          "elementId": "o-enc"
         },
         {
           "elementId": "n-gossip",
@@ -3839,43 +4046,70 @@
       ],
       "edges": [
         {
-          "relationshipId": "x-r1"
+          "relationshipId": "o-r1"
         },
         {
-          "relationshipId": "x-r2"
+          "relationshipId": "o-r2"
         },
         {
-          "relationshipId": "x-r3"
+          "relationshipId": "o-r3"
         },
         {
-          "relationshipId": "x-r4"
+          "relationshipId": "o-r4"
         },
         {
-          "relationshipId": "x-r5"
+          "relationshipId": "o-r5"
         },
         {
-          "relationshipId": "x-r6"
+          "relationshipId": "o-r6"
         },
         {
-          "relationshipId": "x-r7"
+          "relationshipId": "o-r7"
         },
         {
-          "relationshipId": "x-r8"
+          "relationshipId": "o-r8"
         },
         {
-          "relationshipId": "x-r9"
+          "relationshipId": "o-r9"
         },
         {
-          "relationshipId": "x-r10"
+          "relationshipId": "o-r10"
         },
         {
-          "relationshipId": "x-r11"
+          "relationshipId": "o-r11"
         },
         {
-          "relationshipId": "x-r12"
+          "relationshipId": "o-r12"
         },
         {
-          "relationshipId": "x-r13"
+          "relationshipId": "o-r13"
+        },
+        {
+          "relationshipId": "o-r14"
+        },
+        {
+          "relationshipId": "o-r15"
+        },
+        {
+          "relationshipId": "o-r16"
+        },
+        {
+          "relationshipId": "o-r17"
+        },
+        {
+          "relationshipId": "o-r18"
+        },
+        {
+          "relationshipId": "o-r19"
+        },
+        {
+          "relationshipId": "o-r20"
+        },
+        {
+          "relationshipId": "o-r21"
+        },
+        {
+          "relationshipId": "o-r22"
         }
       ],
       "legend": {
@@ -3884,7 +4118,7 @@
           {
             "id": "box",
             "label": "Component",
-            "description": "A part of the package that PLAN.md names",
+            "description": "A part of the package that PLAN.md names, or one the build added",
             "swatch": {
               "shape": "box",
               "tone": "default",
@@ -3941,7 +4175,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, saga \u2014 as built for the engine, the log, recovery, the migration workflow and the model cluster; the object API and the links to storage, Merkle and CRDT are the target design",
+      "title": "Component, saga \u2014 as built for the engine, the log, recovery, the migration workflow and the model cluster; the object API and the links to storage, Merkle and OCC metadata are the target design",
       "nodes": [
         {
           "elementId": "n-api",
@@ -4010,15 +4244,15 @@
           ]
         },
         {
-          "elementId": "n-crdt",
+          "elementId": "n-occ",
           "related": [
             {
               "diagramId": "container",
-              "elementId": "c-crdt",
+              "elementId": "c-occ",
               "label": "Container view"
             },
             {
-              "diagramId": "component-crdt",
+              "diagramId": "component-occ",
               "label": "Component view"
             }
           ]
@@ -4150,7 +4384,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, storage \u2014 as built for the chunk store, striping, manifest, placement and the node; the object API and the links to gossip, CRDT and Merkle are the target design",
+      "title": "Component, storage \u2014 as built for the chunk store, striping, manifest, placement and the node; the object API and the links to gossip, OCC metadata and Merkle are the target design",
       "nodes": [
         {
           "elementId": "n-api",
@@ -4212,15 +4446,15 @@
           ]
         },
         {
-          "elementId": "n-crdt",
+          "elementId": "n-occ",
           "related": [
             {
               "diagramId": "container",
-              "elementId": "c-crdt",
+              "elementId": "c-occ",
               "label": "Container view"
             },
             {
-              "diagramId": "component-crdt",
+              "diagramId": "component-occ",
               "label": "Component view"
             }
           ]

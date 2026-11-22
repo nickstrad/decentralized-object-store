@@ -20,7 +20,7 @@ flowchart TB
   end
   ERASURE["Erasure coding<br/>internal/erasure"]
   GOSSIP["Gossip membership<br/>internal/gossip"]
-  CRDT["CRDT metadata<br/>internal/crdt"]
+  OCC["OCC metadata<br/>internal/occ"]
   ENV["Environment interfaces<br/>internal/env"]
   API -->|1| PATHS
   PATHS -->|2| STRIPE
@@ -32,13 +32,13 @@ flowchart TB
   CHUNK -->|8| FORMAT
   CHUNK -->|9| ENV
   PATHS -->|10| MANIFEST
-  MANIFEST -->|11| CRDT
+  MANIFEST -->|11| OCC
   MERKLE -->|12| CHUNK
   STRIPE -->|13| FORMAT
   PATHS -->|14| PROTO
   PROTO -->|15| FORMAT
   classDef ext stroke-dasharray:4 3
-  class API,MERKLE,ERASURE,GOSSIP,CRDT,ENV ext
+  class API,MERKLE,ERASURE,GOSSIP,OCC,ENV ext
 ```
 
 Terminal rendering, in 4 parts. Each numbered relationship appears in exactly one part.
@@ -81,7 +81,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 └───────────────┘     └─────────────────┘
 
 ┌───────────────┐     ┌─────────────────┐
-│Object manifest├─11─►│  CRDT metadata  │
+│Object manifest├─11─►│   OCC metadata  │
 └───────────────┘     └─────────────────┘
 ```
 
@@ -137,7 +137,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 8 | Local chunk store | Shard file format | built | Header plus payload; SHA-256 verified on every write and read |
 | 9 | Local chunk store | Environment interfaces | built | Write then sync, verified read, list, delete (Disk) |
 | 10 | Put and get paths | Object manifest | built | PUT fills in and returns the manifest; GET takes each shard's node and checksum from it. Target: storing the manifest; tombstone manifest on delete |
-| 11 | Object manifest | CRDT metadata | target | Value of the key's LWW-Register |
+| 11 | Object manifest | OCC metadata | target | Stored as the one version of the object's manifest key (`PutManifest`, a conditional write) |
 | 12 | Merkle anti-entropy | Local chunk store | target | Repairs rotted or missing shards (Repairer). The merkle package is built over its own `Repairer` interface and a test chunk store; the chunk store is bound to it in Chunk 6 |
 | 13 | Object striping | Shard file format | built | Wraps each shard in a header on encode; checks header and checksum on decode |
 | 14 | Put and get paths | Shard request protocol | built | Encodes requests to peers; decodes requests it serves |

@@ -1,0 +1,5 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  DOC[Document, LWW merge] -->|11| VERSION[Version and record]
+  VERSION -->|13| VV[Version vectors]
+  DOC -->|12| ENC[Canonical encoding]
