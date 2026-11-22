@@ -918,3 +918,52 @@ their `storage:` prefix. `agent_work/adversarial/` still uses the old `storage.*
 | `go test -cover ./internal/storage ./internal/storage/httpapi` | 97.8%, 87.3% |
 | `agent_work/gates/canaries.sh '^partial-run$'` (host) | `canaries: 1 of 1 caught` |
 | `agent_work/06-integration/cluster-smoke.sh` (host) | `SMOKE: PASS`, exit 0 |
+
+## 12. Entity-tag list fix
+
+**What.** The independent harness (C31) found that `parseEntityTags` in
+`internal/storage/httpapi/http.go` split `If-Match` on every comma before reading quoted strings. RFC 9110
+8.8.3 allows a comma inside an entity-tag (`etagc` includes it). So the valid list `"a,b", "<current>"` got
+400 on object PUT, object DELETE, tag PUT and ACL PUT. The parser now makes one left-to-right pass. It skips
+OWS (SP/HTAB only) and reads either an empty element, `*`, or `[W/]"etagc*"`. It then skips OWS and needs
+a comma or the end of the field. Anything else is 400 (`storage.ErrInvalid`). `etagc` is accepted as
+0x21, 0x23–0x7E and obs-text 0x80–0xFF, the same byte set as before. `W/` is case-sensitive, and no
+whitespace is allowed between `W/` and the quote. `*` must be the only non-empty element.
+
+**Empty elements (RFC 9110 5.6.1), decided.** Empty elements are accepted and ignored: leading, trailing,
+doubled, or the whole field. No count limit is applied beyond the server's header-size limit. A present
+header never becomes an unconditional write. A field with only empty elements, or only weak tags, gives an
+empty strong list (`IfMatchList` true, no candidates), so the write gets 412. `*` with empty elements
+(`, * ,`) is treated as `*`.
+
+**Tests (commit 4cf432f, failing before the fix; fix in 28a05d0).**
+- `TestHTTPObjectAPIAgainstTheModel`: adds the harness's four reproductions: PUT `/b/k`,
+  PUT `/b/k?tag=color`, PUT `/b?acl=alice` and DELETE `/b/k`, each with `If-Match: "a,b", <current>`
+  (200/200/200/204). It also adds a non-matching `"a,<current>"` row (412). The test now tracks the current
+  ETag for each path, so tag and ACL rows use their own ETags.
+- `TestParseEntityTagsTable` (42 rows, through `export_test.go`'s `ParseEntityTags`): quoted commas;
+  several tags with OWS; weak validators, including a weak tag with a comma; `*` alone, in a list, and with
+  empty elements; empty, whitespace-only and all-empty fields; trailing comma; unterminated quotes, including
+  one holding a comma; unquoted tags; doubled quotes; two tags with no comma; SP, HTAB, control bytes and DEL
+  inside quotes (reject); obs-text (accept); lowercase `w/`; `W/` followed by a space; VT is not OWS. Each row
+  is also checked against the reference tokeniser.
+- `FuzzObjectAPI`: every header value is now compared with `referenceEntityTags`, an independent byte-level
+  state machine. They must agree on accept or reject, the strong-tag list and the star flag. A parser error
+  must also wrap `storage.ErrInvalid`. `mayApply` now uses the reference tokeniser to decide whether a
+  write may apply, instead of splitting on commas. Two aligned seeds cover quoted commas, weak tags with
+  commas, empty elements and two tags with no comma.
+
+**Commands (Docker unless marked host).**
+
+| Command | Result |
+|---|---|
+| `gofmt -l .` | empty |
+| `go vet ./...` | ok |
+| `go test ./internal/storage/... ./internal/node/... ./internal/noderuntime/... ./cmd/...` | ok |
+| same with `-race` | ok |
+| `go test -cover ./internal/storage/httpapi` | 87.8% |
+| `go test ./internal/storage/httpapi -run '^$' -fuzz '^FuzzObjectAPI$' -fuzztime 60s -fuzzminimizetime 5s` | PASS, 379,052 execs, 43 new interesting |
+| `agent_work/adversarial/06-integration/run-all.sh` (host) | `SUMMARY held=662 broken=0 setup_errors=0 elapsed_seconds=490`, exit 0; evidence restored afterwards with `git checkout -- agent_work/adversarial` |
+
+**Note.** The existing seed `"x", "@"` in `FuzzObjectAPI` has its fields misaligned, because each step
+needs four NUL-separated fields. That seed was left unchanged. The two new seeds use the correct layout.
