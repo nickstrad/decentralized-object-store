@@ -34,17 +34,17 @@ services:
     <<: *node
     hostname: node-a1
     command: ["go", "run", "./cmd/objnode", "-id", "node-a1:7946", "-region", "a", "-listen", ":7946", "-data", "/data", "-http", ":8080", "-k", "2", "-m", "1", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
-    ports: ["18081:8080"]
+    ports: ["127.0.0.1::8080"]
   node-b1:
     <<: *node
     hostname: node-b1
     command: ["go", "run", "./cmd/objnode", "-id", "node-b1:7946", "-region", "b", "-listen", ":7946", "-data", "/data", "-http", ":8080", "-k", "2", "-m", "1", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
-    ports: ["18082:8080"]
+    ports: ["127.0.0.1::8080"]
   node-c1:
     <<: *node
     hostname: node-c1
     command: ["go", "run", "./cmd/objnode", "-id", "node-c1:7946", "-region", "c", "-listen", ":7946", "-data", "/data", "-http", ":8080", "-k", "2", "-m", "1", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946"]
-    ports: ["18083:8080"]
+    ports: ["127.0.0.1::8080"]
 
 networks:
   cluster: {}
