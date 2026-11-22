@@ -360,6 +360,15 @@ func (h *harness) onCommitLoss(id env.NodeID, key string, v occ.Version) {
 		h.declared = append(h.declared, ver)
 		man := h.mans[ver]
 		if man == nil {
+			if rd, rerr := h.node(id).OCC().Reader(); rerr == nil {
+				if val, _, gerr := rd.Get(occ.ManifestKey(parts[0], parts[1])); gerr == nil {
+					if m, merr := manifestOf(val); merr == nil && m.Version.String() == ver {
+						man = m
+					}
+				}
+			}
+		}
+		if man == nil {
 			h.s.Fail(fmt.Errorf("%s declared version %s of %s/%s lost, a version no node ever committed", id, ver, parts[0], parts[1]))
 			return
 		}

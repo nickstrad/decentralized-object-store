@@ -78,7 +78,7 @@ func (n *Node) expectedAll(rd occ.Reader) map[string]map[string]expectedShard {
 				continue
 			}
 			if strings.HasPrefix(parts[2], tagAbsent) {
-				if rd.Record(k).Live() {
+				if parts[1] == "" && rd.Record(k).Live() {
 					n.noteAbsent(parts[2])
 				}
 				continue
@@ -354,7 +354,11 @@ func (n *Node) stateAbsent(man *storage.Manifest, stripe, idx int, verifiable in
 	if n.purged[man.Version] || n.dead(rd, id.BlobName()) || !n.liveVersion(rd, man) || n.statedAbsent(rd, id) {
 		return
 	}
-	if b, err := n.store.Store().GetBlob(id); err == nil && storage.BlobChecksum(b) == man.Stripes[stripe].Shards[idx].Checksum {
+	b, err := n.store.Store().GetBlob(id)
+	if err == nil && storage.BlobChecksum(b) == man.Stripes[stripe].Shards[idx].Checksum {
+		return
+	}
+	if err != nil && !isNotFound(err) && !isCorrupt(err) {
 		return
 	}
 	k := absentKey(man.Bucket, id, n.e.ID)
@@ -498,6 +502,11 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 		}
 		enc, err := storage.EncodeStripe(codec, man.Version, stripe, data)
 		if err != nil || storage.BlobChecksum(enc[es.idx]) != want[es.idx] || n.purged[man.Version] {
+			n.stats.RebuildFailures++
+			return
+		}
+		rd, err := n.occ.Reader()
+		if err != nil || n.dead(rd, name) || n.statedAbsent(rd, man.ShardID(es.stripe, es.idx)) {
 			n.stats.RebuildFailures++
 			return
 		}
