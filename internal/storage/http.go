@@ -158,16 +158,63 @@ func objectHeaders(w http.ResponseWriter, oi ObjectInfo) {
 	}
 }
 
+func parseEntityTags(v string) ([]string, bool, error) {
+	var strong []string
+	star := false
+	elements := 0
+	for _, el := range strings.Split(v, ",") {
+		el = strings.Trim(el, " \t")
+		if el == "" {
+			continue
+		}
+		elements++
+		if el == "*" {
+			star = true
+			continue
+		}
+		weak := strings.HasPrefix(el, "W/")
+		tag := strings.TrimPrefix(el, "W/")
+		if len(tag) < 2 || tag[0] != '"' || tag[len(tag)-1] != '"' {
+			return nil, false, fmt.Errorf("storage: entity-tag %q is not quoted: %w", el, ErrInvalid)
+		}
+		opaque := tag[1 : len(tag)-1]
+		for i := 0; i < len(opaque); i++ {
+			if c := opaque[i]; c == '"' || c < 0x21 || c == 0x7f {
+				return nil, false, fmt.Errorf("storage: entity-tag %q: %w", el, ErrInvalid)
+			}
+		}
+		if !weak {
+			strong = append(strong, opaque)
+		}
+	}
+	if star && elements > 1 {
+		return nil, false, fmt.Errorf("storage: * inside an entity-tag list %q: %w", v, ErrInvalid)
+	}
+	return strong, star, nil
+}
+
 func condition(r *http.Request) (Condition, error) {
 	var c Condition
-	if v := r.Header.Get("If-None-Match"); v != "" {
+	if vs, ok := r.Header["If-None-Match"]; ok {
+		v := strings.Join(vs, ",")
 		if strings.TrimSpace(v) != "*" {
 			return c, fmt.Errorf("storage: If-None-Match %q: only * is supported: %w", v, ErrInvalid)
 		}
 		c.IfNoneMatch = true
 	}
-	if v := r.Header.Get("If-Match"); v != "" {
-		c.IfMatch = strings.Trim(strings.TrimSpace(v), `"`)
+	if vs, ok := r.Header["If-Match"]; ok {
+		strong, star, err := parseEntityTags(strings.Join(vs, ","))
+		if err != nil {
+			return c, err
+		}
+		if star {
+			c.IfMatch = "*"
+		} else {
+			c.IfMatchList, c.IfMatchAny = true, strong
+		}
+	}
+	if c.IfNoneMatch && (c.IfMatch != "" || c.IfMatchList) {
+		return c, fmt.Errorf("storage: both If-Match and If-None-Match: %w", ErrInvalid)
 	}
 	return c, nil
 }

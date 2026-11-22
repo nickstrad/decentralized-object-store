@@ -119,25 +119,33 @@ func validObjectKey(key string) error {
 }
 
 func precondition(rd occ.Reader, key string, c storage.Condition) (occ.Precondition, error) {
+	ifMatch := c.IfMatch != "" || c.IfMatchList
 	switch {
-	case c.IfNoneMatch && c.IfMatch != "":
+	case c.IfNoneMatch && ifMatch:
 		return occ.Precondition{}, fmt.Errorf("node: both If-Match and If-None-Match: %w", storage.ErrInvalid)
 	case c.IfNoneMatch:
 		return occ.IfNoneMatch(), nil
-	case c.IfMatch == "*":
-		rec := rd.Record(key)
+	case !ifMatch:
+		return occ.Unconditional(), nil
+	}
+	rec := rd.Record(key)
+	if c.IfMatch == "*" {
 		if !rec.Live() {
 			return occ.Precondition{}, fmt.Errorf("node: if-match * on %q: %w", key, occ.ErrPreconditionFailed)
 		}
 		return occ.IfMatch(rec.ETag()), nil
-	case c.IfMatch != "":
-		e, err := occ.ParseETag(strings.Trim(c.IfMatch, `"`))
-		if err != nil {
-			return occ.Precondition{}, fmt.Errorf("node: if-match %q: %w", c.IfMatch, storage.ErrInvalid)
-		}
-		return occ.IfMatch(e), nil
 	}
-	return occ.Unconditional(), nil
+	tags := c.IfMatchAny
+	if c.IfMatch != "" {
+		tags = append(slices.Clone(tags), strings.Trim(c.IfMatch, `"`))
+	}
+	for _, t := range tags {
+		e, err := occ.ParseETag(t)
+		if err == nil && rec.Live() && e == rec.ETag() {
+			return occ.IfMatch(e), nil
+		}
+	}
+	return occ.Precondition{}, fmt.Errorf("node: if-match %q on %q: %w", tags, key, occ.ErrPreconditionFailed)
 }
 
 func info(bucket, key string, etag occ.ETag, rec objectRecord) storage.ObjectInfo {
