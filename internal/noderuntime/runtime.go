@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net"
+	"net/netip"
 	"os"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,27 +20,37 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/node"
 )
 
+var (
+	ErrPanicked       = errors.New("node: node loop panicked")
+	ErrOutcomeUnknown = errors.New("node: call abandoned after the node loop took it; outcome unknown")
+)
+
 const (
-	DefaultDatagramQueue = 1024
-	DefaultControlQueue  = 4096
-	DefaultMaxConns      = 256
-	DefaultIOTimeout     = 10 * time.Second
-	DefaultServeTimeout  = 30 * time.Second
+	DefaultResolveTimeout = 5 * time.Second
+	DefaultSendTimeout    = 100 * time.Millisecond
+	DefaultDatagramQueue  = 1024
+	DefaultControlQueue   = 4096
+	DefaultMaxConns       = 256
+	DefaultIOTimeout      = 10 * time.Second
+	DefaultServeTimeout   = 30 * time.Second
 )
 
 type RuntimeConfig struct {
-	ID            env.NodeID
-	Region        env.Region
-	Listen        string
-	DataDir       string
-	Node          node.Config
-	DatagramQueue int
-	ControlQueue  int
-	MaxConns      int
-	IOTimeout     time.Duration
-	ServeTimeout  time.Duration
-	NoNetwork     bool
-	Logf          func(format string, args ...any)
+	ID             env.NodeID
+	Region         env.Region
+	Listen         string
+	DataDir        string
+	Node           node.Config
+	DatagramQueue  int
+	ControlQueue   int
+	MaxConns       int
+	IOTimeout      time.Duration
+	ServeTimeout   time.Duration
+	NoNetwork      bool
+	ResolveTimeout time.Duration
+	SendTimeout    time.Duration
+	Lookup         func(ctx context.Context, host string) ([]netip.Addr, error)
+	Logf           func(format string, args ...any)
 }
 
 func (c RuntimeConfig) withDefaults() RuntimeConfig {
@@ -57,6 +69,17 @@ func (c RuntimeConfig) withDefaults() RuntimeConfig {
 	if c.ServeTimeout == 0 {
 		c.ServeTimeout = DefaultServeTimeout
 	}
+	if c.ResolveTimeout == 0 {
+		c.ResolveTimeout = DefaultResolveTimeout
+	}
+	if c.SendTimeout == 0 {
+		c.SendTimeout = DefaultSendTimeout
+	}
+	if c.Lookup == nil {
+		c.Lookup = func(ctx context.Context, host string) ([]netip.Addr, error) {
+			return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+		}
+	}
 	if c.Listen == "" && !c.NoNetwork {
 		if _, port, err := net.SplitHostPort(string(c.ID)); err == nil {
 			c.Listen = ":" + port
@@ -74,7 +97,7 @@ func (c RuntimeConfig) Validate() error {
 		return fmt.Errorf("node: runtime: region of %d bytes: %w", len(c.Region), node.ErrConfig)
 	case c.DataDir == "":
 		return fmt.Errorf("node: runtime: no data directory: %w", node.ErrConfig)
-	case c.DatagramQueue < 0 || c.ControlQueue < 1 || c.MaxConns < 1 || c.IOTimeout < 0 || c.ServeTimeout < 0:
+	case c.DatagramQueue < 0 || c.ControlQueue < 1 || c.MaxConns < 1 || c.IOTimeout < 0 || c.ServeTimeout < 0 || c.ResolveTimeout < 0 || c.SendTimeout < 0:
 		return fmt.Errorf("node: runtime: queue, connection or timeout bound out of range: %w", node.ErrConfig)
 	}
 	if !c.NoNetwork {
@@ -120,16 +143,26 @@ type Runtime struct {
 	dgrams  chan inboundDatagram
 	connSem chan struct{}
 
-	dropped   atomic.Uint64
-	refused   atomic.Uint64
-	badFrames atomic.Uint64
-	panicked  atomic.Bool
+	dropped    atomic.Uint64
+	refused    atomic.Uint64
+	badFrames  atomic.Uint64
+	panicked   atomic.Bool
+	abandoned  atomic.Uint64
+	unresolved atomic.Uint64
 
-	nd      *node.Node
-	timers  map[*realTimer]struct{}
-	pending map[uint64]bool
-	nextID  uint64
-	addrs   map[env.NodeID]*net.UDPAddr
+	halted   chan struct{}
+	haltOnce sync.Once
+	failure  error
+
+	startHook   func()
+	dequeueHook func(op string, left <-chan struct{})
+
+	resolving map[env.NodeID]bool
+	nd        *node.Node
+	timers    map[*realTimer]struct{}
+	pending   map[uint64]bool
+	nextID    uint64
+	addrs     map[env.NodeID]*net.UDPAddr
 }
 
 var canaryUntrackedGoroutine chan struct{}
@@ -149,7 +182,8 @@ func NewRuntime(cfg RuntimeConfig) (*Runtime, error) {
 		conns: map[net.Conn]struct{}{}, ctx: ctx, cancel: cancel,
 		ctrl: make(chan func(), cfg.ControlQueue), dgrams: make(chan inboundDatagram, cfg.DatagramQueue),
 		connSem: make(chan struct{}, cfg.MaxConns), timers: map[*realTimer]struct{}{},
-		pending: map[uint64]bool{}, addrs: map[env.NodeID]*net.UDPAddr{},
+		pending: map[uint64]bool{}, addrs: map[env.NodeID]*net.UDPAddr{}, resolving: map[env.NodeID]bool{},
+		halted: make(chan struct{}),
 	}, nil
 }
 
@@ -200,6 +234,9 @@ func (rt *Runtime) Start(ctx context.Context) error {
 	}
 	rt.state = stateStarting
 	rt.mu.Unlock()
+	if rt.startHook != nil {
+		rt.startHook()
+	}
 	if err := ctx.Err(); err != nil {
 		return errors.Join(err, rt.Close())
 	}
@@ -274,12 +311,39 @@ func (rt *Runtime) Start(ctx context.Context) error {
 	return nil
 }
 
+func (rt *Runtime) halt() { rt.haltOnce.Do(func() { close(rt.halted) }) }
+
+func (rt *Runtime) closeSockets() []error {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	var errs []error
+	if rt.udp != nil {
+		errs = append(errs, rt.udp.Close())
+	}
+	if rt.tcp != nil {
+		errs = append(errs, rt.tcp.Close())
+	}
+	for c := range rt.conns {
+		errs = append(errs, c.Close())
+	}
+	return errs
+}
+
 func (rt *Runtime) loop() {
 	defer func() {
 		if r := recover(); r != nil {
+			rt.mu.Lock()
+			rt.failure = fmt.Errorf("node %s: %v: %w", rt.cfg.ID, r, ErrPanicked)
+			rt.mu.Unlock()
 			rt.panicked.Store(true)
 			rt.logf("node %s: stopped after a panic on the node loop: %v", rt.cfg.ID, r)
 			rt.cancel()
+			for _, err := range rt.closeSockets() {
+				if err != nil && !errors.Is(err, net.ErrClosed) {
+					rt.logf("node %s: close after panic: %v", rt.cfg.ID, err)
+				}
+			}
+			rt.halt()
 		}
 	}()
 	for {
@@ -445,16 +509,54 @@ func (t *realNet) Send(to env.NodeID, msg []byte) error {
 	}
 	addr, ok := rt.addrs[to]
 	if !ok {
-		addr, err = net.ResolveUDPAddr("udp", string(to))
-		if err != nil {
-			return fmt.Errorf("node: send to %s: %v: %w", to, err, env.ErrUnreachable)
+		ap, perr := netip.ParseAddrPort(string(to))
+		if perr != nil {
+			rt.unresolved.Add(1)
+			if err := rt.resolve(to); err != nil {
+				return err
+			}
+			return fmt.Errorf("node: send to %s: address not resolved yet, datagram dropped: %w", to, env.ErrUnreachable)
 		}
+		addr = net.UDPAddrFromAddrPort(ap)
 		rt.addrs[to] = addr
+	}
+	if err := rt.udp.SetWriteDeadline(time.Now().Add(rt.cfg.SendTimeout)); err != nil {
+		return fmt.Errorf("node: send to %s: %v: %w", to, err, env.ErrUnreachable)
 	}
 	if _, err := rt.udp.WriteToUDP(b, addr); err != nil {
 		delete(rt.addrs, to)
 		return fmt.Errorf("node: send to %s: %v: %w", to, err, env.ErrUnreachable)
 	}
+	return nil
+}
+
+func (rt *Runtime) resolve(to env.NodeID) error {
+	if rt.resolving[to] {
+		return nil
+	}
+	host, port, err := net.SplitHostPort(string(to))
+	if err != nil {
+		return fmt.Errorf("node: send to %s: %v: %w", to, err, env.ErrUnreachable)
+	}
+	p, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		return fmt.Errorf("node: send to %s: port: %v: %w", to, err, env.ErrUnreachable)
+	}
+	rt.resolving[to] = true
+	lookup, timeout := rt.cfg.Lookup, rt.cfg.ResolveTimeout
+	rt.wg.Go(func() {
+		ctx, cancel := context.WithTimeout(rt.ctx, timeout)
+		defer cancel()
+		ips, err := lookup(ctx, host)
+		rt.post(func() {
+			delete(rt.resolving, to)
+			if err != nil || len(ips) == 0 {
+				rt.logf("node %s: resolve %s: %v", rt.cfg.ID, to, err)
+				return
+			}
+			rt.addrs[to] = net.UDPAddrFromAddrPort(netip.AddrPortFrom(ips[0].Unmap(), uint16(p)))
+		})
+	})
 	return nil
 }
 
@@ -477,7 +579,19 @@ func (t *realNet) Request(to env.NodeID, req []byte, timeout time.Duration, cb f
 	tm = rt.afterFunc(timeout, func() {
 		complete(nil, fmt.Errorf("node: request %d to %s after %v: %w", id, to, timeout, env.ErrTimeout))
 	})
+	if timeout <= 0 {
+		rt.afterFunc(0, func() {
+			cb(nil, fmt.Errorf("node: request to %s with timeout %v: %w", to, timeout, env.ErrInvalidArgument))
+		})
+		return
+	}
 	if to == rt.cfg.ID {
+		if len(req) > node.MaxFrame {
+			rt.afterFunc(0, func() {
+				cb(nil, fmt.Errorf("node: request of %d bytes over %d: %w", len(req), node.MaxFrame, env.ErrTooLarge))
+			})
+			return
+		}
 		body := slices.Clone(req)
 		rt.afterFunc(0, func() {
 			rt.nd.OnRequest(to, body, func(resp []byte, err error) {
@@ -579,18 +693,8 @@ func (rt *Runtime) Shutdown(ctx context.Context) error {
 		}
 	}
 	rt.cancel()
-	rt.mu.Lock()
-	var errs []error
-	if rt.udp != nil {
-		errs = append(errs, rt.udp.Close())
-	}
-	if rt.tcp != nil {
-		errs = append(errs, rt.tcp.Close())
-	}
-	for c := range rt.conns {
-		errs = append(errs, c.Close())
-	}
-	rt.mu.Unlock()
+	rt.halt()
+	errs := rt.closeSockets()
 	rt.wg.Wait()
 	for tm := range rt.timers {
 		if tm.t != nil {
@@ -608,7 +712,17 @@ func (rt *Runtime) Shutdown(ctx context.Context) error {
 
 func (rt *Runtime) Close() error { return rt.Shutdown(context.Background()) }
 
-func (rt *Runtime) Dropped() uint64   { return rt.dropped.Load() }
-func (rt *Runtime) Refused() uint64   { return rt.refused.Load() }
-func (rt *Runtime) BadFrames() uint64 { return rt.badFrames.Load() }
-func (rt *Runtime) Panicked() bool    { return rt.panicked.Load() }
+func (rt *Runtime) Dropped() uint64    { return rt.dropped.Load() }
+func (rt *Runtime) Refused() uint64    { return rt.refused.Load() }
+func (rt *Runtime) BadFrames() uint64  { return rt.badFrames.Load() }
+func (rt *Runtime) Panicked() bool     { return rt.panicked.Load() }
+func (rt *Runtime) Abandoned() uint64  { return rt.abandoned.Load() }
+func (rt *Runtime) Unresolved() uint64 { return rt.unresolved.Load() }
+
+func (rt *Runtime) Done() <-chan struct{} { return rt.halted }
+
+func (rt *Runtime) Err() error {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.failure
+}

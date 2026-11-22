@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickstrad/decentralized-object-store/internal/node"
+	"github.com/nickstrad/decentralized-object-store/internal/noderuntime"
 	"github.com/nickstrad/decentralized-object-store/internal/testutil/leakcheck"
 )
 
@@ -127,7 +129,7 @@ func TestServeAndShutdownOnCancel(t *testing.T) {
 	done := make(chan int, 1)
 	var stderr safeBuffer
 	go func() {
-		done <- run(ctx, []string{"-id", id, "-region", "a", "-data", t.TempDir(), "-http", "127.0.0.1:0", "-k", "1", "-m", "0", "-stripe", "1024"}, &stderr, func(a string) { ready <- a })
+		done <- run(ctx, []string{"-id", id, "-region", "a", "-data", t.TempDir(), "-http", "127.0.0.1:0", "-k", "1", "-m", "0", "-stripe", "1024"}, &stderr, func(a string, _ *noderuntime.Runtime) { ready <- a })
 	}()
 	var addr string
 	select {
@@ -152,6 +154,28 @@ func TestServeAndShutdownOnCancel(t *testing.T) {
 	var e2 safeBuffer
 	if code := run(context.Background(), []string{"-id", id, "-data", t.TempDir(), "-http", "256.1.1.1:1"}, &e2, nil); code != 1 {
 		t.Fatalf("an unusable http address exited %d", code)
+	}
+}
+
+func TestServeExitsNonZeroWhenTheNodeLoopPanics(t *testing.T) {
+	var stderr safeBuffer
+	done := make(chan int, 1)
+	go func() {
+		done <- run(context.Background(), []string{"-id", freePort(t), "-region", "a", "-data", t.TempDir(), "-http", "127.0.0.1:0", "-k", "1", "-m", "0", "-stripe", "1024"}, &stderr,
+			func(_ string, rt *noderuntime.Runtime) {
+				go func() { _ = rt.Inspect(context.Background(), func(*node.Node) { panic("injected") }) }()
+			})
+	}()
+	select {
+	case code := <-done:
+		if code != 1 {
+			t.Fatalf("objnode exited %d after its node loop panicked, want 1: %s", code, stderr.String())
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatalf("objnode kept running after its node loop panicked: %s", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "panic") {
+		t.Fatalf("no panic in the log: %s", stderr.String())
 	}
 }
 

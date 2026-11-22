@@ -128,7 +128,7 @@ func (o options) configs(logf func(string, ...any)) (noderuntime.RuntimeConfig, 
 	return cfg, storage.Limits{MaxObjectSize: o.MaxObject}, nil
 }
 
-func serve(ctx context.Context, o options, logger *log.Logger, ready func(httpAddr string)) error {
+func serve(ctx context.Context, o options, logger *log.Logger, ready func(httpAddr string, rt *noderuntime.Runtime)) error {
 	cfg, limits, err := o.configs(logger.Printf)
 	if err != nil {
 		return err
@@ -146,16 +146,19 @@ func serve(ctx context.Context, o options, logger *log.Logger, ready func(httpAd
 	}
 	logger.Printf("objnode: node %s in region %q serving http on %s", cfg.ID, cfg.Region, srv.Addr())
 	if ready != nil {
-		ready(srv.Addr())
+		ready(srv.Addr(), rt)
 	}
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+	case <-rt.Done():
+	}
 	logger.Printf("objnode: shutting down within %v", o.ShutdownTimeout)
 	sctx, cancel := context.WithTimeout(context.Background(), o.ShutdownTimeout)
 	defer cancel()
-	return errors.Join(srv.Shutdown(sctx), rt.Shutdown(sctx))
+	return errors.Join(rt.Err(), srv.Shutdown(sctx), rt.Shutdown(sctx))
 }
 
-func run(ctx context.Context, args []string, stderr io.Writer, ready func(string)) int {
+func run(ctx context.Context, args []string, stderr io.Writer, ready func(string, *noderuntime.Runtime)) int {
 	o, err := parse(args, stderr)
 	if errors.Is(err, flag.ErrHelp) {
 		return 0

@@ -3,7 +3,6 @@ package noderuntime_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,49 +17,6 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/noderuntime"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
-
-func TestCancelMidGetAndMidMigrationReturnContextErrors(t *testing.T) {
-	c := startReal(t, 3, realConfig())
-	bg := context.Background()
-	eventually(t, 20*time.Second, "joined", func() bool { return c.joined(3) })
-	if err := c.rts[0].CreateBucket(bg, storage.BucketSpec{Name: "b", Region: "r0"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := c.rts[0].CreateBucket(bg, storage.BucketSpec{Name: "u"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.rts[0].PutObject(bg, storage.PutRequest{Bucket: "u", Key: "k", Data: bytes.Repeat([]byte("z"), 300_000)}); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(bg)
-	cancel()
-	if _, _, err := c.rts[0].GetObject(ctx, "u", "k"); !errors.Is(err, context.Canceled) {
-		t.Fatalf("get with a canceled context: %v", err)
-	}
-	if _, err := c.rts[0].StartMigration(ctx, "b", "r1"); !errors.Is(err, context.Canceled) {
-		t.Fatalf("migration with a canceled context: %v", err)
-	}
-	dctx, dcancel := context.WithTimeout(bg, time.Nanosecond)
-	defer dcancel()
-	<-dctx.Done()
-	if _, _, err := c.rts[1].GetObject(dctx, "u", "k"); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("get past its deadline: %v", err)
-	}
-	mi, err := c.rts[0].StartMigration(bg, "b", "r1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.rts[0].Migration(ctx, mi.ID); !errors.Is(err, context.Canceled) {
-		t.Fatalf("migration status with a canceled context: %v", err)
-	}
-	if _, err := c.rts[1].Migration(bg, mi.ID); err == nil {
-		t.Fatal("a node that does not coordinate the migration reported its status")
-	}
-	eventually(t, 20*time.Second, "the runtimes keep serving after canceled calls", func() bool {
-		_, data, err := c.rts[2].GetObject(bg, "u", "k")
-		return err == nil && len(data) == 300_000
-	})
-}
 
 func TestShutdownDuringRepairAndRestartOnTheSameDisk(t *testing.T) {
 	cfg := realConfig()

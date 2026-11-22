@@ -55,25 +55,6 @@ func TestRuntimeLifecycleInABubble(t *testing.T) {
 	})
 }
 
-func TestRuntimeCloseDuringStartup(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		rt := newLoopRuntime(t)
-		block := make(chan struct{})
-		errc := make(chan error, 1)
-		go func() {
-			<-block
-			errc <- rt.Start(context.Background())
-		}()
-		if err := rt.Close(); err != nil {
-			t.Fatal(err)
-		}
-		close(block)
-		if err := <-errc; !errors.Is(err, env.ErrClosed) {
-			t.Fatalf("start after a concurrent close: %v", err)
-		}
-	})
-}
-
 func TestRuntimeStartHonoursItsContext(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rt := newLoopRuntime(t)

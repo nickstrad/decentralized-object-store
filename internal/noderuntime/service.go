@@ -2,8 +2,10 @@ package noderuntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
+	"sync/atomic"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/node"
@@ -14,6 +16,14 @@ type result[T any] struct {
 	v   T
 	err error
 }
+
+const (
+	callQueued int32 = iota
+	callRunning
+	callCanceled
+	callDelivered
+	callLeft
+)
 
 func call[T any](ctx context.Context, rt *Runtime, op string, fn func(n *node.Node, done func(T, error))) (T, error) {
 	var zero T
@@ -27,21 +37,48 @@ func call[T any](ctx context.Context, rt *Runtime, op string, fn func(n *node.No
 	default:
 		return zero, fmt.Errorf("node: %s on %s: %w", op, rt.cfg.ID, node.ErrNotReady)
 	}
+	if err := ctx.Err(); err != nil {
+		return zero, fmt.Errorf("node: %s on %s: not applied: %w", op, rt.cfg.ID, err)
+	}
+	var st atomic.Int32
+	left := make(chan struct{})
 	ch := make(chan result[T], 1)
 	f := func() {
+		if !st.CompareAndSwap(callQueued, callRunning) {
+			return
+		}
+		if h := rt.dequeueHook; h != nil {
+			h(op, left)
+		}
 		once := false
 		fn(rt.nd, func(v T, err error) {
 			if once {
 				return
 			}
 			once = true
-			ch <- result[T]{v: v, err: err}
+			if st.CompareAndSwap(callRunning, callDelivered) {
+				ch <- result[T]{v: v, err: err}
+				return
+			}
+			rt.abandoned.Add(1)
+			rt.logf("node %s: %s finished after its caller left: err=%v", rt.cfg.ID, op, err)
 		})
+	}
+	abandon := func(cause error) (T, error) {
+		if st.CompareAndSwap(callQueued, callCanceled) {
+			return zero, fmt.Errorf("node: %s on %s: not applied: %w", op, rt.cfg.ID, cause)
+		}
+		if st.CompareAndSwap(callRunning, callLeft) {
+			close(left)
+			return zero, fmt.Errorf("node: %s on %s: %w", op, rt.cfg.ID, errors.Join(ErrOutcomeUnknown, cause))
+		}
+		r := <-ch
+		return r.v, r.err
 	}
 	select {
 	case rt.ctrl <- f:
 	case <-ctx.Done():
-		return zero, fmt.Errorf("node: %s on %s: %w", op, rt.cfg.ID, ctx.Err())
+		return zero, fmt.Errorf("node: %s on %s: not applied: %w", op, rt.cfg.ID, ctx.Err())
 	case <-rt.ctx.Done():
 		return zero, fmt.Errorf("node: %s on %s: %w", op, rt.cfg.ID, env.ErrClosed)
 	}
@@ -49,9 +86,13 @@ func call[T any](ctx context.Context, rt *Runtime, op string, fn func(n *node.No
 	case r := <-ch:
 		return r.v, r.err
 	case <-ctx.Done():
-		return zero, fmt.Errorf("node: %s on %s: %w", op, rt.cfg.ID, ctx.Err())
+		return abandon(ctx.Err())
 	case <-rt.ctx.Done():
-		return zero, fmt.Errorf("node: %s on %s: %w", op, rt.cfg.ID, env.ErrClosed)
+		v, err := abandon(env.ErrClosed)
+		if err != nil && !errors.Is(err, env.ErrClosed) {
+			err = errors.Join(err, env.ErrClosed)
+		}
+		return v, err
 	}
 }
 
@@ -60,6 +101,11 @@ func syncCall[T any](ctx context.Context, rt *Runtime, op string, fn func(n *nod
 }
 
 var _ storage.Service = (*Runtime)(nil)
+
+func (rt *Runtime) Inspect(ctx context.Context, fn func(*node.Node)) error {
+	_, err := syncCall(ctx, rt, "inspect", func(n *node.Node) (struct{}, error) { fn(n); return struct{}{}, nil })
+	return err
+}
 
 func (rt *Runtime) CreateBucket(ctx context.Context, spec storage.BucketSpec) error {
 	_, err := syncCall(ctx, rt, "create bucket", func(n *node.Node) (struct{}, error) { return struct{}{}, n.CreateBucket(spec) })
@@ -141,6 +187,8 @@ func (rt *Runtime) Health(ctx context.Context) (storage.Health, error) {
 		storage.Counter{Name: "datagrams_dropped", Value: rt.Dropped()},
 		storage.Counter{Name: "connections_refused", Value: rt.Refused()},
 		storage.Counter{Name: "bad_frames", Value: rt.BadFrames()},
+		storage.Counter{Name: "abandoned_calls", Value: rt.Abandoned()},
+		storage.Counter{Name: "unresolved_sends", Value: rt.Unresolved()},
 		storage.Counter{Name: "goroutines", Value: uint64(runtime.NumGoroutine())},
 		storage.Counter{Name: "heap_alloc_bytes", Value: ms.HeapAlloc},
 	)
