@@ -1,0 +1,7 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph LR
+  SIM[Model cluster] -->|13| STEPS[Step interfaces]
+  SIM -->|14| ORCH[Orchestrator]
+  SIM -->|15| WORKFLOW[Bucket-migration workflow]
+  SIM -->|16| ENV[internal/env]
+  SIM -->|17| DST[DST harness]

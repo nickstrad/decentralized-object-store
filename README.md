@@ -14,10 +14,10 @@ is `pgregory.net/rapid`, restricted to test files and checked by a gate.
 
 ## Current status
 
-The foundation tooling, deterministic simulator, and Reed-Solomon erasure coding
-with the local chunk store are built, along with chapters 1 and 3 of the book.
-Each remaining building block lands in its own chunk together with a book
-chapter.
+The foundation tooling, deterministic simulator, Reed-Solomon erasure coding
+with the local chunk store, and the Saga engine with bucket migration are built,
+along with chapters 1, 3, and 6 of the book. Each remaining building block lands
+in its own chunk together with a book chapter.
 
 | Building block | Status | Scope |
 | --- | --- | --- |
@@ -27,7 +27,7 @@ chapter.
 | Reed-Solomon erasure coding | Built | GF(2^8) Cauchy codec (`internal/erasure`, 4+2 default), checksummed chunk store, striping, manifests, region-aware placement, and striped PUT/GET node (`internal/storage`) |
 | Merkle-tree anti-entropy | Planned | Tree diffing and background repair |
 | OCC metadata | Planned | ETags, conditional writes, version vectors to detect concurrency, and last-writer-wins with every discarded write counted and logged |
-| Sagas | Planned | Multi-step bucket migration |
+| Sagas | Built | Compensating saga engine, checksummed log, crash recovery, and five-step bucket migration (`internal/saga`), plus model cluster and failure-point matrix runner (`internal/saga/sagasim`) |
 | Integration, E2E, and book | Planned | Full-cluster integration, end-to-end suite, and finished book |
 
 ## Working through Docker
@@ -100,8 +100,9 @@ the owning gate to go red for the right reason.
 - **The Book:** [book/manifest.json](book/manifest.json) is the table of
   contents; chapters live in `book/chapters/`. Published chapters: Chapter 1,
   [Deterministic Simulation Testing](book/chapters/01-deterministic-simulation.md),
-  and Chapter 3,
-  [Reed-Solomon Erasure Coding](book/chapters/03-reed-solomon-erasure-coding.md).
+  Chapter 3,
+  [Reed-Solomon Erasure Coding](book/chapters/03-reed-solomon-erasure-coding.md),
+  and Chapter 6, [Sagas](book/chapters/06-sagas.md).
 - **C4 diagrams:** [docs/c4/README.md](docs/c4/README.md) holds the C4
   architecture diagrams. They show the target design until each part is built.
 - **Plan and specification:** [PLAN.md](PLAN.md) is the full build and testing

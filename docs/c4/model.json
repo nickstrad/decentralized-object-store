@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "objstore",
   "title": "Decentralized Object Store & Sync Engine — target architecture, as built where landed",
-  "revision": "as-built-erasure-2026-11-21",
+  "revision": "as-built-saga-2026-11-22",
   "defaultDiagramId": "context",
   "model": {
     "elements": [
@@ -242,11 +242,13 @@
         "parentId": "store",
         "containerType": "application",
         "name": "Saga engine (internal/saga)",
-        "description": "Durable Saga orchestrator, log, recovery; the bucket-migration workflow definition.",
+        "description": "Durable saga engine: orchestrator, checksummed log, recovery and retry policy; the five-step bucket-migration workflow, written against the MigrationOps interface; a model cluster (internal/saga/sagasim) that stands in for the real stores in tests.",
         "technology": "Go, sans-IO state machine",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
-        "plannedNotes": [],
+        "plannedNotes": [
+          "The migration steps run only against the model cluster. MigrationOps is bound to the storage, Merkle and metadata components in the integration chunk (Chunk 6)."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -668,9 +670,9 @@
         "kind": "component",
         "parentId": "c-saga",
         "name": "Orchestrator",
-        "description": "Durable orchestrator: bounded retry with clock-driven backoff; compensations in reverse order, retried until they succeed; idempotency keys (saga ID + step).",
+        "description": "saga.Engine (engine.go) and Policy (policy.go). Single-threaded. Every record is appended and synced before the engine acts on it. Steps before the pivot retry up to MaxAttempts with clock-driven backoff and jitter, then compensate in reverse order; the pivot aborts only on ErrPermanent; later steps and compensations retry until they succeed. Each call carries the idempotency key (saga ID, step).",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -683,9 +685,9 @@
         "kind": "component",
         "parentId": "c-saga",
         "name": "Saga log",
-        "description": "Append-only, checksummed log on env.Disk.",
+        "description": "Record format of the per-saga log blob (log.go): append-only frames with a magic byte, a length and two CRC-32C checksums. AppendRecord encodes; DecodeLog returns the valid prefix, reads a strict prefix of a frame as a torn tail and anything else wrong as ErrLogCorrupt. This code does no I/O: the orchestrator and recovery make the env.Disk calls.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -698,9 +700,9 @@
         "kind": "component",
         "parentId": "c-saga",
         "name": "Recovery",
-        "description": "Resumes or compensates from any log prefix.",
+        "description": "Engine.Recover (engine.go) and the pure Resume state machine (resume.go). Reads each log, truncates a torn tail before anything is appended, validates every transition and plans the next action: run a step, abort, compensate or end. A corrupt log is left as found and reported.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -713,9 +715,9 @@
         "kind": "component",
         "parentId": "c-saga",
         "name": "Bucket-migration workflow",
-        "description": "Allocate target, copy shards, verify Merkle root, flip routing pointer (the pivot), delete source.",
+        "description": "saga.Migration (migration.go): allocate, copy, verify, flip (the pivot), delete-source. delete-source reads the merged pointer, seals the source, runs a catch-up copy and a second root comparison, retires the source and then promotes the target; a migration that lost to another one cleans up its own target instead.",
         "technology": "Go",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
         "plannedNotes": [],
         "docIds": [],
@@ -728,11 +730,30 @@
         "kind": "component",
         "parentId": "c-saga",
         "name": "Step interfaces",
-        "description": "Small step interfaces the workflow is defined against; bound to the real components in Chunk 6.",
+        "description": "MigrationOps (migration.go): the five small callback-style interfaces Allocator, Copier, Verifier, Router and Retirer that the workflow is written against.",
         "technology": "Go interfaces",
-        "status": "planned",
+        "status": "existing",
         "tags": [],
-        "plannedNotes": [],
+        "plannedNotes": [
+          "Only the model cluster implements MigrationOps so far. It is bound to the storage, Merkle and metadata components in Chunk 6."
+        ],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ]
+      },
+      {
+        "id": "s-sim",
+        "kind": "component",
+        "parentId": "c-saga",
+        "name": "Model cluster (internal/saga/sagasim)",
+        "description": "Test-support package. Model stores, a coordinator process that hosts the Engine, and a writing client, all as simulator nodes; sagasim.Ops implements MigrationOps over env.Transport. It also exports the 78-cell failure-point matrix runner (Harness, Cells, Run) and the nemesis and duel scenario drivers, so the same runs can be repeated on real components.",
+        "technology": "Go",
+        "status": "existing",
+        "tags": [],
+        "plannedNotes": [
+          "Added by the build; PLAN.md does not name it. It stands in for the storage, Merkle and metadata components until Chunk 6."
+        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -911,9 +932,9 @@
         "parentId": "store",
         "containerType": "application",
         "name": "Saga engine (internal/saga)",
-        "description": "The same package as element c-saga, shown as a neighbour in the component views of other packages. Durable Saga orchestrator, log, recovery; the bucket-migration workflow definition.",
+        "description": "The same package as element c-saga, shown as a neighbour in the component views of other packages. Durable saga engine: orchestrator, checksummed log, recovery and retry policy; the five-step bucket-migration workflow, written against the MigrationOps interface; a model cluster (internal/saga/sagasim) that stands in for the real stores in tests.",
         "technology": "Go, sans-IO state machine",
-        "status": "planned",
+        "status": "existing",
         "tags": [
           "external",
           "neighbour"
@@ -1468,7 +1489,7 @@
         "sourceId": "c-saga",
         "targetId": "c-env",
         "label": "Acts only through Clock, Rand, Transport, Disk",
-        "status": "planned",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2065,8 +2086,8 @@
         "id": "s-r2",
         "sourceId": "s-orch",
         "targetId": "s-workflow",
-        "label": "Runs steps; bounded retry with backoff; compensates in reverse order",
-        "status": "planned",
+        "label": "Runs the steps of a registered definition: bounded retry with backoff before the pivot, compensation in reverse order",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2078,8 +2099,8 @@
         "id": "s-r3",
         "sourceId": "s-orch",
         "targetId": "s-log",
-        "label": "Writes and syncs intent before a step acts",
-        "status": "planned",
+        "label": "Encodes each record; the record is appended and synced before the step or compensation acts",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2091,8 +2112,8 @@
         "id": "s-r4",
         "sourceId": "s-recovery",
         "targetId": "s-log",
-        "label": "Reads any log prefix",
-        "status": "planned",
+        "label": "Decodes the valid prefix of each log; tells a torn tail from corruption",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2104,8 +2125,8 @@
         "id": "s-r5",
         "sourceId": "s-recovery",
         "targetId": "s-orch",
-        "label": "Resumes or compensates",
-        "status": "planned",
+        "label": "Hands over the recovered snapshot; the orchestrator resumes or compensates from it",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2117,8 +2138,8 @@
         "id": "s-r6",
         "sourceId": "s-workflow",
         "targetId": "s-steps",
-        "label": "Allocate, copy, verify, flip pointer (pivot), delete source",
-        "status": "planned",
+        "label": "Claim, copy, root, flip pointer (pivot), seal, retire, promote; unclaim and discard to compensate",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2128,11 +2149,11 @@
       },
       {
         "id": "s-r7",
-        "sourceId": "s-log",
+        "sourceId": "s-recovery",
         "targetId": "n-env",
-        "label": "Append-only checksummed log",
-        "technology": "Disk",
-        "status": "planned",
+        "label": "Lists and reads logs, truncates a torn tail, deletes an empty log; retry timer for an unreadable log",
+        "technology": "Disk, Clock, Rand",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2143,9 +2164,9 @@
         "id": "s-r8",
         "sourceId": "s-orch",
         "targetId": "n-env",
-        "label": "Backoff timers",
-        "technology": "Clock",
-        "status": "planned",
+        "label": "Appends and syncs records; step timeout and backoff timers; jitter",
+        "technology": "Disk, Clock, Rand",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2184,6 +2205,84 @@
         "targetId": "n-crdt",
         "label": "Flip routing pointer (LWW-Register)",
         "status": "planned",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "s-r12",
+        "sourceId": "s-orch",
+        "targetId": "s-recovery",
+        "label": "Checks each record against the same state machine before writing it, and takes its next action from it",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "s-r13",
+        "sourceId": "s-sim",
+        "targetId": "s-steps",
+        "label": "Implements MigrationOps over the model stores (sagasim.Ops)",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go interface implementation"
+      },
+      {
+        "id": "s-r14",
+        "sourceId": "s-sim",
+        "targetId": "s-orch",
+        "label": "Its coordinator process hosts the Engine; the matrix runner freezes it at a chosen record through Config.Hook",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "s-r15",
+        "sourceId": "s-sim",
+        "targetId": "s-workflow",
+        "label": "Registers the migration definition; the matrix runner wraps its steps to inject failures",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Go, in-process"
+      },
+      {
+        "id": "s-r16",
+        "sourceId": "s-sim",
+        "targetId": "n-env",
+        "label": "Requests between coordinator, stores and client; each store's state blob; client and reload retry timers",
+        "status": "existing",
+        "plannedNotes": [],
+        "docIds": [],
+        "sourceIds": [
+          "plan"
+        ],
+        "technology": "Transport, Disk, Clock, Rand"
+      },
+      {
+        "id": "s-r17",
+        "sourceId": "s-sim",
+        "targetId": "dst",
+        "label": "Builds the cluster as simulated nodes; crashes, torn crashes, the nemesis and invariants",
+        "status": "existing",
         "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
@@ -2518,7 +2617,7 @@
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, domain view — as built for erasure coding and the storage engine; the rest is the target design",
+      "title": "Container, domain view — as built for erasure coding, the storage engine and the saga engine; the rest is the target design",
       "nodes": [
         {
           "elementId": "api-client"
@@ -2679,7 +2778,7 @@
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, runtime and environment view — as built for the simulator, the environment interfaces and the storage engine; the rest is the target design",
+      "title": "Container, runtime and environment view — as built for the simulator, the environment interfaces, the storage engine and the saga engine; the rest is the target design",
       "nodes": [
         {
           "elementId": "operator"
@@ -3479,7 +3578,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, saga — TARGET architecture, designed 2026-11-21, awaiting Nick's buy-in",
+      "title": "Component, saga — as built for the engine, the log, recovery, the migration workflow and the model cluster; the object API and the links to storage, Merkle and CRDT are the target design",
       "nodes": [
         {
           "elementId": "n-api",
@@ -3505,6 +3604,9 @@
         },
         {
           "elementId": "s-steps"
+        },
+        {
+          "elementId": "s-sim"
         },
         {
           "elementId": "n-env",
@@ -3557,6 +3659,16 @@
               "label": "Component view"
             }
           ]
+        },
+        {
+          "elementId": "dst",
+          "related": [
+            {
+              "diagramId": "container-runtime",
+              "elementId": "dst",
+              "label": "Container view"
+            }
+          ]
         }
       ],
       "edges": [
@@ -3592,6 +3704,24 @@
         },
         {
           "relationshipId": "s-r11"
+        },
+        {
+          "relationshipId": "s-r12"
+        },
+        {
+          "relationshipId": "s-r13"
+        },
+        {
+          "relationshipId": "s-r14"
+        },
+        {
+          "relationshipId": "s-r15"
+        },
+        {
+          "relationshipId": "s-r16"
+        },
+        {
+          "relationshipId": "s-r17"
         }
       ],
       "legend": {
@@ -3600,7 +3730,7 @@
           {
             "id": "box",
             "label": "Component",
-            "description": "A part of the package that PLAN.md names",
+            "description": "A part of the package that PLAN.md names, or one the build added",
             "swatch": {
               "shape": "box",
               "tone": "default",

@@ -1,0 +1,126 @@
+HELD C1 roundtrip-prefixes: 100 random records and every byte prefix decoded consistently (seed=91001)
+HELD C1 bit-corruption: every single-bit mutation of a complete four-record log was corrupt
+HELD C1 canonical-size-limits: oversized, invalid-field and correctly checksummed noncanonical records were rejected
+HELD C14 random-byte-decoding: 50000 deterministic malformed byte strings returned a prefix or corruption without panic (seed=91002)
+HELD C5 legal-sequences-and-deletions: all prefixes of 1..12-step traces accepted and each removed intent/done rejected
+HELD C5 retry-bound-and-pivot-plans: unknown outcomes abort at the pre-pivot bound and keep retrying at the pivot
+HELD C6 backoff-extremes: large delays saturated without wrap and seeded jitter replayed across 395 draws
+HELD C6 jitter-bound: 10000 draws stayed in exact integer jitter bounds; no distribution claim
+HELD C8 key-collision-grid: 707 saga/step pairs including delimiter-shaped IDs had distinct binary keys
+HELD C10 error-wire-roundtrip: wrapped step errors preserved every saga sentinel over wire encoding
+HELD C15 input-boundaries: 1..1024 byte fields roundtripped and oversized or invalid inputs were correctly rejected
+HELD C15 input-truncation-garbage: all 7 truncated encodings and trailing garbage rejected
+HELD C7 reverse-compensation: six permanent-failure positions compensated in reverse order with two failures before each success
+HELD C7 forever-compensation: after 1 virtual second compensation still retried with observable StepError and no false terminal state
+HELD C9 pivot-and-postpivot: pivot and post-pivot each survived 30 lost responses without compensating
+HELD C9 permanent-pivot-vs-after: permanent pivot rejection aborted once; permanent post-pivot failure kept retrying
+HELD C10 permanent-and-status-errors: permanent failure stopped Do and compensation StepError plus missing-ID sentinel were accurate
+HELD C6 silent-timeout-bound: silent pre-pivot step timed out three times and compensated after the exact retry schedule
+HELD C13 duplicate-late-end: immediate duplicates, delayed failures and terminal restart did not run extra steps
+HELD C8 lost-response-key: 21+ attempts spanning restart used the identical saga/step key and durable intents
+HELD C2 all-prefix-recovery: every byte prefix of a complete trace recovered cleanly or deleted a torn first record
+HELD C12 double-recover-prefixes: recover-once and recover-twice produced identical logs and calls for every byte prefix
+HELD C3 corrupt-middle-recovery: each byte of the middle intent was corrupted independently; recovery preserved bytes and ran nothing
+HELD C3 corrupt-last-and-unknown-definition: last-record corruption and unknown definition were left untouched without execution
+HELD C4 read-fault-recovery: 1, 2 and 17 transient read errors recovered on timers and executed the step once
+HELD C4 permanent-read-fault: 10000 injected read failures left the log unchanged and recovery pending
+HELD C11 terminal-reference-grid: 180 pivot/failure/retry combinations matched an independent terminal-state rule
+HELD C11 crash-and-double-crash-grid: 16 reachable append-boundary schedules verified injection and reached a legal terminal state; pre-end points verified both crashes
+HELD C16 allocate-fail-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-fail-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-fail-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-fail-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-fail-mid-compensation-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-fail-mid-compensation-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-before-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-before-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-after-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-after-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-mid-compensation-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-mid-compensation-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-mid-compensation-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 allocate-crash-mid-compensation-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-fail-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-fail-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-fail-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-fail-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-fail-mid-compensation-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-fail-mid-compensation-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-before-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-before-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-after-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-after-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-mid-compensation-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-mid-compensation-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-mid-compensation-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 copy-crash-mid-compensation-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-fail-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-fail-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-fail-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-fail-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-fail-mid-compensation-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-fail-mid-compensation-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-before-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-before-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-after-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-after-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-mid-compensation-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-mid-compensation-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-mid-compensation-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 verify-crash-mid-compensation-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-fail-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-fail-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-fail-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-fail-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-before-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-before-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-after-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 flip-crash-after-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-fail-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-fail-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-fail-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-fail-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-before-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-before-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-before-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-before-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-after-action-untorn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-after-action-untorn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-after-action-torn: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C16 delete-source-crash-after-action-torn-double: 40 new seeds with 1/8/32 objects met terminal, cleanup and 20-second bounds
+HELD C19 skipped-compensation-0: 10 seeds detected each required cleanup omission and tolerated the verify no-op
+HELD C19 skipped-compensation-1: 10 seeds detected each required cleanup omission and tolerated the verify no-op
+HELD C19 skipped-compensation-2: 10 seeds detected each required cleanup omission and tolerated the verify no-op
+HELD C17 nemesis-dense-false: 150 new seeds with four chaos phases preserved acknowledged writes and settled within 20 seconds
+HELD C17 nemesis-dense-true: 150 new seeds with four chaos phases preserved acknowledged writes and settled within 20 seconds
+HELD C18 duel-stagger-0: 150 seeds with 10–20 second partitions converged to one location with loser cleanup
+HELD C18 duel-stagger-2000000000: 150 seeds with 10–20 second partitions converged to one location with loser cleanup
+HELD C18 same-target-contention: 100 same-target duels had one winner, one compensation and clean target ownership
+HELD C17 writes-during-copy: 100 seeds with delayed copy responses, 8 initial objects and 16 concurrent writes preserved every acknowledgment
+HELD C20 model-wire-sentinels: all model and saga sentinels survived wrapped wire roundtrips
+HELD C20 unknown-source-target: unknown bucket, unknown target and identical source/target compensated without damaging the live bucket
+HELD C21 coordinator-lost: permanent loss after copy left an unfinished inspectable log, as explicitly limited
+HELD C15 workflow-branch-oracle: five workflow paths matched independently specified operation order, cleanup and outcome
+HELD C6 exact-backoff-log-times: nine attempts occurred at exactly 0/1/3/7/15/23/31/39/47 milliseconds with zero timing tolerance
+HELD C8 idempotent-effect-after-lost-response: timeout and crash each caused two calls but one effect when the external step deduplicated the stable key
+HELD C20 late-copy-fence: 20 paused-source schedules rejected late two-hop copies after discard and left no target objects
+HELD C20 malformed-store-requests: six malformed field-count, length, opcode and trailing-byte requests were rejected without state changes
+HELD C1 checksummed-length-limits: zero and two oversized declared lengths were rejected even with valid header checksums
+HELD C12 compensating-prefix-recovery: 101 compensating byte prefixes produced identical terminal logs and reverse-order calls on repeated recovery
+SUMMARY held=125 broken=0 setup_errors=0 elapsed_seconds=16

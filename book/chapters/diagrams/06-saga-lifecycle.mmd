@@ -1,0 +1,10 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  BEGIN[Log begin] --> PRE[Pre-pivot steps]
+  PRE -->|ok| PIV[Pivot step]
+  PRE -->|abort| ABORT[Log abort]
+  PIV -->|ErrPermanent| ABORT
+  PIV -->|ok| POST[Post-pivot steps]
+  POST -->|ok| DONE[End: Completed]
+  ABORT --> COMP[Compensate reverse]
+  COMP -->|ok| ROLL[End: Compensated]

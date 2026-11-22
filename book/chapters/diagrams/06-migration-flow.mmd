@@ -1,0 +1,8 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  S0[0. allocate: Claim] --> S1[1. copy: Copy]
+  S1 --> S2[2. verify: Root]
+  S2 --> S3[3. flip: Pivot LWW ptr]
+  S3 --> S4[4. delete-source: Pointer]
+  S4 -->|ptr == To| WIN[Seal, catch-up, Retire, Promote]
+  S4 -->|ptr != To| LOSE[Discard, Unclaim: superseded]
