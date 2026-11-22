@@ -154,33 +154,54 @@ func objectHeaders(w http.ResponseWriter, oi storage.ObjectInfo) {
 	}
 }
 
+func skipOWS(v string, i int) int {
+	for i < len(v) && (v[i] == ' ' || v[i] == '\t') {
+		i++
+	}
+	return i
+}
+
 func parseEntityTags(v string) ([]string, bool, error) {
 	var strong []string
 	star := false
 	elements := 0
-	for _, el := range strings.Split(v, ",") {
-		el = strings.Trim(el, " \t")
-		if el == "" {
+	for i := skipOWS(v, 0); i < len(v); i = skipOWS(v, i) {
+		if v[i] == ',' {
+			i++
 			continue
 		}
+		start := i
 		elements++
-		if el == "*" {
+		if v[i] == '*' {
 			star = true
-			continue
-		}
-		weak := strings.HasPrefix(el, "W/")
-		tag := strings.TrimPrefix(el, "W/")
-		if len(tag) < 2 || tag[0] != '"' || tag[len(tag)-1] != '"' {
-			return nil, false, fmt.Errorf("storage: entity-tag %q is not quoted: %w", el, storage.ErrInvalid)
-		}
-		opaque := tag[1 : len(tag)-1]
-		for i := 0; i < len(opaque); i++ {
-			if c := opaque[i]; c == '"' || c < 0x21 || c == 0x7f {
-				return nil, false, fmt.Errorf("storage: entity-tag %q: %w", el, storage.ErrInvalid)
+			i++
+		} else {
+			weak := strings.HasPrefix(v[i:], "W/")
+			if weak {
+				i += 2
 			}
+			if i == len(v) || v[i] != '"' {
+				return nil, false, fmt.Errorf("storage: entity-tag at %q is not quoted: %w", v[start:], storage.ErrInvalid)
+			}
+			i++
+			open := i
+			for i < len(v) && v[i] != '"' {
+				if c := v[i]; c < 0x21 || c == 0x7f {
+					return nil, false, fmt.Errorf("storage: entity-tag at %q: byte %#x outside etagc: %w", v[start:], c, storage.ErrInvalid)
+				}
+				i++
+			}
+			if i == len(v) {
+				return nil, false, fmt.Errorf("storage: entity-tag at %q is not terminated: %w", v[start:], storage.ErrInvalid)
+			}
+			if !weak {
+				strong = append(strong, v[open:i])
+			}
+			i++
 		}
-		if !weak {
-			strong = append(strong, opaque)
+		i = skipOWS(v, i)
+		if i < len(v) && v[i] != ',' {
+			return nil, false, fmt.Errorf("storage: entity-tag list %q: unexpected %q after an element: %w", v, v[i], storage.ErrInvalid)
 		}
 	}
 	if star && elements > 1 {
