@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -206,4 +207,24 @@ func (s *safeBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.b.String()
+}
+
+func TestLeakReportCountsAGoroutineUntilItEnds(t *testing.T) {
+	base := leakReport(io.Discard, 0)
+	release := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		<-release
+	}()
+	var b strings.Builder
+	n := leakReport(&b, 50*time.Millisecond)
+	if n != base+1 || !strings.Contains(b.String(), fmt.Sprintf("goroutines left at exit: %d", base+1)) || !strings.Contains(b.String(), "TestLeakReportCountsAGoroutineUntilItEnds") {
+		t.Fatalf("leakReport = %d with one blocked goroutine over a base of %d: %q", n, base, b.String())
+	}
+	close(release)
+	<-done
+	if n := leakReport(io.Discard, time.Second); n != base {
+		t.Fatalf("leakReport = %d after the goroutine ended, base %d", n, base)
+	}
 }
