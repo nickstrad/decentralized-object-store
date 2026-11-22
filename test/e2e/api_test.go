@@ -101,6 +101,7 @@ func decodeResult(b []byte) (apiResult, []byte, error) {
 
 type apiNode struct {
 	p     env.Process
+	n     *node.Node
 	onPut func(n *node.Node, bucket, key string)
 }
 
@@ -113,8 +114,8 @@ func (a *apiNode) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 		a.p.OnRequest(from, req, reply)
 		return
 	}
-	n, ok := a.p.(*node.Node)
-	if !ok {
+	n := a.n
+	if n == nil {
 		reply(nil, storage.ErrUnavailable)
 		return
 	}

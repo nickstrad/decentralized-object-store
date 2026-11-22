@@ -53,18 +53,20 @@ func defaultSimOptions() simOptions {
 }
 
 type simCluster struct {
-	s       *sim.Sim
-	ids     []env.NodeID
-	nodes   []Node
-	cli     map[string]env.Env
-	disks   map[env.NodeID]env.Disk
-	cfg     node.Config
-	o       *simOracle
-	ledger  *Ledger
-	moved   map[byte]uint64
-	opts    simOptions
-	calls   int
-	regions []string
+	s        *sim.Sim
+	ids      []env.NodeID
+	nodes    []Node
+	cli      map[string]env.Env
+	disks    map[env.NodeID]env.Disk
+	cfg      node.Config
+	o        *simOracle
+	ledger   *Ledger
+	moved    map[byte]uint64
+	opts     simOptions
+	calls    int
+	regions  []string
+	procWrap func(id env.NodeID, p env.Process) env.Process
+	onHeal   func()
 }
 
 func newSimCluster(seed int64, opts simOptions) *simCluster {
@@ -128,7 +130,12 @@ func (c *simCluster) factory(e env.Env) env.Process {
 	if c.opts.wrap != nil {
 		e = c.opts.wrap(id, e)
 	}
-	return &apiNode{p: node.NewFactory(cfg)(e), onPut: c.o.notePut}
+	p := node.NewFactory(cfg)(e)
+	n, _ := p.(*node.Node)
+	if c.procWrap != nil {
+		p = c.procWrap(id, p)
+	}
+	return &apiNode{p: p, n: n, onPut: c.o.notePut}
 }
 
 type countNet struct {
@@ -160,8 +167,7 @@ func (c *simCluster) node(id env.NodeID) *node.Node {
 	if !st.Up || st.Paused {
 		return nil
 	}
-	n, _ := a.p.(*node.Node)
-	return n
+	return a.n
 }
 
 func (c *simCluster) anyNode(id env.NodeID) *node.Node {
@@ -169,8 +175,7 @@ func (c *simCluster) anyNode(id env.NodeID) *node.Node {
 	if a == nil {
 		return nil
 	}
-	n, _ := a.p.(*node.Node)
-	return n
+	return a.n
 }
 
 func (c *simCluster) upNodes() []*node.Node {
@@ -316,26 +321,29 @@ func (c *simCluster) Sleep(d time.Duration) error {
 
 func (c *simCluster) Await(what string, bound time.Duration, cond func() (bool, error)) (time.Duration, error) {
 	start := c.s.Now()
-	last := env.Time(-1)
-	var cerr error
-	err := c.s.RunUntilConverged(start.Add(bound), func() bool {
-		if last >= 0 && c.s.Now().Sub(last) < simAwaitStep {
-			return false
+	deadline := start.Add(bound)
+	for {
+		if err := c.s.Err(); err != nil {
+			return c.s.Now().Sub(start), err
 		}
-		last = c.s.Now()
-		ok, e := cond()
-		cerr = e
-		return ok || e != nil
-	})
-	if err == nil {
-		err = cerr
+		ok, err := cond()
+		if err != nil {
+			err = fmt.Errorf("e2e: %s: %w", what, err)
+			c.s.Fail(err)
+			return c.s.Now().Sub(start), err
+		}
+		if ok {
+			return c.s.Now().Sub(start), nil
+		}
+		if c.s.Now() >= deadline {
+			err := failf("%s: not within %v", what, bound)
+			c.s.Fail(err)
+			return c.s.Now().Sub(start), err
+		}
+		if err := c.s.RunUntil(min(c.s.Now().Add(simAwaitStep), deadline)); err != nil {
+			return c.s.Now().Sub(start), err
+		}
 	}
-	if err != nil {
-		err = fmt.Errorf("e2e: %s within %v: %w", what, bound, err)
-		c.s.Fail(err)
-		return c.s.Now().Sub(start), err
-	}
-	return c.s.Now().Sub(start), nil
 }
 
 func (c *simCluster) apply(f sim.Fault) error {
@@ -362,7 +370,12 @@ func (c *simCluster) Partition(side, other []Node) error {
 	return c.apply(sim.Fault{Kind: sim.FaultPartition, Side: ids(side), Other: ids(other)})
 }
 
-func (c *simCluster) Heal() error { return c.apply(sim.Fault{Kind: sim.FaultHealNet}) }
+func (c *simCluster) Heal() error {
+	if c.onHeal != nil {
+		c.onHeal()
+	}
+	return c.apply(sim.Fault{Kind: sim.FaultHealNet})
+}
 
 func (c *simCluster) Crash(n Node) error {
 	return c.apply(sim.Fault{Kind: sim.FaultCrash, Node: env.NodeID(n.ID)})
