@@ -7,11 +7,12 @@ reject stale updates, while concurrent writes are resolved by last-writer-wins
 (highest hybrid logical clock, node ID breaking ties) so all replicas converge;
 the losing write is discarded, and every discard is counted and logged.
 
-The foundation tooling, deterministic simulator, SWIM gossip membership,
-Reed-Solomon erasure coding with the local chunk store, Merkle-tree
-anti-entropy, and the Saga engine with bucket migration are built today. Planned
-building blocks are optimistic concurrency control for metadata, full-cluster
-integration, and an end-to-end test suite.
+The foundation tooling and every protocol building block — the deterministic
+simulator, SWIM gossip membership, Reed-Solomon erasure coding with the local
+chunk store, Merkle-tree anti-entropy, optimistic concurrency control for
+metadata, and the Saga engine with bucket migration — are built today. What
+remains planned is full-cluster integration (the node and the HTTP object API),
+the end-to-end test suite, and the finished book.
 
 ## How this site is organised
 
@@ -23,6 +24,8 @@ integration, and an end-to-end test suite.
   [Reed-Solomon Erasure Coding](../book/chapters/03-reed-solomon-erasure-coding.md),
   Chapter 4,
   [Merkle-Tree Anti-Entropy](../book/chapters/04-merkle-anti-entropy.md),
+  Chapter 5,
+  [Optimistic Concurrency Control](../book/chapters/05-optimistic-concurrency-control.md),
   and Chapter 6, [Sagas](../book/chapters/06-sagas.md).
 - **[C4 diagrams](c4/README.md)** describe the target architecture across
   system, container, and component views. They show the planned design until
