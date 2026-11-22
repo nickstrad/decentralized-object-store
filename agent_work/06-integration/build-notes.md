@@ -271,7 +271,8 @@ stripe. The six-node profile from Chunk 0a passed flags objnode never had (`-gos
 - The migration fence is in memory: a coordinator crash ends the copy with the process; the engine never
   runs a forward step after compensation began, so no persisted fence is needed.
 - A quota is a pre-check on the coordinating node (no cross-node reservation); overshoot under
-  replication lag and partitions is measured (section 8), corrected only on a quota discard (recount).
+  replication lag and partitions is measured (section 8), corrected by a recount after a quota or manifest
+  discard and by the periodic quota audit against a recount once a bucket's metadata is still.
 - Concurrent PUTs to one key from two nodes in one partition side may both be acknowledged (LWW).
 - Pointer reads require every live peer (in the coordinator's view) to agree: a peer that is up but
   unreachable keeps delete-source retrying until it is declared dead or heals.
@@ -300,7 +301,7 @@ persist fails mid-step (Retire, Promote, discard error returns).
 ### Intentionally ignored errors (`_ =`)
 - `internal/storage/httpapi/http.go`: the JSON encoder and `ResponseWriter.Write` errors (the client is gone; the
   status is already sent).
-- `internal/node/runtime.go`: `net.Conn.Close` on refused, untracked, timed-out or finished connections;
+- `internal/noderuntime/runtime.go`: `net.Conn.Close` on refused, untracked, timed-out or finished connections;
   re-encoding the error frame for an oversized response (the error frame is small and cannot fail).
 
 ### Panics added
