@@ -534,6 +534,15 @@ func (g *migrator) Flip(c saga.Call, m saga.MigrationInput, done func(error)) {
 			done(nil)
 			return
 		}
+		if owner == flipValue(id, m.To) {
+			if _, err := g.n.occ.SetRoute(m.Bucket, env.Region(m.To)); err != nil {
+				done(err)
+				return
+			}
+			g.n.RecordMeta(occ.RouteKey(m.Bucket))
+			done(nil)
+			return
+		}
 		if bs.route != m.From {
 			done(permanent(fmt.Errorf("node: flip %q to %q: routed to %q by %q: %w", m.Bucket, m.To, bs.route, owner, ErrNoMigration)))
 			return
