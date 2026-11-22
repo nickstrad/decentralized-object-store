@@ -142,15 +142,16 @@ func covers(x, w occ.Version) bool {
 
 type gcOracle struct {
 	h       *harness
-	off     bool
-	onWrite func(id env.NodeID, name string)
+	off      bool
+	residual map[string]bool
+	onWrite  func(id env.NodeID, name string)
 	deleted map[storage.VersionID][]string
 	refs    map[occ.VersionID]storage.VersionID
 	found   []string
 }
 
 func newGCOracle(h *harness) *gcOracle {
-	return &gcOracle{h: h, deleted: map[storage.VersionID][]string{}, refs: map[occ.VersionID]storage.VersionID{}}
+	return &gcOracle{h: h, deleted: map[storage.VersionID][]string{}, refs: map[occ.VersionID]storage.VersionID{}, residual: map[string]bool{}}
 }
 
 type watchDisk struct {
@@ -242,7 +243,7 @@ func (o *gcOracle) onDelete(id env.NodeID, name string, v storage.VersionID) {
 	if o.off {
 		return
 	}
-	if k, ok := o.protector(v, o.readers()); ok {
+	if k, ok := o.protector(v, o.readers()); ok && !o.residual[k] {
 		o.fail(fmt.Errorf("node %s deleted shard %s of version %s, which %q can still make the winner", id, name, v, k))
 	}
 }
@@ -289,6 +290,9 @@ func (o *gcOracle) check() error {
 	slices.Sort(vs)
 	for _, v := range vs {
 		for _, c := range byVersion[v] {
+			if o.residual[c.key] {
+				continue
+			}
 			beaten := false
 			for _, other := range rds {
 				y, ok := other.Record(c.key).Version()
