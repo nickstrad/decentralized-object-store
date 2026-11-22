@@ -14,6 +14,9 @@ import (
 
 func soloLayout() storage.Layout { return storage.Layout{K: 1, M: 0, StripeSize: 1024} }
 
+// TestRuntimeLifecycleInABubble proves Start, duplicate Start rejection,
+// object operations, Shutdown, idempotent Close, and post-close env.ErrClosed
+// inside a testing/synctest bubble.
 func TestRuntimeLifecycleInABubble(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rt := newLoopRuntime(t)
@@ -55,6 +58,8 @@ func TestRuntimeLifecycleInABubble(t *testing.T) {
 	})
 }
 
+// TestRuntimeStartHonoursItsContext proves Start with an already-canceled
+// context returns context.Canceled and transitions the runtime to closed.
 func TestRuntimeStartHonoursItsContext(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rt := newLoopRuntime(t)
@@ -69,6 +74,8 @@ func TestRuntimeStartHonoursItsContext(t *testing.T) {
 	})
 }
 
+// TestRuntimeCallsBeforeStartAreNotReady proves service calls before Start
+// return node.ErrNotReady.
 func TestRuntimeCallsBeforeStartAreNotReady(t *testing.T) {
 	rt := newLoopRuntime(t)
 	if _, err := rt.Health(context.Background()); !errors.Is(err, node.ErrNotReady) {

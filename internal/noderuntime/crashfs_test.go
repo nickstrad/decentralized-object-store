@@ -340,6 +340,11 @@ func readBack(m *memFS, blob string) ([]byte, bool, error) {
 	return b, err == nil, err
 }
 
+// TestFileDiskCrashLeavesOldOrNewBytes proves under an in-memory POSIX crash
+// model (both keeping and losing unsynced directory changes) that crashing,
+// failing, or short-writing at any step of overwrite, create, delete, append,
+// or first-append leaves only old or new bytes (or a prefix of an unsynced
+// append), and always preserves new bytes once Sync returns nil.
 func TestFileDiskCrashLeavesOldOrNewBytes(t *testing.T) {
 	for _, c := range crashCases() {
 		for _, mode := range []string{"crash", "fail-then-crash", "short-write"} {

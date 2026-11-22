@@ -7,6 +7,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// TestAckOracleKeepsIdenticalPayloadsOnTwoKeysApart proves ackOracle scopes
+// content matching by key so overwriting k2 cannot mask a silent loss on k1
+// when both keys held the same bytes.
 func TestAckOracleKeepsIdenticalPayloadsOnTwoKeysApart(t *testing.T) {
 	h := smallCluster(t, 1)
 	id := h.ids[0]

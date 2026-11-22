@@ -10,6 +10,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 )
 
+// TestGossipViewAdaptsMembershipForEveryConsumer proves gossipView and
+// regionView expose live members, non-self peers, region filtering, and drop
+// crashed members once gossip declares them dead.
 func TestGossipViewAdaptsMembershipForEveryConsumer(t *testing.T) {
 	table, err := CodeTable()
 	if err != nil {
@@ -64,6 +67,7 @@ func TestGossipViewAdaptsMembershipForEveryConsumer(t *testing.T) {
 	}
 }
 
+// TestChannelPrefixRoundTrips proves withChannel prepends the exact channel byte.
 func TestChannelPrefixRoundTrips(t *testing.T) {
 	b := withChannel(chOCC, []byte{9, 8})
 	if !slices.Equal(b, []byte{chOCC, 9, 8}) {

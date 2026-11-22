@@ -121,6 +121,9 @@ func (c *realCluster) joined(n int) bool {
 	return true
 }
 
+// TestLoopbackClusterServesObjectsAcrossNodes proves three loopback nodes join,
+// replicate buckets and multi-stripe objects, enforce If-None-Match/If-Match,
+// and report ready health.
 func TestLoopbackClusterServesObjectsAcrossNodes(t *testing.T) {
 	c := startReal(t, 3, realConfig())
 	ctx := context.Background()
@@ -161,6 +164,9 @@ func TestLoopbackClusterServesObjectsAcrossNodes(t *testing.T) {
 	}
 }
 
+// TestShutdownUnderLoadReturnsEveryCall proves shutting down a node while 16
+// concurrent writers are active returns every in-flight call cleanly and
+// rejects later calls with env.ErrClosed.
 func TestShutdownUnderLoadReturnsEveryCall(t *testing.T) {
 	c := startReal(t, 3, realConfig())
 	ctx := context.Background()
@@ -202,6 +208,9 @@ func TestShutdownUnderLoadReturnsEveryCall(t *testing.T) {
 	}
 }
 
+// TestCanaryShutdownLeak plants an untracked goroutine in Runtime.Start (not
+// registered with rt.wg) and proves leakcheck.Snapshot.Leaked catches it until
+// released.
 func TestCanaryShutdownLeak(t *testing.T) {
 	before := leakcheck.Take()
 	release := make(chan struct{})
@@ -226,6 +235,8 @@ func TestCanaryShutdownLeak(t *testing.T) {
 	}
 }
 
+// TestRealRuntimeLeavesNoGoroutineBehind proves starting a 2-node loopback
+// cluster, waiting for join, and closing both nodes leaks zero goroutines.
 func TestRealRuntimeLeavesNoGoroutineBehind(t *testing.T) {
 	before := leakcheck.Take()
 	c := startReal(t, 2, realConfig())

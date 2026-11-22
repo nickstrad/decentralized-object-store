@@ -265,6 +265,11 @@ func partitionRun(res *partitionResult) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestClusterPartitionHealDST proves deterministic 21-node concurrent writes
+// across a partition converge to one version per key, every acknowledged write
+// is explained by ackOracle (current, superseded, or discarded), discards are
+// reported in Health, loser shards are collected after GCGrace without ever
+// deleting a possible winner, and quota usage settles to match live manifests.
 func TestClusterPartitionHealDST(t *testing.T) {
 	t.Parallel()
 	var m measure
@@ -288,6 +293,9 @@ func TestClusterPartitionHealDST(t *testing.T) {
 	t.Cleanup(func() { m.report(t) })
 }
 
+// TestCanaryNodeSkipsDiscardRecount plants a bug disabling both
+// discard-triggered recounts and auditQuotas and proves partitionRun and
+// quotaDriftRun fail their post-heal usage checks.
 func TestCanaryNodeSkipsDiscardRecount(t *testing.T) {
 	node.SetCanaryNoDiscardRecount(true)
 	node.SetCanaryNoQuotaAudit(true)

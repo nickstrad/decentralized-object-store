@@ -6,6 +6,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// Service is the backend interface served by the HTTP object API.
+// Every method accepts a request context and returns domain errors mapped
+// through StatusTable.
 type Service interface {
 	CreateBucket(ctx context.Context, spec storage.BucketSpec) error
 	ListObjects(ctx context.Context, bucket, prefix string, limit int) ([]storage.ObjectInfo, error)

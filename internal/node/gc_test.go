@@ -22,6 +22,9 @@ func shardsOf(h *harness, id env.NodeID, v string) []string {
 	return out
 }
 
+// TestCorruptShardOfADeadVersionIsCollected proves a bit-rotted shard of a
+// deleted object is collected after GCGrace and does not cause an endless
+// inventory start/stop loop.
 func TestCorruptShardOfADeadVersionIsCollected(t *testing.T) {
 	h := smallCluster(t, 1)
 	n := h.node(h.ids[0])
@@ -68,6 +71,9 @@ func TestCorruptShardOfADeadVersionIsCollected(t *testing.T) {
 	}
 }
 
+// TestDeathEvidenceGetsItsOwnGracePeriod proves GCGrace is counted from when
+// the holder first observes the ~gc/ marker rather than from when the shard
+// first became locally unreferenced.
 func TestDeathEvidenceGetsItsOwnGracePeriod(t *testing.T) {
 	cfg := smallConfig()
 	cfg.GCGrace = 10 * time.Second
@@ -129,6 +135,10 @@ func TestDeathEvidenceGetsItsOwnGracePeriod(t *testing.T) {
 	}
 }
 
+// TestAWriteWhoseShardsWereCollectedAsOrphansIsRecordedLost proves 1-, 2-, and
+// 6-stripe objects whose shards are collected as orphans while the writer is
+// isolated are declared lost on record after heal instead of staying live and
+// unreadable.
 func TestAWriteWhoseShardsWereCollectedAsOrphansIsRecordedLost(t *testing.T) {
 	cfg := smallConfig()
 	stripes := []int{1, 2, storage.DefaultWindow + 2}
@@ -252,6 +262,9 @@ func shardsByStripe(h *harness, id env.NodeID, bucket string) map[uint32]int {
 	return out
 }
 
+// TestOrphanRecordsAccumulateAcrossMaintenanceTicks proves multi-stripe shards
+// collected as orphans on separate maintenance ticks do not overwrite earlier
+// records and the unrecoverable object is declared lost after heal.
 func TestOrphanRecordsAccumulateAcrossMaintenanceTicks(t *testing.T) {
 	cfg := smallConfig()
 	cfg.Layout = storage.Layout{K: 2, M: 2, StripeSize: 1024}
@@ -346,6 +359,8 @@ func TestOrphanRecordsAccumulateAcrossMaintenanceTicks(t *testing.T) {
 	requireLiveOnlyIfReadableAfterHeal(t, h, "g", "k", oi.Version)
 }
 
+// TestANodeRefusesShardDeletesOverTheWire proves inbound OpDeleteShard RPCs
+// are rejected and leave the shard on disk.
 func TestANodeRefusesShardDeletesOverTheWire(t *testing.T) {
 	h := smallCluster(t, 1)
 	n := h.node(h.ids[0])
@@ -379,6 +394,9 @@ func TestANodeRefusesShardDeletesOverTheWire(t *testing.T) {
 	}
 }
 
+// TestLiveReadableOrLostOracleCatchesAnUnreadableLiveKey proves
+// checkLiveReadableOrLost fails when a live object loses more than m shards
+// without a ~lost/ record.
 func TestLiveReadableOrLostOracleCatchesAnUnreadableLiveKey(t *testing.T) {
 	h := smallCluster(t, 1)
 	n := h.node(h.ids[0])

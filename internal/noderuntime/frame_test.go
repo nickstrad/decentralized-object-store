@@ -11,6 +11,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// TestFrameRoundTrips proves TCP request/response frames, error-message
+// truncation, and UDP datagrams round-trip cleanly through encode and decode.
 func TestFrameRoundTrips(t *testing.T) {
 	req := requestFrame{ID: 7, From: "a:1", Body: []byte("body")}
 	p, err := encodeRequest(req)
@@ -48,6 +50,9 @@ func TestFrameRoundTrips(t *testing.T) {
 	}
 }
 
+// TestFrameDecodersRejectMalformedInput proves truncated, wrong-version,
+// wrong-kind, empty-sender, error-with-body, and oversized frames and datagrams
+// return node.ErrFrame, env.ErrTooLarge, or env.ErrInvalidArgument.
 func TestFrameDecodersRejectMalformedInput(t *testing.T) {
 	good, _ := encodeRequest(requestFrame{ID: 1, From: "a", Body: []byte("b")})
 	rows := []struct {
@@ -90,6 +95,9 @@ func TestFrameDecodersRejectMalformedInput(t *testing.T) {
 	}
 }
 
+// TestFrameLimitCoversMerkleRepliesAndShardRequests proves MaxFrame holds a
+// full merkle.MaxReplyBytes response and a default-layout shard request, while
+// Config.Validate rejects a layout whose shard request would exceed MaxFrame.
 func TestFrameLimitCoversMerkleRepliesAndShardRequests(t *testing.T) {
 	if merkle.MaxReplyBytes+responseHeader+env.MaxErrorMessage > MaxFrame {
 		t.Fatalf("a full merkle reply (%d bytes) does not fit the %d-byte frame", merkle.MaxReplyBytes, MaxFrame)
@@ -107,6 +115,9 @@ func TestFrameLimitCoversMerkleRepliesAndShardRequests(t *testing.T) {
 	}
 }
 
+// FuzzFrame proves arbitrary bytes never panic the TCP frame or UDP datagram
+// decoders, always return node.ErrFrame or env.ErrTooLarge on rejection, and
+// re-encode identically when accepted.
 func FuzzFrame(f *testing.F) {
 	good, _ := encodeRequest(requestFrame{ID: 3, From: "n:1", Body: []byte("x")})
 	framed, _ := appendFrame(nil, good)

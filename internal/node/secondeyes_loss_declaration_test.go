@@ -16,6 +16,10 @@ import (
 	"strings"
 )
 
+// TestLocalTransientDiskIOErrorMustNotDeclareHealthyObjectLost proves
+// stateAbsent ignores transient disk read I/O errors (neither not found nor
+// corrupt) so intact shards on k=2,m=0 and k=2,m=1 stripes never produce
+// absence records or false loss declarations.
 func TestLocalTransientDiskIOErrorMustNotDeclareHealthyObjectLost(t *testing.T) {
 	t.Run("k2m0_two_transient_read_errors_on_one_holder", func(t *testing.T) {
 		h, _ := lossHarness(t, 3, storage.Layout{K: 2, M: 0, StripeSize: 1024}, 2)
@@ -86,6 +90,10 @@ func TestLocalTransientDiskIOErrorMustNotDeclareHealthyObjectLost(t *testing.T) 
 	})
 }
 
+// TestLossDeclarationRacesConcurrentOverwriteAndDelete proves a loss
+// declaration racing a concurrent overwrite settles cleanly under LWW (either
+// v2 stays readable or its discard is counted), and racing a concurrent delete
+// converges usage and collects all shards of the lost version.
 func TestLossDeclarationRacesConcurrentOverwriteAndDelete(t *testing.T) {
 	for _, seed := range []int64{1, 2, 3, 4} {
 		t.Run(fmt.Sprintf("concurrent_overwrite/seed=%d", seed), func(t *testing.T) {
@@ -259,6 +267,9 @@ func TestLossDeclarationRacesConcurrentOverwriteAndDelete(t *testing.T) {
 	})
 }
 
+// TestDualDeclarersInPartitionedCluster proves two lowest-ID nodes in separate
+// halves of a partition can each declare an already-evidenced lost version and
+// converge after heal with accurate usage and zero leftover shards.
 func TestDualDeclarersInPartitionedCluster(t *testing.T) {
 	h, _ := lossHarness(t, 6, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)
 	oi, _, man := putEverywhere(t, h, 700)
@@ -369,6 +380,9 @@ func TestDualDeclarersInPartitionedCluster(t *testing.T) {
 	_ = nonHolders
 }
 
+// TestNonHolderAndCrossStripeAbsenceRecordsIgnored proves absence records from
+// non-holders and m-or-fewer records spread across different stripes never
+// trigger a loss declaration.
 func TestNonHolderAndCrossStripeAbsenceRecordsIgnored(t *testing.T) {
 	h, logs := lossHarness(t, 6, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)
 	oi, data, man := putEverywhere(t, h, 2*1024)
@@ -412,6 +426,9 @@ func TestNonHolderAndCrossStripeAbsenceRecordsIgnored(t *testing.T) {
 	requireReadableNotLost(t, orphanRun{h: h, oi: oi, data: data, logs: logs})
 }
 
+// TestLossDeclarationAfterBucketMigration proves an object migrated to a new
+// region whose target shards rot beyond m is declared lost cleanly and passes
+// the converse oracle even though its manifest was installed by Retire.
 func TestLossDeclarationAfterBucketMigration(t *testing.T) {
 	cfg := smallConfig()
 	cfg.Layout = storage.Layout{K: 2, M: 1, StripeSize: 1024}
@@ -498,6 +515,9 @@ func (s holdStep) Do(c saga.Call, done func([]byte, error)) {
 	s.Step.Do(c, done)
 }
 
+// TestStagedMigrationCopyNeverWritesAbsenceWhileStaged proves rotting shards
+// of a staged ~stage/<saga> migration copy never produces absence records or a
+// loss declaration while the live source manifest is intact.
 func TestStagedMigrationCopyNeverWritesAbsenceWhileStaged(t *testing.T) {
 	cfg := smallConfig()
 	cfg.Layout = storage.Layout{K: 2, M: 1, StripeSize: 1024}
@@ -578,6 +598,9 @@ func TestStagedMigrationCopyNeverWritesAbsenceWhileStaged(t *testing.T) {
 	}
 }
 
+// TestSlashHolderIDsEndToEndLossDeclaration proves nodes whose NodeID contains
+// slashes write, replicate, and tally absence records to declare an
+// unrecoverable object lost end to end.
 func TestSlashHolderIDsEndToEndLossDeclaration(t *testing.T) {
 	table, err := node.CodeTable()
 	if err != nil {

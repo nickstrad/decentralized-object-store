@@ -12,6 +12,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// TestLateShardAfterOrphanCollectionBeforeAbsenceSavesObject proves a delayed
+// writer shard that lands on its holder after other shards were orphaned—but
+// before absence records fire—keeps k verifiable shards and saves the object.
 func TestLateShardAfterOrphanCollectionBeforeAbsenceSavesObject(t *testing.T) {
 	cfg := smallConfig()
 	cfg.Layout = storage.Layout{K: 2, M: 2, StripeSize: 1024}
@@ -90,6 +93,9 @@ func TestLateShardAfterOrphanCollectionBeforeAbsenceSavesObject(t *testing.T) {
 	requireReadableNotLost(t, orphanRun{h: h, oi: oi, data: data, logs: logs})
 }
 
+// TestLateShardDuringRebuildPreventsAbsenceRecord proves stateAbsent's fresh
+// local read sees a good shard that arrived while a rebuild was in flight,
+// preventing a false absence record and letting the stripe recover.
 func TestLateShardDuringRebuildPreventsAbsenceRecord(t *testing.T) {
 	cfg := smallConfig()
 	cfg.Layout = storage.Layout{K: 2, M: 2, StripeSize: 1024}
@@ -168,6 +174,9 @@ func TestLateShardDuringRebuildPreventsAbsenceRecord(t *testing.T) {
 	requireReadableNotLost(t, orphanRun{h: h, oi: oi, data: data, logs: logs})
 }
 
+// TestLateShardAfterAbsenceBeforeDeclarationRefused proves a holder refuses a
+// late OpPutShard with ErrFenced as soon as its absence record is committed,
+// even before the designated declarer has declared the version lost.
 func TestLateShardAfterAbsenceBeforeDeclarationRefused(t *testing.T) {
 	cfg := smallConfig()
 	cfg.Layout = storage.Layout{K: 2, M: 2, StripeSize: 1024}
@@ -258,6 +267,11 @@ func TestLateShardAfterAbsenceBeforeDeclarationRefused(t *testing.T) {
 	}
 }
 
+// TestResidualCaseBWipedHolderBeforeDeclaration exercises the documented
+// disk-wipe residual case (b): when a holder with an absence record on an
+// already-below-k stripe is wiped and receives a held shard write before
+// metadata sync, the subsequent declaration triggers the converse oracle
+// because k verifiable shards now exist on disk.
 func TestResidualCaseBWipedHolderBeforeDeclaration(t *testing.T) {
 	cfg := smallConfig()
 	cfg.Layout = storage.Layout{K: 2, M: 2, StripeSize: 1024}

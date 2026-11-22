@@ -1,3 +1,11 @@
+// Package noderuntime hosts a single-threaded node.Node on real UDP/TCP
+// sockets, a file-backed env.Disk, and wall-clock timers, and adapts it to
+// httpapi.Service.
+//
+// All protocol state is owned by one loop goroutine; the runtime mutex guards
+// only lifecycle state and the set of active TCP connections. Every goroutine
+// is started through sync.WaitGroup.Go and exits before Shutdown returns. Peer
+// traffic is unauthenticated and one TCP connection is used per request.
 package noderuntime
 
 import (
@@ -20,11 +28,17 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/node"
 )
 
+// Sentinel errors returned by Runtime:
+//   - ErrPanicked: returned by Err when the node loop recovered a panic and
+//     stopped the runtime.
+//   - ErrOutcomeUnknown: joined with the cancellation error when a service call
+//     was canceled after the node loop already started running it.
 var (
 	ErrPanicked       = errors.New("node: node loop panicked")
 	ErrOutcomeUnknown = errors.New("node: call abandoned after the node loop took it; outcome unknown")
 )
 
+// Default queue bounds, connection caps, and I/O timeouts for RuntimeConfig.
 const (
 	DefaultResolveTimeout = 5 * time.Second
 	DefaultSendTimeout    = 100 * time.Millisecond
@@ -35,6 +49,10 @@ const (
 	DefaultServeTimeout   = 30 * time.Second
 )
 
+// RuntimeConfig configures a Runtime and its embedded node.Node. Zero queue,
+// connection, timeout, and Lookup fields use Default* values and
+// net.DefaultResolver; an empty Listen defaults to ":<port>" from ID unless
+// NoNetwork is true.
 type RuntimeConfig struct {
 	ID             env.NodeID
 	Region         env.Region
@@ -88,6 +106,9 @@ func (c RuntimeConfig) withDefaults() RuntimeConfig {
 	return c
 }
 
+// Validate checks c's identity, directory, bounds, network addresses (unless
+// NoNetwork), and embedded Node configuration, returning node.ErrConfig on
+// failure.
 func (c RuntimeConfig) Validate() error {
 	c = c.withDefaults()
 	switch {
@@ -123,6 +144,9 @@ type inboundDatagram struct {
 	body []byte
 }
 
+// Runtime owns the real OS environment, event loop, sockets, and lifecycle of
+// one node.Node. Callers must call Start before service methods and Shutdown or
+// Close when done.
 type Runtime struct {
 	cfg   RuntimeConfig
 	codes *env.CodeTable
@@ -167,6 +191,7 @@ type Runtime struct {
 
 var canaryUntrackedGoroutine chan struct{}
 
+// NewRuntime validates cfg and allocates an unstarted Runtime.
 func NewRuntime(cfg RuntimeConfig) (*Runtime, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -193,8 +218,11 @@ func (rt *Runtime) logf(f string, a ...any) {
 	}
 }
 
+// ID returns the node's advertised env.NodeID.
 func (rt *Runtime) ID() env.NodeID { return rt.cfg.ID }
 
+// Addr returns the bound TCP listener address, or "" before Start or when
+// NoNetwork is set.
 func (rt *Runtime) Addr() string {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -221,6 +249,10 @@ func newRand() *rand.Rand {
 	return rand.New(rand.NewPCG(binary.LittleEndian.Uint64(seed[:8]), binary.LittleEndian.Uint64(seed[8:])))
 }
 
+// Start opens the data directory, binds UDP and TCP sockets (unless NoNetwork),
+// launches the node loop and socket goroutines, and runs Node.Start. It returns
+// env.ErrClosed if already closed, node.ErrConfig if called twice, or ctx.Err()
+// if canceled during startup.
 func (rt *Runtime) Start(ctx context.Context) error {
 	rt.mu.Lock()
 	switch rt.state {
@@ -329,6 +361,9 @@ func (rt *Runtime) closeSockets() []error {
 	return errs
 }
 
+// loop runs all protocol callbacks, timers, and inbound datagrams on one
+// goroutine. A recovered panic records ErrPanicked, cancels rt.ctx, closes all
+// sockets so readers/acceptors exit without Close, and closes Done().
 func (rt *Runtime) loop() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -337,6 +372,8 @@ func (rt *Runtime) loop() {
 			rt.mu.Unlock()
 			rt.panicked.Store(true)
 			rt.logf("node %s: stopped after a panic on the node loop: %v", rt.cfg.ID, r)
+			// Cancel before closeSockets so any concurrent track() sees the
+			// cancelled context and refuses newly accepted connections.
 			rt.cancel()
 			for _, err := range rt.closeSockets() {
 				if err != nil && !errors.Is(err, net.ErrClosed) {
@@ -433,6 +470,8 @@ func (rt *Runtime) accept() {
 	}
 }
 
+// serve handles one framed TCP request/response exchange on c within IOTimeout
+// and ServeTimeout.
 func (rt *Runtime) serve(c net.Conn) {
 	if err := c.SetDeadline(time.Now().Add(rt.cfg.IOTimeout)); err != nil {
 		return
@@ -507,6 +546,8 @@ func (t *realNet) Send(to env.NodeID, msg []byte) error {
 	if err != nil {
 		return err
 	}
+	// Resolve non-numeric hostnames asynchronously off the loop so a slow or
+	// failing DNS lookup never stalls protocol timers or Shutdown.
 	addr, ok := rt.addrs[to]
 	if !ok {
 		ap, perr := netip.ParseAddrPort(string(to))
@@ -560,6 +601,8 @@ func (rt *Runtime) resolve(to env.NodeID) error {
 	return nil
 }
 
+// Request validates timeout and payload size before registering a pending ID or
+// timer so cb is invoked at most once on every path while the loop runs.
 func (t *realNet) Request(to env.NodeID, req []byte, timeout time.Duration, cb func([]byte, error)) {
 	rt := t.rt
 	if timeout <= 0 {
@@ -617,6 +660,9 @@ func (t *realNet) Request(to env.NodeID, req []byte, timeout time.Duration, cb f
 		rt.afterFunc(0, func() { complete(nil, err) })
 		return
 	}
+	// Dials happen asynchronously after scheduling and carry no destination
+	// incarnation, so a queued request can still reach a restarted peer before
+	// deadline even though an established TCP connection cannot survive restart.
 	deadline := time.Now().Add(timeout)
 	rt.wg.Go(func() {
 		resp, err := rt.roundTrip(to, id, frame, deadline)
@@ -669,6 +715,10 @@ func (rt *Runtime) roundTrip(to env.NodeID, id uint64, frame []byte, deadline ti
 	return f.Body, nil
 }
 
+// Shutdown gracefully stops the embedded Node within ctx, cancels the runtime
+// context, closes all sockets and tracked connections, waits for every
+// goroutine to exit, and stops pending timers. A second call waits for the
+// first and returns nil.
 func (rt *Runtime) Shutdown(ctx context.Context) error {
 	rt.mu.Lock()
 	if rt.state == stateClosed {
@@ -710,8 +760,16 @@ func (rt *Runtime) Shutdown(ctx context.Context) error {
 	return graceful
 }
 
+// Close calls Shutdown with context.Background().
 func (rt *Runtime) Close() error { return rt.Shutdown(context.Background()) }
 
+// Diagnostic runtime counters and panic state:
+//   - Dropped: inbound UDP datagrams dropped on a full queue.
+//   - Refused: inbound TCP connections refused at MaxConns.
+//   - BadFrames: malformed datagrams or TCP frames dropped.
+//   - Panicked: reports whether the node loop exited by recovering a panic.
+//   - Abandoned: service calls that finished after their caller left.
+//   - Unresolved: outbound datagrams dropped while awaiting hostname resolution.
 func (rt *Runtime) Dropped() uint64    { return rt.dropped.Load() }
 func (rt *Runtime) Refused() uint64    { return rt.refused.Load() }
 func (rt *Runtime) BadFrames() uint64  { return rt.badFrames.Load() }
@@ -719,8 +777,12 @@ func (rt *Runtime) Panicked() bool     { return rt.panicked.Load() }
 func (rt *Runtime) Abandoned() uint64  { return rt.abandoned.Load() }
 func (rt *Runtime) Unresolved() uint64 { return rt.unresolved.Load() }
 
+// Done returns a channel closed when the runtime halts via Shutdown or a loop
+// panic.
 func (rt *Runtime) Done() <-chan struct{} { return rt.halted }
 
+// Err returns the fatal loop error (wrapping ErrPanicked) if the loop panicked,
+// or nil otherwise.
 func (rt *Runtime) Err() error {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()

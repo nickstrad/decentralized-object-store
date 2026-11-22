@@ -78,6 +78,10 @@ func quotaDriftRun(seed int64) *sim.Sim {
 	return s
 }
 
+// TestQuotaRecountsAfterAManifestDiscardDST proves a manifest-key LWW discard
+// without a quota-key discard (unequal-size vs same-size overwrite across a
+// partition) still triggers a recount and brings usage back in line with live
+// manifests after heal.
 func TestQuotaRecountsAfterAManifestDiscardDST(t *testing.T) {
 	t.Parallel()
 	sweepSharded(t, func(t *testing.T, seed int64) {

@@ -9,6 +9,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/node"
 )
 
+// Wire frame and datagram size limits and header layout constants.
+// MaxFrame matches node.MaxFrame (16 MiB); MaxDatagram is the maximum IPv4 UDP
+// payload size.
 const (
 	MaxFrame       = node.MaxFrame
 	MaxDatagram    = 65507
@@ -34,6 +37,8 @@ type responseFrame struct {
 	Body []byte
 }
 
+// appendFrame prefixes payload with its 4-byte big-endian length, rejecting
+// payloads larger than MaxFrame with env.ErrTooLarge.
 func appendFrame(dst, payload []byte) ([]byte, error) {
 	if len(payload) > MaxFrame {
 		return dst, fmt.Errorf("node: frame of %d bytes over %d: %w", len(payload), MaxFrame, env.ErrTooLarge)
@@ -42,6 +47,7 @@ func appendFrame(dst, payload []byte) ([]byte, error) {
 	return append(dst, payload...), nil
 }
 
+// readFrame reads one length-prefixed TCP frame bounded by limit bytes.
 func readFrame(r io.Reader, limit int) ([]byte, error) {
 	var hdr [frameLenSize]byte
 	if _, err := io.ReadFull(r, hdr[:]); err != nil {
@@ -58,6 +64,8 @@ func readFrame(r io.Reader, limit int) ([]byte, error) {
 	return buf, nil
 }
 
+// encodeRequest serializes a TCP request frame with version, kind, request ID,
+// length-prefixed self-declared sender ID, and body.
 func encodeRequest(f requestFrame) ([]byte, error) {
 	if len(f.From) == 0 || len(f.From) > 255 {
 		return nil, fmt.Errorf("node: request from %q: %w", f.From, env.ErrInvalidArgument)
@@ -70,6 +78,8 @@ func encodeRequest(f requestFrame) ([]byte, error) {
 	return append(b, f.Body...), nil
 }
 
+// decodeRequest validates and parses a TCP request frame, returning
+// node.ErrFrame on malformed or truncated input.
 func decodeRequest(b []byte) (requestFrame, error) {
 	if len(b) < requestHeader || b[0] != frameVersion || b[1] != kindRequest {
 		return requestFrame{}, fmt.Errorf("node: request frame: %w", node.ErrFrame)
@@ -83,6 +93,8 @@ func decodeRequest(b []byte) (requestFrame, error) {
 	return requestFrame{ID: id, From: env.NodeID(rest[:n]), Body: rest[n:]}, nil
 }
 
+// encodeResponse serializes a TCP response frame, truncating error messages to
+// env.MaxErrorMessage bytes.
 func encodeResponse(f responseFrame) []byte {
 	msg := f.Msg
 	if len(msg) > env.MaxErrorMessage {
@@ -97,6 +109,8 @@ func encodeResponse(f responseFrame) []byte {
 	return append(b, f.Body...)
 }
 
+// decodeResponse validates and parses a TCP response frame, rejecting error
+// codes that carry a non-empty body.
 func decodeResponse(b []byte) (responseFrame, error) {
 	if len(b) < responseHeader || b[0] != frameVersion || b[1] != kindResponse {
 		return responseFrame{}, fmt.Errorf("node: response frame: %w", node.ErrFrame)
@@ -115,6 +129,8 @@ func decodeResponse(b []byte) (responseFrame, error) {
 	return f, nil
 }
 
+// encodeDatagram prefixes a UDP payload with the protocol version and sender
+// ID, rejecting empty/oversized sender IDs or payloads exceeding MaxDatagram.
 func encodeDatagram(from env.NodeID, body []byte) ([]byte, error) {
 	if len(from) == 0 || len(from) > 255 {
 		return nil, fmt.Errorf("node: datagram from %q: %w", from, env.ErrInvalidArgument)
@@ -128,6 +144,7 @@ func encodeDatagram(from env.NodeID, body []byte) ([]byte, error) {
 	return append(b, body...), nil
 }
 
+// decodeDatagram validates and extracts the sender ID and body of a UDP packet.
 func decodeDatagram(b []byte) (env.NodeID, []byte, error) {
 	if len(b) < datagramHeader || b[0] != frameVersion {
 		return "", nil, fmt.Errorf("node: datagram: %w", node.ErrFrame)

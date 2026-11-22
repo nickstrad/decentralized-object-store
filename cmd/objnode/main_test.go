@@ -22,6 +22,9 @@ import (
 
 func TestMain(m *testing.M) { os.Exit(leakcheck.Main(m, 5*time.Second)) }
 
+// TestParseFlagsAndConfigFile proves flag defaults, full-flag parsing, JSON
+// config loading with CLI flag overrides, and rejection of unknown fields,
+// missing files, stray arguments, non-positive shutdown timeouts, and bad flags.
 func TestParseFlagsAndConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "c.json")
@@ -74,6 +77,8 @@ func TestParseFlagsAndConfigFile(t *testing.T) {
 	}
 }
 
+// TestHelpListsEveryFlag proves -h exits 0 and prints embedded help text that
+// names every supported flag without duplicate tokens.
 func TestHelpListsEveryFlag(t *testing.T) {
 	var stderr bytes.Buffer
 	if code := run(context.Background(), []string{"-h"}, &stderr, nil); code != 0 {
@@ -94,6 +99,8 @@ func TestHelpListsEveryFlag(t *testing.T) {
 	}
 }
 
+// TestInvalidConfigurationsExitTwo proves invalid addresses, missing data dirs,
+// invalid erasure layouts, empty HTTP endpoints, and unknown flags exit 2.
 func TestInvalidConfigurationsExitTwo(t *testing.T) {
 	for _, args := range [][]string{
 		{"-id", "nohostport", "-data", "/tmp/x"},
@@ -122,6 +129,9 @@ func freePort(t *testing.T) string {
 	return addr
 }
 
+// TestServeAndShutdownOnCancel proves objnode starts serving /_health, shuts
+// down cleanly with exit 0 when its context is canceled, and exits 1 when the
+// HTTP listener cannot bind.
 func TestServeAndShutdownOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	id := freePort(t)
@@ -157,6 +167,8 @@ func TestServeAndShutdownOnCancel(t *testing.T) {
 	}
 }
 
+// TestServeExitsNonZeroWhenTheNodeLoopPanics proves an injected panic on the
+// node loop logs the failure and terminates objnode with exit code 1.
 func TestServeExitsNonZeroWhenTheNodeLoopPanics(t *testing.T) {
 	var stderr safeBuffer
 	done := make(chan int, 1)

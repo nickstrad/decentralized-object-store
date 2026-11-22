@@ -140,6 +140,9 @@ func runProp(t *rapid.T, h *harness, ops []propOp) map[string][]byte {
 	return acked
 }
 
+// TestPropObjectRoundTripThroughTheFullPath proves random PUT/DELETE sequences
+// across 6 simulated nodes and boundary sizes always read back the last
+// acknowledged bytes or ErrNotFound after metadata converges.
 func TestPropObjectRoundTripThroughTheFullPath(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		var dups, lost int
@@ -148,6 +151,9 @@ func TestPropObjectRoundTripThroughTheFullPath(t *testing.T) {
 	})
 }
 
+// TestPropRemoteOperationsAreIdempotent proves duplicating every RPC and
+// dropping 10% of replies never double-applies writes or corrupts bucket quota
+// usage once converged.
 func TestPropRemoteOperationsAreIdempotent(t *testing.T) {
 	lossy := 0
 	rapid.Check(t, func(t *rapid.T) {

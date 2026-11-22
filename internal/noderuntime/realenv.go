@@ -20,6 +20,8 @@ func (c realClock) Now() env.Time { return env.Time(time.Now().UnixNano()) }
 
 func (c realClock) AfterFunc(d time.Duration, fn func()) env.Timer { return c.rt.afterFunc(d, fn) }
 
+// realTimer wraps time.Timer so callbacks run on the Runtime loop and a
+// stopped or reset timer's already-queued event is ignored via generation gen.
 type realTimer struct {
 	rt      *Runtime
 	t       *time.Timer
@@ -73,6 +75,11 @@ func (tm *realTimer) Reset(d time.Duration) bool {
 	return was
 }
 
+// fileDisk implements env.Disk over a directory tree using temp-file write,
+// fsync, atomic rename, and directory/ancestor fsync. It runs synchronously on
+// the node loop. Under POSIX semantics a crash leaves either the old or new
+// bytes (or a prefix of an unsynced append) and synced writes survive; unsynced
+// writes may also survive if flushed from the OS page cache.
 type fileDisk struct {
 	fs    vfs
 	dir   string
@@ -82,6 +89,8 @@ type fileDisk struct {
 
 const tmpDir = ".tmp"
 
+// openFileDisk initializes dir and removes any temp files left in .tmp/ by a
+// prior crash.
 func openFileDisk(fsys vfs, dir string) (*fileDisk, error) {
 	d := &fileDisk{fs: fsys, dir: filepath.Clean(dir), fresh: map[string]bool{}}
 	tmp := filepath.Join(d.dir, tmpDir)
@@ -115,6 +124,8 @@ func openFileDisk(fsys vfs, dir string) (*fileDisk, error) {
 	return d, nil
 }
 
+// path validates name as a relative slash-separated blob key outside .tmp and
+// maps it under d.dir.
 func (d *fileDisk) path(name string) (string, error) {
 	if name == "" || len(name) > 4096 || strings.HasPrefix(name, "/") || strings.ContainsRune(name, 0) || strings.Contains(name, "\\") {
 		return "", fmt.Errorf("node: disk name %q: %w", name, env.ErrInvalidArgument)
@@ -134,6 +145,8 @@ func ioErr(op, name string, err error) error {
 	return fmt.Errorf("node: disk %s %q: %v: %w", op, name, err, env.ErrIO)
 }
 
+// mkdirs creates dir and any missing parents under d.dir, recording every newly
+// created directory in d.fresh so syncChain fsyncs its parent.
 func (d *fileDisk) mkdirs(dir string) error {
 	rel, err := filepath.Rel(d.dir, dir)
 	if err != nil {
@@ -172,6 +185,9 @@ func writeAll(f vfile, data []byte) error {
 	return nil
 }
 
+// syncChain fsyncs dir and the parent of every still-marked fresh ancestor up
+// to d.dir, clearing each mark only after its parent fsync succeeds so a retry
+// after a mid-chain error finishes the remaining ancestors.
 func (d *fileDisk) syncChain(dir string) error {
 	if err := d.syncDir(dir); err != nil {
 		return err
@@ -223,6 +239,8 @@ func (d *fileDisk) Write(name string, data []byte) error {
 	if err != nil {
 		return ioErr("write", name, err)
 	}
+	// Fsync the temp file before renaming so power loss cannot leave the target
+	// pointing at an unallocated or zero-length inode.
 	werr := writeAll(f, data)
 	if werr == nil {
 		werr = f.Sync()
@@ -241,6 +259,8 @@ func (d *fileDisk) Append(name string, data []byte) error {
 	if err != nil {
 		return err
 	}
+	// Route the first append through temp+fsync+rename so a newly created log
+	// never survives a crash as a zero-byte file.
 	if _, err := d.fs.ReadFile(p); errors.Is(err, fs.ErrNotExist) {
 		if err := d.Write(name, data); err != nil {
 			return fmt.Errorf("node: disk append %q: first record: %w", name, err)

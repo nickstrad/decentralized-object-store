@@ -297,18 +297,29 @@ func requireReadableNotLost(t *testing.T, r orphanRun) {
 	}
 }
 
+// TestAnOrphanedWriteWithAnUnwrittenShardIsDeclaredLost proves at k=2,m=2 that
+// 2 orphaned shards plus 1 unwritten shard (fewer than k left) is declared lost
+// after heal, logged, counted, and its remaining shards collected after GCGrace.
 func TestAnOrphanedWriteWithAnUnwrittenShardIsDeclaredLost(t *testing.T) {
 	runOrphanCase(t, orphanCase{nodes: 4, layout: storage.Layout{K: 2, M: 2, StripeSize: 1024}, stripes: 1, missing: 2, lost: true})
 }
 
+// TestAnOrphanedWriteWithEnoughShardsLeftStaysReadable is the readable control
+// at k=2,m=2: 2 orphaned shards with k=2 remaining stay live, read back, and
+// rebuild to all 4 shards without a loss declaration.
 func TestAnOrphanedWriteWithEnoughShardsLeftStaysReadable(t *testing.T) {
 	runOrphanCase(t, orphanCase{nodes: 4, layout: storage.Layout{K: 2, M: 2, StripeSize: 1024}, stripes: 1, missing: -1, keepers: []int{2}, lost: false})
 }
 
+// TestAnOrphanedWriteWithAnUnwrittenShardIsDeclaredLostAtFourPlusTwo proves
+// the unwritten-plus-orphaned loss declaration at production layout k=4,m=2
+// with quorum 5.
 func TestAnOrphanedWriteWithAnUnwrittenShardIsDeclaredLostAtFourPlusTwo(t *testing.T) {
 	runOrphanCase(t, orphanCase{nodes: 6, layout: storage.Layout{K: 4, M: 2, StripeSize: 1024}, quorum: 5, stripes: 1, missing: 4, keepers: []int{2, 3}, lost: true})
 }
 
+// TestAnOrphanedWriteWithEnoughShardsLeftStaysReadableAtFourPlusTwo is the
+// k=4,m=2 control where 2 shards are collected and 4 remain, rebuilding cleanly.
 func TestAnOrphanedWriteWithEnoughShardsLeftStaysReadableAtFourPlusTwo(t *testing.T) {
 	runOrphanCase(t, orphanCase{nodes: 6, layout: storage.Layout{K: 4, M: 2, StripeSize: 1024}, quorum: 5, stripes: 1, missing: -1, keepers: []int{2, 3, 4}, lost: false})
 }
@@ -329,10 +340,16 @@ func onlyStripeUnrecoverable(stripe int) func(t *testing.T, h *harness, oi stora
 	}
 }
 
+// TestAMultiStripeWriteWithOneUnrecoverableStripeIsDeclaredLost proves a
+// 5-stripe 4+2 object where only the final stripe drops below k (2 orphaned + 1
+// unwritten) is declared lost after heal.
 func TestAMultiStripeWriteWithOneUnrecoverableStripeIsDeclaredLost(t *testing.T) {
 	runOrphanCase(t, orphanCase{nodes: 6, layout: storage.Layout{K: 4, M: 2, StripeSize: 1024}, quorum: 5, stripes: storage.DefaultWindow + 1, missing: 4, lastOnly: true, keepers: []int{2, 3, 4}, beforeHeal: onlyStripeUnrecoverable(storage.DefaultWindow), lost: true})
 }
 
+// TestAMultiStripeWriteWithOneStripeRottedDuringThePartitionIsDeclaredLost
+// proves mixed loss causes (2 orphaned shards plus 1 bit-rotted shard on stripe
+// 1) trigger a loss declaration after heal.
 func TestAMultiStripeWriteWithOneStripeRottedDuringThePartitionIsDeclaredLost(t *testing.T) {
 	rot := func(t *testing.T, h *harness, oi storage.ObjectInfo) {
 		man := h.mans[oi.Version]
@@ -388,6 +405,9 @@ func holderOf(man *storage.Manifest, stripe int, id env.NodeID) (string, bool) {
 	return "", false
 }
 
+// TestAHolderThatCannotBeHeardFromBlocksALossDeclaration proves a partitioned
+// or paused holder prevents new absence records and blocks loss declaration
+// while 2 other shards are rotted, allowing full repair after heal.
 func TestAHolderThatCannotBeHeardFromBlocksALossDeclaration(t *testing.T) {
 	for _, mode := range []string{"partitioned", "paused"} {
 		t.Run(mode, func(t *testing.T) {
@@ -433,6 +453,8 @@ func TestAHolderThatCannotBeHeardFromBlocksALossDeclaration(t *testing.T) {
 	}
 }
 
+// TestMoreThanMShardsRottedBeyondRepairIsDeclaredLost proves rotting m+1 shards
+// of one stripe declares the version lost with no orphan collection involved.
 func TestMoreThanMShardsRottedBeyondRepairIsDeclaredLost(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -475,6 +497,8 @@ func TestMoreThanMShardsRottedBeyondRepairIsDeclaredLost(t *testing.T) {
 	}
 }
 
+// TestOneRottedStripeWithinMIsRepairedNotDeclaredLost proves rotting exactly m
+// shards repairs cleanly and never declares the object lost.
 func TestOneRottedStripeWithinMIsRepairedNotDeclaredLost(t *testing.T) {
 	h, logs := lossHarness(t, 4, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)
 	oi, data, man := putEverywhere(t, h, 1500)
@@ -493,6 +517,9 @@ func TestOneRottedStripeWithinMIsRepairedNotDeclaredLost(t *testing.T) {
 	requireReadableNotLost(t, orphanRun{h: h, oi: oi, data: data, logs: logs})
 }
 
+// TestAHolderThatRecordedItHoldsNoShardRefusesItLater proves a holder's
+// binding absence record causes a subsequent OpPutShard for that shard to be
+// refused with ErrFenced, counted in AbsentRefused, and not written to disk.
 func TestAHolderThatRecordedItHoldsNoShardRefusesItLater(t *testing.T) {
 	h, _ := lossHarness(t, 4, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)
 	_, _, man := putEverywhere(t, h, 700)
@@ -542,6 +569,8 @@ func TestAHolderThatRecordedItHoldsNoShardRefusesItLater(t *testing.T) {
 	}
 }
 
+// TestTheLossRecordIsCommittedBeforeTheManifestIsTombstoned proves declareLost
+// commits ~lost/<version> before tombstoning the manifest key.
 func TestTheLossRecordIsCommittedBeforeTheManifestIsTombstoned(t *testing.T) {
 	layout := storage.Layout{K: 2, M: 2, StripeSize: 1024}
 	var order []string
@@ -574,6 +603,11 @@ func TestTheLossRecordIsCommittedBeforeTheManifestIsTombstoned(t *testing.T) {
 	}
 }
 
+// TestAStaleShardWriteToAWipedHolderOfADeclaredLostVersionIsCollected proves
+// residual case (a): if a wiped holder receives a delayed shard write before
+// metadata sync for a version already declared lost, it later collects that
+// shard via the ~gc/ marker after GCGrace while the key stays not live with
+// its loss record intact.
 func TestAStaleShardWriteToAWipedHolderOfADeclaredLostVersionIsCollected(t *testing.T) {
 	h, _ := lossHarness(t, 10, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)
 	h.gc.off = true

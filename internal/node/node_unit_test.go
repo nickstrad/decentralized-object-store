@@ -15,6 +15,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// TestBucketMetadataAPIOnOneNode exercises bucket creation, ACLs, quotas,
+// object listing, user tags, deletes, preconditions, migration validation, and
+// health/accessors on one simulated node.
 func TestBucketMetadataAPIOnOneNode(t *testing.T) {
 	h := smallCluster(t, 2)
 	id := h.ids[0]
@@ -156,6 +159,9 @@ func TestBucketMetadataAPIOnOneNode(t *testing.T) {
 	}
 }
 
+// TestConfigValidationRejectsEachBadField proves Config.Validate rejects each
+// invalid field with ErrConfig, names offending count fields, and NewFactory
+// returns a placeholder failed Process on bad config.
 func TestConfigValidationRejectsEachBadField(t *testing.T) {
 	ok := smallConfig()
 	if err := ok.Validate(); err != nil {
@@ -210,6 +216,9 @@ func TestConfigValidationRejectsEachBadField(t *testing.T) {
 	}
 }
 
+// TestRecordDecodersRejectMalformedBytes proves object, bucket, staged, and
+// pointer-view decoders reject truncated, wrong-version, trailing-byte, and
+// corrupt-manifest inputs.
 func TestRecordDecodersRejectMalformedBytes(t *testing.T) {
 	for _, b := range [][]byte{nil, {9}, {1}, {1, 0x80}} {
 		for i, err := range node.DecodeRecordsForTest(b) {
@@ -229,6 +238,9 @@ func TestRecordDecodersRejectMalformedBytes(t *testing.T) {
 	}
 }
 
+// TestNodeRefusesMalformedAndPostStopTraffic proves malformed datagrams and
+// requests are counted and rejected, and after Node.Stop no workers run and
+// all operations and RPCs return ErrStopped.
 func TestNodeRefusesMalformedAndPostStopTraffic(t *testing.T) {
 	h := smallCluster(t, 3)
 	n := h.node(h.ids[0])
@@ -272,6 +284,8 @@ func TestNodeRefusesMalformedAndPostStopTraffic(t *testing.T) {
 	}
 }
 
+// TestBucketMigratingAwayStopsItsWorkers proves source-region nodes stop their
+// shard inventories once a bucket migrates away and Stop halts all workers.
 func TestBucketMigratingAwayStopsItsWorkers(t *testing.T) {
 	cfg := partitionConfig()
 	cfg.ViewSettle = 2 * time.Second
@@ -327,6 +341,8 @@ func TestBucketMigratingAwayStopsItsWorkers(t *testing.T) {
 	}
 }
 
+// TestMigrationClaimOfAWronglyRoutedBucketIsPermanent proves migrator.Claim
+// returns saga.ErrPermanent for a missing bucket or mismatched source region.
 func TestMigrationClaimOfAWronglyRoutedBucketIsPermanent(t *testing.T) {
 	h := smallCluster(t, 1)
 	n := h.node(h.ids[0])
@@ -352,6 +368,9 @@ func TestMigrationClaimOfAWronglyRoutedBucketIsPermanent(t *testing.T) {
 	}
 }
 
+// TestPreconditionsOnTheNodeNeverDegradeToUnconditional proves empty or
+// non-matching If-Match conditions fail with ErrPreconditionFailed across PUT,
+// DELETE, and PutTag instead of running unconditionally.
 func TestPreconditionsOnTheNodeNeverDegradeToUnconditional(t *testing.T) {
 	h := smallCluster(t, 1)
 	id := h.ids[0]
@@ -396,6 +415,9 @@ func TestPreconditionsOnTheNodeNeverDegradeToUnconditional(t *testing.T) {
 	}
 }
 
+// TestMigrationCopyNeverCallsBackInsideTheCall proves migrator.Copy always
+// invokes its completion callback asynchronously, including on empty or missing
+// buckets.
 func TestMigrationCopyNeverCallsBackInsideTheCall(t *testing.T) {
 	h := smallCluster(t, 1)
 	n := h.node(h.ids[0])
@@ -416,6 +438,8 @@ func TestMigrationCopyNeverCallsBackInsideTheCall(t *testing.T) {
 	}
 }
 
+// TestMigrationStatusOfAnUnknownSagaIsUnknownSaga proves Node.Migration wraps
+// ErrUnknownSaga for an unknown saga ID.
 func TestMigrationStatusOfAnUnknownSagaIsUnknownSaga(t *testing.T) {
 	h := smallCluster(t, 1)
 	if _, err := h.node(h.ids[0]).Migration("nope"); !errors.Is(err, node.ErrUnknownSaga) {
@@ -423,6 +447,10 @@ func TestMigrationStatusOfAnUnknownSagaIsUnknownSaga(t *testing.T) {
 	}
 }
 
+// TestPointerDecidesFromTheAgreedFlipOwner proves migrator.Pointer returns
+// ErrUnsettled before flip, returns a superseded marker for a foreign owner,
+// repairs a lagging route when this saga owns ~flip, and rejects mismatched
+// saga input permanently.
 func TestPointerDecidesFromTheAgreedFlipOwner(t *testing.T) {
 	h := smallCluster(t, 1)
 	n := h.node(h.ids[0])
@@ -485,6 +513,8 @@ func TestPointerDecidesFromTheAgreedFlipOwner(t *testing.T) {
 	}
 }
 
+// TestNodeSurfaceAccessors verifies Members, StatusRows, user-tag filtering of
+// system tags, and Health's lost_objects count.
 func TestNodeSurfaceAccessors(t *testing.T) {
 	h := smallCluster(t, 1)
 	n := h.node(h.ids[0])

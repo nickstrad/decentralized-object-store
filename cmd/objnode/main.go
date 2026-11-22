@@ -1,3 +1,10 @@
+// Command objnode runs one object-store and metadata-sync node over real
+// UDP/TCP sockets, a file-backed disk, and an unauthenticated HTTP API.
+//
+// Options may be passed via flags or a JSON config file (flags take precedence).
+// On SIGINT, SIGTERM, or a recovered panic on the node loop, objnode drains
+// HTTP and runtime shutdown within the configured shutdown timeout and exits
+// 0 on clean shutdown, 1 on runtime failure, or 2 on invalid options.
 package main
 
 import (
@@ -45,6 +52,8 @@ func defaults() options {
 	return options{HTTP: ":8080", K: storage.DefaultK, M: storage.DefaultM, Stripe: storage.DefaultStripeSize, MaxObject: httpapi.DefaultMaxObjectSize, ShutdownTimeout: 20 * time.Second}
 }
 
+// parse reads CLI flags and an optional JSON config file (rejecting unknown
+// fields) and returns the merged options with CLI flags overriding file values.
 func parse(args []string, stderr io.Writer) (options, error) {
 	o := defaults()
 	fs := flag.NewFlagSet("objnode", flag.ContinueOnError)
@@ -90,6 +99,8 @@ func parse(args []string, stderr io.Writer) (options, error) {
 	return o, nil
 }
 
+// merge overlays explicitly provided CLI flags onto options decoded from a
+// config file.
 func merge(file, flags options, set map[string]bool) options {
 	out := file
 	pick := map[string]func(){
@@ -106,6 +117,7 @@ func merge(file, flags options, set map[string]bool) options {
 	return out
 }
 
+// configs validates o and builds the noderuntime and HTTP server configs.
 func (o options) configs(logf func(string, ...any)) (noderuntime.RuntimeConfig, httpapi.Limits, error) {
 	var seeds []env.NodeID
 	for _, s := range strings.Split(o.Seeds, ",") {
@@ -129,6 +141,8 @@ func (o options) configs(logf func(string, ...any)) (noderuntime.RuntimeConfig, 
 	return cfg, httpapi.Limits{MaxObjectSize: o.MaxObject}, nil
 }
 
+// serve starts the node runtime and HTTP server, waits for ctx cancellation or
+// an unexpected runtime stop, and runs bounded shutdown of both.
 func serve(ctx context.Context, o options, logger *log.Logger, ready func(httpAddr string, rt *noderuntime.Runtime)) error {
 	cfg, limits, err := o.configs(logger.Printf)
 	if err != nil {
@@ -159,6 +173,9 @@ func serve(ctx context.Context, o options, logger *log.Logger, ready func(httpAd
 	return errors.Join(rt.Err(), srv.Shutdown(sctx), rt.Shutdown(sctx))
 }
 
+// run executes the CLI lifecycle and maps outcomes to process exit codes:
+// 0 for help or clean shutdown, 2 for usage/config errors, and 1 for runtime
+// errors.
 func run(ctx context.Context, args []string, stderr io.Writer, ready func(string, *noderuntime.Runtime)) int {
 	o, err := parse(args, stderr)
 	if errors.Is(err, flag.ErrHelp) {

@@ -154,6 +154,9 @@ func bitRotRun(res *bitRotResult) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestClusterBitRotDST proves deterministic 21-node bit-rot recovery: with up
+// to m shards rotted per stripe, every GET returns exact bytes and shard
+// inventories rebuild every rotted shard while moving exactly the damaged bytes.
 func TestClusterBitRotDST(t *testing.T) {
 	t.Parallel()
 	var m measure

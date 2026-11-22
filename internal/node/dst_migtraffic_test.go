@@ -334,6 +334,11 @@ func migrationTrafficRun(res *trafficResult) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestClusterMigrationUnderTrafficDST drives continuous PUT, overwrite, and
+// DELETE traffic on non-coordinators through both completed and compensated
+// migrations under 2% loss and up to 150 ms latency, proving ackOracle explains
+// every acked write, live objects live only in the final region, and gcOracle
+// holds throughout.
 func TestClusterMigrationUnderTrafficDST(t *testing.T) {
 	t.Parallel()
 	var m measure

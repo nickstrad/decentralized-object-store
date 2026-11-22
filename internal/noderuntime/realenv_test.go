@@ -13,6 +13,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/node"
 )
 
+// TestFileDiskMeetsTheDiskContract proves Read, Write, Append, Sync, Delete,
+// List (hiding .tmp/), invalid-name rejection, and I/O errors on fileDisk.
 func TestFileDiskMeetsTheDiskContract(t *testing.T) {
 	d, err := openFileDisk(osFS{}, t.TempDir())
 	if err != nil {
@@ -87,6 +89,9 @@ func newLoopRuntime(t *testing.T) *Runtime {
 	return rt
 }
 
+// TestRealTimersFireStopAndResetOnTheLoop proves realTimer callbacks run on
+// the node loop, honor Stop before firing, handle non-positive durations, and
+// can be Reset after firing.
 func TestRealTimersFireStopAndResetOnTheLoop(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rt := newLoopRuntime(t)

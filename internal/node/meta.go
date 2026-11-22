@@ -16,6 +16,9 @@ var (
 	canaryNoQuotaAudit     bool
 )
 
+// metaRepairer implements merkle.Repairer over the node's entire OCC document
+// (including tombstones and system keys) so one Merkle tree discovers newly
+// created buckets as well as missed updates.
 type metaRepairer struct{ n *Node }
 
 func (m *metaRepairer) Keys() ([]string, error) {
@@ -53,6 +56,9 @@ func (m *metaRepairer) Fetch(peer env.NodeID, key string, done func([]byte, erro
 	m.n.net.Request(peer, w.b, m.n.cfg.RPCTimeout, done)
 }
 
+// Put merges one fetched single-key OCC document using last-writer-wins. If the
+// fetched version loses to the local version, Put returns ErrStale so the
+// Merkle worker does not record the losing hash.
 func (m *metaRepairer) Put(key string, data []byte) error {
 	n := m.n
 	doc, err := occ.Decode(data)
@@ -92,6 +98,9 @@ const (
 	opPurge     byte = 3
 )
 
+// serveNode dispatches node-level RPCs on chNode: metadata record fetches for
+// Merkle repair, migration pointer-view queries, and explicit dead-version
+// shard purges.
 func (n *Node) serveNode(from env.NodeID, req []byte, reply env.Reply) {
 	r := rbuf{b: req}
 	op := r.byte()

@@ -80,6 +80,10 @@ type bucketState struct {
 	hasLiv bool
 }
 
+// writable reports whether the bucket accepts writes. A region-routed bucket
+// (b.rec.Region != "") is refused until its routing pointer arrives, and any
+// routed bucket is unwritable while its route differs from ~live (between
+// migration flip and promote).
 func (b bucketState) writable() bool {
 	if b.route == "" {
 		return b.rec.Region == "" && (!b.hasLiv || b.live != "")
@@ -119,6 +123,9 @@ func validObjectKey(key string) error {
 	return nil
 }
 
+// precondition translates a storage.Condition into an occ.Precondition against
+// rd. Any present If-Match header (including an empty strong-tag list) never
+// degrades to occ.Unconditional.
 func precondition(rd occ.Reader, key string, c storage.Condition) (occ.Precondition, error) {
 	ifMatch := c.IfMatch != "" || c.IfMatchList
 	switch {
@@ -176,6 +183,11 @@ func (n *Node) quotaCheck(rd occ.Reader, bs bucketState, dBytes, dObjects int64)
 	return nil
 }
 
+// PutObject writes req.Data into the bucket's current placement scope, commits
+// the single OCC manifest record under req.Cond, updates local quota usage, and
+// invokes cb asynchronously with the resulting ObjectInfo or error. Quotas are
+// pre-checked locally without cross-node reservation; concurrent writes on
+// separate nodes may both succeed and later settle via last-writer-wins.
 func (n *Node) PutObject(req storage.PutRequest, cb func(storage.ObjectInfo, error)) {
 	rd, err := n.reader()
 	if err != nil {
@@ -240,6 +252,8 @@ func (n *Node) commitPut(req storage.PutRequest, region string, pre occ.Precondi
 		fail(err)
 		return
 	}
+	// Re-check bucket writability and route synchronously before committing so a
+	// PUT started before a migration flip cannot commit once route != ~live.
 	if !bs.writable() || bs.route != region {
 		n.markDead(req.Bucket, man.Version)
 		fail(fmt.Errorf("node: bucket %q moved during the put: %w", req.Bucket, storage.ErrBusy))
@@ -279,6 +293,9 @@ func (n *Node) commitPut(req storage.PutRequest, region string, pre occ.Precondi
 	cb(info(req.Bucket, req.Key, v.ETag(), rec), nil)
 }
 
+// GetObject reads the object's live manifest and reconstructs its full payload
+// from any k verified shards, invoking cb asynchronously. If a shard fails
+// verification, it flags the bucket's inventory for a full scrub.
 func (n *Node) GetObject(bucket, key string, cb func(storage.ObjectInfo, []byte, error)) {
 	fail := func(err error) {
 		n.stats.GetFailures++
@@ -321,11 +338,18 @@ func (n *Node) head(bucket, key string) (storage.ObjectInfo, objectRecord, error
 	return info(bucket, key, etag, rec), rec, nil
 }
 
+// HeadObject returns metadata for the live object at bucket/key, or an error
+// wrapping ErrNotReady, ErrStopped, storage.ErrNoSuchBucket, storage.ErrInvalid,
+// or occ.ErrNotFound.
 func (n *Node) HeadObject(bucket, key string) (storage.ObjectInfo, error) {
 	oi, _, err := n.head(bucket, key)
 	return oi, err
 }
 
+// DeleteObject writes an OCC tombstone for bucket/key subject to cond, marks
+// the replaced storage version dead (~gc/<version>) so its shards are collected
+// after GCGrace, and decrements local quota usage. Tombstones are retained
+// indefinitely so stale replicas cannot resurrect deleted keys.
 func (n *Node) DeleteObject(bucket, key string, cond storage.Condition) (storage.ObjectInfo, error) {
 	rd, err := n.reader()
 	if err != nil {
@@ -364,6 +388,8 @@ func (n *Node) DeleteObject(bucket, key string, cond storage.Condition) (storage
 	return oi, nil
 }
 
+// ListObjects returns live objects in bucket whose keys start with prefix, up
+// to limit (unlimited when limit <= 0).
 func (n *Node) ListObjects(bucket, prefix string, limit int) ([]storage.ObjectInfo, error) {
 	rd, err := n.reader()
 	if err != nil {
@@ -385,6 +411,9 @@ func (n *Node) ListObjects(bucket, prefix string, limit int) ([]storage.ObjectIn
 	return out, nil
 }
 
+// CreateBucket creates a new bucket record and, when spec.Region is non-empty,
+// initializes its routing pointer and ~live tag to that region. It returns
+// storage.ErrBucketExists if the bucket already exists locally.
 func (n *Node) CreateBucket(spec storage.BucketSpec) error {
 	rd, err := n.reader()
 	if err != nil {
@@ -424,6 +453,9 @@ func (n *Node) setLive(bucket, region string) error {
 	return nil
 }
 
+// PutTag writes one user tag on an existing object subject to cond. Names
+// starting with "~" are reserved for system metadata and rejected with
+// storage.ErrInvalid.
 func (n *Node) PutTag(bucket, key, name, value string, cond storage.Condition) (storage.TagInfo, error) {
 	rd, err := n.reader()
 	if err != nil {
@@ -450,6 +482,7 @@ func (n *Node) PutTag(bucket, key, name, value string, cond storage.Condition) (
 	return storage.TagInfo{Name: name, Value: value, ETag: v.ETag().String()}, nil
 }
 
+// Tags returns all non-system tags currently attached to bucket/key.
 func (n *Node) Tags(bucket, key string) ([]storage.TagInfo, error) {
 	rd, err := n.reader()
 	if err != nil {
@@ -503,6 +536,8 @@ func permString(p occ.Permission) string {
 	return b.String()
 }
 
+// PutACL sets a principal's permission letters (subset of "r", "w", "a") on
+// bucket subject to cond.
 func (n *Node) PutACL(bucket, principal, perm string, cond storage.Condition) (storage.ACLInfo, error) {
 	rd, err := n.reader()
 	if err != nil {
@@ -531,6 +566,8 @@ func (n *Node) PutACL(bucket, principal, perm string, cond storage.Condition) (s
 	return storage.ACLInfo{Principal: principal, Perm: permString(p), ETag: v.ETag().String()}, nil
 }
 
+// ACL returns a principal's permission entry on bucket, or occ.ErrNotFound if
+// none is set.
 func (n *Node) ACL(bucket, principal string) (storage.ACLInfo, error) {
 	rd, err := n.reader()
 	if err != nil {
@@ -546,6 +583,8 @@ func (n *Node) ACL(bucket, principal string) (storage.ACLInfo, error) {
 	return storage.ACLInfo{Principal: principal, Perm: permString(p), ETag: etag.String()}, nil
 }
 
+// Quota returns bucket's configured byte and object limits and its currently
+// recorded usage.
 func (n *Node) Quota(bucket string) (storage.QuotaInfo, error) {
 	rd, err := n.reader()
 	if err != nil {
@@ -562,6 +601,8 @@ func (n *Node) Quota(bucket string) (storage.QuotaInfo, error) {
 	return storage.QuotaInfo{Bucket: bucket, LimitBytes: bs.rec.QuotaBytes, LimitObjects: bs.rec.QuotaObjects, UsedBytes: u.Bytes, UsedObjects: u.Objects}, nil
 }
 
+// SetQuota updates bucket's configured byte and object limits via If-Match on
+// the bucket record and returns the resulting QuotaInfo.
 func (n *Node) SetQuota(bucket string, bytes, objects uint64) (storage.QuotaInfo, error) {
 	rd, err := n.reader()
 	if err != nil {
@@ -581,6 +622,9 @@ func (n *Node) SetQuota(bucket string, bytes, objects uint64) (storage.QuotaInfo
 	return n.Quota(bucket)
 }
 
+// StartMigration begins a compensating migration saga coordinated by this node
+// to move a region-routed bucket to region to. Unrouted buckets or migrations
+// to the current region fail with ErrNoMigration.
 func (n *Node) StartMigration(bucket, to string) (storage.MigrationInfo, error) {
 	rd, err := n.reader()
 	if err != nil {
@@ -601,6 +645,7 @@ func (n *Node) StartMigration(bucket, to string) (storage.MigrationInfo, error) 
 	return storage.MigrationInfo{ID: id, Bucket: bucket, From: in.From, To: to, State: saga.StateRunning.String()}, nil
 }
 
+// BeginMigration starts a migration saga with an explicit saga.ID and input.
 func (n *Node) BeginMigration(id saga.ID, in saga.MigrationInput) error {
 	if _, err := n.reader(); err != nil {
 		return err
@@ -621,6 +666,8 @@ func (n *Node) newSagaID() string {
 	return fmt.Sprintf("%s-%x-%x", b, uint64(n.e.Clock.Now()), n.e.Rand.Uint32())
 }
 
+// Migration returns the status of a migration saga coordinated by this node, or
+// an error wrapping ErrUnknownSaga and saga.ErrSagaNotFound if unknown locally.
 func (n *Node) Migration(id string) (storage.MigrationInfo, error) {
 	if n.stopped {
 		return storage.MigrationInfo{}, ErrStopped
@@ -642,6 +689,8 @@ func (n *Node) Migration(id string) (storage.MigrationInfo, error) {
 	return mi, nil
 }
 
+// Members returns all members (alive, suspect, and retained dead entries) from
+// the node's local gossip table.
 func (n *Node) Members() []storage.MemberInfo {
 	var out []storage.MemberInfo
 	for _, m := range n.gossip.All() {
@@ -676,6 +725,8 @@ func kindName(k occ.Kind) string {
 	return fmt.Sprintf("kind%d", k)
 }
 
+// Health reports node readiness, live membership count, persisted LWW discard
+// count, the recent discard tail, lost-object count, and diagnostic counters.
 func (n *Node) Health() storage.Health {
 	h := storage.Health{Node: string(n.e.ID), Region: string(n.e.Region), Ready: n.Ready(), LiveMembers: n.gossip.LiveCount()}
 	h.Discards = n.occ.LWWDiscards()

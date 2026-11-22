@@ -8,6 +8,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// TestAbsenceRecordKeyRoundTripsForAnyHolderName proves absentKey and
+// noteAbsent round-trip holder IDs containing slashes, colons, or a bare "/".
 func TestAbsenceRecordKeyRoundTripsForAnyHolderName(t *testing.T) {
 	id := storage.ShardID{Bucket: "g", Version: storage.VersionID(0xc7bd04bd6c737491), Stripe: 12, Index: 5}
 	for _, holder := range []env.NodeID{"n003", "dc1/rack2/n7", "a/b/c/d", "host.example:7000", "/"} {
@@ -26,6 +28,8 @@ func TestAbsenceRecordKeyRoundTripsForAnyHolderName(t *testing.T) {
 	}
 }
 
+// TestMalformedAbsenceRecordNamesAreIgnored proves noteAbsent ignores invalid
+// hex versions, missing dots, non-numeric indices, and empty holder names.
 func TestMalformedAbsenceRecordNamesAreIgnored(t *testing.T) {
 	for _, name := range []string{
 		tagAbsent,

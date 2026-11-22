@@ -1,3 +1,10 @@
+// Package httpapi serves the unauthenticated HTTP object, bucket, metadata,
+// migration, membership, and health API over a Service implementation.
+//
+// Objects are buffered whole in memory up to Limits.MaxObjectSize (no
+// per-stripe streaming). Every present If-Match or If-None-Match header is
+// strictly parsed according to RFC 9110 and never degrades to an unconditional
+// write. Errors are mapped to HTTP status codes through one table, StatusTable.
 package httpapi
 
 import (
@@ -19,6 +26,7 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// Default HTTP server bounds, list cap, and custom response header names.
 const (
 	DefaultMaxObjectSize      = 32 << 20
 	DefaultMaxSmallBody       = 64 << 10
@@ -33,6 +41,8 @@ const (
 	HeaderContentSHA          = "X-Content-Sha256"
 )
 
+// Limits bounds request sizes, headers, and timeouts on the HTTP handler and
+// server. Zero fields are replaced by Default* values via WithDefaults.
 type Limits struct {
 	MaxObjectSize     int64
 	MaxSmallBody      int64
@@ -44,6 +54,8 @@ type Limits struct {
 	RequestTimeout    time.Duration
 }
 
+// WithDefaults returns a copy of l with any zero field filled from the
+// Default* constants.
 func (l Limits) WithDefaults() Limits {
 	if l.MaxObjectSize == 0 {
 		l.MaxObjectSize = DefaultMaxObjectSize
@@ -72,6 +84,8 @@ func (l Limits) WithDefaults() Limits {
 	return l
 }
 
+// StatusTable returns the ordered sentinel-to-HTTP-status table, prepending
+// any caller-supplied extra rows so they take precedence over the defaults.
 func StatusTable(extra ...storage.StatusRow) []storage.StatusRow {
 	rows := []storage.StatusRow{
 		{Err: storage.ErrMethod, Status: http.StatusMethodNotAllowed},
@@ -102,6 +116,8 @@ func StatusTable(extra ...storage.StatusRow) []storage.StatusRow {
 	return append(extra, rows...)
 }
 
+// StatusOf returns the HTTP status code for the first row in rows matching err
+// via errors.Is, 200 for a nil error, or 500 when no row matches.
 func StatusOf(rows []storage.StatusRow, err error) int {
 	if err == nil {
 		return http.StatusOK
@@ -120,6 +136,8 @@ type handler struct {
 	table []storage.StatusRow
 }
 
+// NewHandler returns an http.Handler routing the object-store HTTP API to svc
+// with the given size/timeout limits and optional extra error-status rows.
 func NewHandler(svc Service, l Limits, extra ...storage.StatusRow) http.Handler {
 	return &handler{svc: svc, l: l.WithDefaults(), table: StatusTable(extra...)}
 }
@@ -161,6 +179,10 @@ func skipOWS(v string, i int) int {
 	return i
 }
 
+// parseEntityTags scans an RFC 9110 entity-tag list left to right in one pass
+// so commas inside quoted opaque-tags are preserved. Empty list elements are
+// ignored, weak tags (W/"...") are validated and omitted from the strong list,
+// and "*" is rejected if combined with any other non-empty element.
 func parseEntityTags(v string) ([]string, bool, error) {
 	var strong []string
 	star := false
@@ -210,6 +232,10 @@ func parseEntityTags(v string) ([]string, bool, error) {
 	return strong, star, nil
 }
 
+// condition parses If-Match and If-None-Match headers into a storage.Condition.
+// Only If-None-Match: * is supported; sending both headers or malformed tags
+// returns storage.ErrInvalid. Any present If-Match sets IfMatchList or "*" so
+// it never degrades to an unconditional write.
 func condition(r *http.Request) (storage.Condition, error) {
 	var c storage.Condition
 	if vs, ok := r.Header["If-None-Match"]; ok {
@@ -568,6 +594,8 @@ func (h *handler) object(ctx context.Context, w http.ResponseWriter, r *http.Req
 	}
 }
 
+// Server wraps an http.Server with bounded listen, serve, and graceful
+// shutdown lifecycle management.
 type Server struct {
 	srv *http.Server
 	mu  sync.Mutex
@@ -576,6 +604,8 @@ type Server struct {
 	err error
 }
 
+// NewServer constructs an unstarted HTTP Server bound to addr with Limits l
+// (filled via WithDefaults) and optional extra status rows.
 func NewServer(addr string, svc Service, l Limits, extra ...storage.StatusRow) *Server {
 	l = l.WithDefaults()
 	return &Server{srv: &http.Server{
@@ -584,6 +614,8 @@ func NewServer(addr string, svc Service, l Limits, extra ...storage.StatusRow) *
 	}}
 }
 
+// Start binds the TCP listener on s.srv.Addr and begins serving requests in a
+// tracked goroutine. It returns an error if listening fails.
 func (s *Server) Start(ctx context.Context) error {
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "tcp", s.srv.Addr)
@@ -603,6 +635,7 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
+// Addr returns the bound listener address, or "" before Start succeeds.
 func (s *Server) Addr() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -612,6 +645,9 @@ func (s *Server) Addr() string {
 	return s.ln.Addr().String()
 }
 
+// Shutdown gracefully drains active HTTP requests within ctx, forcefully
+// closes the server if ctx expires, waits for the serving goroutine to exit,
+// and returns any shutdown or serve error.
 func (s *Server) Shutdown(ctx context.Context) error {
 	err := s.srv.Shutdown(ctx)
 	if err != nil {

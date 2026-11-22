@@ -9,6 +9,10 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// TestArbitrationOrphansPlusAnUnwrittenShardFixed proves a k=2,m=2 write with
+// quorum 3 where one shard was never stored and two others were collected as
+// orphans is declared lost on every node after heal, with ~lost/<version>
+// present and GET returning not found.
 func TestArbitrationOrphansPlusAnUnwrittenShardFixed(t *testing.T) {
 	cfg := smallConfig()
 	cfg.Layout = storage.Layout{K: 2, M: 2, StripeSize: 1024}

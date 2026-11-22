@@ -182,6 +182,10 @@ func (c *nodeCluster) read(man *storage.Manifest, loc string) ([]byte, error) {
 func (c *nodeCluster) CheckMoved() error       { return c.checkAt(migTo, migFrom) }
 func (c *nodeCluster) CheckCompensated() error { return c.checkAt(migFrom, migTo) }
 
+// TestClusterMigrationFailurePointsDST executes the 78-cell saga failure
+// matrix on real 21-node clusters (every step failed or crashed before act,
+// after act, and mid-compensation, with and without torn logs), proving each
+// run ends moved or compensated with zero stray shards or staged metadata.
 func TestClusterMigrationFailurePointsDST(t *testing.T) {
 	t.Parallel()
 	cells := sagasim.Cells()
@@ -233,6 +237,9 @@ func matrixSeeds(seeds, pinned []int64, cell, cells int) []int64 {
 	return out
 }
 
+// TestMatrixSeedsRunEveryPinnedSeedOnEveryCell proves matrixSeeds runs all
+// pinned regression seeds and the base seed on every matrix cell while
+// spreading remaining sweep seeds across cells.
 func TestMatrixSeedsRunEveryPinnedSeedOnEveryCell(t *testing.T) {
 	pinned := []int64{900, 901}
 	seeds := []int64{900, 901, 1, 2, 3, 4, 5, 6, 7}

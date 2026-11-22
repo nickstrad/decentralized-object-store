@@ -33,6 +33,10 @@ func (s crashBetweenFlipWrites) Do(c saga.Call, done func([]byte, error)) {
 	s.Step.Do(c, done)
 }
 
+// TestFlipAfterACrashBetweenItsWritesLeavesTheBucketWritable proves a
+// coordinator that crashes after writing ~flip while a concurrent rival wrote
+// another route repairs the route on retry, completes the migration, and leaves
+// the bucket writable and old objects readable.
 func TestFlipAfterACrashBetweenItsWritesLeavesTheBucketWritable(t *testing.T) {
 	cfg := partitionConfig()
 	cfg.Layout = smallLayout()

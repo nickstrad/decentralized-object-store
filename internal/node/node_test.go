@@ -66,6 +66,9 @@ func (h *harness) syncGet(t *testing.T, id env.NodeID, bucket, key string) (stor
 	return oi, data, err
 }
 
+// TestQuotaRefusesAPutOverTheLimit proves a node tracks local bucket byte and
+// object usage and refuses a PUT that exceeds QuotaBytes with
+// occ.ErrQuotaExceeded.
 func TestQuotaRefusesAPutOverTheLimit(t *testing.T) {
 	h := smallCluster(t, 1)
 	n := h.node(h.ids[0])

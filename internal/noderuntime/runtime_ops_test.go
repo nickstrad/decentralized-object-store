@@ -20,6 +20,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage/httpapi"
 )
 
+// TestShutdownDuringRepairAndRestartOnTheSameDisk proves a node whose shard
+// files are removed before Close restarts on the same directory, rebuilds its
+// missing shards from peers, and serves the object again.
 func TestShutdownDuringRepairAndRestartOnTheSameDisk(t *testing.T) {
 	cfg := realConfig()
 	var ids []env.NodeID
@@ -87,6 +90,9 @@ func TestShutdownDuringRepairAndRestartOnTheSameDisk(t *testing.T) {
 	})
 }
 
+// TestStatusRowsThroughHTTPOnARealNode exercises real HTTP responses from a
+// live 3-node loopback cluster across 200, 400, 404, 405, 409, 412, 413, and
+// 507 status rows including ErrNoMigration and ErrUnknownSaga.
 func TestStatusRowsThroughHTTPOnARealNode(t *testing.T) {
 	cfg := realConfig()
 	cfg.MaxObjectSize = 1000
@@ -169,6 +175,8 @@ func (r rowService) GetObject(context.Context, string, string) (storage.ObjectIn
 	return storage.ObjectInfo{}, nil, r.err
 }
 
+// TestEveryNodeStatusRowThroughHTTP proves every row returned by
+// node.StatusRows maps to its declared HTTP status code through httpapi.
 func TestEveryNodeStatusRowThroughHTTP(t *testing.T) {
 	rows := node.StatusRows()
 	if len(rows) == 0 {

@@ -10,6 +10,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// TestJoinedCodeTableHasNoCollision proves AllCodeEntries registers distinct
+// codes across all subsystems and NewCodeTable rejects duplicates.
 func TestJoinedCodeTableHasNoCollision(t *testing.T) {
 	seen := map[env.Code]error{}
 	for _, e := range node.AllCodeEntries() {
@@ -26,6 +28,9 @@ func TestJoinedCodeTableHasNoCollision(t *testing.T) {
 	}
 }
 
+// TestEveryCodeRoundTripsToItsSentinel proves every registered code encodes
+// and decodes back to its sentinel plus env.ErrRemote, and unknown codes map
+// to env.ErrRemote.
 func TestEveryCodeRoundTripsToItsSentinel(t *testing.T) {
 	table, err := node.CodeTable()
 	if err != nil {
@@ -49,6 +54,8 @@ func TestEveryCodeRoundTripsToItsSentinel(t *testing.T) {
 	}
 }
 
+// TestNodeAndAPICodesStayInTheirBlock proves object-API and node codes stay
+// inside their reserved 160..191 wire-code block.
 func TestNodeAndAPICodesStayInTheirBlock(t *testing.T) {
 	for _, e := range append(node.NodeCodeEntries(), storage.APICodeEntries()...) {
 		if e.Code < 160 || e.Code > 191 {

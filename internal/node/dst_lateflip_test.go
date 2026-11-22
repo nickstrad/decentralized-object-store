@@ -176,6 +176,10 @@ func lateFlipRun(res *lateResult, isolate bool) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestMigrationHoldsAWriteAcknowledgedJustBeforeTheFlipDST proves a write
+// committed on a non-coordinator peer right before the routing flip reaches it
+// (with its delta to the coordinator dropped) is held across pointer agreement,
+// copied, and never purged.
 func TestMigrationHoldsAWriteAcknowledgedJustBeforeTheFlipDST(t *testing.T) {
 	t.Parallel()
 	sweepSharded(t, func(t *testing.T, seed int64) {
@@ -187,6 +191,10 @@ func TestMigrationHoldsAWriteAcknowledgedJustBeforeTheFlipDST(t *testing.T) {
 	})
 }
 
+// TestMigrationLateWriteOfAnIsolatedPeerStaysReadableDST proves a pre-flip
+// write on a peer that is isolated before the migration finishes is omitted
+// from Retire's explicit dead-version purge list and stays readable (or on a
+// discard record) once the peer rejoins within OrphanGrace.
 func TestMigrationLateWriteOfAnIsolatedPeerStaysReadableDST(t *testing.T) {
 	t.Parallel()
 	sweepSharded(t, func(t *testing.T, seed int64) {

@@ -43,6 +43,9 @@ func issueOnLoop(t *testing.T, rt *Runtime, to env.NodeID, req []byte, timeout t
 	return got
 }
 
+// TestRequestCallsBackExactlyOnceOnEveryPath proves realNet.Request invokes
+// its callback exactly once for zero/negative timeouts, oversized self
+// requests, no-network peer requests, and normal self requests.
 func TestRequestCallsBackExactlyOnceOnEveryPath(t *testing.T) {
 	rows := []struct {
 		name    string
@@ -85,6 +88,9 @@ func TestRequestCallsBackExactlyOnceOnEveryPath(t *testing.T) {
 	}
 }
 
+// TestNetworkedRequestCallsBackExactlyOnce proves realNet.Request over real
+// sockets invokes its callback once for oversized peer requests and
+// non-listening peers.
 func TestNetworkedRequestCallsBackExactlyOnce(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

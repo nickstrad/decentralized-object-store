@@ -14,6 +14,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// TestRuntimeServiceSurfaceInABubble exercises every httpapi.Service method
+// on Runtime in a synctest bubble without network sockets.
 func TestRuntimeServiceSurfaceInABubble(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var logged []string
@@ -77,6 +79,9 @@ func TestRuntimeServiceSurfaceInABubble(t *testing.T) {
 	})
 }
 
+// TestRuntimeDatagramsToSelfAndQueueOverflow proves self-datagrams enqueue
+// without sockets, oversized datagrams return env.ErrTooLarge, full queues drop
+// and count datagrams, and post-close sends return env.ErrClosed.
 func TestRuntimeDatagramsToSelfAndQueueOverflow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rt, err := NewRuntime(RuntimeConfig{ID: "solo", DataDir: t.TempDir(), NoNetwork: true, DatagramQueue: 1, Node: node.Config{Layout: soloLayout()}})
@@ -113,6 +118,9 @@ func TestRuntimeDatagramsToSelfAndQueueOverflow(t *testing.T) {
 	})
 }
 
+// TestRuntimeRecoversAPanicOnTheLoop proves a panic posted to the node loop is
+// recovered, recorded in Panicked, rejects subsequent calls with env.ErrClosed,
+// and still permits Close.
 func TestRuntimeRecoversAPanicOnTheLoop(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rt := newLoopRuntime(t)
@@ -133,6 +141,9 @@ func TestRuntimeRecoversAPanicOnTheLoop(t *testing.T) {
 	})
 }
 
+// TestRuntimeConfigValidation proves invalid ID, region, data directory, queue
+// bounds, host:port, listen address, and nested node config all fail with
+// node.ErrConfig.
 func TestRuntimeConfigValidation(t *testing.T) {
 	base := RuntimeConfig{ID: "h:1", Region: "r", DataDir: "/d", Node: node.Config{Layout: storage.Layout{K: 2, M: 1, StripeSize: 1024}}}
 	if err := base.Validate(); err != nil {
@@ -159,6 +170,8 @@ func TestRuntimeConfigValidation(t *testing.T) {
 	}
 }
 
+// TestNoConnectionIsTrackedAfterALoopPanic proves track refuses newly accepted
+// connections after the node loop has panicked.
 func TestNoConnectionIsTrackedAfterALoopPanic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rt := newLoopRuntime(t)
@@ -185,6 +198,8 @@ func TestNoConnectionIsTrackedAfterALoopPanic(t *testing.T) {
 	})
 }
 
+// TestNoConnectionIsTrackedAfterTheRuntimeContextEnds proves track refuses
+// newly accepted connections once rt.ctx is canceled.
 func TestNoConnectionIsTrackedAfterTheRuntimeContextEnds(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rt := newLoopRuntime(t)

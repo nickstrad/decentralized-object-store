@@ -1,3 +1,9 @@
+// Package leakcheck detects leaked goroutines in tests that exercise real
+// sockets and background workers outside testing/synctest.
+//
+// Callers capture a Snapshot before work begins and call Snapshot.Leaked (or
+// wrap TestMain with Main) to fail if any non-benign goroutine survives past
+// the settle window.
 package leakcheck
 
 import (
@@ -12,8 +18,11 @@ import (
 	"time"
 )
 
+// ErrLeak is returned by Snapshot.Leaked when goroutines started after the
+// snapshot remain running past the settle deadline.
 var ErrLeak = errors.New("leakcheck: goroutines leaked")
 
+// Snapshot records the goroutine IDs present when Take was called.
 type Snapshot map[uint64]bool
 
 type goroutine struct {
@@ -21,6 +30,7 @@ type goroutine struct {
 	stack string
 }
 
+// stacks captures and parses all live goroutine stacks from the Go runtime.
 func stacks() []goroutine {
 	buf := make([]byte, 1<<20)
 	for {
@@ -47,6 +57,7 @@ func stacks() []goroutine {
 	return out
 }
 
+// Take returns a Snapshot of every goroutine running at the call site.
 func Take() Snapshot {
 	s := Snapshot{}
 	for _, g := range stacks() {
@@ -66,6 +77,8 @@ var ignored = []string{
 	"internal/poll.runtime_pollWait",
 }
 
+// benign reports whether a goroutine stack belongs to the caller itself or a
+// long-lived runtime/testing/signal helper outside project and net/http code.
 func benign(stack string, self uint64) bool {
 	if strings.HasPrefix(stack, "goroutine "+strconv.FormatUint(self, 10)+" ") {
 		return true
@@ -103,6 +116,9 @@ func (s Snapshot) leaked() []goroutine {
 	return out
 }
 
+// Leaked polls until no unexpected goroutine started after s remains, or until
+// settle elapses. It returns nil when clean, or an error wrapping ErrLeak with
+// the surviving stacks.
 func (s Snapshot) Leaked(settle time.Duration) error {
 	deadline := time.Now().Add(settle)
 	for {
@@ -122,6 +138,9 @@ func (s Snapshot) Leaked(settle time.Duration) error {
 	}
 }
 
+// Main runs m and then verifies that no goroutines leaked beyond settle.
+// If any goroutine remains, it prints the stacks to stderr and forces a
+// non-zero exit code.
 func Main(m *testing.M, settle time.Duration) int {
 	before := Take()
 	code := m.Run()

@@ -11,6 +11,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// TestHolderIntactRestartPreservesAbsenceRefusal proves a holder that crashes
+// and restarts with its disk intact still refuses OpPutShard with ErrFenced
+// for any shard covered by its persisted absence record.
 func TestHolderIntactRestartPreservesAbsenceRefusal(t *testing.T) {
 	h, _ := lossHarness(t, 4, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)
 	_, _, man := putEverywhere(t, h, 700)
@@ -71,6 +74,10 @@ func TestHolderIntactRestartPreservesAbsenceRefusal(t *testing.T) {
 	}
 }
 
+// TestDeclarerCrashBetweenLossRecordAndTombstone proves crashing the declarer
+// right after committing ~lost/<version> leaves the manifest live with the
+// loss record, and either the restarted declarer or a surviving successor
+// finishes tombstoning the key and settling quota usage.
 func TestDeclarerCrashBetweenLossRecordAndTombstone(t *testing.T) {
 	for _, restartDeclarer := range []bool{true, false} {
 		name := "declarer_restarts"
@@ -158,6 +165,9 @@ func TestDeclarerCrashBetweenLossRecordAndTombstone(t *testing.T) {
 	}
 }
 
+// TestServeStorageRefusesShardWriteBeforeMetadataLoads proves serveStorage
+// returns occ.ErrNotReady on OpPutShard while OCC metadata is still loading
+// after restart, and enforces ErrFenced once metadata loads.
 func TestServeStorageRefusesShardWriteBeforeMetadataLoads(t *testing.T) {
 	h, _ := lossHarness(t, 4, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)
 	_, _, man := putEverywhere(t, h, 700)
@@ -230,6 +240,9 @@ func TestServeStorageRefusesShardWriteBeforeMetadataLoads(t *testing.T) {
 	}
 }
 
+// TestWipedHolderRebuildRacesOwnAbsenceRecord proves a rebuild already in
+// flight on a wiped holder re-checks metadata on completion and refuses to
+// store the shard once the holder's own absence record has arrived.
 func TestWipedHolderRebuildRacesOwnAbsenceRecord(t *testing.T) {
 	cfg := smallConfig()
 	cfg.Layout = storage.Layout{K: 2, M: 2, StripeSize: 1024}
@@ -314,6 +327,9 @@ func TestWipedHolderRebuildRacesOwnAbsenceRecord(t *testing.T) {
 	}
 }
 
+// TestHolderPauseResumeBlocksThenAllowsDeclaration proves pausing the one
+// remaining good holder blocks absence records and loss declaration until it
+// resumes, after which the unrecoverable stripe is declared lost.
 func TestHolderPauseResumeBlocksThenAllowsDeclaration(t *testing.T) {
 	h, logs := lossHarness(t, 4, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)
 	oi, data, man := putEverywhere(t, h, 700)

@@ -10,6 +10,10 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// Reserved metadata tag names (prefixed with "~", rejected on user tags).
+// Bucket-scoped records store under an empty object key; stage and lost records
+// attach to an object key. Tombstones, GC markers, orphan, absence, and loss
+// records are retained indefinitely.
 const (
 	recordVersion = 1
 	sysPrefix     = "~"
@@ -98,6 +102,9 @@ func (r *rbuf) end(what string) error {
 	return r.err
 }
 
+// objectRecord pairs an object's Content-Type with its storage manifest in one
+// OCC record so concurrent PUTs cannot leave one write's metadata over another's
+// bytes.
 type objectRecord struct {
 	ContentType string
 	Manifest    *storage.Manifest
@@ -132,6 +139,8 @@ func decodeObject(b []byte) (objectRecord, error) {
 	return objectRecord{ContentType: ct, Manifest: m}, nil
 }
 
+// bucketRecord stores a bucket's initial region (empty for unrouted buckets)
+// and configured byte and object quota limits.
 type bucketRecord struct {
 	Region       string
 	QuotaBytes   uint64
@@ -156,6 +165,8 @@ func decodeBucket(b []byte) (bucketRecord, error) {
 	return out, r.end("bucket record")
 }
 
+// stagedRecord holds a migration saga's target-region copy of an object along
+// with the source ETag it was copied from.
 type stagedRecord struct {
 	Saga    string
 	SrcETag occ.ETag

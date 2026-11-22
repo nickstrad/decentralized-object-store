@@ -302,6 +302,10 @@ func do(t testing.TB, srv *httptest.Server, method, path string, body []byte, hd
 	return resp, b
 }
 
+// TestHTTPObjectAPIAgainstTheModel proves every HTTP route, response header,
+// error status, and conditional If-Match/If-None-Match case (including quoted
+// commas, weak tags, empty elements, and malformed values) against an in-memory
+// reference model.
 func TestHTTPObjectAPIAgainstTheModel(t *testing.T) {
 	srv := httptest.NewServer(httpapi.NewHandler(newModel(), httpapi.Limits{MaxObjectSize: 1 << 20}))
 	defer srv.Close()
@@ -414,6 +418,9 @@ func TestHTTPObjectAPIAgainstTheModel(t *testing.T) {
 	}
 }
 
+// TestStatusTableRowByRowThroughHTTP proves every row in StatusTable maps a
+// wrapped error to its declared HTTP status and JSON error body, unknown errors
+// map to 500, and caller-supplied extra rows override defaults.
 func TestStatusTableRowByRowThroughHTTP(t *testing.T) {
 	for _, row := range httpapi.StatusTable() {
 		t.Run(row.Err.Error(), func(t *testing.T) {
@@ -506,6 +513,9 @@ func startServer(t *testing.T, l httpapi.Limits) *httpapi.Server {
 	return s
 }
 
+// TestServerBoundsHeadersBodiesAndSlowClients proves the HTTP server rejects
+// oversized bodies (413) and headers (431) and closes slow header or body
+// clients within its configured timeouts.
 func TestServerBoundsHeadersBodiesAndSlowClients(t *testing.T) {
 	s := startServer(t, httpapi.Limits{MaxObjectSize: 1024, MaxHeaderBytes: 2048, ReadHeaderTimeout: 200 * time.Millisecond, ReadTimeout: 500 * time.Millisecond})
 	base := "http://" + s.Addr()
@@ -568,6 +578,8 @@ func TestServerBoundsHeadersBodiesAndSlowClients(t *testing.T) {
 	}
 }
 
+// TestServerShutdownTwiceAndAfterUse proves Server.Shutdown is idempotent,
+// Addr is empty before Start, and Start rejects an unbindable address.
 func TestServerShutdownTwiceAndAfterUse(t *testing.T) {
 	s := httpapi.NewServer("127.0.0.1:0", newModel(), httpapi.Limits{})
 	if err := s.Start(context.Background()); err != nil {
@@ -686,6 +698,9 @@ func sameTagList(a, b tagList) bool {
 	return a.ok == b.ok && a.star == b.star && slices.Equal(a.strong, b.strong)
 }
 
+// TestParseEntityTagsTable proves ParseEntityTags matches an independent
+// byte-level RFC 9110 state machine across valid lists, quoted commas, weak
+// tags, stars, empty elements, obs-text, and malformed inputs.
 func TestParseEntityTagsTable(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -762,6 +777,10 @@ func mayApply(name, value string, present bool, current string) bool {
 
 var fuzzHeaders = []string{"", "If-Match", "If-None-Match", "If-Match"}
 
+// FuzzObjectAPI proves arbitrary HTTP request sequences never panic, always
+// return a status in the table, never apply a write whose precondition cannot
+// hold under the reference tokeniser, and never return GET bytes disagreeing
+// with the last acknowledged PUT.
 func FuzzObjectAPI(f *testing.F) {
 	f.Add([]byte("\x01/b\x00\x00\x00\x01/b/k\x00\x00hello\x00\x00/b/k\x00\x00\x00"))
 	f.Add([]byte("\x01/b/k\x00*\x00x\x00"))

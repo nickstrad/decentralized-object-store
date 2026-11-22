@@ -6,12 +6,15 @@ import (
 	"path/filepath"
 )
 
+// vfile is the minimal file handle required by fileDisk so crash-model tests
+// can substitute an in-memory POSIX filesystem.
 type vfile interface {
 	Write(p []byte) (int, error)
 	Sync() error
 	Close() error
 }
 
+// vfs abstracts OS filesystem calls under fileDisk.
 type vfs interface {
 	Mkdir(path string) error
 	Create(path string) (vfile, error)
@@ -23,6 +26,7 @@ type vfs interface {
 	WalkDir(root string, fn fs.WalkDirFunc) error
 }
 
+// osFS implements vfs directly against the host operating system.
 type osFS struct{}
 
 func (osFS) Mkdir(path string) error { return os.Mkdir(path, 0o755) }

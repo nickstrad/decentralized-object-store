@@ -253,6 +253,11 @@ func (h *harness) orphanedAfterAck(s *sim.Sim, res *putGetResult) {
 	}
 }
 
+// TestClusterPutGetDST proves deterministic 21-node PUT/GET under 1% loss,
+// region partition, and node crash: no GET returns wrong bytes, every acked PUT
+// reads back after heal, metadata/membership/quota converge, and a post-heal
+// orphaned-after-ack phase verifies recoverable writes stay readable while
+// unrecoverable ones are declared lost on record.
 func TestClusterPutGetDST(t *testing.T) {
 	t.Parallel()
 	var m measure

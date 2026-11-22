@@ -40,6 +40,10 @@ func loopbackAddr(t *testing.T) string {
 	return ""
 }
 
+// TestALoopPanicTakesTheWholeNetworkedRuntimeDown proves a panic on the node
+// loop closes Done(), records ErrPanicked, logs the panic, closes TCP/UDP
+// sockets so all goroutines exit before Close is called, and still lets
+// Shutdown return cleanly.
 func TestALoopPanicTakesTheWholeNetworkedRuntimeDown(t *testing.T) {
 	before := leakcheck.Take()
 	var mu sync.Mutex
@@ -88,6 +92,9 @@ func TestALoopPanicTakesTheWholeNetworkedRuntimeDown(t *testing.T) {
 	}
 }
 
+// TestAStalledNameLookupNeverStallsTheLoop proves a blocked hostname lookup
+// drops the first datagram without stalling Health on the loop and caches the
+// resolved address once the lookup completes.
 func TestAStalledNameLookupNeverStallsTheLoop(t *testing.T) {
 	release := make(chan struct{})
 	asked := make(chan string, 4)
@@ -143,6 +150,9 @@ func TestAStalledNameLookupNeverStallsTheLoop(t *testing.T) {
 	}
 }
 
+// TestCloseWhileStartIsInProgress proves a concurrent Close while Start is
+// inside stateStarting aborts Start with env.ErrClosed and leaves the runtime
+// closed.
 func TestCloseWhileStartIsInProgress(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rt := newLoopRuntime(t)
@@ -167,6 +177,9 @@ func TestCloseWhileStartIsInProgress(t *testing.T) {
 	})
 }
 
+// TestACallCanceledBeforeItReachesTheLoopNeverApplies proves pre-canceled
+// calls and a PUT canceled while queued behind a busy loop return
+// context.Canceled without ErrOutcomeUnknown and never reach the node.
 func TestACallCanceledBeforeItReachesTheLoopNeverApplies(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rt := newLoopRuntime(t)
@@ -219,6 +232,10 @@ func TestACallCanceledBeforeItReachesTheLoopNeverApplies(t *testing.T) {
 	})
 }
 
+// TestACallCanceledAfterTheLoopTookItAppliesOnceAndIsReported proves PUT, GET,
+// and migration start canceled after the loop dequeues them return
+// ErrOutcomeUnknown joined with context.Canceled, execute once, and are counted
+// and logged as abandoned calls.
 func TestACallCanceledAfterTheLoopTookItAppliesOnceAndIsReported(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var mu sync.Mutex

@@ -8,6 +8,7 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// Leading channel byte prepended to every multiplexed message on env.Transport.
 const (
 	chGossip  byte = 1
 	chStorage byte = 2
@@ -16,6 +17,8 @@ const (
 	chNode    byte = 5
 )
 
+// chanNet prefixes outbound datagrams and requests with one channel byte so all
+// subsystems share one env.Transport.
 type chanNet struct {
 	net env.Transport
 	ch  byte
@@ -36,6 +39,8 @@ func (c chanNet) Request(to env.NodeID, req []byte, timeout time.Duration, cb fu
 	c.net.Request(to, withChannel(c.ch, req), timeout, cb)
 }
 
+// gossipView adapts gossip.Node's live membership to storage.Membership,
+// merkle.Membership, and occ.Membership.
 type gossipView struct {
 	g    *gossip.Node
 	self env.NodeID
@@ -71,6 +76,7 @@ func (v *gossipView) InRegion(r env.Region) []env.NodeID {
 	return out
 }
 
+// regionView filters gossipView.Members to one region for region-routed buckets.
 type regionView struct {
 	v      *gossipView
 	region env.Region
@@ -86,4 +92,6 @@ func (r regionView) Members() []storage.Member {
 	return out
 }
 
+// MaxFrame is the maximum TCP wire frame size in bytes (16 MiB), shared with
+// the real runtime and checked against shard request sizes during Config.Validate.
 const MaxFrame = 16 << 20

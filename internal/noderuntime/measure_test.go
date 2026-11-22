@@ -14,6 +14,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// TestMeasureLoopbackRuntime measures idle goroutines/heap, sequential 1 MiB
+// and 32 MiB PUT/GET latency and throughput, and peak goroutines under load on
+// a 3-node loopback cluster when MEASURE_RUNTIME=1 is set.
 func TestMeasureLoopbackRuntime(t *testing.T) {
 	if os.Getenv("MEASURE_RUNTIME") == "" {
 		t.Skip("set MEASURE_RUNTIME=1 to measure the loopback runtime")

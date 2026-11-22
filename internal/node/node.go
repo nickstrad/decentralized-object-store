@@ -1,3 +1,16 @@
+// Package node implements the single-threaded protocol core of one object-store
+// and metadata-sync node over internal/env.
+//
+// It wires SWIM gossip membership, Reed-Solomon striped shard storage, OCC
+// last-writer-wins metadata replication, Merkle-tree anti-entropy (one tree
+// over all metadata keys plus local per-bucket shard inventories), and
+// compensating bucket-migration sagas into one env.Process that runs unchanged
+// inside the simulator and inside internal/noderuntime.
+//
+// Concurrent writes settle by last-writer-wins (never kept side by side); every
+// discard is counted and logged. Every node holds all metadata, tombstones and
+// system markers are retained indefinitely, and callers must serialize all calls
+// onto the node's single event loop.
 package node
 
 import (
@@ -14,6 +27,7 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// Default cadences, grace windows, size caps, and concurrency bounds for Node.
 const (
 	DefaultOCCPeriod      = 3 * time.Second
 	DefaultMetaPeriod     = time.Second
@@ -33,6 +47,9 @@ const (
 	CollectedLogLen       = 4096
 )
 
+// Config configures a Node. Zero durations, counts, Layout, and SagaPolicy fall
+// back to defaults via WithDefaults. Layout applies to new writes coordinated
+// by this node; reads honor each manifest's recorded layout.
 type Config struct {
 	Seeds          []env.NodeID
 	Layout         storage.Layout
@@ -60,6 +77,8 @@ type Config struct {
 	CommitSink     func(key string, held occ.Record, written occ.Version)
 }
 
+// WithDefaults returns a copy of c with zero-valued fields replaced by package
+// defaults.
 func (c Config) WithDefaults() Config {
 	if c.Layout == (storage.Layout{}) {
 		c.Layout = storage.DefaultLayout()
@@ -109,6 +128,9 @@ func (c Config) WithDefaults() Config {
 	return c
 }
 
+// Validate checks c's erasure layout (including that a shard RPC fits MaxFrame),
+// durations, Merkle depth, scrub counts, object size cap, ack quorum, saga
+// policy, and gossip configuration, returning ErrConfig on failure.
 func (c Config) Validate() error {
 	c = c.WithDefaults()
 	if err := c.Layout.Validate(); err != nil {
@@ -145,11 +167,15 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// ShardRequestSize returns an upper bound in bytes for a channel-prefixed
+// OpPutShard RPC carrying one shard under layout l.
 func ShardRequestSize(l storage.Layout) int {
 	shard := (l.StripeSize + l.K - 1) / max(l.K, 1)
 	return 1 + 1 + 10 + 512 + storage.HeaderSize + shard
 }
 
+// Stats holds monotonic per-node operational, repair, GC, discard, and
+// loss-declaration counters.
 type Stats struct {
 	Malformed       uint64
 	Stopped         uint64
@@ -195,6 +221,8 @@ type collectRecord struct {
 	Loser   bool
 }
 
+// Node is the single-threaded env.Process combining gossip, storage, OCC
+// metadata, Merkle anti-entropy, shard inventories, and bucket migration sagas.
 type Node struct {
 	e      env.Env
 	cfg    Config
@@ -234,6 +262,9 @@ func (f *failed) OnRequest(_ env.NodeID, _ []byte, r env.Reply) { r(nil, f.err) 
 func (f *failed) EncodeState() []byte                           { return []byte(f.err.Error()) }
 func (f *failed) Err() error                                    { return f.err }
 
+// NewFactory returns a simulator Process factory that constructs a Node with
+// cfg. If construction fails, the returned placeholder Process answers requests
+// with the construction error.
 func NewFactory(cfg Config) func(env.Env) env.Process {
 	return func(e env.Env) env.Process {
 		n, err := New(e, cfg)
@@ -244,6 +275,8 @@ func NewFactory(cfg Config) func(env.Env) env.Process {
 	}
 }
 
+// New validates cfg and e and constructs an unstarted Node wiring all protocol
+// subsystems onto one channel-multiplexed env.Transport.
 func New(e env.Env, cfg Config) (*Node, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -302,6 +335,13 @@ func New(e env.Env, cfg Config) (*Node, error) {
 	return n, nil
 }
 
+// Subsystem, identity, lifecycle, and inspection accessors on Node:
+//   - ID, Region: node identity and placement zone from env.Env.
+//   - Gossip, OCC, Storage, Meta, Engine: underlying protocol subsystem handles.
+//   - Stats: snapshot of monotonic node counters.
+//   - Ready, Stopped: lifecycle readiness flags.
+//   - Collected: copy of the bounded in-memory collected-shard ring buffer.
+//   - Inventories: count of active per-bucket shard inventories.
 func (n *Node) ID() env.NodeID             { return n.e.ID }
 func (n *Node) Region() env.Region         { return n.e.Region }
 func (n *Node) Gossip() *gossip.Node       { return n.gossip }
@@ -321,6 +361,8 @@ func (n *Node) logf(f string, a ...any) {
 	}
 }
 
+// Start initializes OCC metadata, SWIM gossip, metadata Merkle anti-entropy,
+// saga recovery, and the periodic maintenance timer.
 func (n *Node) Start() {
 	n.viewChanged = n.e.Clock.Now()
 	n.occ.Start()
@@ -343,6 +385,8 @@ func (n *Node) ensureStarted() {
 	}
 }
 
+// Stop marks the node stopped, announces gossip leave, halts metadata
+// anti-entropy, drops all bucket inventories, and cancels the maintenance timer.
 func (n *Node) Stop() {
 	if n.stopped {
 		return
@@ -361,6 +405,8 @@ func (n *Node) Stop() {
 	}
 }
 
+// RunningWorkers returns the number of active background workers (one for
+// metadata anti-entropy while running, plus one per active bucket inventory).
 func (n *Node) RunningWorkers() int {
 	c := len(n.inv)
 	if n.started && !n.stopped {
@@ -369,6 +415,8 @@ func (n *Node) RunningWorkers() int {
 	return c
 }
 
+// OnDatagram demultiplexes an inbound datagram by its leading channel byte to
+// gossip, OCC, or storage, dropping traffic after Stop or with unknown channels.
 func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 	if n.stopped {
 		n.stats.Stopped++
@@ -391,6 +439,9 @@ func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 	}
 }
 
+// OnRequest demultiplexes an inbound request by its leading channel byte to
+// gossip, storage (via serveStorage), OCC, Merkle anti-entropy, or node RPCs,
+// replying with ErrStopped after Stop or ErrMalformed on bad headers.
 func (n *Node) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	if n.stopped {
 		n.stats.Stopped++
@@ -420,10 +471,15 @@ func (n *Node) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	}
 }
 
+// ViewSettled reports whether at least one live peer is known and no join event
+// has occurred within Config.ViewSettle. Migrations require a settled view
+// before pointer agreement and shard purges.
 func (n *Node) ViewSettled() bool {
 	return n.e.Clock.Now().Sub(n.viewChanged) >= n.cfg.ViewSettle && len(n.view.Peers()) > 0
 }
 
+// EncodeState returns a deterministic byte encoding of all subsystem volatile
+// states and node counters for simulator replay digest checks.
 func (n *Node) EncodeState() []byte {
 	var w wbuf
 	w.bytes(n.gossip.EncodeState())
@@ -507,6 +563,7 @@ func (n *Node) maintain() {
 	n.runInventories(rd)
 }
 
+// AuditBatch bounds how many buckets auditQuotas inspects per maintenance tick.
 const AuditBatch = 4
 
 type quotaAudit struct {
@@ -527,6 +584,12 @@ func (n *Node) buckets(rd occ.Reader) []string {
 	return out
 }
 
+// auditQuotas checks up to AuditBatch buckets per tick to repair quota drift
+// that outlives discard-triggered recounts (such as a partition-era recount
+// that became causally newer than earlier quota writes). Once stored usage
+// disagrees with live manifests and neither the quota version nor the bucket's
+// manifest digest has changed for RecountSettle, the lowest-ID live node writes
+// a fresh recount.
 func (n *Node) auditQuotas(rd occ.Reader) {
 	bs := n.buckets(rd)
 	if len(bs) == 0 || canaryNoQuotaAudit {
@@ -578,6 +641,9 @@ func (n *Node) auditQuotas(rd occ.Reader) {
 	}
 }
 
+// onDiscard receives every last-writer-wins discard from OCC, counts it,
+// forwards it to DiscardSink, and defers handleDiscard via n.later so it never
+// re-enters OCC mid-merge.
 func (n *Node) onDiscard(key string, winner, loser occ.Version) {
 	n.stats.Discards++
 	if n.cfg.DiscardSink != nil {
@@ -592,6 +658,11 @@ func (n *Node) committed(key string, held occ.Record, v occ.Version) {
 	}
 }
 
+// handleDiscard schedules a settled quota recount on quota or manifest discards
+// (including tombstone losers) and marks any discarded live manifest's storage
+// version dead so its shards are collected after GCGrace. Pending recounts and
+// losers are in-memory; the ~gc/ marker is durable and auditQuotas repairs any
+// dropped recount after a crash.
 func (n *Node) handleDiscard(key string, loser occ.Version) {
 	kind, parts, err := occ.ParseKey(key)
 	if err != nil {
@@ -688,6 +759,8 @@ func (n *Node) markDead(bucket string, v storage.VersionID) {
 	n.RecordMeta(k)
 }
 
+// RecordMeta updates the metadata Merkle tree entry for key from its current
+// encoded OCC record.
 func (n *Node) RecordMeta(key string) {
 	rd, err := n.occ.Reader()
 	if err != nil {

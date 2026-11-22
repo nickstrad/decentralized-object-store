@@ -189,6 +189,10 @@ func duelRun(res *duelResult) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestClusterDuellingMigrationsDST starts two simultaneous migrations on one
+// bucket (same or different targets) alongside a third on another bucket,
+// proving exactly one duelling saga moves the bucket, the third moves cleanly,
+// no migration metadata leaks, and every object reads from its final region.
 func TestClusterDuellingMigrationsDST(t *testing.T) {
 	t.Parallel()
 	var m measure

@@ -49,6 +49,9 @@ func durableChain(m *memFS, p string) (string, bool) {
 	return "", true
 }
 
+// TestSyncRetriedAfterAMidChainFailureSyncsEveryNewAncestor proves that when
+// an ancestor directory fsync fails mid-chain, retrying Sync still fsyncs every
+// remaining newly created ancestor up to the root data directory.
 func TestSyncRetriedAfterAMidChainFailureSyncsEveryNewAncestor(t *testing.T) {
 	const name = "shards/b/00/v/0.0"
 	fsys := &flakyDirSync{memFS: freshMemFS(), fail: "/d/shards/b"}

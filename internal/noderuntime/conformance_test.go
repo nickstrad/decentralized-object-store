@@ -274,6 +274,8 @@ func (d realDriver) tags(i int, bucket, key string) ([]storage.TagInfo, error) {
 	return d.c.rts[i].Tags(d.ctx(), bucket, key)
 }
 
+// TestConformanceOnTheSimulator proves join, cross-node PUT/GET, conditional
+// writes, and concurrent tag convergence pass against Node on the simulator.
 func TestConformanceOnTheSimulator(t *testing.T) {
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {
@@ -289,6 +291,8 @@ func TestConformanceOnTheSimulator(t *testing.T) {
 	}
 }
 
+// TestConformanceOnLoopback proves the same four conformance scenarios pass
+// against the exact same Node code running on real loopback sockets.
 func TestConformanceOnLoopback(t *testing.T) {
 	for _, sc := range scenarios {
 		t.Run(sc.name, func(t *testing.T) {

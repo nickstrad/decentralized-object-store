@@ -17,10 +17,15 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// presetSource is a single-value rand.Source letting migrator pre-record a
+// copy intent ~cv/<saga>/<version> before storage.Node.Put writes any shards.
 type presetSource struct{ next uint64 }
 
 func (p *presetSource) Uint64() uint64 { return p.next }
 
+// migrator implements saga.MigrationOps on real OCC metadata, storage nodes,
+// and node RPCs. Registration keys (~reg/<saga>) are per-saga so concurrent
+// duels commute under LWW; the in-memory fence stops a discarded saga's copy.
 type migrator struct {
 	n       *Node
 	fenced  map[string]bool
@@ -139,6 +144,9 @@ func (g *migrator) liveVersions(rd occ.Reader, bucket string) map[storage.Versio
 	return out
 }
 
+// Claim claims the target region (~claim/<to>) if unheld and writes this saga's
+// registration key (~reg/<saga>), returning a permanent error if the bucket is
+// not routed to m.From.
 func (g *migrator) Claim(c saga.Call, m saga.MigrationInput, done func(error)) {
 	g.n.later(func() { done(g.claim(c, m)) })
 }
@@ -166,6 +174,8 @@ func (g *migrator) claim(c saga.Call, m saga.MigrationInput) error {
 	return nil
 }
 
+// Unclaim releases this saga's claim (if still held by it) and removes its
+// registration key.
 func (g *migrator) Unclaim(c saga.Call, m saga.MigrationInput, done func(error)) {
 	g.n.later(func() { done(g.unclaim(c, m)) })
 }
@@ -218,6 +228,11 @@ func (g *migrator) newVersion(rd occ.Reader, bucket string) storage.VersionID {
 	}
 }
 
+// Copy sequentially copies each live object in m.Bucket into m.To, recording a
+// copy intent ~cv/<saga>/<version> before writing shards and a staged record
+// ~stage/<saga> after. Objects already staged at the current source ETag or
+// already swapped to one of this saga's intents are skipped, making retries and
+// post-flip catch-up idempotent.
 func (g *migrator) Copy(c saga.Call, m saga.MigrationInput, done func([]byte, error)) {
 	id := string(c.Key.Saga)
 	if g.fenced[id] {
@@ -403,6 +418,9 @@ func (g *migrator) root(rd occ.Reader, m saga.MigrationInput, loc, id string) []
 	return r[:]
 }
 
+// Root computes the Merkle root over (key, SHA-256(contentHash || size)) for
+// either m.From (live manifests) or m.To (this saga's staged records unioned
+// with live manifests already holding one of its copy intents).
 func (g *migrator) Root(c saga.Call, bucket, loc string, done func([]byte, error)) {
 	g.n.later(func() {
 		m, err := saga.DecodeMigrationInput(c.Input)
@@ -419,6 +437,9 @@ func (g *migrator) Root(c saga.Call, bucket, loc string, done func([]byte, error
 	})
 }
 
+// Discard fences the saga in memory, waits for any in-flight Copy step to
+// drain, deletes its staged records, marks its non-live copy intents dead,
+// purges those versions across live peers, and removes the intent keys.
 func (g *migrator) Discard(c saga.Call, m saga.MigrationInput, done func(error)) {
 	id := string(c.Key.Saga)
 	g.fenced[id] = true
@@ -521,6 +542,9 @@ func (g *migrator) purge(bucket string, versions []storage.VersionID, done func(
 
 func flipValue(id, to string) string { return id + "|" + to }
 
+// Flip is the saga pivot: it records ~flip = <saga>|<to> and sets the bucket's
+// routing pointer to m.To. If this saga already owns ~flip (for instance after
+// a crash between the two writes), it repairs the route and succeeds.
 func (g *migrator) Flip(c saga.Call, m saga.MigrationInput, done func(error)) {
 	g.n.later(func() {
 		rd, bs, err := g.state(m)
@@ -608,6 +632,9 @@ func decodePointerView(b []byte) (pointerView, error) {
 	return p, r.end("pointer view")
 }
 
+// agree requires a settled membership view and queries every live peer for its
+// pointerView (route, flip owner, and bucket manifest digest including
+// tombstones), returning ErrUnsettled until every peer matches the coordinator.
 func (g *migrator) agree(bucket string, done func(pointerView, error)) {
 	rd, err := g.n.reader()
 	if err != nil {
@@ -670,6 +697,12 @@ func (g *migrator) agree(bucket string, done func(pointerView, error)) {
 	}
 }
 
+// Pointer waits for every live peer to agree on the bucket's route, flip owner,
+// and manifest digest (ensuring every pre-flip write acknowledged by a live
+// peer has reached the coordinator). If another saga owns ~flip, it returns
+// that owner prefixed with "~" so the saga engine treats this saga as
+// superseded; if this saga owns ~flip but the route lags, it repairs the route
+// and retries.
 func (g *migrator) Pointer(c saga.Call, bucket string, done func(string, error)) {
 	m, err := saga.DecodeMigrationInput(c.Input)
 	if err != nil || m.Bucket != bucket {
@@ -702,6 +735,9 @@ func (g *migrator) Pointer(c saga.Call, bucket string, done func(string, error))
 	})
 }
 
+// Seal checks whether this saga already retired the bucket, refuses with
+// storage.ErrBusy while any other saga remains registered in ~reg/*, and
+// clears ~live so writes stay blocked through catch-up and retire.
 func (g *migrator) Seal(c saga.Call, m saga.MigrationInput, done func(bool, error)) {
 	g.n.later(func() {
 		rd, bs, err := g.state(m)
@@ -730,6 +766,12 @@ func (g *migrator) Seal(c saga.Call, m saga.MigrationInput, done func(bool, erro
 	})
 }
 
+// Retire swaps each live manifest IfMatch its staged SrcETag and marks the
+// replaced version dead, marks non-live copy intents dead, waits for every live
+// peer's pointer view to match the swapped manifests, purges only the bucket's
+// explicitly marked dead versions, drops intents, writes ~retired, and
+// deregisters. Any unseen pre-flip write from an isolated peer is absent from
+// the dead list and stays intact on disk.
 func (g *migrator) Retire(c saga.Call, m saga.MigrationInput, done func(error)) {
 	g.n.later(func() {
 		rd, err := g.n.reader()
@@ -810,6 +852,8 @@ func (g *migrator) Retire(c saga.Call, m saga.MigrationInput, done func(error)) 
 	})
 }
 
+// Promote sets ~live to m.To (re-enabling writes in the target region) and
+// releases this saga's claim.
 func (g *migrator) Promote(c saga.Call, m saga.MigrationInput, done func(error)) {
 	g.n.later(func() {
 		rd, err := g.n.reader()

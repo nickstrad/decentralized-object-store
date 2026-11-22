@@ -217,6 +217,10 @@ func crashRun(res *crashResult) func(seed int64) *sim.Sim {
 	}
 }
 
+// TestClusterCrashRestartDST proves deterministic 21-node crash, wipe-rejoin,
+// region partition, and delete durability: deleted keys never resurrect,
+// restarted and wiped nodes rebuild all expected shards, and usage matches a
+// recount after heal.
 func TestClusterCrashRestartDST(t *testing.T) {
 	t.Parallel()
 	var m measure
@@ -235,6 +239,8 @@ func TestClusterCrashRestartDST(t *testing.T) {
 	t.Cleanup(func() { m.report(t) })
 }
 
+// TestCanaryDeleteResurrected plants a bug that hides tombstones from metadata
+// Merkle anti-entropy and proves crashRun catches a resurrected deleted object.
 func TestCanaryDeleteResurrected(t *testing.T) {
 	node.SetCanaryIgnoreTombstones(true)
 	t.Cleanup(func() { node.SetCanaryIgnoreTombstones(false) })
@@ -253,6 +259,9 @@ func TestCanaryDeleteResurrected(t *testing.T) {
 
 var driftSeeds = []int64{7, 383}
 
+// TestCrashScenarioUsageMatchesARecountOnTheSeedsThatDrifted replays the
+// specific crash seeds where a partition-era recount left usage drifted,
+// proving auditQuotas restores agreement with live manifests.
 func TestCrashScenarioUsageMatchesARecountOnTheSeedsThatDrifted(t *testing.T) {
 	for _, seed := range driftSeeds {
 		var res crashResult
@@ -260,6 +269,8 @@ func TestCrashScenarioUsageMatchesARecountOnTheSeedsThatDrifted(t *testing.T) {
 	}
 }
 
+// TestCanaryNodeSkipsQuotaAudit plants a bug disabling auditQuotas and proves
+// every drift seed fails the post-heal usage recount check.
 func TestCanaryNodeSkipsQuotaAudit(t *testing.T) {
 	node.SetCanaryNoQuotaAudit(true)
 	t.Cleanup(func() { node.SetCanaryNoQuotaAudit(false) })

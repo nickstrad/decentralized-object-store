@@ -12,6 +12,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// TestOrphanManifestArrivesJustBeforeGrace proves a manifest that reaches
+// holders shortly before OrphanGrace expires cancels orphan collection and
+// leaves the object intact and readable with zero absence or orphan records.
 func TestOrphanManifestArrivesJustBeforeGrace(t *testing.T) {
 	for _, seed := range []int64{1, 2, 3} {
 		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
@@ -99,6 +102,9 @@ func TestOrphanManifestArrivesJustBeforeGrace(t *testing.T) {
 	}
 }
 
+// TestOrphanStaggeredCollectionAcrossTicks proves 2+2 and 4+2 writes whose
+// holders receive shards on staggered maintenance ticks end readable when k
+// shards survive and declared lost when fewer than k survive.
 func TestOrphanStaggeredCollectionAcrossTicks(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -219,6 +225,9 @@ func TestOrphanStaggeredCollectionAcrossTicks(t *testing.T) {
 	}
 }
 
+// TestEdgeLayoutsAndShortAndZeroObjects proves loss declaration and repair
+// across k=1,m=0, k=2,m=0 (short last stripe), k=1,m=1, and zero-byte objects
+// (which have no stripes and are never declared lost).
 func TestEdgeLayoutsAndShortAndZeroObjects(t *testing.T) {
 	t.Run("k1m0_single_rot_declared_lost", func(t *testing.T) {
 		h, logs := lossHarness(t, 3, storage.Layout{K: 1, M: 0, StripeSize: 1024}, 1)

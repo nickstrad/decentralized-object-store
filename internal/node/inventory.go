@@ -13,6 +13,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// InventoryDepth is the Merkle trie depth used for local per-bucket shard
+// inventories and migration root comparisons.
 const InventoryDepth = 2
 
 type inventory struct {
@@ -41,6 +43,9 @@ type liveRef struct {
 	man  *storage.Manifest
 }
 
+// expectedAll scans replicated manifests and staged migration records to build
+// the map of shards this node should hold per bucket, refreshes n.absent from
+// bucket-scoped absence records, and collects n.liveRefs for loss checks.
 func (n *Node) expectedAll(rd occ.Reader) map[string]map[string]expectedShard {
 	out := map[string]map[string]expectedShard{}
 	n.absent = map[storage.VersionID]map[[2]int]map[env.NodeID]bool{}
@@ -121,6 +126,8 @@ func (n *Node) localBuckets() []string {
 	return slices.Compact(out)
 }
 
+// dead reports whether name's storage version has death evidence: either this
+// node observed it as an LWW loser or a live ~gc/<version> marker exists.
 func (n *Node) dead(rd occ.Reader, name string) bool {
 	id, err := storage.ParseBlobName(name)
 	if err != nil {
@@ -129,6 +136,9 @@ func (n *Node) dead(rd occ.Reader, name string) bool {
 	return n.losers[id.Version] || rd.Record(gcKey(id.Bucket, id.Version)).Live()
 }
 
+// runInventories runs one scrub, expected-vs-actual Merkle diff, rebuild, and
+// collection pass per active bucket, stops inventories with no expected shards
+// and no local files remaining, and checks for unrecoverable live objects.
 func (n *Node) runInventories(rd occ.Reader) {
 	exp := n.expectedAll(rd)
 	buckets := append(sortedKeys(exp), n.localBuckets()...)
@@ -177,6 +187,14 @@ func (n *Node) scrubShard(inv *inventory, name string) {
 	}
 }
 
+// checkInventory scrubs up to InventoryScrub shards (or all shards on a full
+// pass), compares the local verified tree against the expected manifest tree
+// to trigger bounded rebuilds, and collects unreferenced disk files (including
+// corrupt ones) via two paths:
+//  1. Dead version: death evidence seen by this holder for at least GCGrace.
+//  2. Orphan: no evidence, unreferenced for OrphanGrace; writes a per-shard
+//     replicated ~orphan/<version>/<stripe>.<index>/<holder> record first and
+//     deletes nothing if that write fails.
 func (n *Node) checkInventory(rd occ.Reader, inv *inventory, exp map[string]expectedShard) int {
 	names, err := n.e.Disk.List(shardPrefix(inv.bucket))
 	if err != nil {
@@ -306,6 +324,9 @@ func absentKey(bucket string, id storage.ShardID, holder env.NodeID) string {
 	return bucketKey(bucket, tagAbsent+id.Version.String()+"/"+strconv.FormatUint(uint64(id.Stripe), 10)+"."+strconv.FormatUint(uint64(id.Index), 10)+"/"+string(holder))
 }
 
+// noteAbsent parses a bucket-scoped ~absent/<version>/<stripe>.<index>/<holder>
+// tag name (splitting into at most three parts so holder IDs containing "/"
+// round-trip) and records it in n.absent.
 func (n *Node) noteAbsent(name string) {
 	parts := strings.SplitN(strings.TrimPrefix(name, tagAbsent), "/", 3)
 	if len(parts) != 3 || parts[2] == "" {
@@ -345,6 +366,20 @@ func (n *Node) liveVersion(rd occ.Reader, man *storage.Manifest) bool {
 	return err == nil && rec.Manifest.Version == man.Version
 }
 
+// stateAbsent writes a binding, permanently retained absence record
+// ~absent/<version>/<stripe>.<index>/<holder> only when all of the following
+// hold in one loop step:
+//   - the manifest is live in this holder's metadata (never a staged migration
+//     copy), is neither purged nor dead, and has no existing absence record;
+//   - a fresh local read finds no matching shard (only not found, corrupt, or
+//     a checksum mismatch qualifies; a transient disk I/O error writes nothing);
+//   - the just-finished rebuild received an answer (shard, not found, or
+//     corrupt) from every other holder of the stripe and fewer than k verified.
+//
+// Once written, this holder refuses OpPutShard for this shard (ErrFenced) and
+// skips rebuilding it. Residual limit: refusal relies on keeping this metadata;
+// a disk wipe loses the local record until metadata sync restores it, and a
+// sufficiently late shard write arriving in that window can be stored.
 func (n *Node) stateAbsent(man *storage.Manifest, stripe, idx int, verifiable int) {
 	id := man.ShardID(stripe, idx)
 	rd, err := n.occ.Reader()
@@ -371,6 +406,9 @@ func (n *Node) stateAbsent(man *storage.Manifest, stripe, idx int, verifiable in
 	n.logf("shard %s: every holder of stripe %d answered and %d of %d shards verify, need %d; recorded that this holder holds none and will store none", id.BlobName(), stripe, verifiable, len(man.Stripes[stripe].Shards), man.Layout.K)
 }
 
+// unrecoverableStripe reports whether any stripe of man has more than m indices
+// whose manifest-designated holder wrote an absence record. Records from
+// non-holders do not count.
 func (n *Node) unrecoverableStripe(man *storage.Manifest) (int, int, bool) {
 	byShard := n.absent[man.Version]
 	if len(byShard) == 0 {
@@ -399,6 +437,21 @@ func (n *Node) designated() bool {
 	return true
 }
 
+// declareLost runs on the lowest-ID live node in its view and declares any
+// live version lost once some stripe has more than m binding absence records
+// from that stripe's holders. An unreachable holder, or one whose disk keeps
+// failing reads with transient I/O errors, blocks new absence records and
+// therefore blocks the decision; until every holder of the stripe is up, holds
+// the manifest, can reach the others, and its disk answers (or forever if a
+// holder is permanently gone), the key stays live and GET fails with
+// storage.ErrUnavailable.
+//
+// The loss record ~lost/<version> is written before the manifest tombstone
+// (IfMatch its ETag) so a crash between the two leaves a live key with a loss
+// record that the next tick finishes, never a deleted key without one. After
+// tombstoning, the version is marked dead (~gc/<version>) and usage is
+// decremented. A concurrent newer write on another partition side competes with
+// the tombstone under last-writer-wins (counted and logged).
 func (n *Node) declareLost(rd occ.Reader) {
 	if len(n.absent) == 0 || !n.designated() {
 		return
@@ -454,6 +507,10 @@ func (n *Node) collect(inv *inventory, name string) {
 	n.collected = append(n.collected, collectRecord{Bucket: id.Bucket, Version: id.Version, At: n.e.Clock.Now(), Loser: loser})
 }
 
+// rebuild fetches the other holders' shards for one missing or rotted local
+// shard, decodes and re-encodes the stripe to restore index es.idx, and
+// invokes stateAbsent only when every other holder answered (shard, not found,
+// or corrupt) and fewer than k verified.
 func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 	man := es.man
 	codec, err := man.Layout.Codec()
@@ -505,6 +562,8 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 			n.stats.RebuildFailures++
 			return
 		}
+		// Re-check metadata before storing so an in-flight rebuild cannot write a
+		// shard whose absence record, death marker, or purge arrived meanwhile.
 		rd, err := n.occ.Reader()
 		if err != nil || n.dead(rd, name) || n.statedAbsent(rd, man.ShardID(es.stripe, es.idx)) {
 			n.stats.RebuildFailures++
@@ -551,6 +610,11 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 	}
 }
 
+// serveStorage handles inbound shard RPCs: it refuses OpDeleteShard over the
+// wire (shards are deleted only by local collection or explicit dead-version
+// purge), refuses OpPutShard before metadata loads or when this holder wrote a
+// binding absence record (ErrFenced), and keeps the local inventory tree fresh
+// on accepted writes.
 func (n *Node) serveStorage(from env.NodeID, body []byte, reply env.Reply) {
 	op, id, blob, derr := storage.DecodeShardRequest(body)
 	if derr == nil && op == storage.OpDeleteShard {
@@ -587,6 +651,10 @@ func (n *Node) serveStorage(from env.NodeID, body []byte, reply env.Reply) {
 	})
 }
 
+// purge deletes local shards belonging to the named dead versions, refusing
+// any version that this node's own metadata still calls live (PurgeRefused)
+// and marking purged versions so in-flight or later rebuilds never recreate
+// them.
 func (n *Node) purge(bucket string, versions []storage.VersionID) (int, error) {
 	rd, err := n.occ.Reader()
 	if err != nil {

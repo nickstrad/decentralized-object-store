@@ -11,6 +11,17 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// Sentinel errors returned by Node and its wire protocol:
+//   - ErrNotReady: Start has not finished loading metadata yet.
+//   - ErrStale: a fetched metadata record lost to the local version under LWW.
+//   - ErrUnsettled: peers disagree on a migration pointer view or membership is still settling.
+//   - ErrFenced: a discarded migration copy or a shard with a binding absence record was refused.
+//   - ErrMalformed: an inbound wire message, record, or disallowed shard-delete RPC was invalid.
+//   - ErrUnknownSaga: Migration queried a saga ID not coordinated by this node.
+//   - ErrFrame: a transport frame or datagram header could not be decoded.
+//   - ErrStopped: an operation or RPC arrived after Node.Stop.
+//   - ErrNoMigration: the bucket is unrouted or not routed to the expected region.
+//   - ErrConfig: Config or RuntimeConfig failed validation.
 var (
 	ErrNotReady    = errors.New("node: not ready")
 	ErrStale       = errors.New("node: fetched version lost to the local one")
@@ -24,6 +35,7 @@ var (
 	ErrConfig      = errors.New("node: invalid configuration")
 )
 
+// Wire error codes for node sentinels (block 176–185).
 const (
 	CodeNotReady    = env.CodeAppMin + 112
 	CodeStale       = env.CodeAppMin + 113
@@ -37,6 +49,7 @@ const (
 	CodeConfig      = env.CodeAppMin + 121
 )
 
+// NodeCodeEntries returns the env.CodeEntry rows for this package's sentinels.
 func NodeCodeEntries() []env.CodeEntry {
 	return []env.CodeEntry{
 		{Code: CodeNotReady, Err: ErrNotReady},
@@ -52,6 +65,8 @@ func NodeCodeEntries() []env.CodeEntry {
 	}
 }
 
+// AllCodeEntries joins the wire error entries of gossip, storage, merkle, occ,
+// saga, the object API, and node into one slice.
 func AllCodeEntries() []env.CodeEntry {
 	var all []env.CodeEntry
 	all = append(all, gossip.Codes()...)
@@ -64,6 +79,8 @@ func AllCodeEntries() []env.CodeEntry {
 	return all
 }
 
+// CodeTable builds the unified env.CodeTable used by both the simulator and the
+// real runtime. It fails if any two packages share a wire code.
 func CodeTable() (*env.CodeTable, error) {
 	return env.NewCodeTable(AllCodeEntries()...)
 }

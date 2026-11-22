@@ -42,6 +42,9 @@ type discardRec struct {
 	winner, loser occ.Version
 }
 
+// harness wires a simulated cluster of Nodes with three continuous oracles:
+// ackOracle (per-key LWW lineage), gcOracle (independent watchDisk deletion
+// safety), and onCommitLoss (converse loss-declaration disk check).
 type harness struct {
 	unmarked int
 	s        *sim.Sim
@@ -342,6 +345,10 @@ func (h *harness) checkLiveReadableOrLost(s *sim.Sim) {
 	}
 }
 
+// onCommitLoss is the converse loss-declaration oracle: whenever any node
+// commits a ~lost/<version> record, it inspects every manifest holder's disk
+// (including paused or down nodes) and fails unless at least one stripe has
+// fewer than k verifiable shards at that instant.
 func (h *harness) onCommitLoss(id env.NodeID, key string, v occ.Version) {
 	if len(key) == 0 || v.Tombstone() {
 		return

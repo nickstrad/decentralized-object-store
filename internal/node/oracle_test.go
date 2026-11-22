@@ -21,6 +21,9 @@ type commitRec struct {
 	content string
 }
 
+// ackOracle tracks per-key commit ancestry independently of OCC's classifier so
+// tests can verify every acknowledged write is current, a migration copy of the
+// current content, causally superseded on that key, or named on a discard record.
 type ackOracle struct {
 	acks      []commitRec
 	seen      map[occ.VersionID]map[occ.VersionID]bool
@@ -140,6 +143,9 @@ func covers(x, w occ.Version) bool {
 	return x.ID() != w.ID() && x.Clock().Get(w.Dot().Actor) >= w.Dot().Counter
 }
 
+// gcOracle intercepts every simulated disk Delete via watchDisk, independent of
+// Node.Collected, and fails if any deleted shard belongs to a version that can
+// still win on any node's metadata (up, down, or paused) or is committed later.
 type gcOracle struct {
 	h        *harness
 	off      bool
