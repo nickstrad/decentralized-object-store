@@ -1,0 +1,9 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph TD
+  ALIVE[Alive inc i] -->|no ack| SUSP[Suspect inc i]
+  ALIVE -->|Leave| VERD[Dead or Left inc i]
+  SUSP -->|timeout| VERD
+  SUSP -->|refute| REC[Alive inc i+1]
+  VERD -->|DeadRetention| TOMB[Tombstone cap 4096]
+  TOMB -->|higher inc| NEW[Rejoined inc i+1]
+  TOMB -->|old claim| REINST[Reinstate verdict]
