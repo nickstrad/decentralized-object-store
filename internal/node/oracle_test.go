@@ -60,7 +60,7 @@ func (o *ackOracle) ancestors(key string, held occ.Record) map[occ.VersionID]boo
 	}
 	add(h.ID())
 	if c := contentOf(key, h); c != "" {
-		if id, ok := o.byContent[c]; ok {
+		if id, ok := o.byContent[key+"\x00"+c]; ok {
 			add(id)
 		}
 	}
@@ -75,8 +75,8 @@ func (o *ackOracle) commit(id env.NodeID, key string, held occ.Record, v occ.Ver
 	o.seen[v.ID()] = anc
 	c := contentOf(key, v)
 	if c != "" {
-		if _, dup := o.byContent[c]; !dup {
-			o.byContent[c] = v.ID()
+		if _, dup := o.byContent[key+"\x00"+c]; !dup {
+			o.byContent[key+"\x00"+c] = v.ID()
 		}
 	}
 	o.acks = append(o.acks, commitRec{key: key, node: id, v: v, content: c})
