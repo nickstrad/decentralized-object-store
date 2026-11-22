@@ -16,9 +16,9 @@ container unless it says "host". Numbers marked "500 seeds" come from
 | `mux.go` | the channel byte that multiplexes one transport between gossip (1), storage shard RPCs (2), OCC (3), metadata Merkle diffs (4) and node RPCs (5); `gossipView` and `regionView`, the adapters from gossip's view to `storage.Membership`, `merkle.Membership`, `occ.Membership` |
 | `node.go` | `Config` (defaults, `Validate`), `Node` (an `env.Process`): construction and wiring, start/stop, inbound dispatch, `EncodeState`, discard handling, quota recount, GC markers, `ShardRequestSize` |
 | `objects.go` | the object/bucket API on the single-threaded node: create bucket, put/get/head/delete/list objects, tags, ACL, quota, migration start/status, members, health; precondition translation; quota pre-check |
-| `records.go` | the node's metadata encodings: object record (content type + storage manifest), bucket record (initial region, quota limits), staged record (migration copy); reserved system names (`~bucket`, `~live`, `~reg/<saga>`, `~retired`, `~flip`, `~claim/<region>`, `~stage/<saga>`, `~cv/<saga>/<version>`, `~gc/<version>`, `~orphan/<version>/<node>`, object-level `~lost/<version>`) |
+| `records.go` | the node's metadata encodings: object record (content type + storage manifest), bucket record (initial region, quota limits), staged record (migration copy); reserved system names (`~bucket`, `~live`, `~reg/<saga>`, `~retired`, `~flip`, `~claim/<region>`, `~stage/<saga>`, `~cv/<saga>/<version>`, `~gc/<version>`, `~orphan/<version>/<node>`, `~absent/<version>/<stripe>.<index>/<holder>` (section 14), object-level `~lost/<version>`) |
 | `meta.go` | `metaRepairer`, the `merkle.Repairer` over every OCC key (metadata anti-entropy); node RPCs (meta fetch, pointer view, purge of a version list); the two DST canary switches |
-| `inventory.go` | per-bucket shard inventory: scrub, expected-vs-actual Merkle comparison, rebuild from k shards, the collection rule of section 10.3 (dead versions, recorded orphans, lost-object declaration), inbound shard-RPC hook (shard deletes refused), purge |
+| `inventory.go` | per-bucket shard inventory: scrub, expected-vs-actual Merkle comparison, rebuild from k shards, the collection rule of section 10.3 (dead versions, recorded orphans), absence records and the lost-object declaration (section 14), inbound shard-RPC hook (shard deletes refused), purge |
 | `migrate.go` | `migrator`, the real `saga.MigrationOps` (section 10.2 for the repaired protocol) |
 | `status.go` | `StatusRows`, the node's rows of the HTTP status table |
 
@@ -144,7 +144,8 @@ storage coordinator does not return the manifest on failure) are collected after
 never rebuilt. History: the first rule was "unreferenced for GCGrace"; shortening the DST grace to 10 s
 made `TestClusterPutGetDST` lose data (a region cut off for 10 s collected live shards whose manifest had
 not reached it). Remaining risk, stated: a holder partitioned for longer than `OrphanGrace` before the
-manifest arrives collects live shards; repair rebuilds them if k others survive.
+manifest arrives collects live shards; repair rebuilds them if k others survive, and otherwise the
+version is declared lost under the rule of section 14 once every holder of the stripe can be heard from.
 
 ### 3.5 Last-writer-wins plumbing (brief point 2)
 `occ.Config.OnDiscard` → the node's sink (`Config.DiscardSink`, used by the oracle in tests) and a
@@ -219,7 +220,7 @@ stripe. The six-node profile from Chunk 0a passed flags objnode never had (`-gos
 | A write acknowledged just before the migration flip survives the migration; a pre-flip write of a peer that was away is never purged | `TestMigrationHoldsAWriteAcknowledgedJustBeforeTheFlipDST`, `TestMigrationLateWriteOfAnIsolatedPeerStaysReadableDST` | 500 seeds each |
 | PUT, overwrite and DELETE traffic on non-coordinators through a migration, under 2% loss and up to 150 ms latency: every acknowledged write is readable, superseded or on a discard record; every live object lives in the final region; both outcomes | `TestClusterMigrationUnderTrafficDST` | 500 seeds: acked p50 45 (12 during the migration); oracle p50 19 current, 17 current-copy, 15 superseded, 6 discarded |
 | Two migrations of one bucket started at the same instant (same or different target) end with exactly one moved; a third on another bucket moves | `TestClusterDuellingMigrationsDST` | 500 seeds: all three terminal p50 14.0 s, max 19.9 s |
-| A bit-rotted dead shard is collected; death evidence gets its own grace; an orphan collection that destroys a later-live write is recorded and the key declared lost; shard deletes over the wire are refused | `TestCorruptShardOfADeadVersionIsCollected`, `TestDeathEvidenceGetsItsOwnGracePeriod`, `TestAWriteWhoseShardsWereCollectedAsOrphansIsRecordedLost`, `TestANodeRefusesShardDeletesOverTheWire` | |
+| A bit-rotted dead shard is collected; death evidence gets its own grace; an orphan collection that destroys a later-live write is recorded, and the key is declared lost under section 14's rule when a stripe is left with fewer than k shards; shard deletes over the wire are refused | `TestCorruptShardOfADeadVersionIsCollected`, `TestDeathEvidenceGetsItsOwnGracePeriod`, `TestAWriteWhoseShardsWereCollectedAsOrphansIsRecordedLost`, `TestANodeRefusesShardDeletesOverTheWire` | |
 | A deleted object stays deleted through anti-entropy, a partition heal and a crashed node rejoining | `TestClusterCrashRestartDST`; canary `TestCanaryDeleteResurrected` | deleted 4 per run |
 | A restarted node gets its missing shards back; a wiped node is refilled | `TestClusterCrashRestartDST` | 500 seeds: restarted node whole p50 6.0 s, max 8.4 s after restart; wiped node refilled p50 15.0 s, max 17.4 s |
 | With up to m shards per stripe rotted every GET is correct and every rotted shard is rebuilt, moving the damaged bytes only | `TestClusterBitRotDST` (fails if nothing rotted or rebuilt ≠ rotted bytes) | 500 seeds: 9–33 rotted shards per run, repaired p50 153 ms, max 159 ms; rebuilt/rotted bytes 1.000 every seed |
@@ -280,7 +281,8 @@ stripe. The six-node profile from Chunk 0a passed flags objnode never had (`-gos
 - (Repair) `ErrStaleRequest` removed. Strays: a write a non-live peer acknowledged before the flip may
   live in the old region after a migration (readable; moved by the next migration). Disk I/O runs on
   the node loop (`env.Disk` is synchronous). A shard collected as an orphan whose write later appears
-  is declared lost with a record (10.3). Tombstones, GC markers, intents' tombstones, orphan and loss
+  is rebuilt if k shards of its stripe remain; otherwise the version is declared lost with a record
+  under section 14's rule, which needs every holder of the stripe to be heard from. Tombstones, GC markers, intents' tombstones, orphan and loss
   records are kept forever: one record per deleted key, per dead version, per copy, per orphan
   collection; every metadata write re-encodes and fsyncs the whole document, so write cost grows
   with that history (the CPU profile of the new DSTs is dominated by it, section 10.14).
@@ -515,8 +517,10 @@ next migration, whose purge list names it once it is replaced); an existing key 
 retire's swapped copy under last-writer-wins and one of them is on a discard record (its shards are
 then collected as a loser). Tested by `TestMigrationLateWriteOfAnIsolatedPeerStaysReadableDST`.
 Residual: if the peer stays away longer than `OrphanGrace` (1 h default), the source holders collect
-its shards as orphans (10.3, path 2); the write then arrives and is declared lost with a record,
-never left live and unreadable (`TestAWriteWhoseShardsWereCollectedAsOrphansIsRecordedLost`).
+its shards as orphans (10.3, path 2); when the write then arrives it is rebuilt if k shards of every
+stripe remain, and otherwise declared lost with a record under section 14's rule once every holder of
+the stripe can be heard from (`TestAWriteWhoseShardsWereCollectedAsOrphansIsRecordedLost`). While a
+holder of that stripe cannot be heard from, the write stays live and unreadable (section 14, residual).
 
 ### 10.3 Finding 6: shard collection, its invariant, and the collection rule
 **Invariant (`internal/node/oracle_test.go`, installed in every full-node DST by `newHarness`):**
@@ -542,10 +546,12 @@ and finding 1 on the old code.
 2. *Orphan* (inventory): not expected, no evidence, unreferenced for `OrphanGrace` (1 h default; 10 min
    in the DSTs). Before deleting, the holder writes a replicated record per shard,
    `~orphan/<version>/<stripe>.<index>/<node>` (one key per (version, node) before the review 2 fixes,
-   section 13); if that write fails, nothing is deleted. If a manifest for that version is (or later becomes) live and some stripe has more than m
-   shards on orphan records, the lowest-ID live node tombstones that exact version (IfMatch its ETag),
-   writes `~lost/<version>` on the object, marks the version dead and decrements usage; health
-   reports `lost_objects`. With m or fewer gone, the holders rebuild them as for any missing shard.
+   section 13); if that write fails, nothing is deleted. Orphan records no longer decide loss
+   (section 14 replaced the "more than m orphan records" rule): if a manifest for that version is (or
+   later becomes) live, its holders rebuild missing shards as for any missing shard, and a stripe left
+   with fewer than k shards is declared lost under section 14's rule (the lowest-ID live node
+   tombstones that exact version, IfMatch its ETag, writes `~lost/<version>` on the object, marks the
+   version dead and decrements usage; health reports `lost_objects`).
    Evidence: none — this is the stated residual risk (a holder that does not hear of a write for
    `OrphanGrace`).
 3. *Migration purge*: an explicit list of versions, each with a `~gc/` marker (path 1's evidence, no
@@ -992,7 +998,8 @@ record. `TestLiveReadableOrLostOracleCatchesAnUnreadableLiveKey` shows the check
 `~orphan/<version>/<stripe>.<index>/<holder>`, with a value set by the key (the same encoding,
 holding one pair). Only that holder writes the key and every write of it is identical, so a later
 tick, a restart, a concurrent write or last-writer-wins can add entries but cannot erase one.
-`noteOrphan` is unchanged and still reads records in the old format. Cost: one metadata key per
+`noteOrphan` was unchanged and still read records in the old format (section 14 removed it: orphan
+records no longer decide loss). Cost: one metadata key per
 orphaned shard (orphans are the rare case of a writer away longer than `OrphanGrace`). The
 `orphan_records` counter now counts shards.
 
@@ -1035,7 +1042,8 @@ connection is either closed by that sweep or refused. The negative-count config 
 7 were corrected, and section 10.3's orphan key was updated. The `fuzz-short.sh` nit is in
 `agent_work/gates/`, which is the orchestrator's to change.
 
-**Residual limit, restated.** A write is lost only if its writer is unreachable for longer than
+**Residual limit, restated (superseded by section 14; the paragraph below claimed more than the code
+did, see ARBITRATION-1).** A write is lost only if its writer is unreachable for longer than
 `OrphanGrace` (1 h by default) while other holders hold its shards without its manifest. In that
 case the holders record every shard they collect, one key per shard. Once the write's manifest is
 live anywhere and more than m shards of any stripe appear on those records, the lowest-ID live node
@@ -1058,3 +1066,152 @@ rule. The DST invariant would report it.
 - host `agent_work/adversarial/06-integration/run-all.sh`: `SUMMARY held=662 broken=0 setup_errors=0
   elapsed_seconds=390`. Its evidence files were restored with `git checkout`.
 - Not run: the 500-seed gate and the full gate (the orchestrator runs them).
+
+## 14. Arbitration fix (ARBITRATION-1: FAIL, one MAJOR)
+
+**The defect.** A PUT is acknowledged at k+1 durable shards, so a holder may never store its shard.
+If the writer is then cut off before its manifest spreads, holders that did store shards collect them
+as orphans. The old detector counted only orphan records and declared loss above m per stripe. A
+stripe with m or fewer shards collected and one shard never written kept fewer than k shards. It was
+never declared lost, so the key stayed live and every GET failed.
+
+**When is a version declared lost, and on what evidence (as built, `internal/node/inventory.go`).**
+
+1. *Absence record.* A placement holder H of shard (version v, stripe s, index i) writes the replicated
+   record `~absent/<v>/<s>.<i>/<H>` (bucket-scoped, one immutable value per key, like the orphan
+   records) only when all of the following hold in one step of its loop:
+   - v's manifest is live in H's own metadata (a staged migration copy never qualifies), v is not
+     purged and has no death evidence, and H holds no shard of (v, s, i) whose checksum matches the
+     manifest;
+   - H's rebuild of that shard failed, and that rebuild got an answer from the holder of every other
+     index of stripe s: a shard, `not found` or `corrupt`. A timeout, an unreachable node, a
+     not-ready node or any other error is not an answer, and then no record is written;
+   - fewer than k of the shards collected by that rebuild verify against the manifest's checksums.
+2. *The record is binding.* After writing it, H never rebuilds (v, s, i), and it refuses that shard
+   over the wire with `ErrFenced` (counted as `absent_refused`). The check reads H's own metadata, so
+   it survives a restart.
+3. *Declaration.* On each maintenance tick, the node that has the lowest ID in its own view checks
+   every live manifest. If some stripe has more than m indices whose manifest holder wrote an
+   absence record, that node declares the version lost. Only a record from that index's manifest
+   holder counts. It writes `~lost/<v>` on the object first and then tombstones the manifest key
+   (IfMatch the version's ETag), so a crash between the two writes leaves a live key with a loss
+   record, which the next tick finishes, and never a deleted key without one. It marks the version dead (`~gc/<v>`) and decrements usage. It counts
+   `LostDeclared` and logs `object <b>/<k> version <v> lost: the holders of <c> of the <n> shards of
+   stripe <s> recorded that they hold none, fewer than k=<k> remain`. The remaining shards are no
+   longer expected, so every holder collects them through the death-evidence path (10.3 path 1)
+   after `GCGrace`. A GET then answers `ErrNotFound` (HTTP 404). Health shows `lost_objects` and the
+   new counters `absent_records` and `absent_refused`. Orphan records are still written but no
+   longer decide anything, and `lostByOrphans` and `noteOrphan` are removed.
+
+**Why it cannot fire while a good shard can still be produced.** A record's index held no verifiable
+shard when the record was written. Because the record is binding, that index never gets one later.
+More than m such indices leave at most k-1 indices of the stripe that can hold a shard, at the
+declaration and afterwards. Rebuild needs k verifiable shards, so it cannot add one. A late request
+from the writer is refused. Safety therefore does not depend on timing, view agreement or a grace
+period. The declaration waits for evidence, not for a timer.
+
+**A holder that is down or partitioned blocks the decision.** It cannot write its own record. Every
+other holder's rebuild times out on it, so they write none either. While any holder of the stripe
+cannot be heard from, no new absence record for that stripe is written. A declaration in that time can
+rest only on more than m records written earlier, while every holder answered. `TestAHolderThatCannotBeHeardFromBlocksALossDeclaration` covers this. View agreement
+is not required. A designated node in each half of a partition can declare only on records that are
+already sufficient.
+
+**Last-writer-wins and replication.** Records are written only by their holder, and every write of a
+key is identical, so no merge or discard can erase one. The declaration's tombstone is an ordinary
+metadata write. A newer write of the same key made concurrently on a side the declarer has not heard
+from competes with the tombstone under last-writer-wins, and the loser is counted and logged as any
+discard is. When the newer write wins, it stays live and readable, and only v's `~lost` record remains.
+
+**Cost.** One replicated, permanently retained metadata key per missing shard of an unrecoverable
+stripe: at least m+1 per lost version, written only when a stripe is already below k. One metadata
+lookup per incoming shard write (`OpPutShard`). A failed rebuild re-verifies the blobs it gathered.
+Latency: after a heal, the declaration takes a manifest sync to each missing holder, one maintenance
+tick and one rebuild round (bounded by `RequestTimeout`), a metadata sync of the records, and one more
+tick on the designated node. All tests settle within 30 simulated seconds at a 1 s maintenance period.
+The answers a rebuild collects are not a snapshot. If another holder received its shard (only through
+a late writer request) between answering and the record, H's record is stale, and that index's
+redundancy is given up for good. Safety is unaffected, because the record remains binding.
+
+**Residual limit, restated exactly as the code behaves.** Suppose a stripe of a live version has
+fewer than k verifiable shards. It is declared lost only after more than m of its holders have each
+written an absence record, and each of them must have heard from every holder of the stripe during
+one rebuild. So the guarantee "every key listed live is readable, or declared lost on record" holds
+once every holder of every such stripe is up, holds the manifest and can reach the others. Until
+then the key stays live and unreadable, with GET failing with `ErrUnavailable` (503). A holder that
+never returns, such as a node removed for good, keeps it so forever: the code cannot tell such a
+holder from a partitioned one. A wiped disk (`WipeRejoin`) loses the holder's own copy of its record
+until metadata sync returns it. A writer's shard request sent before the wipe and delivered to the
+new incarnation in that window would be stored, which would falsify the record; if k-1 other good
+shards exist as well, a version that could be rebuilt again is, or stays, declared lost. This needs
+a disk loss on a holder of a stripe already below k and a request in flight across that holder's
+manifest sync, rebuild round, record, wipe and restart. The simulator delivers such a request (it
+addresses a node, not an incarnation); the real runtime does not (the connection dies with the
+process). This path is not tested and not closed. The tombstone
+discards a concurrent newer write of the same key only under last-writer-wins, counted and logged.
+The orphan rule itself is unchanged: a write whose writer stays away longer than `OrphanGrace` can
+lose its shards and then be declared lost.
+
+**Tests** (`internal/node/lost_test.go` unless named; committed in `2d34871` before the code):
+| Test | What it proves | Old code |
+|---|---|---|
+| `TestAnOrphanedWriteWithAnUnwrittenShardIsDeclaredLost` | The arbiter's reproduction (k=2, m=2, quorum 3; n002 never stores, n000 and n001 collect after the orphan grace; writer cut off on acknowledgement). After heal it is declared lost on every node: manifest not live, `~lost/<v>` present, GET not found, `lost_objects` > 0, the log line present, the declaration seen by the harness oracle, and no shard of v left on any disk after `GCGrace`. | FAIL (still live) |
+| `TestAnOrphanedWriteWithEnoughShardsLeftStaysReadable` | Control: the same isolation, but every shard lands and one holder stays with the writer, so 2 are collected (≤ m) and k remain. It stays live, reads back the bytes on every node, is never declared, and all 4 shards are rebuilt. | pass |
+| `...DeclaredLostAtFourPlusTwo` / `...StaysReadableAtFourPlusTwo` | The same at 4+2 with quorum 5 on 6 nodes (2 collected, 1 never written, 3 left → lost; 2 collected, 4 left → readable and fully rebuilt). | FAIL / pass |
+| `TestAMultiStripeWriteWithOneUnrecoverableStripeIsDeclaredLost` | 4+2, 5 stripes. Stripe 4 never reaches one holder that has stripes 0–3, and 2 holders are collected. The test asserts before the heal that only stripe 4 is below k. Declared lost. | FAIL |
+| `TestAMultiStripeWriteWithOneStripeRottedDuringThePartitionIsDeclaredLost` | 4+2, 2 stripes. 2 shards are collected as orphans and a kept holder's stripe-1 shard is bit-rotted (mixed causes). Only stripe 1 is below k. Declared lost. | FAIL |
+| `TestAHolderThatCannotBeHeardFromBlocksALossDeclaration` (`partitioned`, `paused`) | k=2, m=2. Two holders rot and the third good holder is isolated or paused for 2 minutes, so only 1 shard is reachable. Nothing is declared. After the heal the object reads back and every shard is rebuilt. With the "heard from every holder" condition removed, this test fails (checked by a temporary edit, not committed). | pass |
+| `TestMoreThanMShardsRottedBeyondRepairIsDeclaredLost` (`k2m2`, `k4m2`) | 3 shards of stripe 1 rotted, no orphan record anywhere (asserted). Declared lost as above. | FAIL |
+| `TestOneRottedStripeWithinMIsRepairedNotDeclaredLost` | m rotted shards are rebuilt and the object is never declared. | pass |
+| `TestAHolderThatRecordedItHoldsNoShardRefusesItLater` | After its absence record, a holder refuses the original shard over the wire (`ErrFenced`, `AbsentRefused`), and the shard does not reappear on disk. | (new behaviour) |
+| `TestAWriteWhoseShardsWereCollectedAsOrphansIsRecordedLost` (1, 2, 6 stripes), `TestOrphanRecordsAccumulateAcrossMaintenanceTicks` | Kept unchanged, and both pass under the new rule. | pass |
+
+**Oracle changes** (`helpers_test.go`, `oracle_test.go`, `dst_putget_test.go`):
+- *Converse oracle, in every harness test and DST.* The harness records every committed manifest by
+  storage version. When any node commits a `~lost/<v>` record (the declaration now reports its
+  tombstone and loss record to `CommitSink`), the oracle reads the disks of every manifest holder,
+  including nodes that are down or paused. It fails the run unless some stripe has fewer than k
+  shards that decode and match the manifest checksum at that instant.
+- *Put/get DST extended (`TestClusterPutGetDST`, `orphanedAfterAck`).* After the existing checks, the
+  scenario does the following. Two random nodes are made unreachable from a random writer, and a
+  1-stripe object is put. The writer is muted 1–3 ms later, after its shards are sent and before the
+  manifest commits. On the acknowledgement, the writer and k-1 or k (random) shard-holding holders
+  form one side of a partition. The run lasts `OrphanGrace` + 20 s (this scenario's `OrphanGrace` is
+  60 s, up from 10 min) and then heals. After that, `checkLiveReadableOrLost` runs. A version with k
+  verifiable shards of every stripe at the heal must not be declared lost and must read back its
+  bytes. The GC oracle exempts only this key (`gcOracle.residual`), because its orphan collection is
+  the stated residual case. Measures: `late_lost`, `late_recoverable` and
+  `late_orphans_plus_unwritten` (seeds whose late version, at the heal, had a stripe below k while no
+  stripe had more than m shards collected; that is the arbitration's class).
+  The pre-fix product code was run against these tests with a temporary copy and
+  `DST_SEEDS=24`. Seeds 1, 10 and others failed with `pg/late version … is live in metadata,
+  unreadable … and declared lost on no record: … 3 of 6 shards verified, need 4`. The fixed code
+  passes.
+
+**Takeover (Nick's ruling of 2026-11-22, `/root/briefs/objstore-chunk6-fable-finish-ruling-2026-11-22.md`).**
+The Opus round that built this section was stopped during its race run, and the orchestrator seat
+(Fable) finished the fix as builder. Checked by reading and by running: the rule above, every test in
+the table, and that the six `...DeclaredLost` tests fail on the test-only commit `2d34871`. Changed
+after the takeover:
+- `noteAbsent` splits a record name into three parts at most, so a holder ID that contains `/` is
+  read back (`TestAbsenceRecordKeyRoundTripsForAnyHolderName`, with
+  `TestMalformedAbsenceRecordNamesAreIgnored`, in `absent_internal_test.go`). Before, such a
+  holder's records were ignored and its stripes could never be declared lost.
+- `serveStorage` refuses a shard write with the metadata store's error while the node's metadata is
+  not loaded. Before, the absence check was skipped in that state and the shard was stored.
+
+- `declareLost` writes the loss record before the tombstone
+  (`TestTheLossRecordIsCommittedBeforeTheManifestIsTombstoned`, committed failing in the commit
+  before the change). In the earlier order, which the orphan-count rule also had, a crash between
+  the two writes deleted the key and left no record of the loss. Still open after a crash right
+  after the tombstone: the death marker and the usage decrement of that declaration are skipped;
+  the shards are then collected as unreferenced after `OrphanGrace` and the quota audit corrects
+  the usage.
+
+**Not done.** No canary switch was added, since the brief names none. The PLAN error table has no row
+for a permanently lost object. A declared-lost key answers 404 (`ErrNotFound`, the table's row)
+because its manifest is tombstoned.
+
+**Requests to the orchestrator.** (1) If a distinct status for a lost object is wanted (for example
+410 with the `~lost` record), it is a PLAN table change. (2) `absent_records` and `absent_refused` are
+new health counters for the prose seat.
