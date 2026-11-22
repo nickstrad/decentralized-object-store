@@ -32,6 +32,8 @@ func APICodeEntries() []env.CodeEntry {
 
 type Condition struct {
 	IfMatch     string
+	IfMatchList bool
+	IfMatchAny  []string
 	IfNoneMatch bool
 }
 

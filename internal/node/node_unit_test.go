@@ -48,7 +48,7 @@ func TestBucketMetadataAPIOnOneNode(t *testing.T) {
 		{"alice", "rx", storage.Condition{}, storage.ErrInvalid},
 		{"", "r", storage.Condition{}, storage.ErrInvalid},
 		{"alice", "r", storage.Condition{IfMatch: ai.ETag}, occ.ErrPreconditionFailed},
-		{"alice", "r", storage.Condition{IfMatch: "zz"}, storage.ErrInvalid},
+		{"alice", "r", storage.Condition{IfMatch: "zz"}, occ.ErrPreconditionFailed},
 		{"alice", "r", storage.Condition{IfMatch: "x", IfNoneMatch: true}, storage.ErrInvalid},
 	} {
 		if _, err := n.PutACL("m", c.principal, c.perm, c.cond); !errors.Is(err, c.want) {
@@ -115,8 +115,8 @@ func TestBucketMetadataAPIOnOneNode(t *testing.T) {
 	if _, err := n.PutTag("m", "p/0", "t", "x", storage.Condition{IfMatch: ti.ETag}); !errors.Is(err, occ.ErrPreconditionFailed) {
 		t.Fatalf("tag with a replaced etag: %v", err)
 	}
-	if _, err := n.DeleteObject("m", "p/0", storage.Condition{IfMatch: "zz"}); !errors.Is(err, storage.ErrInvalid) {
-		t.Fatalf("delete with a malformed etag: %v", err)
+	if _, err := n.DeleteObject("m", "p/0", storage.Condition{IfMatch: "zz"}); !errors.Is(err, occ.ErrPreconditionFailed) {
+		t.Fatalf("delete with an etag that is not one of ours: %v", err)
 	}
 	if _, err := n.DeleteObject("m", "", storage.Condition{}); !errors.Is(err, storage.ErrInvalid) {
 		t.Fatalf("delete with an empty key: %v", err)
@@ -342,5 +342,49 @@ func TestMigrationClaimOfAWronglyRoutedBucketIsPermanent(t *testing.T) {
 		if !errors.Is(err, saga.ErrPermanent) {
 			t.Fatalf("claim: %v, want a permanent refusal", err)
 		}
+	}
+}
+
+func TestPreconditionsOnTheNodeNeverDegradeToUnconditional(t *testing.T) {
+	h := smallCluster(t, 1)
+	id := h.ids[0]
+	n := h.node(id)
+	if err := n.CreateBucket(storage.BucketSpec{Name: "p"}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := h.syncPut(t, id, storage.PutRequest{Bucket: "p", Key: "k", Data: []byte("v1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := []struct {
+		name string
+		c    storage.Condition
+		want error
+	}{
+		{"an empty If-Match list", storage.Condition{IfMatchList: true}, occ.ErrPreconditionFailed},
+		{"a list without the current etag", storage.Condition{IfMatchList: true, IfMatchAny: []string{"a", ""}}, occ.ErrPreconditionFailed},
+		{"a single etag that is not one of ours", storage.Condition{IfMatch: "zz"}, occ.ErrPreconditionFailed},
+		{"both preconditions", storage.Condition{IfMatchList: true, IfMatchAny: []string{first.ETag}, IfNoneMatch: true}, storage.ErrInvalid},
+	}
+	for _, r := range rows {
+		if _, err := h.syncPut(t, id, storage.PutRequest{Bucket: "p", Key: "k", Data: []byte("x"), Cond: r.c}); !errors.Is(err, r.want) {
+			t.Errorf("put with %s: %v, want %v", r.name, err, r.want)
+		}
+		if _, err := n.DeleteObject("p", "k", r.c); !errors.Is(err, r.want) {
+			t.Errorf("delete with %s: %v, want %v", r.name, err, r.want)
+		}
+		if _, err := n.PutTag("p", "k", "t", "v", r.c); !errors.Is(err, r.want) {
+			t.Errorf("tag with %s: %v, want %v", r.name, err, r.want)
+		}
+	}
+	if _, _, err := h.syncGet(t, id, "p", "k"); err != nil {
+		t.Fatalf("the object was changed by a failed precondition: %v", err)
+	}
+	second, err := h.syncPut(t, id, storage.PutRequest{Bucket: "p", Key: "k", Data: []byte("v2"), Cond: storage.Condition{IfMatchList: true, IfMatchAny: []string{"a", first.ETag}}})
+	if err != nil {
+		t.Fatalf("put with a list holding the current etag: %v", err)
+	}
+	if _, err := n.DeleteObject("p", "k", storage.Condition{IfMatchList: true, IfMatchAny: []string{second.ETag}}); err != nil {
+		t.Fatalf("delete with a list holding the current etag: %v", err)
 	}
 }

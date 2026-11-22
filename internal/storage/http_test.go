@@ -34,11 +34,12 @@ type model struct {
 	mu      sync.Mutex
 	buckets map[string]map[string]*modelObject
 	tags    map[string]string
+	meta    map[string]*modelObject
 	seq     int
 }
 
 func newModel() *model {
-	return &model{buckets: map[string]map[string]*modelObject{}, tags: map[string]string{}}
+	return &model{buckets: map[string]map[string]*modelObject{}, tags: map[string]string{}, meta: map[string]*modelObject{}}
 }
 
 func (m *model) etag() string {
@@ -59,6 +60,9 @@ func holds(c storage.Condition, o *modelObject) bool {
 		return false
 	}
 	if c.IfMatch != "" && (o == nil || (c.IfMatch != "*" && c.IfMatch != o.etag)) {
+		return false
+	}
+	if c.IfMatchList && (o == nil || !slices.Contains(c.IfMatchAny, o.etag)) {
 		return false
 	}
 	return true
@@ -172,8 +176,14 @@ func (m *model) PutTag(_ context.Context, bucket, key, name, value string, c sto
 	if name == "" {
 		return storage.TagInfo{}, storage.ErrInvalid
 	}
-	m.tags[bucket+"/"+key+"/"+name] = value
-	return storage.TagInfo{Name: name, Value: value, ETag: m.etag()}, nil
+	k := bucket + "/" + key + "/" + name
+	if !holds(c, m.meta[k]) {
+		return storage.TagInfo{}, occ.ErrPreconditionFailed
+	}
+	m.tags[k] = value
+	e := m.etag()
+	m.meta[k] = &modelObject{etag: e}
+	return storage.TagInfo{Name: name, Value: value, ETag: e}, nil
 }
 
 func (m *model) Tags(_ context.Context, bucket, key string) ([]storage.TagInfo, error) {
@@ -197,7 +207,7 @@ func (m *model) Tags(_ context.Context, bucket, key string) ([]storage.TagInfo, 
 	return out, nil
 }
 
-func (m *model) PutACL(_ context.Context, bucket, principal, perm string, _ storage.Condition) (storage.ACLInfo, error) {
+func (m *model) PutACL(_ context.Context, bucket, principal, perm string, c storage.Condition) (storage.ACLInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, err := m.objs(bucket); err != nil {
@@ -206,7 +216,13 @@ func (m *model) PutACL(_ context.Context, bucket, principal, perm string, _ stor
 	if principal == "" || strings.Trim(perm, "rwa") != "" {
 		return storage.ACLInfo{}, storage.ErrInvalid
 	}
-	return storage.ACLInfo{Principal: principal, Perm: perm, ETag: m.etag()}, nil
+	k := bucket + "?acl=" + principal
+	if !holds(c, m.meta[k]) {
+		return storage.ACLInfo{}, occ.ErrPreconditionFailed
+	}
+	e := m.etag()
+	m.meta[k] = &modelObject{etag: e}
+	return storage.ACLInfo{Principal: principal, Perm: perm, ETag: e}, nil
 }
 
 func (m *model) ACL(_ context.Context, bucket, principal string) (storage.ACLInfo, error) {
@@ -334,12 +350,42 @@ func TestHTTPObjectAPIAgainstTheModel(t *testing.T) {
 		{"patching a bucket", "PATCH", "/b", "", nil, 405},
 		{"a key over the length limit", "GET", "/b/" + strings.Repeat("k", storage.MaxKeyLen+1), "", nil, 400},
 		{"an object over the size limit", "PUT", "/b/big", strings.Repeat("x", 1<<20+1), nil, 413},
-		{"deleting with a stale etag", "DELETE", "/b/k", "", map[string]string{"If-Match": "0"}, 412},
+		{"deleting with a stale etag", "DELETE", "/b/k", "", map[string]string{"If-Match": `"0"`}, 412},
+		{"If-Match empty quoted etag on PUT", "PUT", "/b/k", "x", map[string]string{"If-Match": `""`}, 412},
+		{"If-Match empty field on PUT", "PUT", "/b/k", "x", map[string]string{"If-Match": ""}, 412},
+		{"If-Match whitespace only on PUT", "PUT", "/b/k", "x", map[string]string{"If-Match": "   "}, 412},
+		{"If-Match empty list elements on PUT", "PUT", "/b/k", "x", map[string]string{"If-Match": " , ,"}, 412},
+		{"If-Match unquoted etag on PUT", "PUT", "/b/k", "x", map[string]string{"If-Match": "abc"}, 400},
+		{"If-Match unterminated quote on PUT", "PUT", "/b/k", "x", map[string]string{"If-Match": `"abc`}, 400},
+		{"If-Match a doubled quote on PUT", "PUT", "/b/k", "x", map[string]string{"If-Match": `""""`}, 400},
+		{"If-Match star inside a list on PUT", "PUT", "/b/k", "x", map[string]string{"If-Match": `*, "a"`}, 400},
+		{"If-Match a weak validator on PUT", "PUT", "/b/k", "x", map[string]string{"If-Match": `W/"@"`}, 412},
+		{"If-Match a list without the current etag on PUT", "PUT", "/b/k", "x", map[string]string{"If-Match": `"a", "b"`}, 412},
+		{"If-None-Match empty field on PUT", "PUT", "/b/k", "x", map[string]string{"If-None-Match": ""}, 400},
+		{"If-None-Match whitespace on PUT", "PUT", "/b/k", "x", map[string]string{"If-None-Match": "  "}, 400},
+		{"If-None-Match a list on PUT", "PUT", "/b/k", "x", map[string]string{"If-None-Match": `"a", *`}, 400},
+		{"both preconditions on PUT", "PUT", "/b/k", "x", map[string]string{"If-Match": "*", "If-None-Match": "*"}, 400},
+		{"If-Match empty quoted etag on DELETE", "DELETE", "/b/k", "", map[string]string{"If-Match": `""`}, 412},
+		{"If-Match whitespace only on DELETE", "DELETE", "/b/k", "", map[string]string{"If-Match": "  "}, 412},
+		{"If-Match malformed on DELETE", "DELETE", "/b/k", "", map[string]string{"If-Match": "abc"}, 400},
+		{"If-Match a weak validator on DELETE", "DELETE", "/b/k", "", map[string]string{"If-Match": `W/"@"`}, 412},
+		{"If-Match empty quoted etag on a tag", "PUT", "/b/k?tag=c", "x", map[string]string{"If-Match": `""`}, 412},
+		{"If-Match a list holding the current etag on PUT", "PUT", "/b/k", "hello", map[string]string{"If-Match": `"a", "@"`, "Content-Type": "text/plain"}, 200},
+		{"If-Match star on PUT", "PUT", "/b/k", "hello", map[string]string{"If-Match": "*", "Content-Type": "text/plain"}, 200},
 		{"deleting it", "DELETE", "/b/k", "", nil, 204},
+		{"If-Match star on a missing object", "PUT", "/b/k", "x", map[string]string{"If-Match": "*"}, 412},
 		{"deleting it again", "DELETE", "/b/k", "", nil, 404},
 	}
+	current := ""
 	for _, s := range steps {
-		resp, body := do(t, srv, s.method, s.path, []byte(s.body), s.hdr)
+		hdr := map[string]string{}
+		for k, v := range s.hdr {
+			hdr[k] = strings.ReplaceAll(v, "@", current)
+		}
+		resp, body := do(t, srv, s.method, s.path, []byte(s.body), hdr)
+		if e := resp.Header.Get("ETag"); e != "" && s.method == "PUT" && !strings.Contains(s.path, "?") {
+			current = strings.Trim(e, `"`)
+		}
 		if resp.StatusCode != s.want {
 			t.Fatalf("%s: status %d, want %d (%s)", s.name, resp.StatusCode, s.want, body)
 		}
@@ -541,16 +587,43 @@ var fuzzMethods = []string{"GET", "PUT", "HEAD", "DELETE", "POST", "PATCH"}
 
 var fuzzStatus = map[int]bool{200: true, 202: true, 204: true, 400: true, 404: true, 405: true, 409: true, 412: true, 413: true, 500: true, 503: true, 504: true, 507: true}
 
+func mayApply(name, value string, present bool, current string) bool {
+	switch name {
+	case "If-None-Match":
+		return strings.TrimSpace(value) == "*" && !present
+	case "If-Match":
+		if strings.TrimSpace(value) == "*" {
+			return present
+		}
+		if !present {
+			return false
+		}
+		for _, el := range strings.Split(value, ",") {
+			if strings.TrimSpace(el) == `"`+current+`"` {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+var fuzzHeaders = []string{"", "If-Match", "If-None-Match", "If-Match"}
+
 func FuzzObjectAPI(f *testing.F) {
 	f.Add([]byte("\x01/b\x00\x00\x00\x01/b/k\x00\x00hello\x00\x00/b/k\x00\x00\x00"))
 	f.Add([]byte("\x01/b/k\x00*\x00x\x00"))
 	f.Add([]byte{})
 	f.Add([]byte("\x05/_migrations\x00\x00{\"bucket\":\"b\",\"to\":\"r\"}\x00"))
 	f.Add([]byte("\x00/b?tags\x00\"etag\"\x00\x00\x03/b/k\x00\x00\x00"))
+	f.Add([]byte("\x01/b\x00\x00\x00\x01/b/k\x00\x00v1\x00\x01/b/k\x00\x01\"\"\x00v2\x00"))
+	f.Add([]byte("\x01/b\x00\x00\x00\x01/b/k\x00\x00v1\x00\x01/b/k\x00\x01   \x00v2\x00\x03/b/k\x00\x01W/\"@\"\x00\x00"))
+	f.Add([]byte("\x01/b\x00\x00\x00\x01/b/k\x00\x00v1\x00\x01/b/k\x00\x01\"x\", \"@\"\x00v2\x00\x01/b/k\x00\x02\x00v3\x00"))
 	f.Fuzz(func(t *testing.T, in []byte) {
 		m := newModel()
 		h := storage.NewHandler(m, storage.Limits{MaxObjectSize: 4096, MaxSmallBody: 1024})
 		puts := map[string][]byte{}
+		etags := map[string]string{}
 		parts := bytes.Split(in, []byte{0})
 		for i := 0; i+3 < len(parts) && i < 4*12; i += 4 {
 			if len(parts[i]) == 0 {
@@ -570,27 +643,44 @@ func FuzzObjectAPI(f *testing.F) {
 			if err != nil {
 				continue
 			}
-			if v := string(parts[i+1]); v != "" && !strings.ContainsAny(v, "\r\n") {
-				if v == "*" {
-					req.Header.Set("If-None-Match", v)
-				} else {
-					req.Header.Set("If-Match", v)
+			key := req.URL.Path
+			name, value := "", string(parts[i+1])
+			if len(value) > 0 && value[0] < 4 {
+				name, value = fuzzHeaders[value[0]], value[1:]
+			} else if value != "" {
+				name = "If-Match"
+				if value == "*" {
+					name = "If-None-Match"
 				}
 			}
+			value = strings.ReplaceAll(value, "@", etags[key])
+			if name != "" && strings.ContainsAny(value, "\r\n\x00") {
+				name = ""
+			}
+			if name != "" {
+				req.Header[name] = []string{value}
+			}
+			cur, present := etags[key]
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, req)
 			if !fuzzStatus[w.Code] {
 				t.Fatalf("%s %s: status %d outside the table", method, path, w.Code)
 			}
-			key := req.URL.Path
+			applied := req.URL.RawQuery == "" && strings.Count(key, "/") == 2 &&
+				(method == "PUT" && w.Code == 200 || method == "DELETE" && w.Code == 204)
+			if applied && name != "" && !mayApply(name, value, present, cur) {
+				t.Fatalf("%s %s with %s: %q applied (status %d) though the precondition cannot hold (exists=%v, etag %s)", method, key, name, value, w.Code, present, cur)
+			}
 			if method == "PUT" && w.Code == 200 && strings.Count(key, "/") == 2 && req.URL.RawQuery == "" {
 				puts[key] = parts[i+2]
 				if w.Header().Get("ETag") == "" {
 					t.Fatalf("PUT %s: no ETag", key)
 				}
+				etags[key] = strings.Trim(w.Header().Get("ETag"), `"`)
 			}
 			if method == "DELETE" && w.Code == 204 {
 				delete(puts, key)
+				delete(etags, key)
 			}
 			if method == "GET" && w.Code == 200 && req.URL.RawQuery == "" {
 				if want, ok := puts[key]; ok && !bytes.Equal(w.Body.Bytes(), want) {
