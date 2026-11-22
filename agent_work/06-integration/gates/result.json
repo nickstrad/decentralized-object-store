@@ -1,16 +1,16 @@
 {
   "chunk": "06-integration",
-  "sha": "c233622a511ea64490ae23f8a0f23116780abaeb",
+  "sha": "97b9850a600120fd7a7b22a8821b6776bd465f93",
   "stage": "build",
-  "comment_baseline": "5087627e9f20345d1b80b13decece38963dcbc4d",
-  "started": "2026-11-22T04:38:45Z",
-  "finished": "2026-11-22T05:36:52Z",
+  "comment_baseline": "631b44ede9ffa3ca4a53abc4bcec824ee362d061",
+  "started": "2026-11-22T08:13:14Z",
+  "finished": "2026-11-22T09:13:03Z",
   "go_version": "go version go1.26.11 linux/amd64",
-  "image_id": "sha256:c428e45bd9c94b3ee1fc04768bdfb935e50b6e91dc96229fd611e0974936d1e1",
+  "image_id": "sha256:1b5ba941beb49ee3f90411898be6bb49414f4fba660ba06230f2c0d7e2003661",
   "in_container": true,
   "partial": false,
   "dirty_tree": false,
-  "seed_from_sha": 213525946061086,
+  "seed_from_sha": 166823056793601,
   "fuzz_seconds": 30,
   "overall": "pass",
   "counts_for_landing": true,
@@ -19,14 +19,14 @@
       "gate": "G0",
       "check": "tools",
       "status": "pass",
-      "seconds": 2,
+      "seconds": 1,
       "note": ""
     },
     {
       "gate": "G0",
       "check": "gofmt",
       "status": "pass",
-      "seconds": 1,
+      "seconds": 0,
       "note": ""
     },
     {
@@ -40,14 +40,14 @@
       "gate": "G0",
       "check": "build",
       "status": "pass",
-      "seconds": 2,
+      "seconds": 1,
       "note": ""
     },
     {
       "gate": "G0",
       "check": "detlint",
       "status": "pass",
-      "seconds": 3,
+      "seconds": 2,
       "note": ""
     },
     {
@@ -61,57 +61,57 @@
       "gate": "G0",
       "check": "deps",
       "status": "pass",
-      "seconds": 0,
+      "seconds": 1,
       "note": ""
     },
     {
       "gate": "G0",
       "check": "comments",
       "status": "pass",
-      "seconds": 1,
-      "note": "comments compared with baseline 5087627e9f20345d1b80b13decece38963dcbc4d"
+      "seconds": 0,
+      "note": "comments compared with baseline 631b44ede9ffa3ca4a53abc4bcec824ee362d061"
     },
     {
       "gate": "G0",
       "check": "selfcontained",
       "status": "pass",
-      "seconds": 6,
+      "seconds": 5,
       "note": ""
     },
     {
       "gate": "G1",
       "check": "unit",
       "status": "pass",
-      "seconds": 103,
+      "seconds": 67,
       "note": ""
     },
     {
       "gate": "G2",
       "check": "property",
       "status": "pass",
-      "seconds": 344,
-      "note": "rapid seed 213525946061086, 2000 checks, 8 packages"
+      "seconds": 360,
+      "note": "rapid seed 166823056793601, 2000 checks, 8 packages"
     },
     {
       "gate": "G3",
       "check": "fuzz",
       "status": "pass",
-      "seconds": 457,
+      "seconds": 460,
       "note": "14 fuzz targets, 30s each"
     },
     {
       "gate": "G4",
       "check": "race",
       "status": "pass",
-      "seconds": 1073,
+      "seconds": 963,
       "note": ""
     },
     {
       "gate": "G5",
       "check": "dst",
       "status": "pass",
-      "seconds": 1493,
-      "note": "500 seeds from base 213525946061086"
+      "seconds": 1726,
+      "note": "500 seeds from base 166823056793601"
     },
     {
       "gate": "G6",
