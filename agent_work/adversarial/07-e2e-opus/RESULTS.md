@@ -19,3 +19,21 @@ The three coverage holes of the first review (the reason for this pass) all held
 seat's own mutations: 10 of 11 mutations of the fuzzed migrating bucket killed (the eleventh
 is F4), the forgotten ambiguous start killed, and every partition-time mutation killed on
 the tier that can see it. Fix round: `agent_work/07-e2e/objstore-p2-07-e2e-advfix.md`.
+
+## Re-run after the fix round (orchestrator, 2026-11-23, branch tip `8c22979`)
+
+`bash agent_work/adversarial/07-e2e-opus/run-all.sh`:
+`SUMMARY held=80 broken=1 setup_errors=3 wall=1706s` (`evidence/run-all.txt`, this run).
+
+| Finding | Lines | Now |
+|---|---|---|
+| F1 | `a02-coordinator-paused-past-orphan-grace-loses-object`, `a02-sched-lost-reply-then-pause-past-heal-bound` | HELD (every acknowledged object kept on seeds 31337, 3, 4; both cycles terminal on 702, 9001, 31337) |
+| F2 | `a05-replay-shard=*` | HELD (every printed REPLAY line reproduces its planted failure) |
+| F3 | no line of its own | closed in review round 3 (the commit-after-delete oracle now names the event) |
+| F4 | `a01-purge-noop-S`, `a01-purge-noop-R` | SETUP ERROR: the patch no longer applies, because the fix rewrote `Retire`. Hand-ported by the orchestrator in a scratch copy (`g.purge(m.Bucket, nil, ...)` in `Retire`): KILLED on the simulator tier by `TestE4MigrationUnderTrafficS` (`30 pre-migration shards of e4 remain outside r1 immediately after migration completed`) |
+| F5 | `a04-oracle-loss-declared-early` | HELD (killed by the loss oracle through the new absence scenario) |
+| N2 | `a01-replaced-never-dead` | SETUP ERROR, same cause. Hand-ported (the `markDead` of the replaced version removed from `Retire`): KILLED by `TestE4MigrationUnderTrafficS` |
+| N7 | `a03-S-stale-read-split` | still the one BROKEN line; no claim broken (E2 does not promise read-your-writes during a partition) |
+
+The three patch files are left as the adversarial seat wrote them; they describe the code
+at `796e127`.
