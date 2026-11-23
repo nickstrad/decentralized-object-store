@@ -35,3 +35,12 @@ reports, the acceptance check `REVIEW-1.md`) and `agent_work/adversarial/08-book
   with a `replace` to the repository root.
 - An edit for length drops detail. Compare the numbers in each chapter before and after
   (a sorted list of numeric tokens is enough) and read what disappeared.
+- `prose-check.sh` rejects a prose commit that carries anything but reader-facing files and
+  Go comments. The three prose commits of the publishing finish also carried the prose
+  seat's work reports (`agent_work/08-book/*-REPORT.md`), so the check ends with four
+  findings of that one kind. Commit a prose seat's report separately, without the trailer.
+  The check was run only after the landing here; run it before, while history can change.
+- Publishing ahead of a running final gate (owner's ruling): merge by hand from the main
+  checkout (`land.sh` needs a gate result), leave the gate's worktree alone, and afterwards
+  give `prose-check.sh` the old main and the branch tip, since a range with a merge in it
+  is itself a finding. The gate result is then committed straight to main.
