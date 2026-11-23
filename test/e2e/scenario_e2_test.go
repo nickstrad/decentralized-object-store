@@ -226,9 +226,9 @@ type e2Params struct {
 }
 
 type e2Result struct {
-	puts, putsAcked, putsUnavailable   int
-	postPutsRequired, postGetsRequired int
-	gets, getsOK                       int
+	puts, putsAcked, putsUnavailable                      int
+	postPutsRequired, earlyGetsRequired, postGetsRequired int
+	gets, getsOK                                          int
 	meta                               int
 	contested                          contestResult
 	discards                           uint64
@@ -277,8 +277,13 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 	if err := c.PartitionRegion(cut); err != nil {
 		return res, err
 	}
+	type earlyGetCheck struct {
+		call   *Call
+		mustOK bool
+	}
 	var contests []contest
 	var earlyPuts, earlyGets, meta []*Call
+	var earlyGetChecks []earlyGetCheck
 	for i := range p.objects / 2 {
 		key := fmt.Sprintf("k%02d", i)
 		ta := c.PutTag(pick(c, sideA), bucket, key, "early", "a", storage.Condition{})
@@ -289,7 +294,13 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 		eb := c.Put(pick(c, sideB), bucket, fmt.Sprintf("eb%02d", i), randomBytes(c.Rand(), p.size), storage.Condition{})
 		earlyPuts = append(earlyPuts, ea, eb)
 		contests = append(contests, objectContest(c, bucket, ea.Key, ea), objectContest(c, bucket, eb.Key, eb))
-		earlyGets = append(earlyGets, c.Get(pick(c, sideA), bucket, key), c.Get(pick(c, sideB), bucket, key))
+		ga := c.Get(pick(c, sideA), bucket, key)
+		gb := c.Get(pick(c, sideB), bucket, key)
+		earlyGets = append(earlyGets, ga, gb)
+		earlyGetChecks = append(earlyGetChecks,
+			earlyGetCheck{call: ga, mustOK: sideHasKShards(preShards, preObjs[i].Info.Version, sideA, l.K)},
+			earlyGetCheck{call: gb, mustOK: sideHasKShards(preShards, preObjs[i].Info.Version, sideB, l.K)},
+		)
 	}
 	if res.detect, err = c.Await("each side of the cut sees only itself", b.converge, splitViews(c, sideA, sideB)); err != nil {
 		return res, err
@@ -418,12 +429,20 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 			res.putsUnavailable++
 		}
 	}
-	for _, k := range earlyGets {
+	for _, eg := range earlyGetChecks {
 		res.gets++
-		if !allowedReadDuringPartition(k) {
-			return res, failf("get %s/%s via %s during the partition: %v (want the bytes, unavailable or not found)", k.Bucket, k.Key, k.At.ID, k.Err)
+		if eg.mustOK {
+			res.earlyGetsRequired++
+			if eg.call.Err != nil {
+				return res, failf("early partition get %s/%s via %s must succeed (side holds >= k=%d shards): %v", eg.call.Bucket, eg.call.Key, eg.call.At.ID, l.K, eg.call.Err)
+			}
+			res.getsOK++
+			continue
 		}
-		if k.Err == nil {
+		if !allowedReadDuringPartition(eg.call) {
+			return res, failf("get %s/%s via %s during the partition: %v (want the bytes, unavailable or not found)", eg.call.Bucket, eg.call.Key, eg.call.At.ID, eg.call.Err)
+		}
+		if eg.call.Err == nil {
 			res.getsOK++
 		}
 	}

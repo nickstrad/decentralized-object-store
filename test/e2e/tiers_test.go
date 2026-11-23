@@ -56,6 +56,7 @@ func TestE2PartitionAndHealS(t *testing.T) {
 		m.add("e2/puts_unavailable", int64(res.putsUnavailable))
 		m.add("e2/post_puts_required", int64(res.postPutsRequired))
 		m.add("e2/gets_ok", int64(res.getsOK))
+		m.add("e2/early_gets_required", int64(res.earlyGetsRequired))
 		m.add("e2/post_gets_required", int64(res.postGetsRequired))
 		m.add("e2/contested_current", int64(res.contested.current))
 		m.add("e2/contested_discarded", int64(res.contested.discarded))

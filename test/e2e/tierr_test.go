@@ -71,6 +71,7 @@ func TestE2PartitionAndHealR(t *testing.T) {
 	logMeasure(t, "e2r/puts_unavailable", res.putsUnavailable)
 	logMeasure(t, "e2r/post_puts_required", res.postPutsRequired)
 	logMeasure(t, "e2r/gets_ok", res.getsOK)
+	logMeasure(t, "e2r/early_gets_required", res.earlyGetsRequired)
 	logMeasure(t, "e2r/post_gets_required", res.postGetsRequired)
 	logMeasure(t, "e2r/contested", res.contested)
 	logMeasure(t, "e2r/discards_max_node", res.discards)
