@@ -1249,3 +1249,365 @@ func TestMigrationVerifyBelowQuorumWaitsForRebuild(t *testing.T) {
 		})
 	}
 }
+
+type verifyWaveNet struct {
+	env.Transport
+	self     env.NodeID
+	coord    *env.NodeID
+	active   *bool
+	inflight *int
+	onWave   func()
+}
+
+func (v verifyWaveNet) Request(to env.NodeID, req []byte, timeout time.Duration, cb func([]byte, error)) {
+	if v.self == *v.coord && *v.active && len(req) >= 2 && req[0] == 5 && req[1] == 4 {
+		*v.inflight++
+		v.Transport.Request(to, req, timeout, func(resp []byte, err error) {
+			cb(resp, err)
+			*v.inflight--
+			if *v.inflight == 0 && *v.active {
+				v.onWave()
+			}
+		})
+		return
+	}
+	v.Transport.Request(to, req, timeout, cb)
+}
+
+func migRetireRecheckRun(wipeCount int, expectRecopy bool) func(int64) *sim.Sim {
+	return func(seed int64) *sim.Sim {
+		const (
+			bucket = "m"
+			from   = "r0"
+			to     = "r1"
+			objKey = "ret0"
+		)
+		layout := storage.Layout{K: 4, M: 2, StripeSize: dstStripe}
+		quorum := min(layout.K+1, layout.K+layout.M)
+		orphanGrace := 20 * time.Second
+		cfg := dstConfig()
+		cfg.Layout = layout
+		cfg.OrphanGrace = orphanGrace
+		cfg.GCGrace = 5 * time.Second
+		cfg.ViewSettle = 2 * time.Second
+		cfg.MaintainPeriod = 500 * time.Millisecond
+		cfg.SagaPolicy = saga.DefaultPolicy()
+		cfg.SagaPolicy.BaseDelay = 200 * time.Millisecond
+
+		var h *harness
+		var coord env.NodeID
+		var sagaID string
+		var sourceVer string
+		var damagedVer storage.VersionID
+		waveActive := false
+		inflightVerify := 0
+		damaged := false
+		deleteSourceFails := 0
+		swaps := 0
+		mk := occManifestKey(bucket, objKey)
+
+		cfg.CommitSink = func(key string, _ occ.Record, v occ.Version) {
+			if key != mk || v.Tombstone() || !damaged {
+				return
+			}
+			man, err := manifestOf(v.Value())
+			if err != nil {
+				h.s.Fail(err)
+				return
+			}
+			if man.Version.String() == sourceVer {
+				return
+			}
+			swaps++
+			if expectRecopy && man.Version == damagedVer {
+				h.s.Fail(fmt.Errorf("retire swapped manifest to damaged version %s with fewer than k=%d shards", damagedVer, layout.K))
+				return
+			}
+			for si := range man.Stripes {
+				if got := h.verifiableShards(man, si); got < quorum {
+					h.s.Fail(fmt.Errorf("retire swapped manifest to version %s while stripe %d had %d verified shards, want >= quorum=%d", man.Version, si, got, quorum))
+					return
+				}
+			}
+		}
+
+		cfg.WrapMigration = func(d saga.Definition) saga.Definition {
+			steps := append([]saga.Step(nil), d.Steps...)
+			for i, st := range steps {
+				if st.Name() == saga.StepDeleteSource {
+					steps[i] = hookStep{
+						Step: st,
+						before: func() {
+							if !damaged {
+								waveActive = true
+							}
+						},
+						after: func(err error) {
+							if err != nil {
+								deleteSourceFails++
+							}
+						},
+					}
+				}
+			}
+			d.Steps = steps
+			return d
+		}
+
+		onWave := func() {
+			waveActive = false
+			if damaged {
+				return
+			}
+			damaged = true
+			nd := h.node(coord)
+			if nd == nil {
+				h.s.Fail(fmt.Errorf("coordinator %s down before retire", coord))
+				return
+			}
+			mans, err := stagedManifests(nd, bucket, sagaID)
+			if err != nil || len(mans) != 1 {
+				h.s.Fail(fmt.Errorf("expected 1 staged manifest before retire, got %d (err=%v)", len(mans), err))
+				return
+			}
+			man := mans[0]
+			damagedVer = man.Version
+			st0 := man.Stripes[0]
+			off := int(seed % int64(len(st0.Shards)))
+			for j := range wipeCount {
+				idx := (off + j) % len(st0.Shards)
+				holder := st0.Shards[idx].Node
+				if err := h.s.WipeRejoin(holder); err != nil {
+					h.s.Fail(fmt.Errorf("wipe destination holder %s: %w", holder, err))
+					return
+				}
+			}
+			wantLeft := len(st0.Shards) - wipeCount
+			if got := h.verifiableShards(man, 0); got != wantLeft {
+				h.s.Fail(fmt.Errorf("after wiping %d holders stripe 0 has %d verified shards, want %d", wipeCount, got, wantLeft))
+				return
+			}
+		}
+
+		var err error
+		h, err = newWrappedHarness(seed, dstNodes, cfg, func(e env.Env) env.Env {
+			return e.WithNet(verifyWaveNet{
+				Transport: e.Net,
+				self:      e.ID,
+				coord:     &coord,
+				active:    &waveActive,
+				inflight:  &inflightVerify,
+				onWave:    onWave,
+			})
+		})
+		if err != nil {
+			h.s.Fail(err)
+			return h.s
+		}
+		s := h.s
+		if err := s.RunFor(5 * time.Second); err != nil {
+			return s
+		}
+		if err := h.node(h.ids[0]).CreateBucket(storage.BucketSpec{Name: bucket, Region: from}); err != nil {
+			s.Fail(err)
+			return s
+		}
+		if err := s.RunUntilConverged(s.Now().Add(20*time.Second), h.converged); err != nil {
+			s.Fail(err)
+			return s
+		}
+
+		body := payload(s.WorkloadRand(), layout.StripeSize+73)
+		acked := false
+		h.node(h.ids[0]).PutObject(storage.PutRequest{Bucket: bucket, Key: objKey, Data: body}, func(oi storage.ObjectInfo, err error) {
+			if err != nil {
+				s.Fail(fmt.Errorf("put %s: %w", objKey, err))
+				return
+			}
+			sourceVer = oi.Version
+			acked = true
+		})
+		if err := s.RunUntilConverged(s.Now().Add(20*time.Second), func() bool { return acked && h.converged() }); err != nil {
+			s.Fail(err)
+			return s
+		}
+
+		coord = h.ids[int(seed%int64(len(h.ids)))]
+		if string(s.Region(coord)) == to {
+			for _, id := range h.ids {
+				if string(s.Region(id)) != to {
+					coord = id
+					break
+				}
+			}
+		}
+
+		mi, err := h.node(coord).StartMigration(bucket, to)
+		if err != nil {
+			s.Fail(fmt.Errorf("start migration on %s: %w", coord, err))
+			return s
+		}
+		sagaID = mi.ID
+
+		var st saga.Status
+		if err := s.RunUntilConverged(s.Now().Add(120*time.Second), func() bool {
+			nd := h.node(coord)
+			if nd == nil {
+				return false
+			}
+			got, err := nd.Engine().Status(saga.ID(mi.ID))
+			st = got
+			return err == nil && got.State.Terminal()
+		}); err != nil {
+			s.Fail(fmt.Errorf("wipeCount=%d: migration never reached terminal state (state=%v step=%d err=%v): %w", wipeCount, st.State, st.Step, st.Err, err))
+			return s
+		}
+		if !damaged {
+			s.Fail(fmt.Errorf("wipeCount=%d: pre-retire wipe trigger never fired", wipeCount))
+			return s
+		}
+		if deleteSourceFails < 1 {
+			s.Fail(fmt.Errorf("wipeCount=%d: delete-source never failed after pre-retire wipe (swaps=%d)", wipeCount, swaps))
+			return s
+		}
+		if st.State != saga.StateCompleted {
+			s.Fail(fmt.Errorf("wipeCount=%d: migration ended %v (err=%v), want completed", wipeCount, st.State, st.Err))
+			return s
+		}
+		if swaps < 1 {
+			s.Fail(fmt.Errorf("wipeCount=%d: expected manifest swap commit after recovery, got 0", wipeCount))
+			return s
+		}
+		if err := s.RunUntilConverged(s.Now().Add(40*time.Second), h.converged); err != nil {
+			s.Fail(err)
+			return s
+		}
+
+		for _, nd := range h.up() {
+			rd, err := nd.OCC().Reader()
+			if err != nil {
+				s.Fail(err)
+				return s
+			}
+			r, err := rd.Route(bucket)
+			if err != nil || string(r) != to {
+				s.Fail(fmt.Errorf("wipeCount=%d: node %s routes %s to %q (%v), want %q", wipeCount, nd.ID(), bucket, r, err, to))
+				return s
+			}
+			for _, k := range rd.Keys() {
+				if strings.Contains(k, "~lost/") {
+					s.Fail(fmt.Errorf("wipeCount=%d: node %s has loss record %q", wipeCount, nd.ID(), k))
+					return s
+				}
+			}
+		}
+		if len(h.declared) > 0 {
+			s.Fail(fmt.Errorf("wipeCount=%d: loss declared: %v", wipeCount, h.declared))
+			return s
+		}
+
+		noOutside := func() bool {
+			for _, id := range h.ids {
+				if string(s.Region(id)) == to {
+					continue
+				}
+				for _, name := range s.Disk(id).Names() {
+					if strings.HasPrefix(name, "shards/"+bucket+"/") {
+						return false
+					}
+				}
+			}
+			return true
+		}
+		if err := s.RunUntilConverged(s.Now().Add(orphanGrace+cfg.GCGrace+20*time.Second), noOutside); err != nil {
+			s.Fail(fmt.Errorf("wipeCount=%d: shards left outside %s: %w", wipeCount, to, err))
+			return s
+		}
+
+		rd, err := h.up()[0].OCC().Reader()
+		if err != nil {
+			s.Fail(err)
+			return s
+		}
+		val, _, err := rd.Get(mk)
+		if err != nil {
+			s.Fail(fmt.Errorf("wipeCount=%d: manifest %s/%s missing: %w", wipeCount, bucket, objKey, err))
+			return s
+		}
+		man, err := manifestOf(val)
+		if err != nil {
+			s.Fail(err)
+			return s
+		}
+		if man.Version.String() == sourceVer {
+			s.Fail(fmt.Errorf("wipeCount=%d: live version is still source version %s", wipeCount, sourceVer))
+			return s
+		}
+		if expectRecopy && man.Version == damagedVer {
+			s.Fail(fmt.Errorf("wipeCount=%d: live version is damaged version %s, want recopied version", wipeCount, damagedVer))
+			return s
+		}
+		for si, stripe := range man.Stripes {
+			inDest := 0
+			for idx, ref := range stripe.Shards {
+				if string(s.Region(ref.Node)) != to {
+					s.Fail(fmt.Errorf("wipeCount=%d: live stripe %d shard %d on %s in %s, want %s", wipeCount, si, idx, ref.Node, s.Region(ref.Node), to))
+					return s
+				}
+				blob, ok := s.Disk(ref.Node).Peek(man.ShardID(si, idx).BlobName())
+				if !ok {
+					continue
+				}
+				if _, _, derr := storage.DecodeShard(blob); derr == nil && storage.BlobChecksum(blob) == ref.Checksum {
+					inDest++
+				}
+			}
+			if inDest < quorum {
+				s.Fail(fmt.Errorf("wipeCount=%d: live stripe %d holds %d verified shards in %s, want >= quorum=%d", wipeCount, si, inDest, to, quorum))
+				return s
+			}
+		}
+
+		got := false
+		h.node(h.ids[0]).GetObject(bucket, objKey, func(_ storage.ObjectInfo, b []byte, err error) {
+			got = true
+			if err != nil || !bytes.Equal(b, body) {
+				s.Fail(fmt.Errorf("wipeCount=%d: get %s/%s: len=%d err=%v", wipeCount, bucket, objKey, len(b), err))
+			}
+		})
+		if err := s.RunUntilConverged(s.Now().Add(10*time.Second), func() bool { return got }); err != nil {
+			s.Fail(err)
+			return s
+		}
+		if _, err := h.acks.Check(rd, nil); err != nil {
+			s.Fail(fmt.Errorf("wipeCount=%d: ack lineage: %w", wipeCount, err))
+			return s
+		}
+		if err := h.gc.check(); err != nil {
+			s.Fail(fmt.Errorf("wipeCount=%d: gc oracle: %w", wipeCount, err))
+		}
+		return s
+	}
+}
+
+func TestMigrationRetireBelowQuorumWaitsForRebuild(t *testing.T) {
+	t.Parallel()
+	seeds := []int64{31337, 3, 4}
+	for _, seed := range seeds {
+		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
+			t.Parallel()
+			simtest.RequireDeterministic(t, seed, migRetireRecheckRun(2, false))
+		})
+	}
+}
+
+func TestMigrationRetireBelowKRecopiesAndNeverGoesLive(t *testing.T) {
+	t.Parallel()
+	seeds := []int64{31337, 3, 4}
+	for _, seed := range seeds {
+		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
+			t.Parallel()
+			simtest.RequireDeterministic(t, seed, migRetireRecheckRun(3, true))
+		})
+	}
+}
