@@ -21,8 +21,15 @@ repo=$(cd "$(dirname "$0")/../.." && pwd)
 commit=$(git -C "$repo" rev-parse --verify "${1:-HEAD}^{commit}" 2>/dev/null) || { echo "readme-commands: no such commit" >&2; exit 2; }
 work=$(mktemp -d /tmp/readme-commands.XXXXXX) || exit 2
 clone="$work/decentralized-object-store"
+# The clone gets its OWN compose project. compose.yaml names the project, so without this
+# every checkout on the machine shares one project, and taking the clone's project down
+# would stop containers (a running gate, a cluster) and delete the cache volumes of the
+# others (that happened once: a `--list` run stopped a final gate three minutes in). The
+# cache volumes are named in compose.yaml and shared by every project, so they are never
+# removed here.
+export COMPOSE_PROJECT_NAME="objstore-readme-$$"
 cleanup() {
-  if [ -f "$clone/compose.yaml" ]; then (cd "$clone" && docker compose --profile '*' down --remove-orphans --volumes >/dev/null 2>&1); fi
+  if [ -f "$clone/compose.yaml" ]; then (cd "$clone" && docker compose --profile '*' down --remove-orphans >/dev/null 2>&1); fi
   # Containers run as root and may leave root-owned files in the clone.
   rm -rf "$work" 2>/dev/null || docker run --rm -v "$work":/w busybox sh -c 'rm -rf /w/* /w/.[!.]*' >/dev/null 2>&1
   rm -rf "$work" 2>/dev/null
