@@ -1,0 +1,12 @@
+diff -ruN a/internal/node/migrate.go b/internal/node/migrate.go
+--- a/internal/node/migrate.go	2026-11-23 05:02:30.346837398 +0000
++++ b/internal/node/migrate.go	2026-11-23 05:02:30.346837398 +0000
+@@ -798,7 +798,7 @@
+ 					return
+ 				}
+ 				g.n.RecordMeta(mk)
+-				if oerr == nil {
++				if oerr == nil && false {
+ 					g.n.markDead(m.Bucket, old.Manifest.Version)
+ 				}
+ 			}

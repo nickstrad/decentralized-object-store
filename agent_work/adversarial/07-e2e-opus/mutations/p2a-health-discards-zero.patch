@@ -1,0 +1,12 @@
+diff -ruN a/internal/node/objects.go b/internal/node/objects.go
+--- a/internal/node/objects.go	2026-11-23 05:02:30.540853908 +0000
++++ b/internal/node/objects.go	2026-11-23 05:02:30.541853993 +0000
+@@ -733,7 +733,7 @@
+ 		d, r := n.occ.Digest(), n.meta.Tree().Root()
+ 		h.MetaDigest, h.MetaRoot = hex.EncodeToString(d[:]), hex.EncodeToString(r[:])
+ 	}
+-	h.Discards = n.occ.LWWDiscards()
++	h.Discards = 0
+ 	for _, d := range n.occ.DiscardTail() {
+ 		h.RecentDiscards = append(h.RecentDiscards, storage.DiscardInfo{Key: readableKey(d.Key), Winner: d.Winner.ID().String(), Loser: d.Loser.ID().String()})
+ 	}

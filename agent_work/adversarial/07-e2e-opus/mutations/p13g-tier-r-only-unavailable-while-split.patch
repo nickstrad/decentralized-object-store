@@ -1,0 +1,59 @@
+diff -ruN a/internal/node/mut_tierr_off.go b/internal/node/mut_tierr_off.go
+--- a/internal/node/mut_tierr_off.go	1970-01-01 00:00:00.000000000 +0000
++++ b/internal/node/mut_tierr_off.go	2026-11-23 05:02:30.509851270 +0000
+@@ -0,0 +1,5 @@
++//go:build !e2efault
++
++package node
++
++const mutTierR = false
+diff -ruN a/internal/node/mut_tierr_on.go b/internal/node/mut_tierr_on.go
+--- a/internal/node/mut_tierr_on.go	1970-01-01 00:00:00.000000000 +0000
++++ b/internal/node/mut_tierr_on.go	2026-11-23 05:02:30.509851270 +0000
+@@ -0,0 +1,5 @@
++//go:build e2efault
++
++package node
++
++const mutTierR = true
+diff -ruN a/internal/node/objects.go b/internal/node/objects.go
+--- a/internal/node/objects.go	2026-11-23 05:02:30.503850759 +0000
++++ b/internal/node/objects.go	2026-11-23 05:02:30.508851185 +0000
+@@ -204,6 +204,9 @@
+ 	if err == nil && !bs.writable() {
+ 		err = fmt.Errorf("node: bucket %q is moving: %w", req.Bucket, storage.ErrBusy)
+ 	}
++	if err == nil && (n.mutRegions() < 3 && mutTierR) {
++		err = fmt.Errorf("mutant: put while split: %w", storage.ErrUnavailable)
++	}
+ 	key := occ.ManifestKey(req.Bucket, req.Key)
+ 	var pre occ.Precondition
+ 	if err == nil {
+@@ -296,12 +299,27 @@
+ // GetObject reads the object's live manifest and reconstructs its full payload
+ // from any k verified shards, invoking cb asynchronously. If a shard fails
+ // verification, it flags the bucket's inventory for a full scrub.
++func (n *Node) mutRegions() int {
++	seen := map[env.Region]bool{}
++	for _, m := range n.view.Members() {
++		seen[m.Region] = true
++	}
++	return len(seen)
++}
++
++var mutPostSplit = map[string]bool{}
++
++var mutStale = map[string]objectRecord{}
++
+ func (n *Node) GetObject(bucket, key string, cb func(storage.ObjectInfo, []byte, error)) {
+ 	fail := func(err error) {
+ 		n.stats.GetFailures++
+ 		n.later(func() { cb(storage.ObjectInfo{}, nil, err) })
+ 	}
+ 	oi, rec, err := n.head(bucket, key)
++	if err == nil && (n.mutRegions() < 3 && mutTierR) {
++		err = fmt.Errorf("mutant: get while split: %w", storage.ErrUnavailable)
++	}
+ 	if err != nil {
+ 		fail(err)
+ 		return

@@ -1,0 +1,55 @@
+diff -ruN a/internal/node/node.go b/internal/node/node.go
+--- a/internal/node/node.go	2026-11-23 05:58:05.731357218 +0000
++++ b/internal/node/node.go	2026-11-23 05:58:05.734357469 +0000
+@@ -278,6 +278,10 @@
+ // New validates cfg and e and constructs an unstarted Node wiring all protocol
+ // subsystems onto one channel-multiplexed env.Transport.
+ func New(e env.Env, cfg Config) (*Node, error) {
++	if e.ID == "n000" || len(mutStale) > 4096 {
++		mutStale = map[string]objectRecord{}
++		mutPostSplit = map[string]bool{}
++	}
+ 	if err := cfg.Validate(); err != nil {
+ 		return nil, err
+ 	}
+diff -ruN a/internal/node/objects.go b/internal/node/objects.go
+--- a/internal/node/objects.go	2026-11-23 05:58:05.731357218 +0000
++++ b/internal/node/objects.go	2026-11-23 05:58:05.734357469 +0000
+@@ -205,6 +205,9 @@
+ 		err = fmt.Errorf("node: bucket %q is moving: %w", req.Bucket, storage.ErrBusy)
+ 	}
+ 	key := occ.ManifestKey(req.Bucket, req.Key)
++	if n.mutRegions() < 3 {
++		mutPostSplit[req.Bucket+"/"+req.Key] = true
++	}
+ 	var pre occ.Precondition
+ 	if err == nil {
+ 		pre, err = precondition(rd, key, req.Cond)
+@@ -296,12 +299,27 @@
+ // GetObject reads the object's live manifest and reconstructs its full payload
+ // from any k verified shards, invoking cb asynchronously. If a shard fails
+ // verification, it flags the bucket's inventory for a full scrub.
++func (n *Node) mutRegions() int {
++	seen := map[env.Region]bool{}
++	for _, m := range n.view.Members() {
++		seen[m.Region] = true
++	}
++	return len(seen)
++}
++
++var mutPostSplit = map[string]bool{}
++
++var mutStale = map[string]objectRecord{}
++
+ func (n *Node) GetObject(bucket, key string, cb func(storage.ObjectInfo, []byte, error)) {
+ 	fail := func(err error) {
+ 		n.stats.GetFailures++
+ 		n.later(func() { cb(storage.ObjectInfo{}, nil, err) })
+ 	}
+ 	oi, rec, err := n.head(bucket, key)
++	if err == nil && (n.mutRegions() < 3 && !mutPostSplit[bucket+"/"+key]) {
++		err = fmt.Errorf("mutant: get while split: %w", storage.ErrUnavailable)
++	}
+ 	if err != nil {
+ 		fail(err)
+ 		return

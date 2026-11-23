@@ -1,0 +1,16 @@
+diff -ruN a/test/e2e/nemesis_test.go b/test/e2e/nemesis_test.go
+--- a/test/e2e/nemesis_test.go	2026-11-23 05:02:30.297833227 +0000
++++ b/test/e2e/nemesis_test.go	2026-11-23 05:02:30.298833313 +0000
+@@ -777,6 +777,12 @@
+ 	if err := createBucket(c, simBounds, storage.BucketSpec{Name: bucketM, Region: n.region}); err != nil {
+ 		return err
+ 	}
++	if q := c.SetQuota(c.nodes[0], bucketM, 1<<40, 1); c.Wait(q) != nil || q.Err != nil {
++		return failf("mutant quota: %v", q.Err)
++	}
++	if _, err := c.Await("mutant quota replicated", nemHealBound, c.Converged); err != nil {
++		return err
++	}
+ 	if n.warmM > 0 {
+ 		wr := sim.NewStream(c.s.Seed(), "e2e/nemesis-warm")
+ 		var warm []*Call

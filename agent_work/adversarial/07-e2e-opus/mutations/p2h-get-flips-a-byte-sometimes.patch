@@ -1,0 +1,15 @@
+diff -ruN a/internal/node/objects.go b/internal/node/objects.go
+--- a/internal/node/objects.go	2026-11-23 05:02:30.587857908 +0000
++++ b/internal/node/objects.go	2026-11-23 05:02:30.587857908 +0000
+@@ -316,6 +316,11 @@
+ 			return
+ 		}
+ 		n.stats.Gets++
++		if len(res.Data) > 1 && n.stats.Gets%7 == 3 {
++			d := append([]byte(nil), res.Data...)
++			d[0] ^= 0x80
++			res.Data = d
++		}
+ 		cb(oi, res.Data, nil)
+ 	})
+ }

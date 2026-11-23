@@ -1,0 +1,6 @@
+REPLAY: go test ./test/e2e -run '^TestE7NemesisHealingCyclesS$/^shard=0$/^seed=166963932986536$' -seed=166963932986536 -count=1
+REPLAY: go test ./test/e2e -run '^TestE7NemesisHealingCyclesS$/^shard=0$/^seed=4$' -seed=4 -count=1
+REPLAY: go test ./test/e2e -run '^TestE7NemesisHealingCyclesS$/^shard=1$/^seed=1$' -seed=1 -count=1
+REPLAY: go test ./test/e2e -run '^TestE7NemesisHealingCyclesS$/^shard=1$/^seed=5$' -seed=5 -count=1
+REPLAY: go test ./test/e2e -run '^TestE7NemesisHealingCyclesS$/^shard=2$/^seed=2$' -seed=2 -count=1
+REPLAY: go test ./test/e2e -run '^TestE7NemesisHealingCyclesS$/^shard=3$/^seed=3$' -seed=3 -count=1

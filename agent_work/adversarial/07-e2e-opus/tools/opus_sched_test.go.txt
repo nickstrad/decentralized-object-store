@@ -1,0 +1,150 @@
+package e2e
+
+// Adversarial schedules (07-e2e-opus): a migration start whose reply is lost, followed by a
+// fault on the coordinator. Copied into a scratch tree by a02; never part of the product tree.
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/decentralized-object-store/internal/sim"
+	"github.com/nickstrad/decentralized-object-store/internal/sim/simtest"
+)
+
+type opusCoordFault struct {
+	name  string
+	chaos time.Duration
+	// faults to inject on the coordinator, relative to the migration op (at 500 ms)
+	plan func(id env.NodeID) []opusTF
+}
+
+type opusTF struct {
+	At    time.Duration
+	Fault sim.Fault
+}
+
+func opusSchedules() []opusCoordFault {
+	at := func(d time.Duration, f sim.Fault) opusTF { return opusTF{At: d, Fault: f} }
+	return []opusCoordFault{
+		{"lost-reply-then-pause-until-heal", e7Chaos, func(id env.NodeID) []opusTF {
+			return []opusTF{at(200*time.Millisecond, sim.Fault{Kind: sim.FaultPause, Node: id})}
+		}},
+		{"lost-reply-then-crash-restart", e7Chaos, func(id env.NodeID) []opusTF {
+			return []opusTF{at(300*time.Millisecond, sim.Fault{Kind: sim.FaultCrash, Node: id}), at(2*time.Second, sim.Fault{Kind: sim.FaultRestart, Node: id})}
+		}},
+		{"lost-reply-then-crash-down-until-heal", e7Chaos, func(id env.NodeID) []opusTF {
+			return []opusTF{at(100*time.Millisecond, sim.Fault{Kind: sim.FaultCrash, Node: id})}
+		}},
+		{"lost-reply-then-torn-crash-restart", e7Chaos, func(id env.NodeID) []opusTF {
+			return []opusTF{at(400*time.Millisecond, sim.Fault{Kind: sim.FaultCrashTorn, Node: id}), at(1500*time.Millisecond, sim.Fault{Kind: sim.FaultRestart, Node: id})}
+		}},
+		{"lost-reply-then-isolated-past-heal-bound", 70 * time.Second, func(id env.NodeID) []opusTF {
+			return []opusTF{at(100*time.Millisecond, sim.Fault{Kind: sim.FaultIsolate, Node: id})}
+		}},
+		{"lost-reply-then-region-cut-past-heal-bound", 70 * time.Second, func(id env.NodeID) []opusTF {
+			return []opusTF{at(100*time.Millisecond, sim.Fault{Kind: sim.FaultPartitionRegion, Region: ""})}
+		}},
+		{"lost-reply-then-pause-past-heal-bound", 70 * time.Second, func(id env.NodeID) []opusTF {
+			return []opusTF{at(100*time.Millisecond, sim.Fault{Kind: sim.FaultPause, Node: id})}
+		}},
+	}
+}
+
+func opusScheduleRun(sc opusCoordFault, cycles int, st *nemesisStats) func(int64) *sim.Sim {
+	o := fuzzOptions()
+	if v := os.Getenv("OPUS_ORPHAN_S"); v != "" {
+		x, _ := strconv.Atoi(v)
+		o.cfg.OrphanGrace = time.Duration(x) * time.Second
+	}
+	return runNemesis(0, o, func(n *nemesis) nemesisPlan {
+		n.noGrace = true
+		n.warmM = fuzzWarmM
+		n.beforeCycle = func(n *nemesis, ci int) error {
+			if ci != 0 {
+				return nil
+			}
+			var clients []env.NodeID
+			for _, r := range n.c.regions {
+				clients = append(clients, env.NodeID("client-"+r))
+			}
+			n.markNetFault()
+			// Every reply from a storage node to a client is lost for the whole first cycle.
+			if os.Getenv("OPUS_NOPART") == "" {
+				if err := n.c.apply(sim.Fault{Kind: sim.FaultPartitionOneWay, Side: n.c.ids, Other: clients}); err != nil {
+					return err
+				}
+			}
+			s := n.c.s
+			s.At(s.Now().Add(500*time.Millisecond+time.Millisecond), "opus-coord-fault", func() {
+				if n.mig == nil {
+					s.Fail(fmt.Errorf("opus: migration op did not start"))
+					return
+				}
+				id := env.NodeID(n.migCoord.ID)
+				for _, tf := range sc.plan(id) {
+					f := tf.Fault
+					if f.Kind == sim.FaultPartitionRegion {
+						f.Region = s.Region(id)
+					}
+					n.markTouched(id)
+					s.InjectAt(s.Now().Add(tf.At), f)
+				}
+			})
+			return nil
+		}
+		var plan nemesisPlan
+		for ci := range cycles {
+			cy := cycle{chaos: e7Chaos, ops: []chaosOp{{kind: opMigrate, a: 0, b: 0, at: 500 * time.Millisecond}}}
+			if ci == 0 {
+				cy.chaos = sc.chaos
+			}
+			plan.cycles = append(plan.cycles, cy)
+		}
+		return plan
+	}, st)
+}
+
+func TestOpusLostReplyCoordinatorSchedules(t *testing.T) {
+	only := os.Getenv("OPUS_ONLY")
+	seeds := []int64{702, 9001, 31337}
+	if v := os.Getenv("OPUS_SEEDS"); v != "" {
+		seeds = nil
+		for _, f := range splitComma(v) {
+			x, _ := strconv.ParseInt(f, 10, 64)
+			seeds = append(seeds, x)
+		}
+	}
+	for _, sc := range opusSchedules() {
+		if only != "" && sc.name != only {
+			continue
+		}
+		for _, seed := range seeds {
+			t.Run(fmt.Sprintf("%s/seed=%d", sc.name, seed), func(t *testing.T) {
+				var st nemesisStats
+				simtest.RequireDeterministic(t, seed, opusScheduleRun(sc, 2, &st))
+				t.Logf("OPUS %s seed=%d recovered=%d migrated=%d compensated=%d moved_shards=%d final=%s applied=%d", sc.name, seed, st.ambiguousRecovered, st.migrated, st.compensated, st.movedShards, st.finalRegion, st.applied)
+				if st.migrated+st.compensated != 2 {
+					t.Fatalf("OPUS-TRACK %s seed %d: %d completed + %d compensated migrations over 2 cycles, want 2 terminal (recovered=%d)", sc.name, seed, st.migrated, st.compensated, st.ambiguousRecovered)
+				}
+			})
+		}
+	}
+}
+
+func splitComma(s string) []string {
+	var out []string
+	cur := ""
+	for _, r := range s {
+		if r == ',' {
+			out = append(out, cur)
+			cur = ""
+			continue
+		}
+		cur += string(r)
+	}
+	return append(out, cur)
+}

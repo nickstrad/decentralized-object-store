@@ -1,0 +1,13 @@
+diff -ruN a/test/e2e/nemesis_test.go b/test/e2e/nemesis_test.go
+--- a/test/e2e/nemesis_test.go	2026-11-23 05:12:58.158888328 +0000
++++ b/test/e2e/nemesis_test.go	2026-11-23 05:12:58.159888412 +0000
+@@ -833,6 +833,9 @@
+ 		if err := n.settle(); err != nil {
+ 			return err
+ 		}
++		if ci == 1 {
++			return failf("planted opus failure at cycle %d", ci)
++		}
+ 		d, err := c.Await("convergence after the heal", nemHealBound, c.Converged)
+ 		n.st.converge = append(n.st.converge, d)
+ 		if err != nil {

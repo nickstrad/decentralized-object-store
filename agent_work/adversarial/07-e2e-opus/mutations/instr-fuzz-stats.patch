@@ -1,0 +1,49 @@
+diff -ruN a/test/e2e/e7_test.go b/test/e2e/e7_test.go
+--- a/test/e2e/e7_test.go	2026-11-23 05:02:30.351837823 +0000
++++ b/test/e2e/e7_test.go	2026-11-23 05:02:30.352837908 +0000
+@@ -472,7 +472,8 @@
+ 		if len(data) > 64<<10 {
+ 			t.Skip("input over 64 KiB")
+ 		}
+-		s, _ := runFuzzInput(fuzzOptions(), fuzzWarmM, data)
++		s, st := runFuzzInput(fuzzOptions(), fuzzWarmM, data)
++		opusFuzzLog(data, st)
+ 		if err := s.Verify(); err != nil {
+ 			simtest.Report(t, s)
+ 			t.Fatalf("seed %d: %v", fuzzSeed(data), err)
+diff -ruN a/test/e2e/opus_instr_test.go b/test/e2e/opus_instr_test.go
+--- a/test/e2e/opus_instr_test.go	1970-01-01 00:00:00.000000000 +0000
++++ b/test/e2e/opus_instr_test.go	2026-11-23 05:02:30.353837993 +0000
+@@ -0,0 +1,32 @@
++package e2e
++
++import (
++	"fmt"
++	"os"
++)
++
++// opusFuzzLog appends one line per fuzz execution to $OPUS_FUZZ_LOG (adversarial instrumentation).
++func opusFuzzLog(data []byte, st nemesisStats) {
++	path := os.Getenv("OPUS_FUZZ_LOG")
++	if path == "" {
++		return
++	}
++	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
++	if err != nil {
++		return
++	}
++	defer f.Close()
++	plan := planFromBytes(data, 3, 8, 4e9)
++	nmig, nops := 0, 0
++	for _, cy := range plan.cycles {
++		for _, op := range cy.ops {
++			nops++
++			if op.kind == opMigrate {
++				nmig++
++			}
++		}
++	}
++	fmt.Fprintf(f, "len=%d cycles=%d ops=%d migops=%d applied=%d skipped=%d warm_ok=%d puts_m=%d puts_m_ok=%d migrated=%d compensated=%d ambiguous=%d moved_objects=%d moved_shards=%d dest_objects=%d dest_shards=%d puts=%d puts_ok=%d gets=%d gets_ok=%d avail=%d\n",
++		len(data), len(plan.cycles), nops, nmig, st.applied, st.skipped, st.warmMOK, st.putsM, st.putsMOK, st.migrated, st.compensated, st.ambiguousRecovered,
++		st.movedObjects, st.movedShards, st.destObjects, st.destShards, st.puts, st.putsOK, st.gets, st.getsOK, st.availabilityGets)
++}

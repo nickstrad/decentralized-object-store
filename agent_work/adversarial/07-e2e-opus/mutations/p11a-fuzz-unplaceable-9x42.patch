@@ -1,0 +1,14 @@
+diff -ruN a/test/e2e/e7_test.go b/test/e2e/e7_test.go
+--- a/test/e2e/e7_test.go	2026-11-23 05:02:30.262830249 +0000
++++ b/test/e2e/e7_test.go	2026-11-23 05:02:30.263830334 +0000
+@@ -126,8 +126,8 @@
+ 
+ func fuzzOptions() simOptions {
+ 	o := defaultSimOptions()
+-	o.nodes = 12
+-	o.cfg.Layout = storage.Layout{K: 2, M: 1, StripeSize: simStripe}
++	o.nodes = 9
++	o.cfg.Layout = storage.Layout{K: 4, M: 2, StripeSize: simStripe}
+ 	o.skew, o.driftP = time.Second, 500
+ 	return o
+ }

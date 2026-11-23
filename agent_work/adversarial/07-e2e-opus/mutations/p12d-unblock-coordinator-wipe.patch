@@ -1,0 +1,13 @@
+diff -ruN a/test/e2e/nemesis_test.go b/test/e2e/nemesis_test.go
+--- a/test/e2e/nemesis_test.go	2026-11-23 05:02:30.377840036 +0000
++++ b/test/e2e/nemesis_test.go	2026-11-23 05:02:30.378840121 +0000
+@@ -430,9 +430,6 @@
+ 		if c.node(id) == nil || len(n.down)+len(n.paused) >= nemMaxDown || !n.allows(id, "") {
+ 			return skip()
+ 		}
+-		if op.kind == opWipeNode && n.mig != nil && n.migCoord.ID == string(id) {
+-			return skip()
+-		}
+ 		if op.kind == opWipeNode && !n.loneWipe && !n.metadataElsewhere(id) {
+ 			return skip()
+ 		}

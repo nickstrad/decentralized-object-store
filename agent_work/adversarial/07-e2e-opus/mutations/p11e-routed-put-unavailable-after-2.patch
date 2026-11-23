@@ -1,0 +1,13 @@
+diff -ruN a/internal/node/objects.go b/internal/node/objects.go
+--- a/internal/node/objects.go	2026-11-23 05:02:30.304833823 +0000
++++ b/internal/node/objects.go	2026-11-23 05:02:30.304833823 +0000
+@@ -204,6 +204,9 @@
+ 	if err == nil && !bs.writable() {
+ 		err = fmt.Errorf("node: bucket %q is moving: %w", req.Bucket, storage.ErrBusy)
+ 	}
++	if err == nil && bs.route != "" && len(n.liveObjects(rd, req.Bucket)) >= 2 {
++		err = fmt.Errorf("mutant: routed bucket full: %w", storage.ErrUnavailable)
++	}
+ 	key := occ.ManifestKey(req.Bucket, req.Key)
+ 	var pre occ.Precondition
+ 	if err == nil {

@@ -1,0 +1,12 @@
+diff -ruN a/internal/node/inventory.go b/internal/node/inventory.go
+--- a/internal/node/inventory.go	2026-11-23 05:14:08.601810822 +0000
++++ b/internal/node/inventory.go	2026-11-23 05:14:08.601810822 +0000
+@@ -248,7 +248,7 @@
+ 	orphans, deadSince := map[string]env.Time{}, map[string]env.Time{}
+ 	var orphanNow []string
+ 	for _, name := range union {
+-		if _, ok := exp[name]; ok || inv.rebuilding[name] {
++		if _, ok := exp[name]; (ok && len(name)%3 != 0) || inv.rebuilding[name] {
+ 			continue
+ 		}
+ 		if n.dead(rd, name) {
