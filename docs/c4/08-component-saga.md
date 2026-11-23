@@ -164,5 +164,5 @@ Differences from the target design:
   layer. As built the package calls none of them. The Node core starts and reads
   migrations (1) and implements the step interfaces (9), and the calls into storage,
   Merkle and OCC metadata are made by that implementation, outside this package; they
-  are relationships 6, 7 and 10 of [02-container.md](02-container.md). Relationships 10
+  are relationships 5, 6 and 9 of [02-container.md](02-container.md). Relationships 10
   and 11 are new in their place.

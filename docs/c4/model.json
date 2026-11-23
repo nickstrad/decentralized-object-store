@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "objstore",
   "title": "Decentralized Object Store & Sync Engine \u2014 architecture as built",
-  "revision": "as-built-integration-2026-11-22",
+  "revision": "as-built-final-2026-11-23",
   "defaultDiagramId": "context",
   "model": {
     "elements": [
@@ -14,21 +14,6 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ]
-      },
-      {
-        "id": "sync-client",
-        "kind": "person",
-        "name": "Sync client",
-        "description": "Client replica that would edit a metadata document offline and sync it.",
-        "status": "planned",
-        "tags": [],
-        "plannedNotes": [
-          "Not to be built: PLAN.md OQ-7 was decided as node-level sync only, with no client replica and no /v1/sync client document."
-        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -410,8 +395,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "Retention followed by bounded tombstones was added by the build; PLAN.md names only the view and its events.",
-          "Nothing outside the package reads the view yet (relationships 10 and 11)."
+          "Retention followed by bounded tombstones was added by the build; PLAN.md names only the view and its events."
         ],
         "docIds": [],
         "sourceIds": [
@@ -520,7 +504,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "No product code calls Verify yet. The storage engine finds damaged shards by checksum and passes them to Reconstruct as missing."
+          "No product code calls Verify. The storage engine finds damaged shards by checksum and passes them to Reconstruct as missing."
         ],
         "docIds": [],
         "sourceIds": [
@@ -886,7 +870,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "Added by the build; PLAN.md does not name it. The node core's tests reuse its failure-matrix runner on real nodes."
+          "Added by the build; PLAN.md does not name it. The node core's tests and the end-to-end suite (test/e2e) reuse its failure-matrix runner on real nodes."
         ],
         "docIds": [],
         "sourceIds": [
@@ -1095,21 +1079,6 @@
         ]
       },
       {
-        "id": "r-sync-store",
-        "sourceId": "sync-client",
-        "targetId": "store",
-        "label": "Edits metadata offline, then syncs it",
-        "technology": "HTTP /v1/sync",
-        "status": "planned",
-        "plannedNotes": [
-          "Not to be built: PLAN.md OQ-7 was decided as node-level sync only."
-        ],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ]
-      },
-      {
         "id": "r-operator-store",
         "sourceId": "operator",
         "targetId": "store",
@@ -1169,21 +1138,6 @@
         "technology": "HTTP, path-style",
         "status": "existing",
         "plannedNotes": [],
-        "docIds": [],
-        "sourceIds": [
-          "plan"
-        ]
-      },
-      {
-        "id": "k-sync-api",
-        "sourceId": "sync-client",
-        "targetId": "c-api",
-        "label": "Syncs a client-side metadata document",
-        "technology": "HTTP /v1/sync",
-        "status": "planned",
-        "plannedNotes": [
-          "Not to be built: PLAN.md OQ-7 was decided as node-level sync only."
-        ],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2766,7 +2720,7 @@
         "id": "k-saga-node",
         "sourceId": "c-saga",
         "targetId": "c-node",
-        "label": "Runs the migration steps through MigrationOps; the node core's migrator implements them on storage, Merkle roots and OCC metadata",
+        "label": "Runs the migration steps through MigrationOps; the node core's migrator implements them on storage, Merkle roots and OCC metadata, with a shard check on the holders of every copy",
         "status": "existing",
         "plannedNotes": [],
         "docIds": [],
@@ -2912,14 +2866,11 @@
       "id": "context",
       "kind": "context",
       "scopeId": "store",
-      "status": "mixed",
-      "title": "System Context \u2014 as built; the sync client is not to be built",
+      "status": "existing",
+      "title": "System Context \u2014 as built",
       "nodes": [
         {
           "elementId": "api-client"
-        },
-        {
-          "elementId": "sync-client"
         },
         {
           "elementId": "operator"
@@ -2943,9 +2894,6 @@
       "edges": [
         {
           "relationshipId": "r-client-store"
-        },
-        {
-          "relationshipId": "r-sync-store"
         },
         {
           "relationshipId": "r-operator-store"
@@ -3003,16 +2951,6 @@
               "stroke": "solid",
               "arrow": "forward"
             }
-          },
-          {
-            "id": "planned",
-            "label": "Planned",
-            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
-            "swatch": {
-              "shape": "box",
-              "tone": "default",
-              "stroke": "dashed"
-            }
           }
         ]
       },
@@ -3029,17 +2967,14 @@
       "id": "container",
       "kind": "container",
       "scopeId": "store",
-      "status": "mixed",
+      "status": "existing",
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, domain view \u2014 as built; the sync client is not to be built",
+      "title": "Container, domain view \u2014 as built",
       "nodes": [
         {
           "elementId": "api-client"
-        },
-        {
-          "elementId": "sync-client"
         },
         {
           "elementId": "operator"
@@ -3093,9 +3028,6 @@
       "edges": [
         {
           "relationshipId": "k-client-api"
-        },
-        {
-          "relationshipId": "k-sync-api"
         },
         {
           "relationshipId": "k-operator-api"
@@ -3169,16 +3101,6 @@
               "tone": "default",
               "stroke": "solid",
               "arrow": "forward"
-            }
-          },
-          {
-            "id": "planned",
-            "label": "Planned",
-            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
-            "swatch": {
-              "shape": "box",
-              "tone": "default",
-              "stroke": "dashed"
             }
           }
         ]
@@ -3363,16 +3285,6 @@
               "stroke": "solid",
               "arrow": "forward"
             }
-          },
-          {
-            "id": "planned",
-            "label": "Planned",
-            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
-            "swatch": {
-              "shape": "box",
-              "tone": "default",
-              "stroke": "dashed"
-            }
           }
         ]
       },
@@ -3553,16 +3465,6 @@
               "stroke": "solid",
               "arrow": "forward"
             }
-          },
-          {
-            "id": "planned",
-            "label": "Planned",
-            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
-            "swatch": {
-              "shape": "box",
-              "tone": "default",
-              "stroke": "dashed"
-            }
           }
         ]
       },
@@ -3685,16 +3587,6 @@
               "tone": "default",
               "stroke": "solid",
               "arrow": "forward"
-            }
-          },
-          {
-            "id": "planned",
-            "label": "Planned",
-            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
-            "swatch": {
-              "shape": "box",
-              "tone": "default",
-              "stroke": "dashed"
             }
           }
         ]
@@ -3827,16 +3719,6 @@
               "tone": "default",
               "stroke": "solid",
               "arrow": "forward"
-            }
-          },
-          {
-            "id": "planned",
-            "label": "Planned",
-            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
-            "swatch": {
-              "shape": "box",
-              "tone": "default",
-              "stroke": "dashed"
             }
           }
         ]
@@ -4015,16 +3897,6 @@
               "stroke": "solid",
               "arrow": "forward"
             }
-          },
-          {
-            "id": "planned",
-            "label": "Planned",
-            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
-            "swatch": {
-              "shape": "box",
-              "tone": "default",
-              "stroke": "dashed"
-            }
           }
         ]
       },
@@ -4181,16 +4053,6 @@
               "tone": "default",
               "stroke": "solid",
               "arrow": "forward"
-            }
-          },
-          {
-            "id": "planned",
-            "label": "Planned",
-            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
-            "swatch": {
-              "shape": "box",
-              "tone": "default",
-              "stroke": "dashed"
             }
           }
         ]
@@ -4356,16 +4218,6 @@
               "stroke": "solid",
               "arrow": "forward"
             }
-          },
-          {
-            "id": "planned",
-            "label": "Planned",
-            "description": "Dashed outlines and arrows mark parts that are designed and not built yet",
-            "swatch": {
-              "shape": "box",
-              "tone": "default",
-              "stroke": "dashed"
-            }
           }
         ]
       },
@@ -4385,7 +4237,7 @@
       "id": "plan",
       "title": "PLAN.md \u2014 testing-first plan, Phase 1",
       "url": "https://github.com/nickstrad/decentralized-object-store/blob/main/PLAN.md",
-      "notes": "Sections 1, 2.1, 3, 4.2 and 7 define the target architecture drawn here."
+      "notes": "Sections 1, 2.1, 3, 4.2 and 7 define the design that the build started from."
     }
   ]
 }

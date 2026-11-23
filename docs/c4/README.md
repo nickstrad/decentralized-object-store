@@ -1,6 +1,6 @@
 # C4 diagrams
 
-**As built.** Every part of the system has landed, and every diagram was checked against the code when its part landed. The one element still drawn as planned is the Sync client, which is not to be built (OQ-7).
+**As built.** Every part of the system has landed, and every diagram was checked against the code when its part landed. Every element and relationship in the set is built. Sync runs between nodes only: a client-side replica was considered (PLAN.md OQ-7) and not built, so no diagram shows one.
 
 | Part | State | Diagrams |
 | --- | --- | --- |
@@ -16,9 +16,9 @@
 | Node runtime (`internal/noderuntime`): UDP and TCP transports, frame codec, file disk, wall clock, the node loop, `Runtime` as the object service | built | 2, 3 |
 | HTTP object API (`internal/storage/httpapi`): handler, status table, limits, server, `Service` interface | built | 1, 2, 3 |
 | `cmd/objnode` | built | 1, 3 |
-| Sync client and `/v1/sync` | not to be built (OQ-7) | 1, 2 |
+| End-to-end suite (`test/e2e`): the same scenarios on the simulator and on real `objnode` processes over HTTP. Test code, drawn as part of relationship 21 of diagram 3 | built | 3 |
 
-These diagrams started as the target architecture that [PLAN.md](../../PLAN.md) defines.
+These diagrams started as the design that [PLAN.md](../../PLAN.md) defines.
 As each part landed, its diagrams were checked against the code and updated in the same
 landing. Where the build differs from the plan, the diagram shows the build and a
 "Differences from the target design" section says what changed.
@@ -27,7 +27,7 @@ landing. Where the build differs from the plan, the diagram shows the build and 
 
 | # | Level | File | Shows |
 | --- | --- | --- | --- |
-| 1 | System Context | [01-system-context.md](01-system-context.md) | The object store and sync system, its clients and operator, peer nodes, and the DST harness as a test system |
+| 1 | System Context | [01-system-context.md](01-system-context.md) | The object store and sync system, its client and operator, peer nodes, and the DST harness as a test system |
 | 2 | Container | [02-container.md](02-container.md) | Domain view: object API, node runtime, node core, storage engine, erasure coding, gossip membership, Merkle anti-entropy, OCC metadata, Saga engine |
 | 3 | Container | [03-container-runtime.md](03-container-runtime.md) | Runtime and environment view: `cmd/objnode`, the object API, `internal/noderuntime`, `internal/node`, `internal/env`, node disk, peers, and the DST harness (`internal/sim`) |
 | 4 | Component | [04-component-gossip.md](04-component-gossip.md) | `internal/gossip`: join and leave, SWIM probe, indirect probe, suspicion state machine, dissemination, full-state sync, Membership view, wire codec |
@@ -43,7 +43,7 @@ relationships does not stay readable.
 ## Format
 
 - [model.json](model.json) is the C4 model: every element, relationship and diagram.
-  It is a `c4-sdk` bundle, `schemaVersion: 1`. Built elements and relationships have status `existing`, the rest `planned`; a diagram showing both is `mixed`.
+  It is a `c4-sdk` bundle, `schemaVersion: 1`. Every element, relationship and diagram has status `existing`. The `plannedNotes` field is part of the schema; here it holds as-built notes.
 - Each diagram file has a Mermaid rendering, a terminal (Unicode) rendering, an
   element table and a numbered relationship table. Edge numbers in the pictures
   match the table rows.
@@ -94,13 +94,10 @@ DRAW_VISUAL_MAX_WIDTH=80 render.py --check docs/c4/0*.md
    Each one stands for the container with the matching `c-` ID, is used only in
    component views, and links back to that container's views. This is a workaround
    for a limit in the tool. Nick decides whether to keep it or to change `c4-sdk`.
-2. **Planned key entry.** Every legend has a `Planned` entry, because `c4-sdk` draws
-   planned elements and relationships with dashed lines. Only the Sync client and its
-   relationships are still planned.
-3. **Technology on in-process relationships.** Relationships between Go packages in
+2. **Technology on in-process relationships.** Relationships between Go packages in
    the one `objnode` process carry the technology `Go, in-process`. The DST harness
    and node runtime relationships to `internal/env` carry `Go interface implementation`.
-4. **Interface relationships.** A protocol package that declares an interface and has
+3. **Interface relationships.** A protocol package that declares an interface and has
    the node core implement it is drawn with an arrow from the package to the node core,
    technology `Go interface, in-process`: the arrow points to the supplier. The Go
    import runs the other way, from `internal/node` to the package.
