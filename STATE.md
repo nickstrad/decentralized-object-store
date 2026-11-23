@@ -13,11 +13,10 @@ last-writer-wins on the hybrid logical clock, every discard counted and logged
 folded into PLAN 9.1, 7.5 and Chunk 4); Docker is the one environment; the book is the
 learning artifact; C4 diagrams are kept current).
 
-Status: PHASE 2 (BUILD) RUNNING since 2026-11-21. LANDED: Step 0, 0a, 0b, all five protocol
-chunks (1–5), Chunk 6 (integration, f64aa11) and Chunk 7 (end-to-end suite and hardening,
-d618607, 2026-11-23). Chunk 8 (publishing finish), the last chunk: its content is PUBLISHED —
-merged to main at fbb0e2a and live on the site (2026-11-23, owner ruling, ahead of the gate);
-its FINAL GATE IS STILL RUNNING and is the closeout authority (see its row).
+Status: PHASE 2 (BUILD) COMPLETE, 2026-11-23. Every chunk is landed on main: Step 0, 0a, 0b,
+the five protocol chunks (1–5), Chunk 6 (integration, f64aa11), Chunk 7 (end-to-end suite and
+hardening, d618607) and Chunk 8 (publishing finish, fbb0e2a). The assembled book is live. Nothing
+is in flight; the done marker is /root/runs/objstore-phase2-done.txt.
 
 Seats (this project only): Fable orchestrates, gates and lands; Opus writes
 product Go (logic only, no comments), fresh agent and worktree per chunk, at
@@ -45,13 +44,11 @@ adversarial seat; Astra has no Chunk 7 role. Chunk 8 returns to the seats above.
 | 5 | Saga engine and bucket migration (internal/saga) | LANDED 4892ab9; chapter 6; review FAIL → repair → NITS closed; harness 125 held |
 | 6 | Integration: node (`internal/node`), real runtime (`internal/noderuntime`), HTTP object API (`internal/storage/httpapi`), cmd/objnode | LANDED f64aa11; chapter 7; REVIEW-1 FAIL → repair → REVIEW-2 FAIL → fix → ARBITRATION-1 FAIL (one major) → fix finished by Fable (owner ruling) → ARBITRATION-2 NITS closed → owner-ordered Neon second-eyes pass FAIL (four majors, two nits) → fixed by Fable → focused Neon confirm NITS closed (its one nit was fixed AFTER the confirm; covered by tests and the final gate only); harness 662 held, 0 broken; final gate G0–G7 green at 500 seeds. Records: agent_work/06-integration/ (build-notes sections 14 and 15, NEON-SECOND-EYES.md, NEON-CONFIRM.md) |
 | 7 | E2E suite, nemesis cycles, fuzz hardening (`test/e2e`, tier S on the simulator and tier R with real `objnode` processes; `internal/nodetest`) | LANDED d618607; chapter 8 live. Opus build → Neon REVIEW-1 FAIL (three coverage holes in the suite) → owner seat swap for the finish (Neon builds, Fable reviews, Opus adversarial) → Fable review rounds 1 FAIL, 2 PASS, 3 NITS, 4 PASS (FABLE-REVIEW.md; landing verdict REVIEW-2.md NITS CLOSED). Two product defects found and fixed with tests (a read short of k shards answered 404 instead of 503, f70e2c2; a migration behind a long-frozen coordinator lost acknowledged objects, eaa0556). Adversarial (agent_work/adversarial/07-e2e-opus): 80 held, 1 broken with no claim behind it. Final gate on d35dcfe: G0–G7 and G5R all green (race 54 min, 500-seed sweep 73 min, base 232399873226549). OPEN, not blocking: the real-process step failed only when run straight after the hour-long sweep, cause not established; the gate runs it first (build-notes sections 16–17). |
-| 8 | Publishing finish: the assembled book (assembly and polish only) | PUBLISHED on main at fbb0e2a (merge of `chunk/08-book` at 1639665, pushed 2026-11-23 ~22:08Z) on the owner's ruling "Publish the book while the full suite runs" (/root/briefs/objstore-publish-book-now-ruling-2026-11-23.md); land.sh was bypassed because no gate result exists yet. Verified live: front page presents the book, book index lists preface, topic map and chapters 1–8, all 24 site URLs HTTP 200, site lint clean (23 pages). Content: README command check; eight chapters edited into one shape (two Neon editors); final C4 pass; preface, topic map, final README, site front page (Neon); Astra's independent check (36 commands pass; 3 README findings and 13 of 381 claims not supported, all closed in one Neon round, agent_work/adversarial/08-book/RESULTS.md); acceptance check agent_work/08-book/REVIEW-1.md PASS. CLOSEOUT NOT DONE — FINAL GATE RUNNING in the worktree against b72277f (started 2026-11-23 21:09Z, about three hours; `/root/runs/objstore-p2-08-book-gate-final.{log,pid,exit}`, wrapper /tmp/fable-gate/gate-final-08.sh; do not restart or duplicate it while its pid is alive). When the exit file says 0: `agent_work/gates/prose-check.sh 98c6edc 1639665` (the range must be the linear branch, not the merge), copy the worktree's `agent_work/08-book/gates/` to main and commit it, record the open durability question as answered (/root/briefs/objstore-durability-question-closed-2026-11-23.md), final STATE, knowledge/INDEX, remove the worktree (keep the branch), write /root/runs/objstore-phase2-done.txt, END in the progress file. If the gate fails: fix forward on main, report the failure and the fix in the progress file; the book stays published. If the gate died with no exit file: read the log tail, re-start once with the wrapper. |
+| 8 | Publishing finish: the assembled book (assembly and polish only) | LANDED fbb0e2a (2026-11-23), published AHEAD of its final gate on the owner's ruling (/root/briefs/objstore-publish-book-now-ruling-2026-11-23.md; land.sh bypassed, merged by hand); the gate then finished ALL GREEN on b72277f (G0–G7 and G5R: 13 of 13 real-process tests, unit, 2,000-check properties, 15 fuzz targets, race 50 min, 500-seed sweep 69 min from base 201358669618850, Docker, cluster; agent_work/08-book/gates/result.json). Live and verified: front page presents the book; book index lists preface, topic map and chapters 1–8; all 24 site URLs HTTP 200. Content: eight chapters edited into one shape (two Neon editors); preface, topic map, final README, site front page (Neon); final C4 pass; README command check; Astra's independent check (36 commands pass; 3 README findings and 13 of 381 claims not supported, all closed in one Neon round; agent_work/adversarial/08-book/RESULTS.md); acceptance check REVIEW-1.md PASS. NOT CLEAN: `prose-check.sh 98c6edc 1639665` exits 1 with four findings of one kind — see Open items. |
 
 ## In progress
 
-- Chunk 8: see the board row. Briefs and the style sheet are in agent_work/08-book/. Run files:
-  /root/runs/objstore-p2-08-book-*. If `08-book-front` died with no exit file, read its log tail
-  and re-dispatch once with `agent_work/orch/launch.sh 08-book-front neon <worktree> <brief>`.
+Nothing. The build is complete.
 
 ## Per-chunk pipeline (as run for chunks 1–5; worked examples in each agent_work/<slug>/)
 
@@ -87,6 +84,16 @@ adversarial seat; Astra has no Chunk 7 role. Chunk 8 returns to the seats above.
   `waitany.sh <secs> <run>...`, `mkstage.py` (run inside the worktree), `soften.sh`.
 
 ## Open items
+
+- Prose provenance check on Chunk 8 is RED on a bookkeeping point (owner: Nick, to accept
+  or direct otherwise): the three prose commits 9b10463, b9fbcdf and b72277f also carry the
+  prose seat's own work reports under agent_work/08-book/, which the rule does not allow in
+  a prose commit. No finding touches a reader-facing file or Go. The check ran only after
+  the publish, the history is pushed, and it has not been rewritten.
+- ANSWERED (Nick, 2026-11-23, /root/briefs/objstore-durability-question-closed-2026-11-23.md):
+  a metadata write acknowledged by a node cut off from the cluster is lost without a record
+  if that node's disk is wiped before the write replicates. Ruling: "Don't worry about that
+  edge case." It is an accepted, stated limitation of the design; no fix, no further work.
 
 - Neon seat: UP again on the direct route (probed LIVE 2026-11-23 ~15:16Z at Nick's request;
   the monthly spending cap that took it down at ~11:20Z no longer blocks it). OpenRouter
@@ -131,7 +138,7 @@ adversarial seat; Astra has no Chunk 7 role. Chunk 8 returns to the seats above.
   /root/runs/objstore-p2-*. Progress log: /root/runs/objstore-phase2-progress.txt.
   Done marker (only at completion or cutoff): /root/runs/objstore-phase2-done.txt.
 - Worktrees: /root/Software/decentralized-object-store-work/NN-<slug>, branch
-  chunk/NN-<slug>. Live: 08-book. Branches of landed chunks are kept.
+  chunk/NN-<slug>. Live: none. Branches of landed chunks are kept.
 - Gate stages: `agent_work/gates/gate.sh <chunk>` (build stage, on a chunk branch, before
   prose) and `GATE_STAGE=final ...` (after prose, and the only form that runs on main).
 - Site: https://nickstrad.github.io/decentralized-object-store/ — built by
@@ -149,10 +156,6 @@ adversarial seat; Astra has no Chunk 7 role. Chunk 8 returns to the seats above.
 
 ## Resume
 
-Read this file, PLAN.md, then /root/briefs/objstore-phase2-mission.md; `git
-log` and `git worktree list` for what has landed and what is in flight. The
-orchestrator is one long headless Fable run (/root/runs/objstore-phase2-run.sh,
-log /root/runs/objstore-phase2.log). To tell whether builders are alive:
-`pgrep -af 'claude -p|codex exec|opencode run'` and the pid files under
-/root/runs/objstore-p2-*.pid. If the orchestrator died, relaunch the run
-script; it resumes from this file.
+Nothing to resume: Phase 2 is complete and no run is alive. For follow-up work read this
+file, PLAN.md and /root/briefs/objstore-phase2-mission.md; start a new branch and worktree
+from main. The full gate on main is `GATE_STAGE=final agent_work/gates/gate.sh <name>`.
