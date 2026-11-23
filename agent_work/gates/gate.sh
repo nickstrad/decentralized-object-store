@@ -317,14 +317,27 @@ g5_dst() {
 # heavy may run beside them; the gate runs its checks one at a time.
 g5r_tierr() {
   [ -d test/e2e ] || { echo "NOTE: no end-to-end suite yet"; return 0; }
-  local rc=0 passed skipped
+  local rc=0 passed skipped waited=0 limit load
+  # Let the machine settle first. Straight after the hour-long sweep the same tests failed
+  # on one-second shard request timeouts (two PUTs answered 503) and then passed twice on
+  # the idle machine: the timeouts are real time and the nodes are race builds. Flush dirty
+  # pages, then wait for the one-minute load to fall under three quarters of the cores, for
+  # at most five minutes. This is a wait, not a retry: the tests still run exactly once.
+  sync
+  limit=$(( $(nproc) * 75 ))
+  while :; do
+    load=$(awk '{printf "%d", $1 * 100}' /proc/loadavg)
+    [ "$load" -ge "$limit" ] && [ "$waited" -lt 300 ] || break
+    sleep 10; waited=$((waited + 10))
+  done
+  echo "settled after ${waited}s (one-minute load $(cut -d' ' -f1 /proc/loadavg), $(nproc) cores)"
   E2E_TIER_R=1 go test ./test/e2e -run 'R$|TierR|DefaultBuild|CanaryE9' -count=1 -v -timeout 40m > "$bin/tierr.txt" 2>&1 || rc=1
   cat "$bin/tierr.txt"
   passed=$(grep -cE '^--- PASS: ' "$bin/tierr.txt" || true)
   skipped=$(grep -cE '^[[:space:]]*--- SKIP: ' "$bin/tierr.txt" || true)
   [ "$skipped" = 0 ] || { echo "TIER R: $skipped tests skipped"; rc=1; }
   [ "$passed" -gt 0 ] || { echo "TIER R: no test passed"; rc=1; }
-  echo "NOTE: $passed real-process tests passed, $skipped skipped"
+  echo "NOTE: $passed real-process tests passed, $skipped skipped, settle wait ${waited}s"
   return $rc
 }
 
