@@ -434,6 +434,11 @@ func TestCanaryNemesisForgottenAmbiguousMigrationFails(t *testing.T) {
 		}
 		t.Logf("caught: %v", err)
 	})
+	t.Run("forgetting slow ambiguous start leaves non-terminal saga into next cycle", func(t *testing.T) {
+		var st nemesisStats
+		s := slowAmbiguousMigrationRun(seed, true, &st)(seed)
+		expectCanaryFailure(t, s, "still holds non-terminal saga")
+	})
 }
 
 func TestCanaryE2ObjectOpsUnavailableDuringSplitFails(t *testing.T) {

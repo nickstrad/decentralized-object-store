@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/decentralized-object-store/internal/node"
+	"github.com/nickstrad/decentralized-object-store/internal/saga"
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 	"github.com/nickstrad/decentralized-object-store/internal/sim/simtest"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
@@ -249,6 +251,108 @@ func verifyAmbiguousMigrationTracked(seed int64, cycles int, forget bool) (*sim.
 	return s, st, nil
 }
 
+type delayStep struct {
+	saga.Step
+	sim   func() *sim.Sim
+	delay time.Duration
+}
+
+func (d delayStep) Do(call saga.Call, done func([]byte, error)) {
+	s := d.sim()
+	if s == nil {
+		d.Step.Do(call, done)
+		return
+	}
+	s.At(s.Now().Add(d.delay), "delay-"+d.Step.Name(), func() {
+		d.Step.Do(call, done)
+	})
+}
+
+func slowAmbiguousMigrationRun(seed int64, forget bool, st *nemesisStats) func(int64) *sim.Sim {
+	return func(seed int64) *sim.Sim {
+		var cl *simCluster
+		opts := fuzzOptions()
+		opts.tweak = func(cfg *node.Config) {
+			cfg.SagaPolicy = saga.DefaultPolicy()
+			cfg.SagaPolicy.StepTimeout = 35 * time.Second
+			cfg.WrapMigration = func(d saga.Definition) saga.Definition {
+				steps := make([]saga.Step, len(d.Steps))
+				copy(steps, d.Steps)
+				for i, step := range steps {
+					if step.Name() == saga.StepCopy {
+						steps[i] = delayStep{Step: step, sim: func() *sim.Sim {
+							if cl == nil {
+								return nil
+							}
+							return cl.s
+						}, delay: 25 * time.Second}
+					}
+				}
+				d.Steps = steps
+				return d
+			}
+		}
+		cl = newSimCluster(seed, opts)
+		if cl.s.Err() != nil {
+			return cl.s
+		}
+		if err := cl.boot(); err != nil {
+			cl.fail(err)
+			return cl.s
+		}
+		n := newNemesis(cl)
+		n.noGrace = true
+		n.warmM = fuzzWarmM
+		n.forgetAmbiguousMig = forget
+		var coordID env.NodeID
+		n.beforeCycle = func(n *nemesis, ci int) error {
+			if ci == 0 {
+				var clients []env.NodeID
+				for _, r := range n.c.regions {
+					clients = append(clients, env.NodeID("client-"+r))
+				}
+				n.netFault = true
+				n.c.s.At(n.c.s.Now().Add(time.Second), "record-mig-coord", func() {
+					coordID = env.NodeID(n.migCoord.ID)
+				})
+				return n.c.apply(sim.Fault{Kind: sim.FaultPartitionOneWay, Side: n.c.ids, Other: clients})
+			}
+			if n.mig != nil {
+				return failf("n.mig still non-nil at start of cycle %d", ci)
+			}
+			for _, id := range n.c.ids {
+				nd := n.c.anyNode(id)
+				if nd == nil {
+					continue
+				}
+				eng := nd.Engine()
+				for _, sid := range eng.IDs() {
+					if s, err := eng.Status(sid); err == nil && !s.State.Terminal() {
+						return failf("coordinator %s still holds non-terminal saga %s at start of cycle %d", id, sid, ci)
+					}
+				}
+			}
+			if coordID != "" {
+				for idx, id := range n.c.ids {
+					if id == coordID {
+						return n.apply(chaosOp{kind: opWipeNode, a: idx})
+					}
+				}
+			}
+			return nil
+		}
+		plan := nemesisPlan{cycles: []cycle{
+			{chaos: e7Chaos, ops: []chaosOp{{kind: opMigrate, a: 0, b: 0, at: 500 * time.Millisecond}}},
+			{chaos: e7Chaos},
+		}}
+		if err := n.run(plan); err != nil {
+			cl.fail(err)
+		}
+		*st = n.st
+		return cl.s
+	}
+}
+
 func TestNemesisAmbiguousMigrationStartIsTracked(t *testing.T) {
 	const seed = 702
 	for _, cycles := range []int{1, 2} {
@@ -301,42 +405,14 @@ func TestNemesisAmbiguousMigrationStartIsTracked(t *testing.T) {
 			t.Fatalf("migrated=%d finalRegion=%q, want 1 and r1", st.migrated, st.finalRegion)
 		}
 	})
-	t.Run("wipe targeting coordinator while start outcome is unknown is skipped", func(t *testing.T) {
+	t.Run("ambiguous start finishes to terminal state before next cycle can wipe coordinator", func(t *testing.T) {
 		var st nemesisStats
-		var coordID env.NodeID
-		var incAfter uint32
-		simtest.RequireDeterministic(t, seed, runNemesis(seed, fuzzOptions(), func(n *nemesis) nemesisPlan {
-			n.noGrace = true
-			n.warmM = fuzzWarmM
-			n.beforeCycle = func(n *nemesis, ci int) error {
-				var clients []env.NodeID
-				for _, r := range n.c.regions {
-					clients = append(clients, env.NodeID("client-"+r))
-				}
-				n.netFault = true
-				n.c.s.At(n.c.s.Now().Add(time.Second), "wipe-coord-while-ambiguous", func() {
-					coordID = env.NodeID(n.migCoord.ID)
-					for idx, id := range n.c.ids {
-						if id == coordID {
-							if err := n.apply(chaosOp{kind: opWipeNode, a: idx}); err != nil {
-								n.c.fail(err)
-							}
-							incAfter = n.c.s.Status(coordID).Incarnation
-							break
-						}
-					}
-				})
-				return n.c.apply(sim.Fault{Kind: sim.FaultPartitionOneWay, Side: n.c.ids, Other: clients})
-			}
-			return nemesisPlan{cycles: []cycle{
-				{chaos: e7Chaos, ops: []chaosOp{{kind: opMigrate, a: 0, b: 0, at: 500 * time.Millisecond}}},
-			}}
-		}, &st))
-		if coordID == "" || incAfter != 1 {
-			t.Fatalf("coordinator %s incarnation = %d, want 1 (never wiped while migration outcome unknown)", coordID, incAfter)
+		simtest.RequireDeterministic(t, seed, slowAmbiguousMigrationRun(seed, false, &st))
+		if st.ambiguousRecovered != 1 || st.migrated != 1 || st.finalRegion != "r1" {
+			t.Fatalf("unexpected stats: recovered=%d migrated=%d finalRegion=%q", st.ambiguousRecovered, st.migrated, st.finalRegion)
 		}
-		if st.skipped < 1 || st.ambiguousRecovered != 1 || st.migrated != 1 || st.finalRegion != "r1" {
-			t.Fatalf("unexpected stats: skipped=%d recovered=%d migrated=%d finalRegion=%q", st.skipped, st.ambiguousRecovered, st.migrated, st.finalRegion)
+		if st.applied < 2 {
+			t.Fatalf("expected migration and cycle-1 coordinator wipe to both apply, got applied=%d", st.applied)
 		}
 	})
 }

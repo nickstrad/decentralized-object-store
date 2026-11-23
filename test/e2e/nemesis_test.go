@@ -382,7 +382,7 @@ func (n *nemesis) apply(op chaosOp) error {
 		if c.node(id) == nil || len(n.down)+len(n.paused) >= nemMaxDown || !n.allows(id, "") {
 			return skip()
 		}
-		if op.kind == opWipeNode && ((n.mig != nil && n.migCoord.ID == string(id)) || n.hasActiveSaga(id)) {
+		if op.kind == opWipeNode && n.mig != nil && n.migCoord.ID == string(id) {
 			return skip()
 		}
 		if op.kind == opWipeNode && !n.loneWipe && !n.metadataElsewhere(id) {
@@ -579,20 +579,6 @@ func (n *nemesis) findNewSaga(coord Node) (saga.ID, bool) {
 		}
 	}
 	return "", false
-}
-
-func (n *nemesis) hasActiveSaga(id env.NodeID) bool {
-	nd := n.c.anyNode(id)
-	if nd == nil {
-		return false
-	}
-	eng := nd.Engine()
-	for _, sid := range eng.IDs() {
-		if st, err := eng.Status(sid); err == nil && !st.State.Terminal() {
-			return true
-		}
-	}
-	return false
 }
 
 func liveBucketRegs(c *simCluster, bucket string) []string {
