@@ -254,7 +254,7 @@ func (n *nemesis) settle() error {
 			} else if !allowedNemesisError(k) {
 				return failf("get %s/%s via %s: disallowed error: %v", k.Bucket, k.Key, k.At.ID, k.Err)
 			}
-			if k.Size == -1 {
+			if k.Size == -1 && !n.netFault && !n.touched[env.NodeID(k.At.ID)] {
 				n.st.availabilityGets++
 				if k.Err != nil && !n.dirty[k.Key] && !errors.Is(k.Err, occ.ErrNotFound) {
 					return failf("availability within the fault budget: get %s via untouched %s failed with no network fault in the cycle: %v", k.Key, k.At.ID, k.Err)
