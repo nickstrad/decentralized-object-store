@@ -16,6 +16,15 @@ you), all eight chapters, the current `README.md` and `docs/index.md`, `compose.
 `cmd/objnode/help.txt`, `cmd/objsim`, and `agent_work/07-e2e/build-notes.md` (replay
 commands, the hardening scripts under `agent_work/07-e2e/hardening/`).
 
+## Docker safety (read before running any command)
+
+`compose.yaml` names the compose project, so every checkout on this machine shares ONE
+project: a `docker compose down` here would stop other people's containers (a test gate may
+be running). Before you run anything, in every shell: `export COMPOSE_PROJECT_NAME=objstore-front`.
+With that set, run the README's commands exactly as a reader would type them (the README
+itself must NOT mention this variable). Never pass `--volumes` or `-v` to `down`, and never
+run `docker system prune`, `docker volume rm` or `docker rm` on containers you did not start.
+
 ## 1. Preface (300–500 words)
 
 What the project is (a leaderless, multi-region object store in Go on the standard library,

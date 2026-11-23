@@ -7,6 +7,16 @@ commands in the worktree. Everything of the project runs through Docker
 (`docker compose ...`); the machine has 4 cores and 7 GB and is shared — one heavy run at
 a time.
 
+## Docker safety (read before running any command)
+
+`compose.yaml` names the compose project, so every checkout on this machine shares ONE
+project: a `docker compose down` in your clone would stop other people's containers. In
+every shell, before anything else: `export COMPOSE_PROJECT_NAME=objstore-walk` (your
+`readme-walk.sh` must set it too, at its top, with a comment saying why). Never pass
+`--volumes` or `-v` to `down`; never run `docker system prune`, `docker volume rm`, or
+`docker rm`/`docker kill` on containers you did not start. Report it as a finding if the
+README leads a reader to stop or delete something that is not theirs.
+
 ## Part 1 — a new reader follows the README
 
 1. Make a clean clone of the worktree's HEAD in a fresh directory under /tmp
