@@ -892,3 +892,360 @@ func TestMigrationPostPivotCatchupStallRecopies(t *testing.T) {
 		})
 	}
 }
+
+func stagedManifests(nd *node.Node, bucket, sagaID string) ([]*storage.Manifest, error) {
+	rd, err := nd.OCC().Reader()
+	if err != nil {
+		return nil, err
+	}
+	wantTag := "~stage/" + sagaID
+	var out []*storage.Manifest
+	for _, k := range rd.Keys() {
+		if len(k) == 0 || occ.Kind(k[0]) != occ.KindTag {
+			continue
+		}
+		_, parts, err := occ.ParseKey(k)
+		if err != nil || len(parts) < 3 || parts[0] != bucket || parts[2] != wantTag {
+			continue
+		}
+		val, _, err := rd.Get(k)
+		if err != nil {
+			continue
+		}
+		man, err := node.ManifestOfStaged(val)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, man)
+	}
+	return out, nil
+}
+
+func migThresholdRun(keep int, wantState saga.State) func(int64) *sim.Sim {
+	return func(seed int64) *sim.Sim {
+		const (
+			bucket = "m"
+			from   = "r0"
+			to     = "r1"
+			objKey = "th0"
+		)
+		layout := storage.Layout{K: 4, M: 2, StripeSize: dstStripe}
+		quorum := min(layout.K+1, layout.K+layout.M)
+		orphanGrace := 20 * time.Second
+		cfg := dstConfig()
+		cfg.Layout = layout
+		cfg.OrphanGrace = orphanGrace
+		cfg.GCGrace = 5 * time.Second
+		cfg.ViewSettle = 2 * time.Second
+		cfg.MaintainPeriod = 500 * time.Millisecond
+		cfg.SagaPolicy = saga.DefaultPolicy()
+		cfg.SagaPolicy.MaxAttempts = 12
+		cfg.SagaPolicy.BaseDelay = 200 * time.Millisecond
+
+		var h *harness
+		var coord env.NodeID
+		var sagaID string
+		damaged := false
+		verifyFails := 0
+		verifyOKs := 0
+		flipRuns := 0
+
+		cfg.WrapMigration = func(d saga.Definition) saga.Definition {
+			steps := append([]saga.Step(nil), d.Steps...)
+			for i, st := range steps {
+				switch st.Name() {
+				case saga.StepVerify:
+					steps[i] = hookStep{
+						Step: st,
+						before: func() {
+							if damaged {
+								return
+							}
+							damaged = true
+							nd := h.node(coord)
+							if nd == nil {
+								h.s.Fail(fmt.Errorf("coordinator %s down before verify", coord))
+								return
+							}
+							mans, err := stagedManifests(nd, bucket, sagaID)
+							if err != nil || len(mans) == 0 {
+								h.s.Fail(fmt.Errorf("no staged manifests before verify (n=%d err=%v)", len(mans), err))
+								return
+							}
+							for _, man := range mans {
+								for si, stripe := range man.Stripes {
+									rot := len(stripe.Shards) - keep
+									if rot <= 0 {
+										h.s.Fail(fmt.Errorf("keep=%d leaves nothing to corrupt for %d shards", keep, len(stripe.Shards)))
+										return
+									}
+									off := int(seed % int64(len(stripe.Shards)))
+									for j := range rot {
+										idx := (off + j) % len(stripe.Shards)
+										ref := stripe.Shards[idx]
+										if err := h.s.BitRot(ref.Node, man.ShardID(si, idx).BlobName()); err != nil {
+											h.s.Fail(fmt.Errorf("bitrot stripe %d shard %d on %s: %w", si, idx, ref.Node, err))
+											return
+										}
+									}
+									if got := h.verifiableShards(man, si); got != keep {
+										h.s.Fail(fmt.Errorf("after bitrot stripe %d has %d verified shards, want %d", si, got, keep))
+										return
+									}
+								}
+							}
+						},
+						after: func(err error) {
+							if err != nil {
+								verifyFails++
+							} else {
+								verifyOKs++
+							}
+						},
+					}
+				case saga.StepFlip:
+					steps[i] = hookStep{
+						Step: st,
+						before: func() {
+							flipRuns++
+							if flipRuns != 1 {
+								return
+							}
+							nd := h.node(coord)
+							if nd == nil {
+								h.s.Fail(fmt.Errorf("coordinator %s down at flip", coord))
+								return
+							}
+							mans, err := stagedManifests(nd, bucket, sagaID)
+							if err != nil || len(mans) == 0 {
+								h.s.Fail(fmt.Errorf("no staged manifests at flip (n=%d err=%v)", len(mans), err))
+								return
+							}
+							for _, man := range mans {
+								for si := range man.Stripes {
+									if got := h.verifiableShards(man, si); got < quorum {
+										h.s.Fail(fmt.Errorf("flip ran while %s/%s version %s stripe %d had %d verified shards, want >= quorum=%d", bucket, man.Key, man.Version, si, got, quorum))
+										return
+									}
+								}
+							}
+						},
+					}
+				}
+			}
+			d.Steps = steps
+			return d
+		}
+
+		var err error
+		h, err = newHarness(seed, dstNodes, cfg, sim.DefaultNetConfig())
+		if err != nil {
+			h.s.Fail(err)
+			return h.s
+		}
+		s := h.s
+		if err := s.RunFor(5 * time.Second); err != nil {
+			return s
+		}
+		if err := h.node(h.ids[0]).CreateBucket(storage.BucketSpec{Name: bucket, Region: from}); err != nil {
+			s.Fail(err)
+			return s
+		}
+		if err := s.RunUntilConverged(s.Now().Add(20*time.Second), h.converged); err != nil {
+			s.Fail(err)
+			return s
+		}
+
+		body := payload(s.WorkloadRand(), layout.StripeSize+113)
+		acked := false
+		h.node(h.ids[0]).PutObject(storage.PutRequest{Bucket: bucket, Key: objKey, Data: body}, func(_ storage.ObjectInfo, err error) {
+			if err != nil {
+				s.Fail(fmt.Errorf("put %s: %w", objKey, err))
+				return
+			}
+			acked = true
+		})
+		if err := s.RunUntilConverged(s.Now().Add(20*time.Second), func() bool { return acked && h.converged() }); err != nil {
+			s.Fail(err)
+			return s
+		}
+
+		coord = h.ids[int(seed%int64(len(h.ids)))]
+		if string(s.Region(coord)) == to {
+			for _, id := range h.ids {
+				if string(s.Region(id)) != to {
+					coord = id
+					break
+				}
+			}
+		}
+
+		mi, err := h.node(coord).StartMigration(bucket, to)
+		if err != nil {
+			s.Fail(fmt.Errorf("start migration on %s: %w", coord, err))
+			return s
+		}
+		sagaID = mi.ID
+
+		var st saga.Status
+		if err := s.RunUntilConverged(s.Now().Add(90*time.Second), func() bool {
+			nd := h.node(coord)
+			if nd == nil {
+				return false
+			}
+			got, err := nd.Engine().Status(saga.ID(mi.ID))
+			st = got
+			return err == nil && got.State.Terminal()
+		}); err != nil {
+			s.Fail(fmt.Errorf("keep=%d: migration never reached terminal state (state=%v step=%d err=%v): %w", keep, st.State, st.Step, st.Err, err))
+			return s
+		}
+		if !damaged {
+			s.Fail(fmt.Errorf("keep=%d: verify damage hook never fired", keep))
+			return s
+		}
+		if verifyFails < 1 {
+			s.Fail(fmt.Errorf("keep=%d: verify never failed before passing (fails=%d ok=%d)", keep, verifyFails, verifyOKs))
+			return s
+		}
+		if st.State != wantState {
+			s.Fail(fmt.Errorf("keep=%d: migration ended %v (err=%v), want %v", keep, st.State, st.Err, wantState))
+			return s
+		}
+		if wantState == saga.StateCompensated && flipRuns != 0 {
+			s.Fail(fmt.Errorf("keep=%d: flip ran %d times despite fewer than k verified shards", keep, flipRuns))
+			return s
+		}
+		if wantState == saga.StateCompleted && (verifyOKs < 1 || flipRuns < 1) {
+			s.Fail(fmt.Errorf("keep=%d: expected verify ok and flip (verifyOKs=%d flipRuns=%d)", keep, verifyOKs, flipRuns))
+			return s
+		}
+		if err := s.RunUntilConverged(s.Now().Add(30*time.Second), h.converged); err != nil {
+			s.Fail(err)
+			return s
+		}
+
+		finalRegion := from
+		if wantState == saga.StateCompleted {
+			finalRegion = to
+		}
+		for _, nd := range h.up() {
+			rd, err := nd.OCC().Reader()
+			if err != nil {
+				s.Fail(err)
+				return s
+			}
+			r, err := rd.Route(bucket)
+			if err != nil || string(r) != finalRegion {
+				s.Fail(fmt.Errorf("keep=%d: node %s routes %s to %q (%v), want %q", keep, nd.ID(), bucket, r, err, finalRegion))
+				return s
+			}
+			for _, k := range rd.Keys() {
+				if strings.Contains(k, "~lost/") {
+					s.Fail(fmt.Errorf("keep=%d: node %s has loss record %q", keep, nd.ID(), k))
+					return s
+				}
+			}
+		}
+		if len(h.declared) > 0 {
+			s.Fail(fmt.Errorf("keep=%d: loss declared: %v", keep, h.declared))
+			return s
+		}
+
+		noOutside := func() bool {
+			for _, id := range h.ids {
+				if string(s.Region(id)) == finalRegion {
+					continue
+				}
+				for _, name := range s.Disk(id).Names() {
+					if strings.HasPrefix(name, "shards/"+bucket+"/") {
+						return false
+					}
+				}
+			}
+			return true
+		}
+		if err := s.RunUntilConverged(s.Now().Add(orphanGrace+cfg.GCGrace+20*time.Second), noOutside); err != nil {
+			s.Fail(fmt.Errorf("keep=%d: shards of %s left outside %s: %w", keep, bucket, finalRegion, err))
+			return s
+		}
+
+		rd, err := h.up()[0].OCC().Reader()
+		if err != nil {
+			s.Fail(err)
+			return s
+		}
+		val, _, err := rd.Get(occManifestKey(bucket, objKey))
+		if err != nil {
+			s.Fail(fmt.Errorf("keep=%d: manifest %s/%s missing: %w", keep, bucket, objKey, err))
+			return s
+		}
+		man, err := manifestOf(val)
+		if err != nil {
+			s.Fail(err)
+			return s
+		}
+		for si, stripe := range man.Stripes {
+			inFinal := 0
+			for idx, ref := range stripe.Shards {
+				if string(s.Region(ref.Node)) != finalRegion {
+					s.Fail(fmt.Errorf("keep=%d: live stripe %d shard %d on %s in %s, want %s", keep, si, idx, ref.Node, s.Region(ref.Node), finalRegion))
+					return s
+				}
+				blob, ok := s.Disk(ref.Node).Peek(man.ShardID(si, idx).BlobName())
+				if !ok {
+					continue
+				}
+				if _, _, derr := storage.DecodeShard(blob); derr == nil && storage.BlobChecksum(blob) == ref.Checksum {
+					inFinal++
+				}
+			}
+			if inFinal < quorum {
+				s.Fail(fmt.Errorf("keep=%d: live stripe %d holds %d verified shards in %s, want >= quorum=%d", keep, si, inFinal, finalRegion, quorum))
+				return s
+			}
+		}
+
+		got := false
+		h.node(h.ids[0]).GetObject(bucket, objKey, func(_ storage.ObjectInfo, b []byte, err error) {
+			got = true
+			if err != nil || !bytes.Equal(b, body) {
+				s.Fail(fmt.Errorf("keep=%d: get %s/%s: len=%d err=%v", keep, bucket, objKey, len(b), err))
+			}
+		})
+		if err := s.RunUntilConverged(s.Now().Add(10*time.Second), func() bool { return got }); err != nil {
+			s.Fail(err)
+			return s
+		}
+		if _, err := h.acks.Check(rd, nil); err != nil {
+			s.Fail(fmt.Errorf("keep=%d: ack lineage: %w", keep, err))
+			return s
+		}
+		if err := h.gc.check(); err != nil {
+			s.Fail(fmt.Errorf("keep=%d: gc oracle: %w", keep, err))
+		}
+		return s
+	}
+}
+
+func TestMigrationVerifyBelowKCompensates(t *testing.T) {
+	t.Parallel()
+	seeds := []int64{31337, 3, 4}
+	for _, seed := range seeds {
+		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
+			t.Parallel()
+			simtest.RequireDeterministic(t, seed, migThresholdRun(3, saga.StateCompensated))
+		})
+	}
+}
+
+func TestMigrationVerifyBelowQuorumWaitsForRebuild(t *testing.T) {
+	t.Parallel()
+	seeds := []int64{31337, 3, 4}
+	for _, seed := range seeds {
+		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
+			t.Parallel()
+			simtest.RequireDeterministic(t, seed, migThresholdRun(4, saga.StateCompleted))
+		})
+	}
+}
