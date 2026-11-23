@@ -602,3 +602,113 @@ func TestDefaultBuildCarriesNoFaultInjection(t *testing.T) {
 		}
 	}
 }
+
+func TestAllocDistinctPortsNeverCollides(t *testing.T) {
+	ports, err := allocDistinctPorts(40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ports) != 40 {
+		t.Fatalf("allocated %d ports, want 40", len(ports))
+	}
+	seen := map[int]bool{}
+	for _, p := range ports {
+		if p <= 0 {
+			t.Fatalf("invalid allocated port %d", p)
+		}
+		if seen[p] {
+			t.Fatalf("duplicate allocated port %d", p)
+		}
+		seen[p] = true
+	}
+}
+
+func TestTierRStartupFailsOnPlantedLaunchFailure(t *testing.T) {
+	requireTierR(t)
+	realBin := buildObjnode(t, true, "e2efault")
+	t.Run("wrapper binary exits non-zero for one node", func(t *testing.T) {
+		wrapper := filepath.Join(t.TempDir(), "fail-r2.sh")
+		script := fmt.Sprintf("#!/bin/sh\nprev=\"\"\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"-region\" ] && [ \"$a\" = \"r2\" ]; then\n    echo \"planted launch failure for region r2\" >&2\n    exit 73\n  fi\n  prev=\"$a\"\ndone\nexec %q \"$@\"\n", realBin)
+		if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		var launchedDir string
+		var launchedPIDs []int
+		c, err := startRealCluster(t, 821001, realOptions{
+			nodes:  3,
+			layout: storage.Layout{K: 2, M: 1, StripeSize: realStripe},
+			bin:    wrapper,
+			onLaunch: func(dir string, pids []int) {
+				launchedDir = dir
+				launchedPIDs = slices.Clone(pids)
+			},
+		})
+		if err == nil {
+			c.close()
+			t.Fatal("startRealCluster succeeded despite node r2 exiting 73")
+		}
+		for _, want := range []string{"(r2)", "status 73", "planted launch failure for region r2"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("startup error missing %q: %v", want, err)
+			}
+		}
+		if len(launchedPIDs) != 3 || launchedDir == "" {
+			t.Fatalf("incomplete launch record: dir=%q pids=%v", launchedDir, launchedPIDs)
+		}
+		for _, pid := range launchedPIDs {
+			if kerr := syscall.Kill(pid, 0); !errors.Is(kerr, syscall.ESRCH) {
+				t.Errorf("stray process %d survived failed startup: %v", pid, kerr)
+			}
+		}
+		if _, serr := os.Stat(launchedDir); !errors.Is(serr, os.ErrNotExist) {
+			t.Errorf("cluster directory %s survived failed startup: %v", launchedDir, serr)
+		}
+		t.Logf("caught: %v", err)
+	})
+	t.Run("occupied port causes bind failure surfaced with node and log tail", func(t *testing.T) {
+		blocker, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = blocker.Close() }()
+		busyPort := blocker.Addr().(*net.TCPAddr).Port
+		ports, err := allocDistinctPorts(6)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ports[5] = busyPort
+		wantNodeID := fmt.Sprintf("127.0.0.1:%d", ports[2])
+		var launchedDir string
+		var launchedPIDs []int
+		c, err := startRealCluster(t, 821002, realOptions{
+			nodes:  3,
+			layout: storage.Layout{K: 2, M: 1, StripeSize: realStripe},
+			ports:  ports,
+			onLaunch: func(dir string, pids []int) {
+				launchedDir = dir
+				launchedPIDs = slices.Clone(pids)
+			},
+		})
+		if err == nil {
+			c.close()
+			t.Fatal("startRealCluster succeeded despite occupied HTTP port on node 2")
+		}
+		for _, want := range []string{wantNodeID, "(r2)", "address already in use"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("bind failure error missing %q: %v", want, err)
+			}
+		}
+		if len(launchedPIDs) != 3 || launchedDir == "" {
+			t.Fatalf("incomplete launch record: dir=%q pids=%v", launchedDir, launchedPIDs)
+		}
+		for _, pid := range launchedPIDs {
+			if kerr := syscall.Kill(pid, 0); !errors.Is(kerr, syscall.ESRCH) {
+				t.Errorf("stray process %d survived failed bind startup: %v", pid, kerr)
+			}
+		}
+		if _, serr := os.Stat(launchedDir); !errors.Is(serr, os.ErrNotExist) {
+			t.Errorf("cluster directory %s survived failed bind startup: %v", launchedDir, serr)
+		}
+		t.Logf("caught: %v", err)
+	})
+}

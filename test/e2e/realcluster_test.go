@@ -126,27 +126,48 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func freePort(t testing.TB) int {
-	t.Helper()
-	for range 50 {
+func allocDistinctPorts(n int) ([]int, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	var tcpLs []net.Listener
+	var udpCs []net.PacketConn
+	defer func() {
+		for _, u := range udpCs {
+			_ = u.Close()
+		}
+		for _, l := range tcpLs {
+			_ = l.Close()
+		}
+	}()
+	used := map[int]bool{}
+	ports := make([]int, 0, n)
+	attempts := 0
+	for len(ports) < n && attempts < n*50 {
+		attempts++
 		l, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 		port := l.Addr().(*net.TCPAddr).Port
+		if used[port] {
+			_ = l.Close()
+			continue
+		}
 		u, uerr := net.ListenPacket("udp", fmt.Sprintf("127.0.0.1:%d", port))
-		if err := l.Close(); err != nil {
-			t.Fatal(err)
+		if uerr != nil {
+			_ = l.Close()
+			continue
 		}
-		if uerr == nil {
-			if err := u.Close(); err != nil {
-				t.Fatal(err)
-			}
-			return port
-		}
+		used[port] = true
+		tcpLs = append(tcpLs, l)
+		udpCs = append(udpCs, u)
+		ports = append(ports, port)
 	}
-	t.Fatal("no free port")
-	return 0
+	if len(ports) < n {
+		return nil, fmt.Errorf("e2e: could only allocate %d of %d distinct free ports", len(ports), n)
+	}
+	return ports, nil
 }
 
 type realProc struct {
@@ -181,52 +202,179 @@ type realCluster struct {
 }
 
 type realOptions struct {
-	nodes  int
-	layout storage.Layout
+	nodes    int
+	layout   storage.Layout
+	bin      string
+	ports    []int
+	onLaunch func(dir string, pids []int)
 }
 
 func defaultRealOptions() realOptions {
 	return realOptions{nodes: 9, layout: storage.Layout{K: 4, M: 2, StripeSize: realStripe}}
 }
 
-func newRealCluster(t testing.TB, seed int64, o realOptions) *realCluster {
+func logTail(path string, maxLines int) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Sprintf("<unable to read %s: %v>", path, err)
+	}
+	trimmed := strings.TrimRight(string(b), "\n")
+	if trimmed == "" {
+		return "<empty log>"
+	}
+	lines := strings.Split(trimmed, "\n")
+	return strings.Join(lines[max(0, len(lines)-maxLines):], "\n")
+}
+
+func (c *realCluster) allStartedAndConverged() (bool, error) {
+	want := map[string]bool{}
+	for _, p := range c.procs {
+		if !p.running() {
+			code := -1
+			if p.state != nil {
+				code = p.state.ExitCode()
+			}
+			return false, failf("node %s (%s) exited with status %d during startup; log tail:\n%s", p.node.ID, p.node.Region, code, logTail(p.log, 15))
+		}
+		want[p.node.ID] = true
+	}
+	if len(want) != len(c.procs) || len(c.procs) == 0 {
+		return false, failf("intended %d nodes but got %d distinct IDs", len(c.procs), len(want))
+	}
+	var digest, root string
+	for i, p := range c.procs {
+		h, err := c.Health(p.node)
+		if err != nil || !h.Ready || h.MetaDigest == "" {
+			return false, nil
+		}
+		if h.Node != p.node.ID {
+			return false, failf("node %s HTTP endpoint %s reported identity %q", p.node.ID, p.httpAddr, h.Node)
+		}
+		if i == 0 {
+			digest, root = h.MetaDigest, h.MetaRoot
+		} else if h.MetaDigest != digest || h.MetaRoot != root {
+			return false, nil
+		}
+		ms, err := c.Members(p.node)
+		if err != nil {
+			return false, nil
+		}
+		live := 0
+		for _, m := range ms {
+			if m.State == "alive" {
+				if !want[m.ID] {
+					return false, nil
+				}
+				live++
+			}
+		}
+		if live != len(c.procs) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (c *realCluster) awaitStartup(bound time.Duration) (time.Duration, error) {
+	start := time.Now()
+	for {
+		ok, err := c.allStartedAndConverged()
+		if err != nil {
+			return time.Since(start), err
+		}
+		if ok {
+			return time.Since(start), nil
+		}
+		if time.Since(start) > bound {
+			var tails []string
+			for _, p := range c.procs {
+				tails = append(tails, fmt.Sprintf("--- %s (%s, running=%v) ---\n%s", p.node.ID, p.node.Region, p.running(), logTail(p.log, 10)))
+			}
+			return time.Since(start), failf("cluster of %d nodes not ready and converged within %v:\n%s", len(c.procs), bound, strings.Join(tails, "\n"))
+		}
+		time.Sleep(realPoll)
+	}
+}
+
+func startRealCluster(t testing.TB, seed int64, o realOptions) (*realCluster, error) {
 	t.Helper()
+	if o.nodes < 1 {
+		return nil, failf("real cluster requires at least 1 node, got %d", o.nodes)
+	}
+	bin := o.bin
+	if bin == "" {
+		bin = buildObjnode(t, true, "e2efault")
+	}
+	ports := o.ports
+	if len(ports) == 0 {
+		var err error
+		ports, err = allocDistinctPorts(2 * o.nodes)
+		if err != nil {
+			return nil, err
+		}
+	} else if len(ports) != 2*o.nodes {
+		return nil, failf("real cluster with %d nodes needs %d ports, got %d", o.nodes, 2*o.nodes, len(ports))
+	}
 	dir, err := os.MkdirTemp("", "e2e-tier-r-")
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
-	c := &realCluster{t: t, bin: buildObjnode(t, true, "e2efault"), dir: dir, ledger: newLedger(), r: rand.New(rand.NewPCG(uint64(seed), 7)),
+	c := &realCluster{t: t, bin: bin, dir: dir, ledger: newLedger(), r: rand.New(rand.NewPCG(uint64(seed), 7)),
 		hc: &http.Client{Timeout: realCallTimeout}, layout: o.layout, blocked: map[[2]int]bool{}, slots: make(chan struct{}, realPutSlots)}
-	t.Cleanup(c.close)
+	cleanup := true
+	defer func() {
+		if cleanup {
+			c.close()
+		}
+	}()
 	for r := range 3 {
 		c.regions = append(c.regions, fmt.Sprintf("r%d", r))
 	}
-	var ids []string
-	for range o.nodes {
-		ids = append(ids, fmt.Sprintf("127.0.0.1:%d", freePort(t)))
+	ids := make([]string, o.nodes)
+	for i := range o.nodes {
+		ids[i] = fmt.Sprintf("127.0.0.1:%d", ports[i])
 	}
+	seedCount := min(3, len(ids))
 	for i, id := range ids {
-		hp := freePort(t)
+		hp := ports[o.nodes+i]
 		p := &realProc{node: Node{ID: id, Region: c.regions[i%3]}, httpAddr: fmt.Sprintf("127.0.0.1:%d", hp),
 			data: filepath.Join(dir, fmt.Sprintf("node-%d", i)), log: filepath.Join(dir, fmt.Sprintf("node-%d.log", i))}
-		port, _ := strconv.Atoi(strings.TrimPrefix(id, "127.0.0.1:"))
-		p.ports = []int{port, hp}
+		p.ports = []int{ports[i], hp}
 		p.args = []string{"-id", id, "-region", p.node.Region, "-listen", id, "-http", p.httpAddr, "-data", p.data,
-			"-seeds", strings.Join(ids[:3], ","), "-k", strconv.Itoa(o.layout.K), "-m", strconv.Itoa(o.layout.M),
+			"-seeds", strings.Join(ids[:seedCount], ","), "-k", strconv.Itoa(o.layout.K), "-m", strconv.Itoa(o.layout.M),
 			"-stripe", strconv.Itoa(o.layout.StripeSize), "-shutdown-timeout", "10s"}
 		c.procs = append(c.procs, p)
 	}
 	c.t0 = time.Now()
+	var pids []int
 	for _, p := range c.procs {
 		if err := c.start(p); err != nil {
-			t.Fatal(err)
+			if o.onLaunch != nil {
+				o.onLaunch(c.dir, pids)
+			}
+			return nil, failf("launch node %s (%s): %v", p.node.ID, p.node.Region, err)
 		}
+		pids = append(pids, p.cmd.Process.Pid)
 	}
-	d, err := c.Await("cluster formed", realBounds.converge, c.Converged)
+	if o.onLaunch != nil {
+		o.onLaunch(c.dir, pids)
+	}
+	d, err := c.awaitStartup(realBounds.converge)
+	if err != nil {
+		return nil, err
+	}
+	c.startup = d
+	cleanup = false
+	t.Cleanup(c.close)
+	return c, nil
+}
+
+func newRealCluster(t testing.TB, seed int64, o realOptions) *realCluster {
+	t.Helper()
+	c, err := startRealCluster(t, seed, o)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.startup = d
 	return c
 }
 
