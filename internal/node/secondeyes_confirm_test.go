@@ -584,8 +584,8 @@ func TestConfirmOracleSoundness(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if h.mans[man.Version.String()] != nil {
-			t.Fatalf("expected migrated version %s not to be in h.mans", man.Version)
+		if h.mans[man.Version.String()] == nil {
+			t.Fatalf("expected migrated version %s to be recorded in h.mans", man.Version)
 		}
 		for i := 0; i < 2; i++ {
 			ref := man.Stripes[0].Shards[i]
