@@ -3,6 +3,9 @@
 package noderuntime
 
 import (
+	"errors"
+	"io/fs"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -18,14 +21,13 @@ const (
 
 type blocklist struct {
 	checked time.Time
-	mod     time.Time
-	size    int64
 	peers   map[env.NodeID]bool
 }
 
 var (
-	blocklistMu sync.Mutex
-	blocklists  = map[string]*blocklist{}
+	blocklistMu   sync.Mutex
+	blocklists    = map[string]*blocklist{}
+	blocklistLogf = log.Printf
 )
 
 func init() { outboundFilter = blockedPeer }
@@ -43,23 +45,24 @@ func blockedPeer(dataDir string, to env.NodeID) bool {
 	now := time.Now()
 	if b.peers == nil || now.Sub(b.checked) >= blocklistReload {
 		b.checked = now
-		b.reload(BlocklistPath(dataDir))
+		if err := b.reload(BlocklistPath(dataDir)); err != nil && blocklistLogf != nil {
+			blocklistLogf("noderuntime: e2efault: read %s: %v", BlocklistPath(dataDir), err)
+		}
 	}
 	return b.peers[to]
 }
 
-func (b *blocklist) reload(path string) {
-	fi, err := os.Stat(path)
-	if err != nil {
-		b.peers, b.mod, b.size = map[env.NodeID]bool{}, time.Time{}, 0
-		return
-	}
-	if b.peers != nil && fi.ModTime().Equal(b.mod) && fi.Size() == b.size {
-		return
-	}
+func (b *blocklist) reload(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return
+		if errors.Is(err, fs.ErrNotExist) {
+			b.peers = map[env.NodeID]bool{}
+			return nil
+		}
+		if b.peers == nil {
+			b.peers = map[env.NodeID]bool{}
+		}
+		return err
 	}
 	peers := map[env.NodeID]bool{}
 	for _, line := range strings.Split(string(data), "\n") {
@@ -67,5 +70,6 @@ func (b *blocklist) reload(path string) {
 			peers[env.NodeID(line)] = true
 		}
 	}
-	b.peers, b.mod, b.size = peers, fi.ModTime(), fi.Size()
+	b.peers = peers
+	return nil
 }
