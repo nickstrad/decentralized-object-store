@@ -1,5 +1,5 @@
 #!/bin/bash
-# Landing gates G0-G6 for one chunk, run through Docker.
+# Landing gates G0-G6 (with G5R, the real-process tier) for one chunk, run through Docker.
 #
 # Usage: agent_work/gates/gate.sh <chunk>
 #   Called on the host: builds the dev image, then re-executes itself inside the `dev`
@@ -16,14 +16,17 @@
 #                       itself is refused (exit 2) rather than compared with itself
 #   GATE_STAGE=final    after the prose stage: the comment check is replaced by prose-check.sh
 #   FUZZ_SECONDS=30     per fuzz target in G3
+#   GATE_SHORT=1        G1 runs `go test -short` (the CI fast lane: the end-to-end package
+#                       trims its migration failure matrix to a smoke); such a result never
+#                       counts for landing
 #   GATE_NO_DOCKER=1    run where you are, without Docker; the result is marked
 #                       in_container=false and never counts for landing
 #   GATE_OUT=<dir>      where to write results (default agent_work/<chunk>/gates)
 #
 # A result counts for landing only when ALL of these hold: every gate ran and is green, the
 # run was inside the dev container, the commit is a full SHA, the host wrapper saw a clean
-# tree, the stage is valid, the fuzz budget is at least 30 s and, at the build stage, the
-# comment baseline is a named commit other than the gated one. The host wrapper supplies
+# tree, the stage is valid, the fuzz budget is at least 30 s, G1 was not a short run and, at
+# the build stage, the comment baseline is a named commit other than the gated one. The host wrapper supplies
 # the commit, the clean-tree flag and the image ID; the file is evidence for an honest
 # operator, not a tamper-proof certificate, and land.sh binds it to the branch tip.
 #
@@ -92,6 +95,7 @@ if [ "$in_container" = false ] && [ "${GATE_NO_DOCKER:-}" != 1 ]; then
     -e GATE_SHA="$sha" -e GATE_DIRTY="$dirty" -e GATE_IMAGE_ID="$image_id" \
     -e GATE_ONLY="${GATE_ONLY:-}" -e GATE_STAGE="${GATE_STAGE:-build}" \
     -e FUZZ_SECONDS="${FUZZ_SECONDS:-30}" -e GATE_OUT="${GATE_OUT:-}" \
+    -e GATE_SHORT="${GATE_SHORT:-}" \
     dev agent_work/gates/gate.sh "$chunk"
   rc=$?
   # G7, host side: the compose `cluster` profile must start three peers that join, serve an
@@ -141,6 +145,8 @@ if [ "$stage" = build ] && { [ -z "${GATE_ONLY:-}" ] || [[ ",${GATE_ONLY}," == *
 fi
 fuzz_seconds=${FUZZ_SECONDS:-30}
 [[ "$fuzz_seconds" =~ ^[0-9]+$ ]] || { echo "gate: FUZZ_SECONDS must be a whole number" >&2; exit 2; }
+short=false; short_flag=()
+if [ "${GATE_SHORT:-}" = 1 ]; then short=true; short_flag=(-short); fi
 dirty=${GATE_DIRTY:-true}
 [ "$dirty" = false ] || dirty=true
 out=${GATE_OUT:-agent_work/$chunk/gates}
@@ -252,7 +258,8 @@ g0_selfcontained() {
 floor_pkgs='internal/sim internal/gossip internal/erasure internal/storage internal/merkle internal/occ internal/saga internal/node internal/noderuntime internal/storage/httpapi'
 g1_unit() {
   local rc=0 p line pct
-  go test -count=1 -timeout 30m -cover ./... > "$bin/cover.txt" 2>&1 || rc=1
+  [ "$short" = false ] || echo "NOTE: short run (go test -short); does not count for landing"
+  go test -count=1 -timeout 30m "${short_flag[@]}" -cover ./... > "$bin/cover.txt" 2>&1 || rc=1
   cat "$bin/cover.txt"
   for p in $floor_pkgs; do
     [ -d "$p" ] || continue
@@ -303,6 +310,24 @@ g5_dst() {
   DST_SEEDS=500 DST_SEED_BASE="$seed" go test -count=1 -timeout 120m ./...
 }
 
+# ---- G5R the end-to-end scenarios on real objnode processes (tier R). The tests skip
+# unless E2E_TIER_R=1, so a run in which any selected test skipped, or none passed, is red:
+# a silently skipped tier must not read as a pass. They build objnode themselves (race
+# detector on, fault hook compiled in) and are bound by real timeouts, so nothing else
+# heavy may run beside them; the gate runs its checks one at a time.
+g5r_tierr() {
+  [ -d test/e2e ] || { echo "NOTE: no end-to-end suite yet"; return 0; }
+  local rc=0 passed skipped
+  E2E_TIER_R=1 go test ./test/e2e -run 'R$|TierR|DefaultBuild|CanaryE9' -count=1 -v -timeout 40m > "$bin/tierr.txt" 2>&1 || rc=1
+  cat "$bin/tierr.txt"
+  passed=$(grep -cE '^--- PASS: ' "$bin/tierr.txt" || true)
+  skipped=$(grep -cE '^[[:space:]]*--- SKIP: ' "$bin/tierr.txt" || true)
+  [ "$skipped" = 0 ] || { echo "TIER R: $skipped tests skipped"; rc=1; }
+  [ "$passed" -gt 0 ] || { echo "TIER R: no test passed"; rc=1; }
+  echo "NOTE: $passed real-process tests passed, $skipped skipped"
+  return $rc
+}
+
 # ---- G6 Docker environment
 g6_docker() {
   echo "in_container=$in_container image=${GATE_IMAGE_ID:-unknown} $(go version)"
@@ -327,21 +352,22 @@ want G2 && check G2 property g2_property
 want G3 && check G3 fuzz g3_fuzz
 want G4 && check G4 race g4_race
 want G5 && check G5 dst g5_dst
+want G5R && check G5R tierR g5r_tierr
 want G6 && check G6 docker g6_docker
 
 partial=false; [ -z "${GATE_ONLY:-}" ] || partial=true
 counts=false
 if [ "$overall" = pass ] && [ "$in_container" = true ] && [ "$partial" = false ] && [ "$sha" != unknown ] \
-   && [ "$dirty" = false ] && [ "$fuzz_seconds" -ge 30 ] \
+   && [ "$dirty" = false ] && [ "$fuzz_seconds" -ge 30 ] && [ "$short" = false ] \
    && { [ "$stage" = final ] || [[ "${GATE_BASE_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; }; then counts=true; fi
 jq -n --arg chunk "$chunk" --arg sha "$sha" --arg stage "$stage" --arg started "$started" \
   --arg finished "$(date -u +%FT%TZ)" --arg go "$(go version)" --arg image "${GATE_IMAGE_ID:-unknown}" \
   --arg overall "$overall" --argjson in_container "$in_container" --argjson partial "$partial" \
   --argjson dirty "$dirty" --argjson counts "$counts" --argjson seed "$seed" \
-  --argjson fuzz "$fuzz_seconds" --argjson checks "$checks_json" --arg cbase "${GATE_BASE_SHA:-none}" \
+  --argjson fuzz "$fuzz_seconds" --argjson short "$short" --argjson checks "$checks_json" --arg cbase "${GATE_BASE_SHA:-none}" \
   '{chunk:$chunk, sha:$sha, stage:$stage, comment_baseline:$cbase, started:$started, finished:$finished, go_version:$go,
     image_id:$image, in_container:$in_container, partial:$partial, dirty_tree:$dirty,
-    seed_from_sha:$seed, fuzz_seconds:$fuzz, overall:$overall, counts_for_landing:$counts,
+    seed_from_sha:$seed, fuzz_seconds:$fuzz, short:$short, overall:$overall, counts_for_landing:$counts,
     checks:$checks}' > "$out/result.json"
 echo "gate: overall=$overall counts_for_landing=$counts -> $out/result.json"
 [ "$overall" = pass ]

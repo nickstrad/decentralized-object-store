@@ -6,15 +6,18 @@
 # Runs, inside the dev container, through gate.sh:
 #   G0  build, gofmt, vet, determinism lint, panic allowlist, dependency and
 #       self-containment checks
-#   G1  every unit test once with the coverage floors. Simulation and end-to-end tests run
-#       their pinned regression seeds plus the default sweep of three fixed seeds
-#       (seeds 1-3), which is the fixed-seed smoke.
+#   G1  every unit test once (`go test -short`) with the coverage floors. Simulation and
+#       end-to-end tests run their pinned regression seeds plus the default sweep of three
+#       fixed seeds (seeds 1-3), which is the fixed-seed smoke. Under -short the end-to-end
+#       package trims one thing: its 78-cell migration failure matrix runs every eighth
+#       cell on one seed (the whole matrix is about four minutes on its own).
 #   G6  proof that the run happened inside the dev container
 # Target: a few minutes. Nothing here has a time budget or a seed count to grow.
 #
 # Deliberately NOT here (owner ruling 2026-11-22: CI runs quick tests only; long runs are
 # on-demand events, not the cost of every push). All of it stays runnable by hand:
-#   full landing gate (G0-G7: 2,000-check properties, fuzz, race, 500-seed sweep, cluster):
+#   full landing gate (G0-G7: the full unit run, 2,000-check properties, fuzz, race, the
+#   500-seed sweep, the scenarios on real processes, the cluster check):
 #       GATE_STAGE=final agent_work/gates/gate.sh <chunk>
 #   one gate of it, for example the 500-seed sweep or the race run:
 #       GATE_ONLY=G5 agent_work/gates/gate.sh <chunk>
@@ -32,4 +35,4 @@
 set -u
 here=$(cd "$(dirname "$0")" && pwd -P)
 unset DST_SEED DST_SEEDS DST_SEED_BASE
-GATE_ONLY=G0,G1,G6 GATE_STAGE=final exec "$here/gate.sh" ci
+GATE_SHORT=1 GATE_ONLY=G0,G1,G6 GATE_STAGE=final exec "$here/gate.sh" ci

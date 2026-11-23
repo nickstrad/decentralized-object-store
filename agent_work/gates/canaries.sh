@@ -292,6 +292,23 @@ func TestZZRace(t *testing.T) {
 }
 EOF
 }
+plant_tierr() {
+  [ -d test/e2e ] || return 1
+  cat > test/e2e/zz_canary_test.go <<'EOF'
+package e2e
+
+import (
+	"os"
+	"testing"
+)
+
+func TestZZPlantedTierR(t *testing.T) {
+	if os.Getenv("E2E_TIER_R") == "1" {
+		t.Fatal("planted: fails only on the real-process tier")
+	}
+}
+EOF
+}
 plant_dst() {
   base_pkg
   cat > internal/sim/zz_dst_test.go <<'EOF'
@@ -365,12 +382,14 @@ canary unicode-fuzz     G3 fuzz            'FUZZ FAIL'                    "the s
 canary fuzz-stall       G3 fuzz            'FUZZ FAIL'                    "a fuzz target that stalls on every mutated input (retried once, must still fail)" G3 plant_fuzzstall
 canary race             G4 race            'DATA RACE'                    "a data race"                                              G4 plant_race
 canary dst-seeds        G5 dst             'planted'                      "a test that fails only under the 500-seed sweep"          G5 plant_dst
+canary tier-r           G5R tierR          'planted'                      "a real-process test that fails only when tier R is switched on" G5R plant_tierr
 canary indirect-dst     G5 dst             'planted'                      "a scenario that reaches the simulator through a bridge"   G5 plant_indirect
 
 # Results that must never count for landing, each on an otherwise green full run.
 counts dirty-tree     "a dirty tree reported by the host wrapper"   false GATE_DIRTY=true
 counts dirty-unknown  "no clean-tree flag at all (gate called directly)" false GATE_DIRTY=
 counts short-fuzz     "a fuzz budget under 30 s"                    false FUZZ_SECONDS=5
+counts short-unit     "unit tests run with -short (the fast lane)"  false GATE_SHORT=1
 counts bad-sha        "a commit that is not a full SHA"             false GATE_SHA=not-a-commit
 if [[ partial-run =~ $only ]]; then
   fresh partial-run; run_gate partial-run G0,G6
