@@ -17,29 +17,6 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/testutil/leakcheck"
 )
 
-func loopbackAddr(t *testing.T) string {
-	t.Helper()
-	for range 20 {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		addr := l.Addr().String()
-		u, uerr := net.ListenPacket("udp", addr)
-		if err := l.Close(); err != nil {
-			t.Fatal(err)
-		}
-		if uerr == nil {
-			if err := u.Close(); err != nil {
-				t.Fatal(err)
-			}
-			return addr
-		}
-	}
-	t.Fatal("no free loopback port")
-	return ""
-}
-
 // TestALoopPanicTakesTheWholeNetworkedRuntimeDown proves a panic on the node
 // loop closes Done(), records ErrPanicked, logs the panic, closes TCP/UDP
 // sockets so all goroutines exit before Close is called, and still lets
@@ -48,14 +25,10 @@ func TestALoopPanicTakesTheWholeNetworkedRuntimeDown(t *testing.T) {
 	before := leakcheck.Take()
 	var mu sync.Mutex
 	var logged []string
-	rt, err := NewRuntime(RuntimeConfig{ID: env.NodeID(loopbackAddr(t)), Region: "r0", DataDir: t.TempDir(), Node: node.Config{Layout: soloLayout()},
-		Logf: func(f string, a ...any) { mu.Lock(); logged = append(logged, f); mu.Unlock() }})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := rt.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	rt := startLoopbackRuntime(t, func(addr, dir string) RuntimeConfig {
+		return RuntimeConfig{ID: env.NodeID(addr), Region: "r0", DataDir: dir, Node: node.Config{Layout: soloLayout()},
+			Logf: func(f string, a ...any) { mu.Lock(); logged = append(logged, f); mu.Unlock() }}
+	})
 	addr := rt.Addr()
 	if err := rt.Inspect(context.Background(), func(*node.Node) { panic("injected") }); !errors.Is(err, env.ErrClosed) {
 		t.Fatalf("the call whose function panicked returned %v", err)
@@ -98,23 +71,19 @@ func TestALoopPanicTakesTheWholeNetworkedRuntimeDown(t *testing.T) {
 func TestAStalledNameLookupNeverStallsTheLoop(t *testing.T) {
 	release := make(chan struct{})
 	asked := make(chan string, 4)
-	rt, err := NewRuntime(RuntimeConfig{ID: env.NodeID(loopbackAddr(t)), Region: "r0", DataDir: t.TempDir(), Node: node.Config{Layout: soloLayout()},
-		Lookup: func(ctx context.Context, host string) ([]netip.Addr, error) {
-			asked <- host
-			select {
-			case <-release:
-				return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
-		}})
-	if err != nil {
-		t.Fatal(err)
-	}
 	ctx := context.Background()
-	if err := rt.Start(ctx); err != nil {
-		t.Fatal(err)
-	}
+	rt := startLoopbackRuntime(t, func(addr, dir string) RuntimeConfig {
+		return RuntimeConfig{ID: env.NodeID(addr), Region: "r0", DataDir: dir, Node: node.Config{Layout: soloLayout()},
+			Lookup: func(ctx context.Context, host string) ([]netip.Addr, error) {
+				asked <- host
+				select {
+				case <-release:
+					return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}}
+	})
 	var sendErr error
 	if err := rt.Inspect(ctx, func(*node.Node) { sendErr = (&realNet{rt: rt}).Send("stalls.example:7", []byte{1}) }); err != nil {
 		t.Fatal(err)

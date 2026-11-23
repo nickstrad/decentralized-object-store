@@ -182,21 +182,30 @@ func TestServeAndShutdownOnCancel(t *testing.T) {
 // TestServeExitsNonZeroWhenTheNodeLoopPanics proves an injected panic on the
 // node loop logs the failure and terminates objnode with exit code 1.
 func TestServeExitsNonZeroWhenTheNodeLoopPanics(t *testing.T) {
-	var stderr safeBuffer
-	done := make(chan int, 1)
-	go func() {
-		done <- run(context.Background(), []string{"-id", freePort(t), "-region", "a", "-data", t.TempDir(), "-http", "127.0.0.1:0", "-k", "1", "-m", "0", "-stripe", "1024"}, &stderr,
-			func(_ string, rt *noderuntime.Runtime) {
-				go func() { _ = rt.Inspect(context.Background(), func(*node.Node) { panic("injected") }) }()
-			})
-	}()
-	select {
-	case code := <-done:
-		if code != 1 {
-			t.Fatalf("objnode exited %d after its node loop panicked, want 1: %s", code, stderr.String())
+	var stderr *safeBuffer
+	var code int
+	for attempt := 0; ; attempt++ {
+		stderr = &safeBuffer{}
+		errs := stderr
+		done := make(chan int, 1)
+		go func() {
+			done <- run(context.Background(), []string{"-id", freePort(t), "-region", "a", "-data", t.TempDir(), "-http", "127.0.0.1:0", "-k", "1", "-m", "0", "-stripe", "1024"}, errs,
+				func(_ string, rt *noderuntime.Runtime) {
+					go func() { _ = rt.Inspect(context.Background(), func(*node.Node) { panic("injected") }) }()
+				})
+		}()
+		select {
+		case code = <-done:
+		case <-time.After(30 * time.Second):
+			t.Fatalf("objnode kept running after its node loop panicked: %s", stderr.String())
 		}
-	case <-time.After(30 * time.Second):
-		t.Fatalf("objnode kept running after its node loop panicked: %s", stderr.String())
+		if code == 1 && attempt < 3 && strings.Contains(stderr.String(), "address already in use") {
+			continue
+		}
+		break
+	}
+	if code != 1 {
+		t.Fatalf("objnode exited %d after its node loop panicked, want 1: %s", code, stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "panic") {
 		t.Fatalf("no panic in the log: %s", stderr.String())

@@ -297,7 +297,28 @@ func (c *realCluster) awaitStartup(bound time.Duration) (time.Duration, error) {
 	}
 }
 
+const realStartAttempts = 5
+
 func startRealCluster(t testing.TB, seed int64, o realOptions) (*realCluster, error) {
+	t.Helper()
+	if len(o.ports) > 0 {
+		return startRealClusterOnce(t, seed, o)
+	}
+	var lastErr error
+	for range realStartAttempts {
+		c, err := startRealClusterOnce(t, seed, o)
+		if err == nil {
+			return c, nil
+		}
+		if !strings.Contains(err.Error(), "address already in use") {
+			return nil, err
+		}
+		lastErr = err
+	}
+	return nil, lastErr
+}
+
+func startRealClusterOnce(t testing.TB, seed int64, o realOptions) (*realCluster, error) {
 	t.Helper()
 	if o.nodes < 1 {
 		return nil, failf("real cluster requires at least 1 node, got %d", o.nodes)
