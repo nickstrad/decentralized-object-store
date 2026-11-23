@@ -1,0 +1,16 @@
+{"Time":"2026-11-23T00:03:12.341008253Z","Action":"start","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture"}
+{"Time":"2026-11-23T00:03:12.349292297Z","Action":"run","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Test":"TestIndependentHygiene"}
+{"Time":"2026-11-23T00:03:12.349342475Z","Action":"output","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Test":"TestIndependentHygiene","Output":"=== RUN   TestIndependentHygiene\n"}
+{"Time":"2026-11-23T00:03:12.349691733Z","Action":"run","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Test":"TestIndependentHygiene/C10/default-build/seed=0"}
+{"Time":"2026-11-23T00:03:12.349714153Z","Action":"output","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Test":"TestIndependentHygiene/C10/default-build/seed=0","Output":"=== RUN   TestIndependentHygiene/C10/default-build/seed=0\n"}
+{"Time":"2026-11-23T00:03:15.641804302Z","Action":"output","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Test":"TestIndependentHygiene/C10/default-build/seed=0","Output":"--- PASS: TestIndependentHygiene/C10/default-build/seed=0 (3.29s)\n"}
+{"Time":"2026-11-23T00:03:15.641856283Z","Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Test":"TestIndependentHygiene/C10/default-build/seed=0","Elapsed":3.29}
+{"Time":"2026-11-23T00:03:15.641868886Z","Action":"run","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Test":"TestIndependentHygiene/C10/failed-test-cleanup/seed=99"}
+{"Time":"2026-11-23T00:03:15.641875293Z","Action":"output","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Test":"TestIndependentHygiene/C10/failed-test-cleanup/seed=99","Output":"=== RUN   TestIndependentHygiene/C10/failed-test-cleanup/seed=99\n"}
+{"Time":"2026-11-23T00:03:17.883912466Z","Action":"output","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Test":"TestIndependentHygiene/C10/failed-test-cleanup/seed=99","Output":"--- PASS: TestIndependentHygiene/C10/failed-test-cleanup/seed=99 (2.24s)\n"}
+{"Time":"2026-11-23T00:03:17.884566933Z","Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Test":"TestIndependentHygiene/C10/failed-test-cleanup/seed=99","Elapsed":2.24}
+{"Time":"2026-11-23T00:03:17.884677323Z","Action":"output","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Test":"TestIndependentHygiene","Output":"--- PASS: TestIndependentHygiene (5.54s)\n"}
+{"Time":"2026-11-23T00:03:17.884687337Z","Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Test":"TestIndependentHygiene","Elapsed":5.54}
+{"Time":"2026-11-23T00:03:17.884697028Z","Action":"output","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Output":"PASS\n"}
+{"Time":"2026-11-23T00:03:17.898940779Z","Action":"output","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Output":"ok  \tgithub.com/nickstrad/decentralized-object-store/check07/fixture\t5.557s\n"}
+{"Time":"2026-11-23T00:03:17.899016359Z","Action":"pass","Package":"github.com/nickstrad/decentralized-object-store/check07/fixture","Elapsed":5.558}

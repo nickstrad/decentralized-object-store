@@ -1,0 +1,6 @@
+BROKEN C7 C7/unexpected-delete-error/seed=801001: oracle_contract_test.go:19: seed=801001 single completed delete with ErrCorrupt accepted by nemesis.settle; expected rejection of an unexpected terminal error
+BROKEN C7 C7/unexpected-get-error/seed=801001: oracle_contract_test.go:19: seed=801001 single completed get with ErrCorrupt accepted by nemesis.settle; expected rejection of an unexpected terminal error
+HELD C7 C7/unexpected-put-error/seed=801001: completed all assertions
+BROKEN C7 C7/unexpected-tag-error/seed=801001: oracle_contract_test.go:19: seed=801001 single completed tag with ErrCorrupt accepted by nemesis.settle; expected rejection of an unexpected terminal error
+HELD C11 C11/mux-rejections/seed=801011: completed all assertions
+HELD C11 C11/mux-rejections/seed=801013: completed all assertions

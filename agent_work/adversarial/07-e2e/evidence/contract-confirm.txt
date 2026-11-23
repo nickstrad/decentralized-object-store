@@ -1,0 +1,9 @@
+BROKEN C10 C10/failed-node-start/seed=821001: startup_contract_test.go:35: seed=821001 newRealCluster returned after one of three launches exited 73; startup accepted two live nodes as a complete cluster.
+BROKEN C7 C7/unexpected-delete-error/seed=801001: oracle_contract_test.go:21: seed=801001 single completed delete with ErrCorrupt accepted by nemesis.settle; expected rejection of an unexpected terminal error.
+BROKEN C7 C7/unexpected-get-error/seed=801001: oracle_contract_test.go:21: seed=801001 single completed get with ErrCorrupt accepted by nemesis.settle; expected rejection of an unexpected terminal error.
+HELD C7 C7/unexpected-put-error/seed=801001: completed all assertions.
+BROKEN C7 C7/unexpected-tag-error/seed=801001: oracle_contract_test.go:21: seed=801001 single completed tag with ErrCorrupt accepted by nemesis.settle; expected rejection of an unexpected terminal error.
+BROKEN C6 C6/stale-restart-after-gc/seed=811001: oracle_contract_test.go:60: deleted key on n008 returned remote error (code 96): storage: get stale/deleted: stripe 0: 0 of 6 shards verified, need 4: storage: unavailable.
+BROKEN C6 C6/stale-restart-after-gc/seed=811003: oracle_contract_test.go:60: deleted key on n008 returned remote error (code 96): storage: get stale/deleted: stripe 0: 0 of 6 shards verified, need 4: storage: unavailable.
+HELD C11 C11/mux-rejections/seed=801011: completed all assertions.
+HELD C11 C11/mux-rejections/seed=801013: completed all assertions.
