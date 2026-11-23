@@ -1008,3 +1008,74 @@ re-check in `Retire`).
   `/tmp` is written inside the container and lost with it (two diagnostic logs were lost
   this way). And two packages swept in one `go test` without `-timeout` hit the default
   ten-minute limit.
+
+## 17. Tests of the shard threshold and the retire-time check; the loopback port race
+
+Seat: Gemini 4 Neon (builder), branch `chunk/07-e2e-r3`. Product code: **no changes** (all edits are in `_test.go` files with zero Go comments added and zero panics added). Every verification and mutation run executed through Docker (`docker compose run --rm -T dev ...`), one run at a time.
+
+### R3-1 — migration shard-verification threshold (`f6af1e2`)
+
+- **What was added (`internal/node/dst_migstall_test.go`):**
+  - Shared helpers `stagedManifests` and `migThresholdRun(keep int, wantState saga.State)` on 21 nodes (`4+2`, `k=4`, `m=2`, `quorum = min(k+1, k+m) = 5`, 2-stripe object `m/th0`). After `StepCopy` completes and before `StepVerify` runs, a one-shot `before` hook on `saga.StepVerify` bit-rots `(k+m) - keep` shards on every stripe of the staged manifest so every stripe holds exactly `keep` verified destination shards.
+  - `TestMigrationVerifyBelowKCompensates` (`seeds = {31337, 3, 4}`, `keep = 3`, i.e., `1 <= 3 < k=4`): proves `StepVerify` fails, `StepFlip` never runs (`flipRuns == 0`), the saga ends `compensated`, every node still routes `m` to `r0`, no shards remain outside `r0` after grace, zero loss records exist, `m/th0` reads back byte-for-byte from `r0`, and `Lineage` + `gcOracle` pass.
+  - `TestMigrationVerifyBelowQuorumWaitsForRebuild` (`seeds = {31337, 3, 4}`, `keep = 4`, i.e., `k=4 <= 4 < quorum=5`): proves `StepVerify` fails at least once (`verifyFails >= 1`), `StepFlip` first runs only after destination holders rebuild missing shards so every stripe holds `>= quorum` verified shards at flip time, the saga ends `completed`, and every stripe of the final live manifest holds `>= quorum` verified shards in `r1` with byte-for-byte readback and zero loss records.
+- **Mutation proof (scratch copy `/tmp/opencode/mut-r3-1`, `internal/node/migrate.go`: `if verified < quorum {` → `if verified < 1 {`):**
+  Command: `go test -count=1 -v ./internal/node -run 'TestMigrationVerifyBelow'` → `FAIL` (0.715 s, all 6 subtests failed):
+  - `TestMigrationVerifyBelowKCompensates/seed=31337`: `flip ran while m/th0 version 4be429ce7d022182 stripe 0 had 3 verified shards, want >= quorum=5`
+  - `TestMigrationVerifyBelowKCompensates/seed=3`: `flip ran while m/th0 version 3859fbb007ca655a stripe 0 had 3 verified shards, want >= quorum=5`
+  - `TestMigrationVerifyBelowKCompensates/seed=4`: `flip ran while m/th0 version c7be43a65d1a1f89 stripe 0 had 3 verified shards, want >= quorum=5`
+  - `TestMigrationVerifyBelowQuorumWaitsForRebuild/seed=31337`: `flip ran while m/th0 version 4be429ce7d022182 stripe 0 had 4 verified shards, want >= quorum=5`
+  - `TestMigrationVerifyBelowQuorumWaitsForRebuild/seed=3`: `flip ran while m/th0 version 3859fbb007ca655a stripe 0 had 4 verified shards, want >= quorum=5`
+  - `TestMigrationVerifyBelowQuorumWaitsForRebuild/seed=4`: `flip ran while m/th0 version c7be43a65d1a1f89 stripe 0 had 4 verified shards, want >= quorum=5`
+
+### R3-2 — the re-check in `Retire` (`82b2d97`)
+
+- **Reachability analysis:** `g.verifyDest` in `Retire` IS reachable and essential. Inside `StepDeleteSource` (`internal/saga/migration.go`), catch-up `ops.Root(c, m.Bucket, m.To)` verifies destination holders over `opVerifyShards` (`chNode=5, op=4`) and on its last reply calls `ops.Retire`, which schedules its body via `g.n.later`. Any destination holder wiped or rotted after answering `Root(m.To)`'s `opVerifyShards` (e.g. while replies are in flight) and before `Retire` swaps manifests passes `Root(m.To)` and is caught ONLY by `Retire`'s own `g.verifyDest`.
+- **What was added (`internal/node/dst_migstall_test.go`):**
+  - Transport wrapper `verifyWaveNet` and runner `migRetireRecheckRun(wipeCount int, expectRecopy bool)` on 21 nodes (`4+2`, `k=4`, `m=2`, `quorum=5`, 2-stripe object `m/ret0`). After `StepVerify` and `StepFlip` pass and `StepDeleteSource`'s catch-up `Root(m.To)` completes its `opVerifyShards` wave (just before `Retire`'s queued `later` callback executes), the hook wipes `wipeCount` destination holders of stripe 0 with `WipeRejoin`. A `CommitSink` checks every manifest swap commit on `m/ret0`.
+  - `TestMigrationRetireBelowQuorumWaitsForRebuild` (`seeds = {31337, 3, 4}`, `wipeCount = 2`, leaving 4 verified shards on stripe 0: `>= k=4`, `< quorum=5`): proves `Retire` does not swap manifests while stripe 0 holds fewer than `quorum` verified shards (`deleteSourceFails >= 1`), waits for destination holders to rebuild, swaps only once every stripe holds `>= quorum`, and completes cleanly with byte-for-byte readback and zero loss records.
+  - `TestMigrationRetireBelowKRecopiesAndNeverGoesLive` (`seeds = {31337, 3, 4}`, `wipeCount = 3`, leaving 3 verified shards on stripe 0: `< k=4`): proves the damaged staged version never commits to `occ.ManifestKey`, `Retire` marks it dead and deletes its staged record, post-pivot retry of `StepDeleteSource` re-copies from the live source into a fresh destination version, the saga completes with `>= quorum` verified shards in `r1`, zero loss records, and byte-for-byte readback.
+- **Mutation proof (scratch copy `/tmp/opencode/mut-r3-2`, `internal/node/migrate.go`: `g.verifyDest(m, id, ...)` in `Retire` replaced by immediate `cb(nil)`):**
+  Command: `go test -count=1 -v ./internal/node -run 'TestMigrationRetireBelow'` → `FAIL` (1.076 s, all 6 subtests failed):
+  - `TestMigrationRetireBelowQuorumWaitsForRebuild/seed=31337`: `retire swapped manifest to version 4be429ce7d022182 while stripe 0 had 4 verified shards, want >= quorum=5`
+  - `TestMigrationRetireBelowQuorumWaitsForRebuild/seed=3`: `retire swapped manifest to version 3859fbb007ca655a while stripe 0 had 4 verified shards, want >= quorum=5`
+  - `TestMigrationRetireBelowQuorumWaitsForRebuild/seed=4`: `retire swapped manifest to version c7be43a65d1a1f89 while stripe 0 had 4 verified shards, want >= quorum=5`
+  - `TestMigrationRetireBelowKRecopiesAndNeverGoesLive/seed=31337`: `retire swapped manifest to damaged version 4be429ce7d022182 with fewer than k=4 shards`
+  - `TestMigrationRetireBelowKRecopiesAndNeverGoesLive/seed=3`: `retire swapped manifest to damaged version 3859fbb007ca655a with fewer than k=4 shards`
+  - `TestMigrationRetireBelowKRecopiesAndNeverGoesLive/seed=4`: `retire swapped manifest to damaged version c7be43a65d1a1f89 with fewer than k=4 shards`
+
+### R3-3 — loopback port race in test helpers (`e148aeb`)
+
+- **Diagnosis confirmed:** `freeAddr` (`internal/noderuntime/runtime_net_test.go`), `loopbackAddr` (`internal/noderuntime/hazards_test.go`), and the inline TCP-only probe in `request_once_test.go` bound and released ephemeral ports before `Runtime.Start` bound them, with no retry when another process took a port in between; `startReal` and `TestShutdownDuringRepairAndRestartOnTheSameDisk` also registered `t.Cleanup` only after every node started, leaking already-started runtimes on failure.
+- **What changed (test files only):**
+  - `internal/noderuntime/export_test.go`: one unified test-only helper (`FreeLoopbackAddrs` holding all `n` TCP+UDP sockets together until all `n` distinct ports are chosen, `startLoopbackClusterWith`, `startLoopbackRuntime`, `StartLoopbackCluster`, `isAddrInUse`, bound `maxLoopbackStartAttempts = 5`). On `address already in use` from `Runtime.Start`, every already-started runtime is closed before retrying with fresh addresses for the whole cluster (updating `Seeds`). Any other start error closes already-started runtimes and fails immediately; exhausting the bound returns the last error. (Intentional ignored errors in `FreeLoopbackAddrs` probe socket release: `_ = u.Close()`, `_ = l.Close()`, matching `test/e2e/realcluster_test.go`'s `allocDistinctPorts`.)
+  - `internal/noderuntime/runtime_net_test.go`, `hazards_test.go`, `request_once_test.go`, `runtime_ops_test.go`: removed the duplicate `freeAddr` and `loopbackAddr` copies and wired `startReal`, `TestCanaryShutdownLeak`, `TestALoopPanicTakesTheWholeNetworkedRuntimeDown`, `TestAStalledNameLookupNeverStallsTheLoop`, `TestNetworkedRequestCallsBackExactlyOnce`, and `TestShutdownDuringRepairAndRestartOnTheSameDisk` through the single retrying helper.
+  - Added deterministic test `TestStartRealRetriesLostPortWithoutLeaking` (`internal/noderuntime/runtime_net_test.go`) with three subtests: (1) occupies the UDP side of node 2's port via an injected picker so nodes 0 and 1 start first and node 2 fails UDP bind, proving the 3-node cluster retries onto fresh ports, joins, and leaks zero goroutines; (2) passes an invalid non-bindable port `127.0.0.1:99999` on node 2, proving non-address-in-use errors fail on attempt 1 (`picks == 1`) with zero leaks; (3) permanently blocks node 1's UDP port, proving 5 attempts fail with `address already in use` and zero leaks.
+- **Audit of other packages' port helpers:**
+  - `cmd/objnode/main_test.go`: `TestServeAndShutdownOnCancel` already had a bounded retry (`attempt < 3`) on `address already in use`. `TestServeExitsNonZeroWhenTheNodeLoopPanics` called `freePort(t)` with **no retry** (a stolen port caused exit 1 without `"panic"` in stderr). Fixed in `e148aeb` with the same bounded retry on `address already in use`.
+  - `test/e2e/realcluster_test.go`: `allocDistinctPorts` reserves all `2*n` TCP+UDP ports simultaneously and releases them before spawning `objnode` processes; `startRealCluster` had **no retry** if another process took a released ephemeral port before child bind (`defer c.close()` cleaned up processes and temp dir, then returned the error). Fixed in `e148aeb` by retrying `startRealClusterOnce` up to 5 times on `"address already in use"` when `len(o.ports) == 0`, while preserving immediate failure when `o.ports` is explicitly pinned (`TestTierRStartupFailsOnPlantedLaunchFailure` verified passing on Tier R).
+- **Mutation proof (scratch copy `/tmp/opencode/mut-r3-3`, `internal/noderuntime/export_test.go`: retry condition disabled with `if false && isAddrInUse(err) && cerr == nil {`):**
+  Command: `go test -count=1 -v ./internal/noderuntime -run 'TestStartRealRetriesLostPortWithoutLeaking'` → `FAIL` (0.250 s):
+  - `TestStartRealRetriesLostPortWithoutLeaking/retries_on_UDP_address_already_in_use_without_leaking`: `runtime_net_test.go:270: startRealWith did not survive lost UDP port 127.0.0.1:56196: node: start 127.0.0.1:56196: listen :56196: listen udp :56196: bind: address already in use`
+  - `TestStartRealRetriesLostPortWithoutLeaking/exhausting_retries_fails_with_last_error_without_leaking`: `runtime_net_test.go:346: address picker called 1 times, want 5`
+
+### Commands run and results (Docker `dev` container, one run at a time)
+
+| Command | Result | Time |
+|---|---|---|
+| `go test -count=1 -v ./internal/node -run 'TestMigrationVerifyBelow'` | PASS (6 subtests) | 1.329 s |
+| `go test -count=1 -v ./internal/node -run 'TestMigrationRetireBelow'` | PASS (6 subtests) | 2.499 s |
+| `go test -count=1 -v ./internal/noderuntime -run 'TestStartRealRetriesLostPortWithoutLeaking\|TestALoopPanic\|TestAStalledNameLookup\|TestNetworkedRequest\|TestShutdownDuringRepair\|TestCanaryShutdownLeak'` | PASS | 2.393 s |
+| `go test -count=1 ./internal/noderuntime ./cmd/objnode` | PASS (`noderuntime` 7.425 s, `objnode` 2.209 s) | 9.634 s |
+| `go test -count=1 -tags e2efault ./internal/noderuntime` | PASS | 10.301 s |
+| `go test -race -count=20 ./internal/noderuntime -run 'TestConformanceOnLoopback'` | PASS (20/20 runs) | 31.977 s |
+| `go test -count=1 -v ./test/e2e -run 'TestAllocDistinctPortsNeverCollides'` | PASS | 0.024 s |
+| `E2E_TIER_R=1 go test -count=1 -v ./test/e2e -run 'TestTierRStartupFailsOnPlantedLaunchFailure'` | PASS (2 subtests) | 2.631 s |
+| `gofmt -l .` | empty | < 1 s |
+| `go vet ./...` | clean | < 1 s |
+| `go vet -tags e2efault ./...` | clean | < 1 s |
+| `go test -count=1 -cover ./internal/node` | PASS, coverage **86.9%** of statements (`>= 85%`) | 134.789 s (2m23.31s wall) |
+| `DST_SEEDS=50 go test -count=1 -timeout 20m ./internal/node -run 'TestMigration'` | PASS | 37.607 s (41.05s wall) |
+| `go test -race -count=1 -timeout 20m ./internal/node -run 'TestMigration'` | PASS | 69.605 s (1m22.31s wall) |
+| `GATE_ONLY=G0 agent_work/gates/gate.sh 07-e2e` (then `git checkout -- agent_work/07-e2e/gates`) | `overall=pass` (`tools`, `gofmt`, `vet`, `build`, `detlint`, `panics`, `deps`, `comments`, `selfcontained` all pass) | 24.68 s wall |
+
