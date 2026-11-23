@@ -290,3 +290,47 @@ the node, saga, storage and end-to-end packages ok; `-short` end-to-end 73 s; 12
 `FuzzClusterNemesis` ok; tier R E4 and E5 ok; race ok (node 427 s, end-to-end 460 s);
 `DST_SEEDS=500 ./internal/node` ok (1502 s); node coverage 86.8%. Not run by anyone yet on
 this tip: the 500-seed end-to-end sweep and the static gate — both are in the full gate.
+
+---
+
+## Round 4 — the two missing tests (R3-1, R3-2) and the loopback port race (R3-3)
+
+VERDICT: PASS (R3-1 and R3-2 closed; R3-3, found by the full gate's race step, closed)
+
+Reviewed: `4fd5621..4c85be7` (three test commits and build-notes section 17; no product
+file changed — `git diff --stat` shows `_test.go` files, the notes and the brief only).
+
+- **R3-1 closed.** `TestMigrationVerifyBelowKCompensates` and
+  `TestMigrationVerifyBelowQuorumWaitsForRebuild` (three seeds each) leave exactly 3, then
+  exactly 4, verified destination shards per stripe before the verify step. The second
+  asserts the waiting itself: the flip must not run while a stripe holds fewer than the
+  quorum.
+- **R3-2 closed.** The builder showed the check in `Retire` is reachable (a holder wiped
+  after it answered the catch-up's verification and before the swap) and added
+  `TestMigrationRetireBelowQuorumWaitsForRebuild` and
+  `TestMigrationRetireBelowKRecopiesAndNeverGoesLive` (three seeds each); a commit sink
+  checks every manifest swap.
+- **R3-3 closed.** The gate failure (`TestConformanceOnLoopback`, "listen udp :40303:
+  bind: address already in use", then six leaked goroutines) was a reserve-then-release
+  race in the test helper. One helper now starts every loopback runtime in the package,
+  retries the whole cluster on fresh ports on address-in-use only (five attempts), and
+  closes what it started on every failure path; the two other packages with the same
+  pattern (`cmd/objnode`, the real-process cluster in `test/e2e`) were given the same
+  bounded retry. A pinned-port start still fails at once.
+
+### What I ran in round 4 (scratch copy of `4c85be7`, through Docker)
+
+| Mutant | Command | Result |
+|---|---|---|
+| none | `go test -count=1 ./internal/node -run 'TestMigrationVerifyBelow\|TestMigrationRetireBelow'` | ok |
+| `if verified < quorum` → `if verified < 1` | `go test -count=1 ./internal/node -run TestMigration` | KILLED (`TestMigrationVerifyBelowQuorumWaitsForRebuild`, `TestMigrationRetireBelowQuorumWaitsForRebuild`, all seeds) |
+| `verifyDest` in `Retire` replaced by immediate success | same | KILLED (`TestMigrationRetireBelowQuorumWaitsForRebuild`, `TestMigrationRetireBelowKRecopiesAndNeverGoesLive`, all seeds) |
+| retry on address-in-use switched off | `go test -count=1 ./internal/noderuntime -run TestStartRealRetries` | KILLED (two of three subtests) |
+
+Both round-3 survivors are now killed. Builder's runs taken as reported (build-notes
+section 17); the full gate repeats them.
+
+Note, no action: the retry matches the error by text as well as by `syscall.EADDRINUSE`,
+because the runtime wraps the bind error in a message; fine for a test helper.
+
+NITS CLOSED (2026-11-23): R3-1 and R3-2 closed by tests that kill both round-3 mutants.
