@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/decentralized-object-store/internal/node"
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
 	"github.com/nickstrad/decentralized-object-store/internal/saga"
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
@@ -170,6 +171,47 @@ func (n *nemesis) traffic() {
 	}
 }
 
+func allowedNemesisTransportError(err error) bool {
+	if errors.Is(err, storage.ErrCorrupt) {
+		return false
+	}
+	return errors.Is(err, env.ErrTimeout) ||
+		errors.Is(err, env.ErrUnreachable) ||
+		errors.Is(err, occ.ErrNotReady) ||
+		errors.Is(err, node.ErrNotReady) ||
+		errors.Is(err, storage.ErrNoSuchBucket)
+}
+
+func allowedNemesisError(k *Call) bool {
+	if k.Err == nil {
+		return true
+	}
+	if errors.Is(k.Err, storage.ErrCorrupt) {
+		return false
+	}
+	switch k.Op {
+	case "put":
+		if allowedNemesisTransportError(k.Err) || errors.Is(k.Err, storage.ErrUnavailable) {
+			return true
+		}
+		return k.Bucket == bucketM && errors.Is(k.Err, storage.ErrBusy)
+	case "get":
+		return allowedNemesisTransportError(k.Err) ||
+			errors.Is(k.Err, storage.ErrUnavailable) ||
+			errors.Is(k.Err, occ.ErrNotFound)
+	case "tag":
+		return allowedNemesisTransportError(k.Err) ||
+			errors.Is(k.Err, occ.ErrNotFound)
+	case "delete":
+		if allowedNemesisTransportError(k.Err) || errors.Is(k.Err, occ.ErrNotFound) {
+			return true
+		}
+		return k.Bucket == bucketM && errors.Is(k.Err, storage.ErrBusy)
+	default:
+		return false
+	}
+}
+
 func (n *nemesis) settle() error {
 	c := n.c
 	if err := c.Wait(n.pending...); err != nil {
@@ -191,18 +233,26 @@ func (n *nemesis) settle() error {
 					n.last[k.Key] = k
 					delete(n.deleted, k.Key)
 				}
-			} else if !errors.Is(k.Err, storage.ErrUnavailable) && !errors.Is(k.Err, storage.ErrBusy) && !errors.Is(k.Err, env.ErrTimeout) && !errors.Is(k.Err, env.ErrUnreachable) && !errors.Is(k.Err, occ.ErrNotReady) && !errors.Is(k.Err, storage.ErrNoSuchBucket) {
-				return failf("put %s/%s via %s: %v", k.Bucket, k.Key, k.At.ID, k.Err)
+			} else if !allowedNemesisError(k) {
+				return failf("put %s/%s via %s: disallowed error: %v", k.Bucket, k.Key, k.At.ID, k.Err)
+			}
+		case "tag":
+			if k.Err != nil && !allowedNemesisError(k) {
+				return failf("tag %s/%s via %s: disallowed error: %v", k.Bucket, k.Key, k.At.ID, k.Err)
 			}
 		case "delete":
 			if k.Err == nil {
 				n.deleted[k.Key] = true
 				delete(n.last, k.Key)
+			} else if !allowedNemesisError(k) {
+				return failf("delete %s/%s via %s: disallowed error: %v", k.Bucket, k.Key, k.At.ID, k.Err)
 			}
 		case "get":
 			n.st.gets++
 			if k.Err == nil {
 				n.st.getsOK++
+			} else if !allowedNemesisError(k) {
+				return failf("get %s/%s via %s: disallowed error: %v", k.Bucket, k.Key, k.At.ID, k.Err)
 			}
 			if k.Size == -1 {
 				n.st.availabilityGets++
@@ -210,6 +260,8 @@ func (n *nemesis) settle() error {
 					return failf("availability within the fault budget: get %s via untouched %s failed with no network fault in the cycle: %v", k.Key, k.At.ID, k.Err)
 				}
 			}
+		default:
+			return failf("unexpected pending op %q on %s/%s via %s (err=%v)", k.Op, k.Bucket, k.Key, k.At.ID, k.Err)
 		}
 	}
 	n.pending = nil

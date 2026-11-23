@@ -254,3 +254,74 @@ func TestHealthReportsTheMetadataDigestAndRoot(t *testing.T) {
 		t.Fatal("digest and root did not move after a metadata write")
 	}
 }
+
+func TestNemesisSettleValidatesTerminalErrorsForEveryOp(t *testing.T) {
+	c := newSimCluster(801001, defaultSimOptions())
+	if err := c.boot(); err != nil {
+		t.Fatal(err)
+	}
+	at := c.nodes[0]
+	unknownErr := errors.New("unexpected synthetic error")
+	cases := []struct {
+		name    string
+		call    *Call
+		wantErr bool
+	}{
+		{"put with ErrCorrupt fails", &Call{Op: "put", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrCorrupt, done: true}, true},
+		{"put with unknown error fails", &Call{Op: "put", At: at, Bucket: bucketW, Key: "k00", Err: unknownErr, done: true}, true},
+		{"put with ErrInvalid fails", &Call{Op: "put", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrInvalid, done: true}, true},
+		{"put with ErrPreconditionFailed fails", &Call{Op: "put", At: at, Bucket: bucketW, Key: "k00", Err: occ.ErrPreconditionFailed, done: true}, true},
+		{"put with ErrNotFound fails", &Call{Op: "put", At: at, Bucket: bucketW, Key: "k00", Err: occ.ErrNotFound, done: true}, true},
+		{"put to unmigrated bucketW with ErrBusy fails", &Call{Op: "put", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrBusy, done: true}, true},
+		{"put to migrating bucketM with ErrBusy passes", &Call{Op: "put", At: at, Bucket: bucketM, Key: "m001", Err: storage.ErrBusy, done: true}, false},
+		{"put with ErrUnavailable passes", &Call{Op: "put", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrUnavailable, done: true}, false},
+		{"put with ErrTimeout passes", &Call{Op: "put", At: at, Bucket: bucketW, Key: "k00", Err: env.ErrTimeout, done: true}, false},
+		{"put with ErrNoSuchBucket passes", &Call{Op: "put", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrNoSuchBucket, done: true}, false},
+
+		{"get with ErrCorrupt fails", &Call{Op: "get", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrCorrupt, done: true}, true},
+		{"get with unknown error fails", &Call{Op: "get", At: at, Bucket: bucketW, Key: "k00", Err: unknownErr, done: true}, true},
+		{"get with ErrInvalid fails", &Call{Op: "get", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrInvalid, done: true}, true},
+		{"get with ErrBusy fails", &Call{Op: "get", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrBusy, done: true}, true},
+		{"get with storage.ErrNotFound fails", &Call{Op: "get", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrNotFound, done: true}, true},
+		{"get with occ.ErrNotFound passes", &Call{Op: "get", At: at, Bucket: bucketW, Key: "k00", Err: occ.ErrNotFound, done: true}, false},
+		{"get with ErrUnavailable passes", &Call{Op: "get", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrUnavailable, done: true}, false},
+		{"get with ErrTimeout passes", &Call{Op: "get", At: at, Bucket: bucketW, Key: "k00", Err: env.ErrTimeout, done: true}, false},
+		{"get with ErrNoSuchBucket passes", &Call{Op: "get", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrNoSuchBucket, done: true}, false},
+
+		{"tag with ErrCorrupt fails", &Call{Op: "tag", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrCorrupt, done: true}, true},
+		{"tag with unknown error fails", &Call{Op: "tag", At: at, Bucket: bucketW, Key: "k00", Err: unknownErr, done: true}, true},
+		{"tag with ErrInvalid fails", &Call{Op: "tag", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrInvalid, done: true}, true},
+		{"tag with ErrUnavailable fails", &Call{Op: "tag", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrUnavailable, done: true}, true},
+		{"tag with ErrPreconditionFailed fails", &Call{Op: "tag", At: at, Bucket: bucketW, Key: "k00", Err: occ.ErrPreconditionFailed, done: true}, true},
+		{"tag with occ.ErrNotFound passes", &Call{Op: "tag", At: at, Bucket: bucketW, Key: "k00", Err: occ.ErrNotFound, done: true}, false},
+		{"tag with ErrNoSuchBucket passes", &Call{Op: "tag", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrNoSuchBucket, done: true}, false},
+		{"tag with ErrUnreachable passes", &Call{Op: "tag", At: at, Bucket: bucketW, Key: "k00", Err: env.ErrUnreachable, done: true}, false},
+
+		{"delete with ErrCorrupt fails", &Call{Op: "delete", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrCorrupt, done: true}, true},
+		{"delete with unknown error fails", &Call{Op: "delete", At: at, Bucket: bucketW, Key: "k00", Err: unknownErr, done: true}, true},
+		{"delete with ErrInvalid fails", &Call{Op: "delete", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrInvalid, done: true}, true},
+		{"delete with ErrUnavailable fails", &Call{Op: "delete", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrUnavailable, done: true}, true},
+		{"delete with storage.ErrNotFound fails", &Call{Op: "delete", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrNotFound, done: true}, true},
+		{"delete with ErrPreconditionFailed fails", &Call{Op: "delete", At: at, Bucket: bucketW, Key: "k00", Err: occ.ErrPreconditionFailed, done: true}, true},
+		{"delete with occ.ErrNotFound passes", &Call{Op: "delete", At: at, Bucket: bucketW, Key: "k00", Err: occ.ErrNotFound, done: true}, false},
+		{"delete with ErrNoSuchBucket passes", &Call{Op: "delete", At: at, Bucket: bucketW, Key: "k00", Err: storage.ErrNoSuchBucket, done: true}, false},
+		{"delete with ErrTimeout passes", &Call{Op: "delete", At: at, Bucket: bucketW, Key: "k00", Err: env.ErrTimeout, done: true}, false},
+		{"delete with occ.ErrNotReady passes", &Call{Op: "delete", At: at, Bucket: bucketW, Key: "k00", Err: occ.ErrNotReady, done: true}, false},
+
+		{"unknown op fails", &Call{Op: "bogus", At: at, Bucket: bucketW, Key: "k00", Err: nil, done: true}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			n := newNemesis(c)
+			n.dirty = map[string]bool{}
+			n.pending = []*Call{tc.call}
+			err := n.settle()
+			if tc.wantErr && err == nil {
+				t.Fatalf("settle() = nil for %s (%v), want error", tc.call.Op, tc.call.Err)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("settle() = %v for %s (%v), want nil", err, tc.call.Op, tc.call.Err)
+			}
+		})
+	}
+}
