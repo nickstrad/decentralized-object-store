@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the GitHub Pages site: front page, the book, the C4 section, the plan.
+"""Build the GitHub Pages site: front page, the book, the C4 section.
 
 Usage: python3 .github/scripts/build_site.py [--root REPO_DIR] [output_dir]
   output_dir defaults to _site; --root defaults to the repository holding this script.
@@ -10,8 +10,8 @@ Sources and outputs (all links relative, so the site works under any path prefix
   book/manifest.json     -> book/index.html, one book/<slug>.html per entry
   docs/c4/README.md      -> c4/index.html; docs/c4/NN-*.md -> c4/NN-*.html;
   docs/c4/model.json     -> c4/model.json
-  PLAN.md                -> plan.html
-Never published: docs/knowledge/, agent_work/, STATE.md, kb/.
+Never published: docs/knowledge/, agent_work/, STATE.md, kb/. PLAN.md is not a site page;
+a link to it from a published page goes to the repository.
 
 book/manifest.json schema:
   {"title": str,
@@ -35,7 +35,7 @@ from pathlib import Path
 import markdown
 
 SCRIPT_ROOT = Path(__file__).resolve().parents[2]
-REPO_URL = "https://github.com/nickstrad/decentralized-object-store"
+REPO_URL = "https://github.com/nickstrad/object-store"
 MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
 NEVER_PUBLISH = ("docs/knowledge/", "agent_work/", "STATE.md", "kb/", ".kb/", ".git/")
 
@@ -119,7 +119,7 @@ TEMPLATE = """<!doctype html>
 """
 
 NAV = [("home", "Home", "index.html"), ("book", "Book", "book/index.html"),
-       ("c4", "C4 diagrams", "c4/index.html"), ("plan", "Plan", "plan.html")]
+       ("c4", "C4 diagrams", "c4/index.html")]
 
 MERMAID_SCRIPT = """<script type="module">
 import mermaid from "%s";
@@ -432,7 +432,6 @@ def build(root, out):
     has_index = (root / "docs" / "index.md").is_file()
     if has_index:
         site.add("docs/index.md", "index.html")
-    site.add("PLAN.md", "plan.html")
     site.add("docs/c4/README.md", "c4/index.html")
     site.pages["docs/c4/model.json"] = "c4/model.json"
     for p in diagrams:
@@ -448,7 +447,6 @@ def build(root, out):
     else:
         site.write("index.html", site.project,
                    "<h1>%s</h1>\n" % html.escape(site.project), "home", reading=True)
-    site.render_source("PLAN.md", "plan")
     site.render_source("docs/c4/README.md", "c4")
     for p in diagrams:
         site.render_source("docs/c4/" + p.name, "c4")
@@ -462,7 +460,7 @@ def build(root, out):
 
     n_book = sum(1 for e in entries if e["kind"] == "chapters")
     print("build_site: %d pages into %s (front page%s, book index + %d chapters + %d front matter, "
-          "c4 index + %d diagrams + model.json, plan; %d assets)"
+          "c4 index + %d diagrams + model.json; %d assets)"
           % (len(site.written), out, "" if has_index else " [no docs/index.md]", n_book,
              len(entries) - n_book, len(diagrams), len(site.assets)))
 
