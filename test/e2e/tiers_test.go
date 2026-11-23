@@ -76,9 +76,14 @@ func TestE3BitRotRepairS(t *testing.T) {
 	t.Cleanup(func() { m.report(t) })
 	sweep(t, seedsFor(t, 1, 4), func(t *testing.T, seed int64) {
 		var res e3Result
+		var absShort int
 		runSim(t, seed, defaultSimOptions(), func(c *simCluster) error {
 			var err error
 			res, err = scenarioE3(c, simBounds, e3Params{objects: 16, damaged: 2, size: 3*simStripe + 100})
+			if err != nil {
+				return err
+			}
+			absShort, err = scenarioAbsenceShortOfLoss(c)
 			return err
 		})
 		m.ms("e3/repair_under_reads", res.repairUnderReads)
@@ -86,6 +91,7 @@ func TestE3BitRotRepairS(t *testing.T) {
 		m.add("e3/shards_rotted", int64(res.shardsRotted))
 		m.add("e3/damaged_bytes", int64(res.damagedBytes))
 		m.add("e3/bucket_bytes", int64(res.bucketBytes))
+		m.add("e3/absence_records_short_of_loss", int64(absShort))
 		if res.damagedBytes > 0 {
 			m.add("e3/rebuilt_per_damaged_ppm", int64(res.rebuiltBytes*1_000_000/uint64(res.damagedBytes)))
 			m.add("e3/moved_per_damaged_ppm", int64(res.movedBytes*1_000_000/uint64(res.damagedBytes)))
