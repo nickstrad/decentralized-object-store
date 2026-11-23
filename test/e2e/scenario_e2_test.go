@@ -189,8 +189,7 @@ func allowedReadDuringPartition(k *Call) bool {
 }
 
 func sideCanPut(side []Node, l storage.Layout) bool {
-	need := max(l.K+l.M, min(l.K+1, l.K+l.M))
-	return len(side) >= need
+	return len(side) >= l.K+l.M
 }
 
 func sideHasKShards(all map[string]map[uint32]map[uint16][]Node, version string, side []Node, k int) bool {
@@ -229,11 +228,11 @@ type e2Result struct {
 	puts, putsAcked, putsUnavailable                      int
 	postPutsRequired, earlyGetsRequired, postGetsRequired int
 	gets, getsOK                                          int
-	meta                               int
-	contested                          contestResult
-	discards                           uint64
-	lost                               uint64
-	converge, detect                   time.Duration
+	meta                                                  int
+	contested                                             contestResult
+	discards                                              uint64
+	lost                                                  uint64
+	converge, detect                                      time.Duration
 }
 
 func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {

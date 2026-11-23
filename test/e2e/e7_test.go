@@ -111,8 +111,8 @@ func TestE7NemesisHealingCyclesS(t *testing.T) {
 		m.add("e7/migrations_completed", int64(st.migrated))
 		m.add("e7/migrations_compensated", int64(st.compensated))
 		m.add("e7/ambiguous_migrations_recovered", int64(st.ambiguousRecovered))
-		m.add("e7/migrated_objects", int64(st.migratedObjects))
-		m.add("e7/migrated_shards", int64(st.migratedShards))
+		m.add("e7/dest_objects", int64(st.destObjects))
+		m.add("e7/dest_shards", int64(st.destShards))
 		m.add("e7/moved_objects", int64(st.movedObjects))
 		m.add("e7/moved_shards", int64(st.movedShards))
 		for _, d := range st.converge {
@@ -179,8 +179,10 @@ func checkFuzzCorpus(opts simOptions, warmM int) (nemesisStats, error) {
 		tot.putsMOK += st.putsMOK
 		tot.migrated += st.migrated
 		tot.compensated += st.compensated
-		tot.migratedObjects += st.migratedObjects
-		tot.migratedShards += st.migratedShards
+		tot.destObjects += st.destObjects
+		tot.destShards += st.destShards
+		tot.movedObjects += st.movedObjects
+		tot.movedShards += st.movedShards
 	}
 	if warmM > 0 && tot.warmMOK == 0 {
 		return tot, failf("fuzz seed corpus acknowledged 0 warm-up puts to routed bucket %s", bucketM)
@@ -191,8 +193,11 @@ func checkFuzzCorpus(opts simOptions, warmM int) (nemesisStats, error) {
 	if tot.migrated == 0 {
 		return tot, failf("fuzz seed corpus completed 0 migrations of bucket %s", bucketM)
 	}
-	if tot.migratedShards == 0 {
-		return tot, failf("fuzz seed corpus completed %d migrations of bucket %s with 0 shards moved", tot.migrated, bucketM)
+	if tot.destShards == 0 {
+		return tot, failf("fuzz seed corpus completed %d migrations of bucket %s with 0 destination shards", tot.migrated, bucketM)
+	}
+	if warmM > 0 && tot.movedShards == 0 {
+		return tot, failf("fuzz seed corpus completed %d migrations of bucket %s with 0 pre-existing shards moved", tot.migrated, bucketM)
 	}
 	return tot, nil
 }
@@ -207,8 +212,10 @@ func TestFuzzClusterNemesisCorpusMovesShards(t *testing.T) {
 	t.Logf("MEASURE fuzz_corpus/puts_m_ok %d", st.putsMOK)
 	t.Logf("MEASURE fuzz_corpus/migrations_completed %d", st.migrated)
 	t.Logf("MEASURE fuzz_corpus/migrations_compensated %d", st.compensated)
-	t.Logf("MEASURE fuzz_corpus/migrated_objects %d", st.migratedObjects)
-	t.Logf("MEASURE fuzz_corpus/migrated_shards %d", st.migratedShards)
+	t.Logf("MEASURE fuzz_corpus/dest_objects %d", st.destObjects)
+	t.Logf("MEASURE fuzz_corpus/dest_shards %d", st.destShards)
+	t.Logf("MEASURE fuzz_corpus/moved_objects %d", st.movedObjects)
+	t.Logf("MEASURE fuzz_corpus/moved_shards %d", st.movedShards)
 }
 
 func ambiguousMigrationRun(seed int64, cycles int, forget bool, st *nemesisStats) func(int64) *sim.Sim {
@@ -251,8 +258,8 @@ func verifyAmbiguousMigrationTracked(seed int64, cycles int, forget bool) (*sim.
 		return s, st, failf("completed migrations = %d, want %d", st.migrated, cycles)
 	}
 	wantShards := cycles * fuzzWarmM * (fuzzOptions().cfg.Layout.K + fuzzOptions().cfg.Layout.M)
-	if st.migratedShards < wantShards {
-		return s, st, failf("migrated shards = %d, want at least %d", st.migratedShards, wantShards)
+	if st.movedShards < wantShards {
+		return s, st, failf("moved shards = %d, want at least %d", st.movedShards, wantShards)
 	}
 	wantRegion := "r1"
 	if cycles == 2 {
@@ -378,8 +385,8 @@ func TestNemesisAmbiguousMigrationStartIsTracked(t *testing.T) {
 			t.Fatalf("cycles=%d: migrated = %d, want %d", cycles, st.migrated, cycles)
 		}
 		wantShards := cycles * fuzzWarmM * (fuzzOptions().cfg.Layout.K + fuzzOptions().cfg.Layout.M)
-		if st.migratedShards < wantShards {
-			t.Fatalf("cycles=%d: migratedShards = %d, want >= %d", cycles, st.migratedShards, wantShards)
+		if st.movedShards < wantShards {
+			t.Fatalf("cycles=%d: movedShards = %d, want >= %d", cycles, st.movedShards, wantShards)
 		}
 		wantRegion := "r1"
 		if cycles == 2 {
@@ -388,7 +395,7 @@ func TestNemesisAmbiguousMigrationStartIsTracked(t *testing.T) {
 		if st.finalRegion != wantRegion {
 			t.Fatalf("cycles=%d: finalRegion = %q, want %q", cycles, st.finalRegion, wantRegion)
 		}
-		t.Logf("cycles=%d recovered=%d migrated=%d shards=%d finalRegion=%s", cycles, st.ambiguousRecovered, st.migrated, st.migratedShards, st.finalRegion)
+		t.Logf("cycles=%d recovered=%d migrated=%d movedShards=%d destShards=%d finalRegion=%s", cycles, st.ambiguousRecovered, st.migrated, st.movedShards, st.destShards, st.finalRegion)
 	}
 	t.Run("dropped request timeout starts no saga and next cycle migrates from original region", func(t *testing.T) {
 		var st nemesisStats

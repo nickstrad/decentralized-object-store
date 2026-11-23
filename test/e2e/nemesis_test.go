@@ -72,19 +72,19 @@ const (
 )
 
 type nemesisStats struct {
-	applied, skipped, cycles        int
-	puts, putsOK, gets, getsOK      int
-	warmM, warmMOK, putsM, putsMOK  int
-	availabilityGets                int
-	discards, declared, migrated    int
-	migratedObjects, migratedShards int
-	movedObjects, movedShards       int
-	ambiguousRecovered              int
-	compensated                     int
-	finalRegion                     string
-	converge                        []time.Duration
-	repair                          []time.Duration
-	tally                           map[string]int
+	applied, skipped, cycles       int
+	puts, putsOK, gets, getsOK     int
+	warmM, warmMOK, putsM, putsMOK int
+	availabilityGets               int
+	discards, declared, migrated   int
+	destObjects, destShards        int
+	movedObjects, movedShards      int
+	ambiguousRecovered             int
+	compensated                    int
+	finalRegion                    string
+	converge                       []time.Duration
+	repair                         []time.Duration
+	tally                          map[string]int
 }
 
 type nemesis struct {
@@ -749,8 +749,8 @@ func (n *nemesis) finishMigration() error {
 		if err != nil {
 			return err
 		}
-		n.st.migratedObjects += objs
-		n.st.migratedShards += shards
+		n.st.destObjects += objs
+		n.st.destShards += shards
 		for _, key := range preKeys {
 			have := perKey[key]
 			if have < c.cfg.Layout.K {
