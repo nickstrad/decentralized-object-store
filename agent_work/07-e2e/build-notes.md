@@ -545,3 +545,98 @@ Coverage: `test/e2e` holds no product statements; `internal/nodetest` is covered
 other packages' tests (section 1). The gate's G1 reports per-package coverage of the landed
 packages.
 
+## 11. Finish round, stage 1 (Neon): REVIEW-1 majors
+
+Seat: Gemini 4 Neon (builder), branch `chunk/07-e2e`. Product code (`internal/`, `cmd/`): **no changes**. All three majors of `REVIEW-1.md` (Findings 1, 2, 3) are closed in `test/e2e/` with zero Go comments added; Findings 4–8 are left for stage 2 per brief.
+
+### Finding 1 — the fuzzed migrating bucket is always empty
+
+- **What was wrong:** `fuzzOptions()` (`test/e2e/e7_test.go`) overrode only `o.nodes = 9` (3 per region across `simRegions = 3`) while keeping `defaultSimOptions()`'s `Layout{K: 4, M: 2}` (`K+M = 6` shards per stripe). Routed bucket `m` places shards only inside its own region, so every PUT to `m` failed with `storage: placement: 3 members for 6 shards: unavailable`, which `nemesis.settle()` silently allowed. Every fuzzed migration moved 0 objects and 0 shards.
+- **What changed:**
+  - `test/e2e/e7_test.go`: changed `fuzzOptions()` to `nodes: 12` (4 nodes per region) and `Layout{K: 2, M: 1, StripeSize: simStripe}` (`K+M = 3`, `AckQuorum = 3`). Four nodes per region leaves 3 live nodes (`>= K+M`) inside the routed region even when one node in that region is crashed, paused, or isolated, so routed PUTs and migrations into/out of that region continue to place shards under single-node faults; `2+1` also halves per-stripe shard work relative to `4+2` to keep fuzz executions cheap. Extracted `fuzzCorpus()`, `runFuzzInput()`, `checkFuzzCorpus()`, set `fuzzWarmM = 2`, added `TestFuzzClusterNemesisCorpusMovesShards`, and added `e7/puts_m`, `e7/puts_m_ok`, `e7/migrated_objects`, `e7/migrated_shards` measures plus sweep-level assertions to `TestE7NemesisHealingCyclesS`.
+  - `test/e2e/nemesis_test.go`: added `warmM`, `warmMOK`, `putsM`, `putsMOK`, `migratedObjects`, `migratedShards` to `nemesisStats` and `warmM` to `nemesis`; added a fault-free warm-up prefix in `nemesis.run()` (`n.warmM` 4 KiB objects into `bucketM` before cycle 1, failing immediately on any PUT error); added `bucketShardsIn()` to count live objects and verified shards of `bucketM` on disks in `n.region` after a completed migration and `shardsOutside == 0`, failing when `n.warmM > 0 && shards == 0`.
+  - `test/e2e/canary_test.go`: added `TestCanaryFuzzRoutedBucketCannotPlaceShards`.
+- **E7 and Tier R check for the same hole:**
+  - `e7Options()` uses `defaultSimOptions()`: 21 nodes (7 per region) at `4+2` (`7 >= K+M = 6`), tolerating a single node fault in the routed region. No hole. Across 31 E7 seeds (`DST_SEEDS=50`): `puts_m` 2–10 (p50 5), `puts_m_ok` 1–9 (p50 4), `migrations_completed` 0–3 (p50 1), `migrated_objects` 0–9 (p50 1), `migrated_shards` 0–54 (p50 6).
+  - Tier R (`realcluster_test.go`, `tierr_test.go`): `defaultRealOptions()` (9 nodes, 3/region, `4+2`) is used only for unrouted buckets (E1, E2, E3, E6, E8, E9). Every routed-bucket test on Tier R (`TestE4MigrationUnderTrafficR`, `TestE5RollbackKillTargetMidCopyR`, `TestE5RollbackKillCoordinatorMidSagaR`) already uses `routedRealOptions()` (9 nodes, 3/region, `2+1`, `3 >= K+M = 3`). No hole.
+- **Test proving the repair:** `TestFuzzClusterNemesisCorpusMovesShards` (failed on the old 9-node `4+2` `fuzzOptions()` with `fault-free warm-up put to routed bucket m via n000 failed: ... storage: placement: 3 members for 6 shards: storage: unavailable`; passes after the fix).
+- **Canary proving the test bites:** `TestCanaryFuzzRoutedBucketCannotPlaceShards` (restores `nodes=9`, `K=4, M=2`):
+  - `warm-up fails immediately on unplaceable routed bucket`: matches `"fault-free warm-up put to routed bucket m"` and `"unavailable"`; caught `corpus[0] (seed 7347990519673328018): fault-free warm-up put to routed bucket m via n000 failed: remote error (code 99): storage: put m/warm00: stripe 0: storage: placement: 3 members for 6 shards: storage: unavailable: e2e: scenario check failed: e2e: scenario check failed`.
+  - `corpus check catches zero acknowledged puts to routed bucket without warm-up` (`warmM=0`): matches `"acknowledged 0 traffic puts to routed bucket m"`; caught `fuzz seed corpus acknowledged 0 traffic puts to routed bucket m: e2e: scenario check failed`.
+- **Numbers measured:**
+  - Fuzz seed corpus (18 inputs): `warm_m_ok=36` (2 warm-up objects / 6 shards per run), `puts_m=25`, `puts_m_ok=19`, `migrations_completed=2`, `migrations_compensated=0`, `migrated_objects=5`, `migrated_shards=15` (2.5 objects and 7.5 shards moved per completed migration across the seed corpus).
+  - Fuzz executions/sec before vs after (4 workers, `dev` container):
+    - Raw (`-fuzztime 20s -fuzzminimizetime 0s`, fresh cache): **11.0 exec/s** before (227 execs in 20.6 s) vs **8.7 exec/s** after (178 execs in 20.5 s).
+    - With minimization (`-fuzztime 30s -fuzzminimizetime 5s`, fresh cache): **1.37 exec/s** before (43 execs in 31.5 s, 17 new) vs **1.34 exec/s** after (43 execs in 32.1 s, 16 new).
+    - Warm cached baseline (222 cached inputs): **7.66 exec/s** before (222 in 29 s) vs **5.55 exec/s** after (222 in 40 s).
+    - Required 120 s run (`-fuzztime 120s -fuzzminimizetime 5s`): 287 execs in 121.2 s (2.37 exec/s overall, 50 new interesting inputs, total corpus 272, 0 failures).
+    - Seed corpus only (`-run '^FuzzClusterNemesis$' -count=1`): 18 seeds in 4.71 s (3.82 exec/s).
+
+### Finding 2 — timed-out migration start treated as "nothing started"
+
+- **What was wrong:** `nemesis.finishMigration()` (`test/e2e/nemesis_test.go`) cleared `n.mig = nil` and returned `nil` on `env.ErrTimeout` or `env.ErrUnreachable` from `StartMigration`, ignoring the simulator contract that a timeout means outcome unknown. If `coord` applied `StartMigration` and only its reply was lost, the runner skipped `awaitMigration` and `shardsOutside`, failed to count the migration, left `n.region` stale (causing a subsequent `opMigrate` to fail with `node.ErrNoMigration`), and stopped protecting a live coordinator from `opWipeNode`.
+- **What changed:**
+  - `test/e2e/nemesis_test.go`: added `seenSagas`, `migTo`, `forgetAmbiguousMig`, `beforeCycle` to `nemesis` and `ambiguousRecovered`, `finalRegion` to `nemesisStats`. Before calling `StartMigration`, `opMigrate` records `coord.Engine().IDs()` into `n.seenSagas` and saves `n.migTo`. In `finishMigration()`: on `env.ErrTimeout` or `env.ErrUnreachable` (unless the canary switch `forgetAmbiguousMig` is set), `findNewSaga(coord)` inspects `coord.Engine().IDs()` (existing exported product API; no product change needed) for any saga ID not in `n.seenSagas`. When found, it marks the ID seen, increments `n.st.ambiguousRecovered`, and runs the exact same post-migration path as an acknowledged start: `awaitMigration` to terminal state, `c.Await(..., c.Converged)`, `refreshRegion()` from converged `rd.Route(bucketM)` asserting match with `wantTo` (completed) or `prevRegion` (compensated), `shardsOutside(c, bucketM, n.region) == 0`, and `bucketShardsIn` shard accounting. When no saga started, `liveBucketRegs(c, bucketM)` cross-checks converged OCC metadata for any stray live `~reg/` entry and `refreshRegion()` still refreshes `n.region`. `refreshRegion()` also runs when `n.mig == nil` or on `ErrBusy`/`ErrUnavailable`. `opWipeNode` now skips if `(n.mig != nil && n.migCoord.ID == string(id)) || n.hasActiveSaga(id)`, keeping any live coordinator protected while an outcome is unknown or a saga is non-terminal.
+  - **`ErrBusy` / `ErrUnavailable` review:** kept as "certainly not started" (while still calling `refreshRegion()`). `Node.StartMigration` (`internal/node/objects.go:628-646`) never returns `storage.ErrBusy` (which occurs on `PutObject`/`DeleteObject` or later inside saga steps `Claim`/`Seal`), and `storage.ErrUnavailable` is returned only by `apiNode.OnRequest` when `a.n == nil` before `Node.StartMigration` is invoked (or on HTTP 503 for pre-`Begin` `ErrNotReady`/`ErrStopped`). Neither can be returned after `engine.Begin` commits `RecBegin`.
+  - `test/e2e/e7_test.go`: added `ambiguousMigrationRun`, `verifyAmbiguousMigrationTracked`, `TestNemesisAmbiguousMigrationStartIsTracked`, and `e7/ambiguous_migrations_recovered` measure.
+  - `test/e2e/canary_test.go`: added `TestCanaryNemesisForgottenAmbiguousMigrationFails`.
+- **Test proving the repair:** `TestNemesisAmbiguousMigrationStartIsTracked` (fixed seed 702, under `simtest.RequireDeterministic`, using `sim.FaultPartitionOneWay` from storage nodes to client nodes in cycle 0 so `StartMigration` executes on `coord` while its reply is dropped and the caller receives `env.ErrTimeout`):
+  - 1-cycle run: `recovered=1 migrated=1 shards=6 finalRegion=r1`.
+  - 2-cycle run: `recovered=1 migrated=2 shards=18 finalRegion=r2`.
+  - `dropped request timeout starts no saga and next cycle migrates from original region` (`FaultPartitionOneWay` clients → nodes): `ambiguousRecovered=0`, `migrated=1`, `finalRegion="r1"`.
+  - `wipe targeting coordinator while start outcome is unknown is skipped`: `opWipeNode` targeting `n.migCoord` at 1 s is skipped (`incarnation == 1`, `skipped >= 1`, `recovered=1`, `migrated=1`, `finalRegion="r1"`).
+- **Canary proving the test bites:** `TestCanaryNemesisForgottenAmbiguousMigrationFails` (`n.forgetAmbiguousMig = true`):
+  - `2-cycle run fails with no migration when timed-out start is forgotten`: matches `"bucket cannot migrate"`; caught `start migration via n002: remote error (code 184): node: migrate "m" from "r1" to "r1": node: bucket cannot migrate: e2e: scenario check failed`.
+  - `1-cycle tracking assertions catch forgotten ambiguous start`: matches `"ambiguous migration start was not recovered"`; caught `ambiguous migration start was not recovered: got 0 recovered, want 1: e2e: scenario check failed`.
+
+### Finding 3 — `scenarioE2` never requires partition-time reads or writes to succeed
+
+- **What was wrong:** `scenarioE2` (`test/e2e/scenario_e2_test.go`) accepted `ErrUnavailable` for every partition-time PUT and GET without requiring any surviving-side read or write to succeed; because tags and ACLs still succeeded on both sides, returning `ErrUnavailable` for every object PUT and GET while split still passed E2 on both tiers.
+- **What changed:**
+  - `test/e2e/scenario_e2_test.go`: added `sideCanPut(side, layout)` (`len(side) >= max(K+M, min(K+1, K+M))`) and `sideHasKShards(preShards, version, side, K)` (checks every stripe of a pre-cut version holds `>= K` distinct shard indices on `side`). Before `PartitionRegion`, `scenarioE2` collects pre-cut shard placement via `collectShards`. Once `splitViews` settles and `Sleep(p.detect)` finishes:
+    1. Issues pre-cut GETs for every pre-cut key on both `sideA` and `sideB` before any overwrites: sides with `>= K` shards must succeed with the exact pre-cut SHA-256 and ETag; sides with `< K` shards must return `storage.ErrUnavailable`.
+    2. For post-split PUTs (`pa`, `pb`, `pn`): sides with `sideCanPut == true` must succeed; sides with `sideCanPut == false` must return `storage.ErrUnavailable`.
+    3. For post-split concurrent GETs: sides with `>= K` surviving shards must succeed; sides with `< K` shards and no overwrite on that side must return `storage.ErrUnavailable`.
+    4. Asserts `postGetsRequired > 0 && getsOK > 0` and `postPutsRequired > 0 && putsAcked > 0`.
+    Pre-split early calls (before `splitViews`) keep `allowedDuringPartition` / `allowedReadDuringPartition`.
+  - `test/e2e/api_test.go`, `test/e2e/simcluster_test.go`: added test-only `apiIntercept func(n *node.Node, op byte) error` hook on `simCluster`/`apiNode` (nil in all normal runs).
+  - `test/e2e/tiers_test.go`, `test/e2e/tierr_test.go`: added `post_puts_required`, `gets_ok`, `post_gets_required` measures.
+  - `test/e2e/canary_test.go`: added `TestCanaryE2ObjectOpsUnavailableDuringSplitFails`.
+- **Numbers measured per seed:**
+  - Tier S (`TestE2PartitionAndHealS`, 13 seeds from `DST_SEEDS=50`, 21 nodes = 7+14, `K=4, M=2`): `post_puts_required=9` (4 `sideA`, 5 `sideB`), `puts_acked=9`, `puts_unavailable=6` (all pre-split); `post_gets_required=12` (6 pre-cut + 6 concurrent on `sideB`), `gets_ok=15` (12 post-split + 3 early `sideB`) on every seed (min=p50=max).
+  - Tier R (`TestE2PartitionAndHealR`, 9 nodes = 3+6, `K=4, M=2`): `post_puts_required=5` (all 5 on `sideB`; `sideA`'s 4 post-split PUTs required and returned `ErrUnavailable` since `3 < 6`), `puts_acked=5`, `puts_unavailable=10` (6 early + 4 `sideA` post-split); `post_gets_required=12` (all 12 on `sideB`), `gets_ok=15` (12 post-split + 3 early `sideB`).
+- **Canary proving the test bites:** `TestCanaryE2ObjectOpsUnavailableDuringSplitFails` (before the fix, all 3 subcases passed `scenarioE2` and failed the canary; after the fix, all 3 pass):
+  - `put and get unavailable during split`: matches `"must succeed"`; caught `post-split get e2/k00 via n020 must succeed (side holds >= k=4 shards): remote error (code 99): storage: unavailable: e2e: scenario check failed`.
+  - `only get unavailable during split`: matches `"get e2/"`; caught `post-split get e2/k00 via n020 must succeed (side holds >= k=4 shards): remote error (code 99): storage: unavailable: e2e: scenario check failed`.
+  - `only put unavailable during split`: matches `"put e2/"`; caught `post-split put e2/k00 via n000 must succeed (side size 7 >= k+m=6): remote error (code 99): storage: unavailable: e2e: scenario check failed`.
+
+### Failures found
+
+None. Zero failing seeds, zero fuzz crashers, and zero suspected product defects.
+
+### Commands run and results (stage 1)
+
+All Go commands ran inside `docker compose run --rm -T dev ...`; `GATE_ONLY=G0` ran `agent_work/gates/gate.sh 07-e2e` which builds and runs inside the `dev` container.
+
+| Command | Result |
+|---|---|
+| `gofmt -l .` | empty |
+| `go vet ./...` | clean |
+| `go build ./...` | ok |
+| `go test -count=1 ./test/e2e` | ok, 245.1 s |
+| `go test -count=1 ./internal/node/... ./internal/nodetest/... ./internal/noderuntime/...` | ok (`node` 48.9 s, `nodetest` no test files, `noderuntime` 5.4 s) |
+| `DST_SEEDS=50 go test -count=1 -v ./test/e2e -run 'TestE2\|TestE7\|TestCanary'` | ok, 89.5 s (13 E2 seeds, 31 E7 seeds, all 12 Tier S canaries) |
+| `go test -v ./test/e2e -run '^FuzzClusterNemesis$' -count=1` | ok, 18 seeds, 4.71 s |
+| `go test ./test/e2e -run '^$' -fuzz '^FuzzClusterNemesis$' -fuzztime 120s -fuzzminimizetime 5s` | PASS, 121.2 s, 287 execs, 50 new (total 272), 0 failures |
+| `E2E_TIER_R=1 go test ./test/e2e -run 'TestE2.*R$' -count=1 -v -timeout 20m` | PASS, 51.85 s (`post_puts_required=5`, `post_gets_required=12`, `gets_ok=15`, `declared_lost=0`) |
+| `go test -race -count=1 ./test/e2e -run 'TestE2\|TestE7\|TestCanary'` | ok, 124.5 s |
+| `GATE_ONLY=G0 agent_work/gates/gate.sh 07-e2e` | overall=pass (tools, gofmt, vet, build, detlint, panics, deps, comments, selfcontained all pass) |
+
+### Anything not done, and requests to the orchestrator
+
+- **Not done (out of stage 1 scope):** REVIEW-1 Findings 4–8 (four nits and one note) are left for stage 2 as instructed.
+- **Requests to the orchestrator:**
+  1. Run the full gate (`agent_work/gates/gate.sh 07-e2e`) and proceed to Fable review, Opus mutation check, and stage 2 (Findings 4–8).
+  2. Consider re-running the 15-minute hardening fuzz budget on `FuzzClusterNemesis` once stage 2 lands so the hardening archive reflects the repaired 12-node `2+1` non-empty migration setup.
+
+
