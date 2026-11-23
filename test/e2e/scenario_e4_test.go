@@ -40,12 +40,19 @@ func awaitMigration(c Cluster, b bounds, coord Node, id string, during func() []
 }
 
 func shardsOutside(c Cluster, bucket, region string) ([]string, error) {
+	return shardsOfVersionsOutside(c, bucket, region, nil)
+}
+
+func shardsOfVersionsOutside(c Cluster, bucket, region string, versions map[string]bool) ([]string, error) {
 	all, err := collectShards(c, bucket)
 	if err != nil {
 		return nil, err
 	}
 	var out []string
 	for v, stripes := range all {
+		if versions != nil && !versions[v] {
+			continue
+		}
 		for s, idx := range stripes {
 			for i, hs := range idx {
 				for _, h := range hs {
@@ -134,6 +141,17 @@ func scenarioE4(c Cluster, b bounds, p e4Params) (e4Result, error) {
 	if _, err := c.Await("objects replicated", b.converge, c.Converged); err != nil {
 		return res, err
 	}
+	preVersions := map[string]bool{}
+	for _, k := range pre {
+		preVersions[k.Info.Version] = true
+	}
+	beforeShards, err := shardsOfVersionsOutside(c, bucket, to, preVersions)
+	if err != nil {
+		return res, err
+	}
+	if len(beforeShards) == 0 {
+		return res, failf("e4 found 0 pre-migration shards in %s before migration", from)
+	}
 	coord := c.Nodes()[2]
 	start := c.StartMigration(coord, bucket, to)
 	if err := waitAll(c, start); err != nil {
@@ -162,6 +180,13 @@ func scenarioE4(c Cluster, b bounds, p e4Params) (e4Result, error) {
 	}
 	if mi.State != "completed" {
 		return res, failf("migration ended %s (%s), want completed", mi.State, mi.Error)
+	}
+	preLeft, err := shardsOfVersionsOutside(c, bucket, to, preVersions)
+	if err != nil {
+		return res, err
+	}
+	if len(preLeft) > 0 {
+		return res, failf("no shard of the bucket left in %s: %d pre-migration shards of %s remain outside %s immediately after migration completed; first %s", from, len(preLeft), bucket, to, preLeft[0])
 	}
 	if err := c.Wait(traffic...); err != nil {
 		return res, err
