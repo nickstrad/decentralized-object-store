@@ -1,123 +1,101 @@
 # Decentralized Object Store & Local-First Sync Engine
 
-A leaderless, multi-region object store written in Go on the standard library
-alone. It is a learning project, built testing-first so that every claim about
-fault tolerance and consistency is backed by deterministic simulation, property
-tests, and fuzzing. Metadata conflicts are handled with optimistic concurrency
-control rather than CRDTs: conditional writes reject stale updates, while
-concurrent writes are resolved by last-writer-wins (highest hybrid logical
-clock, node ID breaking ties) so all replicas converge; the losing write is
-discarded, and every discard is counted and logged.
+A leaderless, multi-region object store written in Go on the standard library alone, with `pgregory.net/rapid` restricted to test files and enforced by a gate. It is a learning project built testing-first: every claim about durability, repair, and convergence is backed by deterministic simulation testing, property tests, and fuzzing. Metadata updates use optimistic concurrency control for conditional writes, while concurrent writes across partitions settle by last-writer-wins (highest hybrid logical clock, node ID breaking ties) so all replicas converge; every discarded write is counted and logged.
 
-Product code imports only the Go standard library. The sole external dependency
-is `pgregory.net/rapid`, restricted to test files and checked by a gate.
+## Read the book
 
-## Current status
+Read the book online at [nickstrad.github.io/decentralized-object-store](https://nickstrad.github.io/decentralized-object-store/) or directly in this repository. It is the main way to learn the project: each chapter explains one distributed-systems mechanism, maps it to packages and code excerpts, and states what the tests prove and do not prove.
 
-The foundation tooling, every protocol building block — the deterministic
-simulator, SWIM gossip membership, Reed-Solomon erasure coding with the local
-chunk store, Merkle-tree anti-entropy, optimistic concurrency control for
-metadata, and the Saga engine with bucket migration — full-cluster integration
-(the wired node, real runtime, HTTP object API, and `objnode` CLI), and the
-end-to-end test suite with nemesis cycles and fuzz hardening are built, along
-with chapters 1 through 8 of the book. Only the finished book remains planned.
+- [Preface](book/front/preface.md) — scope, reading order, and stated limits
+- [Topic Map](book/front/topic-map.md) — topics, packages, and main test targets
+
+1. [Deterministic Simulation Testing](book/chapters/01-deterministic-simulation.md)
+2. [SWIM Gossip Membership](book/chapters/02-swim-gossip.md)
+3. [Reed-Solomon Erasure Coding](book/chapters/03-reed-solomon-erasure-coding.md)
+4. [Merkle-Tree Anti-Entropy](book/chapters/04-merkle-anti-entropy.md)
+5. [Optimistic Concurrency Control](book/chapters/05-optimistic-concurrency-control.md)
+6. [Sagas](book/chapters/06-sagas.md)
+7. [The Object Store and Sync Engine](book/chapters/07-object-store-and-sync-engine.md)
+8. [End-to-End Tests and Hardening](book/chapters/08-end-to-end-and-hardening.md)
+
+## What is built
 
 | Building block | Status | Scope |
 | --- | --- | --- |
-| Foundation | Built | Docker environment (Go 1.26.11), landing gates (G0–G6), gate canaries, book scaffold, target C4 diagrams, site |
-| Deterministic simulator | Built | Environment interfaces (`internal/env`), single-threaded discrete-event simulator (`internal/sim`), sweep harness (`internal/sim/simtest`), and `cmd/objsim` |
-| SWIM gossip membership | Built | Direct and indirect probing, suspicion with incarnation refutation, piggybacked gossip, clean leave, bounded tombstones, and push-pull partition-heal sync (`internal/gossip`) |
-| Reed-Solomon erasure coding | Built | GF(2^8) Cauchy codec (`internal/erasure`, 4+2 default), checksummed chunk store, striping, manifests, region-aware placement, and striped PUT/GET node (`internal/storage`) |
-| Merkle-tree anti-entropy | Built | Persistent fanout-16 SHA-256 trie, level-by-level diff protocol with 1 MiB bounded replies and stateless responder, and periodic scrub-and-repair worker (`internal/merkle`) |
-| OCC metadata | Built | Conditional writes (ETags, `If-Match` / `If-None-Match`), version vectors to detect concurrency, last-writer-wins for concurrent writes with every discarded write counted and logged, and OCC-checked quotas (`internal/occ`) |
-| Sagas | Built | Compensating saga engine, checksummed log, crash recovery, and five-step bucket migration (`internal/saga`), plus model cluster and failure-point matrix runner (`internal/saga/sagasim`) |
-| Integration | Built | Wired protocol node (`internal/node`), UDP/TCP and crash-safe disk runtime (`internal/noderuntime`), HTTP object API (`internal/storage`, `internal/storage/httpapi`), `cmd/objnode`, and three-node cluster profile |
-| E2E suite and hardening | Built | Simulated and real-process scenarios (E1–E9), continuous oracles (`internal/nodetest`), nemesis cycles, `FuzzClusterNemesis`, hardening sweeps (`test/e2e`), and runtime/node fixes (`internal/node`, `internal/noderuntime`) |
-| Finished book | Planned (next) | Assembled book manuscript, final C4 pass, and publishing checks (`book/`) |
+| Foundation | Built | Docker Go 1.26.11 image, landing gates (G0–G7, G5R), canaries, site build |
+| Deterministic simulator | Built | `internal/env`, event loop and nemesis (`internal/sim`, `simtest`), `cmd/objsim` |
+| SWIM gossip membership | Built | Direct/indirect probing, suspicion, refutation, tombstones, push-pull sync (`internal/gossip`) |
+| Reed-Solomon erasure coding | Built | GF(2^8) Cauchy codec (`internal/erasure`, `4+2` default), chunk store, striping, placement (`internal/storage`) |
+| Merkle-tree anti-entropy | Built | Fanout-16 SHA-256 trie, bounded diff protocol, scrubber and repair worker (`internal/merkle`) |
+| OCC metadata | Built | ETags, `If-Match`/`If-None-Match`, version vectors, last-writer-wins with logged discards, quotas (`internal/occ`) |
+| Sagas | Built | Checksummed log, crash recovery, five-step bucket migration (`internal/saga`, `sagasim`) |
+| Integration | Built | Wired node (`internal/node`), real runtime (`internal/noderuntime`), object API (`httpapi`), `cmd/objnode` |
+| E2E suite and hardening | Built | Simulated and real-process scenarios (E1–E9), continuous oracles, nemesis, `FuzzClusterNemesis` (`test/e2e`) |
+| Finished book | Built | Preface, topic map, eight chapters, as-built C4 diagrams, published site (`book/`, `docs/`) |
 
-## Working through Docker
+## Run the tests through Docker
 
-Docker is the one environment for building, testing, and running the gates.
-Nothing needs Go installed on the host.
-
-Build the development image (Go 1.26.11):
+Docker is the only prerequisite; nothing needs Go installed on the host. Build the image and run the whole test suite (about 7 minutes on a 4-core machine):
 
 ```sh
 docker compose build dev
-```
-
-Run tests or any command inside the container:
-
-```sh
 docker compose run --rm dev go test ./...
-docker compose run --rm dev <command>
 ```
 
-Run a 100-node chaos simulation from a fixed seed; the same seed always prints
-the same two replay digests:
+Run the fast lane (G0 hygiene, G1 `go test -short` with coverage floors, and G6 container check; about 3 minutes):
 
 ```sh
+agent_work/gates/ci-fast.sh
+```
+
+Run the full landing gate on demand (G0–G7 including real processes; about 2.5 hours on a 4-core machine; `demo` labels the output directory):
+
+```text
+GATE_STAGE=final agent_work/gates/gate.sh demo
+```
+
+The full gate runs these checks in order:
+
+- **G0 (hygiene):** gate tools, `gofmt`, `go vet`, `go build`, determinism lint, panic allowlist, stdlib-only dependency check, comment check (skipped in `final`), self-containment, and site lint.
+- **G5R (real-process end-to-end):** runs first among test gates; runs the end-to-end scenarios on real `-race` `objnode` processes (`E2E_TIER_R=1`).
+- **G1 (unit):** `go test -count=1 -cover ./...` with an 85% statement coverage floor on core packages.
+- **G2 (property):** `pgregory.net/rapid` property tests at 2,000 checks per property, seeded from the commit.
+- **G3 (fuzz):** 30-second fuzz run for each of the 15 fuzz targets.
+- **G4 (race):** `go test -race ./...` plus `-race -count=3` on `internal/node`, `internal/noderuntime`, `internal/storage/...`, `cmd/objnode`, and `test/e2e`.
+- **G5 (simulation):** 500-seed sweep from the commit seed across the module, with replay meta-tests and canaries.
+- **G6 (environment):** proof that the run happened inside the project `dev` image.
+- **G7 (cluster smoke):** host-side check starting the three-node Docker cluster, putting and getting a 1.5 MB object across nodes, verifying conditional-write 412s, and tearing it down.
+
+## Replay a seed
+
+Every failing simulator test prints a `REPLAY:` line with the exact test filter and seed so the failure reproduces byte for byte. Replay a pinned single-seed end-to-end nemesis run or the 100-node chaos CLI (which always prints the same two SHA-256 digests for a given seed):
+
+```sh
+docker compose run --rm dev go test ./test/e2e -run '^TestE7NemesisHealingCyclesS$/^shard=1$/^seed=1$' -seed=1 -count=1
 docker compose run --rm dev go run ./cmd/objsim -scenario toy-chaos-100 -seed 3
 ```
 
-### Landing gates and canaries
+## Run a local cluster
 
-Run the seven landing gates from the repository root on the host. The script
-builds the image and re-runs itself inside the container. On a checkout of
-`main`, run the `final` stage (`<name>` only labels the output under
-`agent_work/<name>/gates/result.json`):
+`compose.yaml` defines a three-node `cluster` profile (`node-a1`, `node-b1`, `node-c1` across regions `a`, `b`, and `c` with `2+1` erasure coding on ephemeral loopback ports). Start it, PUT an object through `node-a1`, GET it back from `node-c1`, and stop it:
 
 ```sh
-GATE_STAGE=final agent_work/gates/gate.sh <name>
+docker compose --profile cluster up -d node-a1 node-b1 node-c1
+A=$(docker compose --profile cluster port node-a1 8080)
+C=$(docker compose --profile cluster port node-c1 8080)
+until curl -sf "http://$A/_health" | grep '"Ready":true,"LiveMembers":3' >/dev/null; do sleep 1; done
+curl -sf -X PUT "http://$A/demo"
+echo
+curl -sf -X PUT --data-binary "hello from region a" "http://$A/demo/hello.txt"
+echo
+until curl -sf "http://$C/demo/hello.txt"; do sleep 1; done
+echo
+docker compose --profile cluster down
 ```
 
-The default `build` stage (`agent_work/gates/gate.sh <name>`) is for a chunk
-branch before its comments are written: it requires product Go to add no
-comments beyond the commit the branch started from. It stops on `main` because
-a commit cannot be checked against itself; `GATE_STAGE=final` runs G0 through
-G6 without that comment check.
+## Where things are
 
-The script runs G0 through G6 in order and records a machine-readable result:
-
-- **G0 (hygiene):** gofmt, vet, build, a determinism lint, a panic allowlist, a
-  dependency check, a comment check, self-containment, and site lint.
-- **G1 (unit):** unit tests with a coverage floor.
-- **G2 (property):** `pgregory.net/rapid` property tests (2,000 checks, seeded
-  from the commit).
-- **G3 (fuzz):** a 30-second fuzz run per fuzz target.
-- **G4 (race):** the race detector.
-- **G5 (simulation):** simulation seed sweeps (500 seeds).
-- **G6 (environment):** proof that the run happened inside the project image.
-
-To test the gates themselves, run the canary suite:
-
-```sh
-agent_work/gates/canaries.sh
-```
-
-It plants one violation at a time in a throwaway copy of the tree and requires
-the owning gate to go red for the right reason.
-
-## Where to read
-
-- **Site:** [nickstrad.github.io/decentralized-object-store](https://nickstrad.github.io/decentralized-object-store/)
-  publishes the front page, the Book, the C4 diagrams, and the plan.
-- **The Book:** [book/manifest.json](book/manifest.json) is the table of
-  contents; chapters live in `book/chapters/`. Published chapters: Chapter 1,
-  [Deterministic Simulation Testing](book/chapters/01-deterministic-simulation.md),
-  Chapter 2, [SWIM Gossip Membership](book/chapters/02-swim-gossip.md),
-  Chapter 3,
-  [Reed-Solomon Erasure Coding](book/chapters/03-reed-solomon-erasure-coding.md),
-  Chapter 4,
-  [Merkle-Tree Anti-Entropy](book/chapters/04-merkle-anti-entropy.md),
-  Chapter 5,
-  [Optimistic Concurrency Control](book/chapters/05-optimistic-concurrency-control.md),
-  Chapter 6, [Sagas](book/chapters/06-sagas.md), Chapter 7,
-  [The Object Store and Sync Engine](book/chapters/07-object-store-and-sync-engine.md),
-  and Chapter 8,
-  [End-to-End Tests and Hardening](book/chapters/08-end-to-end-and-hardening.md).
-- **C4 diagrams:** [docs/c4/README.md](docs/c4/README.md) holds the C4
-  architecture diagrams. They show the target design until each part is built.
-- **Plan and specification:** [PLAN.md](PLAN.md) is the full build and testing
-  plan; [docs/project-source.md](docs/project-source.md) is the original
-  specification.
+- **Book:** [book/manifest.json](book/manifest.json) (front matter in `book/front/`, chapters in `book/chapters/`).
+- **C4 diagrams:** [docs/c4/README.md](docs/c4/README.md) (as-built system, container, and component views).
+- **Plan:** [PLAN.md](PLAN.md) (build plan, testing strategy, and landing gates).
+- **Specification:** [docs/project-source.md](docs/project-source.md) (original specification).
