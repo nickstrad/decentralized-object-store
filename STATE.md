@@ -15,8 +15,9 @@ learning artifact; C4 diagrams are kept current).
 
 Status: PHASE 2 (BUILD) RUNNING since 2026-11-21. LANDED: Step 0, 0a, 0b, all five protocol
 chunks (1–5), Chunk 6 (integration, f64aa11) and Chunk 7 (end-to-end suite and hardening,
-d618607, 2026-11-23); book chapters 1–8 are live. IN FLIGHT: Chunk 8 (publishing finish), the
-last chunk, on `chunk/08-book` (see its row and In progress).
+d618607, 2026-11-23). Chunk 8 (publishing finish), the last chunk: its content is PUBLISHED —
+merged to main at fbb0e2a and live on the site (2026-11-23, owner ruling, ahead of the gate);
+its FINAL GATE IS STILL RUNNING and is the closeout authority (see its row).
 
 Seats (this project only): Fable orchestrates, gates and lands; Opus writes
 product Go (logic only, no comments), fresh agent and worktree per chunk, at
@@ -44,7 +45,7 @@ adversarial seat; Astra has no Chunk 7 role. Chunk 8 returns to the seats above.
 | 5 | Saga engine and bucket migration (internal/saga) | LANDED 4892ab9; chapter 6; review FAIL → repair → NITS closed; harness 125 held |
 | 6 | Integration: node (`internal/node`), real runtime (`internal/noderuntime`), HTTP object API (`internal/storage/httpapi`), cmd/objnode | LANDED f64aa11; chapter 7; REVIEW-1 FAIL → repair → REVIEW-2 FAIL → fix → ARBITRATION-1 FAIL (one major) → fix finished by Fable (owner ruling) → ARBITRATION-2 NITS closed → owner-ordered Neon second-eyes pass FAIL (four majors, two nits) → fixed by Fable → focused Neon confirm NITS closed (its one nit was fixed AFTER the confirm; covered by tests and the final gate only); harness 662 held, 0 broken; final gate G0–G7 green at 500 seeds. Records: agent_work/06-integration/ (build-notes sections 14 and 15, NEON-SECOND-EYES.md, NEON-CONFIRM.md) |
 | 7 | E2E suite, nemesis cycles, fuzz hardening (`test/e2e`, tier S on the simulator and tier R with real `objnode` processes; `internal/nodetest`) | LANDED d618607; chapter 8 live. Opus build → Neon REVIEW-1 FAIL (three coverage holes in the suite) → owner seat swap for the finish (Neon builds, Fable reviews, Opus adversarial) → Fable review rounds 1 FAIL, 2 PASS, 3 NITS, 4 PASS (FABLE-REVIEW.md; landing verdict REVIEW-2.md NITS CLOSED). Two product defects found and fixed with tests (a read short of k shards answered 404 instead of 503, f70e2c2; a migration behind a long-frozen coordinator lost acknowledged objects, eaa0556). Adversarial (agent_work/adversarial/07-e2e-opus): 80 held, 1 broken with no claim behind it. Final gate on d35dcfe: G0–G7 and G5R all green (race 54 min, 500-seed sweep 73 min, base 232399873226549). OPEN, not blocking: the real-process step failed only when run straight after the hour-long sweep, cause not established; the gate runs it first (build-notes sections 16–17). |
-| 8 | Publishing finish: the assembled book (assembly and polish only) | IN FLIGHT on `chunk/08-book`, everything committed, FINAL GATE RUNNING (started 2026-11-23 about 21:12Z; `/root/runs/objstore-p2-08-book-gate-final.{log,pid,exit}`, wrapper /tmp/fable-gate/gate-final-08.sh). Done: README command check; eight chapters edited into one shape (two Neon editors); final C4 pass; preface, topic map, final README, site front page (Neon); Astra's independent check (36 commands pass; 3 README findings and 13 of 381 claims not supported, all closed in one Neon round, agent_work/adversarial/08-book/RESULTS.md); acceptance check agent_work/08-book/REVIEW-1.md PASS; knowledge entry; INDEX rows. LEFT: when the gate exits 0 — `agent_work/gates/prose-check.sh main HEAD`, commit `agent_work/08-book/gates/`, `agent_work/orch/land.sh 08-book chunk/08-book <message-file>` from the main checkout, verify the site (front page, book index with preface and topic map, link check), final STATE, write /root/runs/objstore-phase2-done.txt. Do NOT commit to main before the landing (the gated commit must stay on a branch rebased on main). If the gate died with no exit file: read the log tail, re-start once with the wrapper. |
+| 8 | Publishing finish: the assembled book (assembly and polish only) | PUBLISHED on main at fbb0e2a (merge of `chunk/08-book` at 1639665, pushed 2026-11-23 ~22:08Z) on the owner's ruling "Publish the book while the full suite runs" (/root/briefs/objstore-publish-book-now-ruling-2026-11-23.md); land.sh was bypassed because no gate result exists yet. Verified live: front page presents the book, book index lists preface, topic map and chapters 1–8, all 24 site URLs HTTP 200, site lint clean (23 pages). Content: README command check; eight chapters edited into one shape (two Neon editors); final C4 pass; preface, topic map, final README, site front page (Neon); Astra's independent check (36 commands pass; 3 README findings and 13 of 381 claims not supported, all closed in one Neon round, agent_work/adversarial/08-book/RESULTS.md); acceptance check agent_work/08-book/REVIEW-1.md PASS. CLOSEOUT NOT DONE — FINAL GATE RUNNING in the worktree against b72277f (started 2026-11-23 21:09Z, about three hours; `/root/runs/objstore-p2-08-book-gate-final.{log,pid,exit}`, wrapper /tmp/fable-gate/gate-final-08.sh; do not restart or duplicate it while its pid is alive). When the exit file says 0: `agent_work/gates/prose-check.sh 98c6edc 1639665` (the range must be the linear branch, not the merge), copy the worktree's `agent_work/08-book/gates/` to main and commit it, record the open durability question as answered (/root/briefs/objstore-durability-question-closed-2026-11-23.md), final STATE, knowledge/INDEX, remove the worktree (keep the branch), write /root/runs/objstore-phase2-done.txt, END in the progress file. If the gate fails: fix forward on main, report the failure and the fix in the progress file; the book stays published. If the gate died with no exit file: read the log tail, re-start once with the wrapper. |
 
 ## In progress
 
@@ -107,9 +108,6 @@ adversarial seat; Astra has no Chunk 7 role. Chunk 8 returns to the seats above.
   Known and left alone: the full gate cannot finish on a GitHub runner (its host-side
   cluster check cannot write into the container-owned result directory — the cause of the
   last red CI runs on main); it runs on vm-1 as root.
-- docs/c4 diagrams 1 and 2 still draw a "Sync client" person marked "not to be built"
-  (OQ-7 decided node-level sync only). Removing it renumbers both views — owner: Nick,
-  or do it in Chunk 8's final C4 pass.
 - Book chapters are accurate but dense (close to compressed specifications). Style
   verdict is Nick's; Chunk 8 is the consistency edit.
 - OCC's LWW round 2 was run as the owner-directed amendment round (ruling's process
@@ -138,7 +136,7 @@ adversarial seat; Astra has no Chunk 7 role. Chunk 8 returns to the seats above.
   prose) and `GATE_STAGE=final ...` (after prose, and the only form that runs on main).
 - Site: https://nickstrad.github.io/decentralized-object-store/ — built by
   .github/scripts/build_site.py through .github/workflows/pages.yml on every push to
-  main; the book index lists chapters 1–8.
+  main; the book index lists the preface, the topic map and chapters 1–8 (all live at fbb0e2a).
 - C4 set: docs/c4/ (c4-sdk bundle model.json, nine diagram files; 07 is
   07-component-occ.md). Every protocol package is drawn as built; redrawn as built at the Chunk 6 landing (a node core implements every package's
   interfaces; no protocol package calls another).
