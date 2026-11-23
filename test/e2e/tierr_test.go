@@ -489,7 +489,9 @@ func scenarioE9(c *realCluster, sig syscall.Signal) (e9Result, error) {
 
 func TestE9ShutdownUnderLoadR(t *testing.T) {
 	requireTierR(t)
-	c := newRealCluster(t, 9, defaultRealOptions())
+	o := defaultRealOptions()
+	o.putSlots = 4
+	c := newRealCluster(t, 9, o)
 	res, err := scenarioE9(c, syscall.SIGTERM)
 	if err != nil {
 		t.Fatal(err)
@@ -505,7 +507,9 @@ func TestE9ShutdownUnderLoadR(t *testing.T) {
 
 func TestCanaryE9AKilledNodeFailsTheCleanShutdownChecks(t *testing.T) {
 	requireTierR(t)
-	c := newRealCluster(t, 90, defaultRealOptions())
+	o := defaultRealOptions()
+	o.putSlots = 4
+	c := newRealCluster(t, 90, o)
 	_, err := scenarioE9(c, syscall.SIGKILL)
 	if err == nil || !strings.Contains(err.Error(), "exited -1") {
 		t.Fatalf("E9 with SIGKILL instead of SIGTERM: %v, want the exit-status check to fail", err)

@@ -34,7 +34,7 @@ const (
 	realStripe      = 64 << 10
 	realCallTimeout = 60 * time.Second
 	realPoll        = 100 * time.Millisecond
-	realPutSlots    = 4
+	realPutSlots    = 1
 )
 
 var realBounds = bounds{
@@ -44,7 +44,7 @@ var realBounds = bounds{
 	catchUp:    90 * time.Second,
 	refill:     120 * time.Second,
 	readBatch:  8,
-	writeBatch: 4,
+	writeBatch: 1,
 }
 
 func requireTierR(t *testing.T) {
@@ -204,6 +204,7 @@ type realCluster struct {
 type realOptions struct {
 	nodes    int
 	layout   storage.Layout
+	putSlots int
 	bin      string
 	ports    []int
 	onLaunch func(dir string, pids []int)
@@ -319,8 +320,12 @@ func startRealCluster(t testing.TB, seed int64, o realOptions) (*realCluster, er
 	if err != nil {
 		return nil, err
 	}
+	slots := o.putSlots
+	if slots <= 0 {
+		slots = realPutSlots
+	}
 	c := &realCluster{t: t, bin: bin, dir: dir, ledger: newLedger(), r: rand.New(rand.NewPCG(uint64(seed), 7)),
-		hc: &http.Client{Timeout: realCallTimeout}, layout: o.layout, blocked: map[[2]int]bool{}, slots: make(chan struct{}, realPutSlots)}
+		hc: &http.Client{Timeout: realCallTimeout}, layout: o.layout, blocked: map[[2]int]bool{}, slots: make(chan struct{}, slots)}
 	cleanup := true
 	defer func() {
 		if cleanup {
