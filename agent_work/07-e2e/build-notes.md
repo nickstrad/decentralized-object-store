@@ -479,6 +479,13 @@ E7 in the sweep: 199 seeds, 796 heals, convergence p50 7.7 s, max 26.2 s, nothin
 - Tier R does not count bytes moved by repair, does not check the routing pointer directly (only
   through where probe writes land) and checks shard catch-up after a crash only against the
   shards the node held before.
+- Tier R write concurrency is capped at 1 in-flight PUT per cluster outside E9 (`realPutSlots` /
+  `realBounds.writeBatch` lowered from 4 to 1 in `996b289`; E9 keeps `putSlots: 4`). With four
+  concurrent PUTs, nine `-race`-built `objnode` processes on this 4-core VM exceed the fixed 1 s
+  shard `RequestTimeout` and answer HTTP 503, which the stricter E2 check rightly no longer
+  forgives. Lowering the load hides nothing about protocol correctness, but means tier R (apart
+  from E9) no longer exercises concurrent writes; lifting this limit requires the product
+  follow-up of a configurable shard request timeout flag on `objnode` (request 5 of section 9).
 - The tier S sweep uses per-scenario seed shares (section 5) instead of `DST_SEEDS` for every
   scenario; E5 spreads its seeds over the 78 cells as Chunk 6 did (every cell runs at least
   once; at 500 seeds 202 runs, not 78 × 500).
