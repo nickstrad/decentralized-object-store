@@ -107,16 +107,44 @@ func plant(d saga.Definition, name string, do, comp bool) saga.Definition {
 	return d
 }
 
+func checkCanaryFailure(err error, want string) error {
+	if strings.TrimSpace(want) == "" {
+		return fmt.Errorf("canary helper called with empty error match string")
+	}
+	if err == nil {
+		return fmt.Errorf("the scenario passed with the planted fault on")
+	}
+	if !strings.Contains(err.Error(), want) {
+		return fmt.Errorf("the scenario failed for another reason than the planted fault (want %q): %v", want, err)
+	}
+	return nil
+}
+
 func expectCanaryFailure(t *testing.T, s *sim.Sim, want string) {
 	t.Helper()
 	err := s.Err()
-	if err == nil {
-		t.Fatalf("the scenario passed with the planted fault on")
-	}
-	if want != "" && !strings.Contains(err.Error(), want) {
-		t.Fatalf("the scenario failed for another reason than the planted fault: %v", err)
+	if cerr := checkCanaryFailure(err, want); cerr != nil {
+		t.Fatal(cerr)
 	}
 	t.Logf("caught: %v", err)
+}
+
+func TestExpectCanaryFailureRejectsEmptyMatch(t *testing.T) {
+	if err := checkCanaryFailure(fmt.Errorf("anything"), ""); err == nil {
+		t.Fatal("checkCanaryFailure accepted an empty match string")
+	}
+	if err := checkCanaryFailure(fmt.Errorf("anything"), "   "); err == nil {
+		t.Fatal("checkCanaryFailure accepted a whitespace-only match string")
+	}
+	if err := checkCanaryFailure(nil, "expected reason"); err == nil {
+		t.Fatal("checkCanaryFailure accepted a nil error")
+	}
+	if err := checkCanaryFailure(fmt.Errorf("unrelated failure"), "expected reason"); err == nil {
+		t.Fatal("checkCanaryFailure accepted an unrelated error")
+	}
+	if err := checkCanaryFailure(fmt.Errorf("hit expected reason here"), "expected reason"); err != nil {
+		t.Fatalf("checkCanaryFailure rejected matching error: %v", err)
+	}
 }
 
 func runCanary(seed int64, opts simOptions, body func(c *simCluster) error) *sim.Sim {
@@ -194,7 +222,7 @@ func TestCanaryE4AMigrationThatSkipsDeletingTheSourceFails(t *testing.T) {
 		_, err := scenarioE4(c, simBounds, e4Params{objects: 4, size: 2*simStripe + 5})
 		return err
 	})
-	expectCanaryFailure(t, s, "")
+	expectCanaryFailure(t, s, "no shard of the bucket left in r0")
 }
 
 func TestCanaryE5ACopyThatIsNeverCompensatedLeavesOrphans(t *testing.T) {
@@ -211,7 +239,7 @@ func TestCanaryE5ACopyThatIsNeverCompensatedLeavesOrphans(t *testing.T) {
 	}
 	h := plantedE5{}
 	s := sagasim.Run(h, cell, sagasim.RunOptions{Settle: 8 * time.Second})(1)
-	expectCanaryFailure(t, s, "check failed")
+	expectCanaryFailure(t, s, "still holds a staged entry")
 }
 
 type plantedE5 struct{}
