@@ -8,4 +8,4 @@ if [ -n "$(docker ps -aq --filter label=com.docker.compose.project=$COMPOSE_PROJ
   exit 2
 fi
 trap 'docker compose --profile cluster down > agent_work/adversarial/08-book/claims-cleanup.log 2>&1' EXIT
-docker compose run --rm -T dev sh -c 'gofmt -w agent_work/adversarial/08-book/claims_test.go && go test -v -count=1 ./agent_work/adversarial/08-book' > agent_work/adversarial/08-book/claims-run.log 2>&1
+docker compose run --rm -T dev sh -c 'gofmt -w agent_work/adversarial/08-book/claims_test.go && cd agent_work/adversarial/08-book && go test -v -count=1 .' > agent_work/adversarial/08-book/claims-run.log 2>&1
