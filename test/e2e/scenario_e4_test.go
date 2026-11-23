@@ -94,7 +94,9 @@ func routedTo(c Cluster, b bounds, bucket, region string) error {
 }
 
 type e4Params struct {
-	objects, size int
+	objects, size   int
+	multiStripeSize int
+	trafficSize     int
 }
 
 type e4Result struct {
@@ -120,7 +122,11 @@ func scenarioE4(c Cluster, b bounds, p e4Params) (e4Result, error) {
 	}
 	var pre []*Call
 	for i := range p.objects {
-		pre = append(pre, c.Put(pick(c, c.Nodes()), bucket, fmt.Sprintf("m%02d", i), randomBytes(c.Rand(), p.size+i), storage.Condition{}))
+		sz := p.size + i
+		if i == 0 && p.multiStripeSize > 0 {
+			sz = p.multiStripeSize
+		}
+		pre = append(pre, c.Put(pick(c, c.Nodes()), bucket, fmt.Sprintf("m%02d", i), randomBytes(c.Rand(), sz), storage.Condition{}))
 	}
 	if err := waitAll(c, pre...); err != nil {
 		return res, err
@@ -134,10 +140,14 @@ func scenarioE4(c Cluster, b bounds, p e4Params) (e4Result, error) {
 		return res, err
 	}
 	seq := 0
+	trafficBase := p.trafficSize
+	if trafficBase <= 0 {
+		trafficBase = p.size / 2
+	}
 	during := func() []*Call {
 		seq++
 		out := []*Call{
-			c.Put(pick(c, c.Nodes()), bucket, fmt.Sprintf("t%03d", seq), randomBytes(c.Rand(), p.size/2+seq), storage.Condition{}),
+			c.Put(pick(c, c.Nodes()), bucket, fmt.Sprintf("t%03d", seq), randomBytes(c.Rand(), trafficBase+seq), storage.Condition{}),
 			c.Get(pick(c, c.Nodes()), bucket, pre[c.Rand().IntN(len(pre))].Key),
 		}
 		if seq%2 == 0 {
