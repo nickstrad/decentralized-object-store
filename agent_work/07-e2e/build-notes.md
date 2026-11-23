@@ -802,5 +802,100 @@ All Go commands ran inside `docker compose run --rm -T dev ...`; `GATE_ONLY=G0` 
   3. Consider guarding stage 1's single-seed E7 cleanup check (`test/e2e/e7_test.go:62`) so single-seed replays like `-seed=102` do not false-fail when a migration runs before the first `puts_m_ok`.
   4. Run the full gate, Fable review, and Opus mutation check.
 
+## 13. Finish round, fix round (Neon): FABLE-REVIEW findings
+
+Seat: Gemini 4 Neon (builder), branch `chunk/07-e2e`. Product code (`internal/` non-test files, `cmd/`): **no changes**. All six findings (1 major, 2 minors, 3 nits) and Note B of `agent_work/07-e2e/FABLE-REVIEW.md` are closed with zero Go comments added (`GATE_ONLY=G0` `comments` check passes against baseline `d667977`).
+
+### Finding 1 (major) — exact per-migration E7 migrated-shards check (`00e269e`)
+
+- **What changed:**
+  - `test/e2e/nemesis_test.go`: added `bucketLiveKeys(c, coord, bucketM)` to snapshot the sorted live non-empty object keys of `bucketM` on `coord` right before `opMigrate` calls `c.StartMigration` (pure passive observation; does not alter any PRNG draw, event, or schedule of E7 seeds). Extended `bucketShardsIn` to also return per-key verified shard counts in `n.region`. In `finishMigration()` when `mi.State == "completed"`, every pre-existing key in `n.migPreKeys` must now hold at least `c.cfg.Layout.K` verified shards on disks in `n.region` (and increments `movedObjects` / `movedShards`); with `n.warmM > 0`, also requires `len(preKeys) >= n.warmM && shards > 0`.
+  - `test/e2e/e7_test.go`: removed the faulty statistical `totMig > 0 && totPutsMOK > 0 && totMigShards == 0` check from `TestE7NemesisHealingCyclesS`'s `t.Cleanup`, guarded sweep-only totals (`totPutsM >= 4 && totPutsMOK == 0` on `seedsRun >= 10`, `totMovedObjs == 0` on `seedsRun >= 20`) so single-seed replays cannot false-fail, and added `e7/moved_objects` and `e7/moved_shards` measures.
+  - `test/e2e/canary_test.go`: added kept E7 canary `TestCanaryE7CompletedMigrationMissingPreExistingShardsFails` on `e7Options()` (21 nodes, 4+2, `warmM == 0`, seed 2) using a `dropBucketOnCopyStep` wrapper on `saga.StepCopy` that tombstones `bucketM`'s live objects via `nd.DeleteObject` before copying so `StepVerify`, `StepFlip`, `StepPromote`, `shardsOutside == 0`, `watchDisk`, `Lineage`, `checkLiveReadableOrLost`, and `checkOrphans` all pass, leaving only the exact per-migration check to catch the missing pre-existing objects.
+- **Tests, canary, and pinned-seed checks:**
+  - Single-seed reproduction (`go test -v ./test/e2e -run '^TestE7NemesisHealingCyclesS$' -seed=102 -count=1`): **PASS** (4.44 s; `migrations_completed=1`, `puts_m_ok=1`, `moved_objects=0`, `dest_objects=0`).
+  - Kept E7 canary (`TestCanaryE7CompletedMigrationMissingPreExistingShardsFails`): **PASS** (0.84 s), matched `"left pre-existing object"`; caught `completed migration n012-6b1b68927-be0c7133 of bucket m left pre-existing object m001 with 0 verified shards in r1 (need >= 4): e2e: scenario check failed`.
+  - Pinned seed `166963932986536`: `TestCanaryE7WipingTheOnlyCopyOfAnAcknowledgedWriteIsCaught` **PASS** (2.11 s), matched `"on no discard record"`; caught `acknowledged version d332c2c4 of "\x01\x01w\x03k06\x01t" (written on n000, stamp 45331239499.0@n000) is not current, not superseded by a later acknowledged write and on no discard record: e2e: scenario check failed`.
+  - Pinned seed `1` with `f70e2c2` undone in a `/tmp/opencode/scratch-mut` copy (`git show f70e2c2~1` for `internal/storage/errors.go` and `internal/storage/httpapi/http.go`): **KILLED** (`E7_RC=1`, 3.94 s) with `get w/k15 via n017: disallowed error: remote error (code 96): storage: get w/k15: stripe 0: 3 of 6 shards verified, need 4: storage: unavailable / shard 3 on n008 attempt 1: remote error (code 96): storage: read shard shards/w/f5/de7dd0a497155148/0.3: storage: not: e2e: scenario check failed`.
+- **Numbers (`DST_SEEDS=500`, 301 E7 seeds):** `e7/moved_objects n=301 min=0 p50=1 p99=9 max=15`, `e7/moved_shards n=301 min=0 p50=6 p99=54 max=90`.
+
+### Finding 2 (minor) — remove redundant `hasActiveSaga` wipe guard and replace subtest (`96db03e`)
+
+- **What changed and why:**
+  - `test/e2e/nemesis_test.go`: removed `|| n.hasActiveSaga(id)` from `opWipeNode` and deleted the unused `hasActiveSaga` helper. Reasoning: `opMigrate` is the sole place `nemesis` starts a migration; it sets `n.mig` immediately and `n.mig` is never cleared until `finishMigration()` finishes after `FaultHealAll` + `c.Converged()`. During the entire chaos phase of a cycle (including if `StartMigration` times out early), `n.mig != nil && n.migCoord.ID == string(id)` already skips wiping the coordinator. Inside `finishMigration()`, every acknowledged or timeout-recovered saga on `coord` is awaited via `awaitMigration` to a terminal state (`completed` or `compensated`) before `defer` clears `n.mig` (and if no saga started, `liveBucketRegs` verifies no live registration exists). Therefore zero non-terminal sagas can exist on any node whenever `n.mig == nil`.
+  - `test/e2e/e7_test.go`: replaced the subtest that passed without `hasActiveSaga` with `ambiguous start finishes to terminal state before next cycle can wipe coordinator` (`slowAmbiguousMigrationRun`): wraps `saga.StepCopy` with a 25 s virtual-time delay (`> simCallTimeout = 20s`, `SagaPolicy.StepTimeout = 35s`), applies `FaultPartitionOneWay` nodes → clients in cycle 0 so `StartMigration` times out while the saga is still running in `StepCopy`, asserts at `beforeCycle(n, 1)` that `n.mig == nil` and every saga on every node is `Terminal()`, and then wipes `coord` in cycle 1.
+  - `test/e2e/canary_test.go`: added subcase `forgetting slow ambiguous start leaves non-terminal saga into next cycle` to `TestCanaryNemesisForgottenAmbiguousMigrationFails` (`forget = true`).
+- **Test and canary proving it bites:**
+  - `TestNemesisAmbiguousMigrationStartIsTracked/ambiguous_start_finishes_to_terminal_state_before_next_cycle_can_wipe_coordinator`: **PASS** (1.20 s; `recovered=1`, `migrated=1`, `finalRegion="r1"`, `applied >= 2`).
+  - `TestCanaryNemesisForgottenAmbiguousMigrationFails/forgetting_slow_ambiguous_start_leaves_non-terminal_saga_into_next_cycle`: **PASS** (0.32 s), matched `"still holds non-terminal saga"`; caught `coordinator n008 still holds non-terminal saga n008-3f8935f85-4db95f91 at start of cycle 1: e2e: scenario check failed`.
+
+### Finding 3 (minor) — narrow availability-get voiding by timestamp and add sweep floor (`3911ed0`)
+
+- **What changed:**
+  - `test/e2e/nemesis_test.go`: `Call.Ended` is already recorded in virtual time on every simulated call (`simcluster_test.go:232`). Added `netFaultAt`, `touchedAt`, and `dirtyAt` timestamps via `markNetFault()`, `markTouched(id)`, and `markDirty(key)` (reset per cycle), plus `availabilityReadClean(k)` and `keyDirtyFor(k)`. An availability GET (`k.Size == -1`) is voided only if `n.netFault && k.Ended >= n.netFaultAt` or `n.touched[id] && k.Ended >= n.touchedAt[id]` (and only excused as dirty if `n.dirty[k.Key] && k.Ended >= n.dirtyAt[k.Key]`). Reads that already finished strictly before the fault remain checked and counted.
+  - `test/e2e/e7_test.go`: added `checkE7AvailabilityFloor(seedsRun, totAvailGets)` (`e7AvailFloorMinSeeds = 10`, `e7AvailFloorPerSeed = 10`) called from `TestE7NemesisHealingCyclesS`'s `t.Cleanup` (cannot false-fail on a single-seed run; fails a sweep if average availability gets drop below 10/seed, which would catch both 0 checks and the `d32405c` regression). Added unit test `TestE7AvailabilityFloorSafeForSingleSeed`.
+  - `test/e2e/oracle_self_test.go`: replaced the coarse availability subtest with exact timestamp boundary cases (`Ended < netFaultAt` fails/counts, `Ended >= netFaultAt` voided and not counted; same for `touchedAt` and `dirtyAt`).
+- **Measured `e7/availability_gets` across the `DST_SEEDS=500` E7 sweep:**
+  - At `d32405c~1` (scratch copy, 546.74 s, EXIT=1 — seeds 102 and 290 failed): `n=299 min=6 p50=20 p99=41 max=42`.
+  - At `d32405c` (scratch copy, 563.98 s, EXIT=0): `n=301 min=0 p50=7 p99=27 max=38` (seed 290 had `0`, seed 102 had `11`).
+  - After exact narrowing (`3911ed0`, 628.11 s, EXIT=0; and final verification sweep): `n=301 min=6 p50=20 p99=40 max=42` (seed 102: `21`, seed 290: `16` — full p50=20 and min=6 recovered with zero false failures).
+- **Tests proving it bites:** `TestNemesisSettleValidatesTerminalErrorsForEveryOp/availability_get_voids_only_reads_not_yet_complete_when_fault_or_node_touch_occurs` (PASS) and `TestE7AvailabilityFloorSafeForSingleSeed` (6 subtests, PASS).
+
+### Finding 4 (nit) — require E2 early partition reads when side holds `k` shards (`78edab5`)
+
+- **What changed:**
+  - `test/e2e/scenario_e2_test.go`, `tiers_test.go`, `tierr_test.go`: checked each `earlyGet` against `sideHasKShards(preShards, preObjs[i].Info.Version, side, l.K)` and required `eg.call.Err == nil` whenever the side holds `>= k` shards (failing with `"early partition get %s/%s via %s must succeed (side holds >= k=%d shards): %v"`). Recorded `e2/early_gets_required` and `e2r/early_gets_required`.
+- **Verification before keeping the stricter rule:**
+  - `DST_SEEDS=500 go test -count=1 -v ./test/e2e -run 'TestE2'`: **PASS** (116.28 s, 126/126 seeds, `e2/early_gets_required n=126 min=3 p50=3 p99=3 max=3`, `e2/gets_ok n=126 min=15 p50=15 p99=15 max=15`).
+  - `E2E_TIER_R=1 go test -v ./test/e2e -run 'TestE2.*R$' -count=3 -timeout 30m`: **PASS** (3/3 runs, 157.92 s: 53.54 s, 52.51 s, 51.83 s; `e2r/early_gets_required=3`, `e2r/post_gets_required=12`, `e2r/gets_ok=15..16` on all three).
+  - `TestCanaryE2*`: **PASS** (2.94 s).
+
+### Finding 5 (nit) — clarify names and simplify `sideCanPut` (`bf05175`)
+
+- **What changed:**
+  - `test/e2e/scenario_e2_test.go`: simplified `sideCanPut` to `return len(side) >= l.K+l.M`.
+  - `test/e2e/nemesis_test.go`, `test/e2e/e7_test.go`: renamed `migratedObjects`/`migratedShards` and `e7/migrated_*` / `fuzz_corpus/migrated_*` to `destObjects`/`destShards` and `e7/dest_*` / `fuzz_corpus/dest_*`, and updated `TestNemesisAmbiguousMigrationStartIsTracked` / `verifyAmbiguousMigrationTracked` to assert against `movedShards`.
+- **Definitions (for the chapter):**
+  - `dest_objects` / `dest_shards`: live objects and verified shards of bucket `m` present in the destination region after a completed migration (includes objects written there after the route flipped).
+  - `moved_objects` / `moved_shards`: strictly the pre-existing objects that were live on the coordinator when `opMigrate` started, and their verified shards in the destination region after the migration completes.
+- **Measured on fuzz seed corpus (18 inputs):** `dest_objects=5`, `dest_shards=15`; `moved_objects=4`, `moved_shards=12`. On `DST_SEEDS=500` E7 (301 seeds): `dest_objects min=0 p50=1 max=19`, `dest_shards min=0 p50=6 max=114`; `moved_objects min=0 p50=1 max=15`, `moved_shards min=0 p50=6 max=90`.
+
+### Finding 6 (nit) — full shard-cause precedence table tests (`4de93e2`)
+
+- **What changed:**
+  - `internal/node/codes_test.go`: added `TestJoinedUnavailablePrecedesEveryShardCause` against the merged `node.CodeTable()` covering all eight shard-request causes (`storage.ErrNotFound`, `storage.ErrCorrupt`, `env.ErrNotFound`, `env.ErrTimeout`, `env.ErrUnreachable`, `storage.ErrBusy`, `storage.ErrExists`, `storage.ErrInvalid`) in both `errors.Join` orders, all combined, and standalone (25 subtests).
+  - `internal/storage/errors_test.go`: expanded `TestCodeTableJoinedUnavailablePrecedesShardCauses` with all eight causes (13 subtests).
+  - `internal/storage/httpapi/http_test.go`: expanded `TestStatusTableJoinedUnavailablePrecedesShardCauses` with all eight causes in both join orders, all combined, and standalone (18 subtests).
+- **Mutation proving it bites (`/tmp/opencode/scratch-mut` with `f70e2c2` undone):**
+  - `TestJoinedUnavailablePrecedesEveryShardCause`: **FAIL** (`Encode(Join(ErrUnavailable, storage.ErrNotFound)) = 96, want 99`; `storage.ErrCorrupt` = 97; `storage.ErrExists` = 98; `all` = 96).
+  - `TestStatusTableJoinedUnavailablePrecedesShardCauses`: **FAIL** (`StatusOf(Join(ErrUnavailable, storage.ErrNotFound)) = 404, want 503`; `env.ErrNotFound` = 404; `storage.ErrExists` = 409; `storage.ErrInvalid` = 400; `all` = 404).
+
+### Note B (`2d62a51`)
+
+- Added one paragraph to section 8 documenting that tier R write concurrency outside E9 is capped at 1 in-flight PUT per cluster (`realPutSlots` / `realBounds.writeBatch` = 1) due to the fixed 1 s shard `RequestTimeout` under `-race` on 4 cores, and pointing to request 5 of section 9 (configurable timeout flag).
+
+### Commands run and results (fix round, final code `2d62a51`)
+
+All Go commands ran one at a time inside `docker compose run --rm -T dev ...`; `GATE_ONLY=G0` ran inside the `dev` container via `agent_work/gates/gate.sh 07-e2e` and `agent_work/07-e2e/gates` was restored afterwards.
+
+| Command | Result |
+|---|---|
+| `gofmt -l .` | empty |
+| `go vet ./...` | clean |
+| `go vet -tags e2efault ./...` | clean |
+| `go build ./...` | ok |
+| `go test -count=1 ./test/e2e ./internal/storage/... ./internal/node/...` | ok (`test/e2e` 380.70 s, `storage` 3.01 s, `httpapi` 1.85 s, `node` 83.88 s) |
+| `DST_SEEDS=500 go test -count=1 ./test/e2e -run 'TestE2\|TestE7\|TestCanary\|Nemesis\|Fuzz' -timeout 60m` | ok, 862.54 s (E7 301 seeds, E2 126 seeds, all 13 Tier S canaries, fuzz corpus) |
+| `go test ./test/e2e -run '^$' -fuzz '^FuzzClusterNemesis$' -fuzztime 120s -fuzzminimizetime 5s` | PASS, 121.86 s, 384 execs, 32 new (total 348), 0 failures |
+| `go test -race -count=1 ./test/e2e -run 'TestE2\|TestE7\|TestCanary\|Nemesis'` | ok, 230.43 s |
+| `E2E_TIER_R=1 go test ./test/e2e -run 'TestE2.*R$' -count=3 -timeout 30m` | ok, 3/3 pass, 157.92 s (on `78edab5`, identical E2 code except `sideCanPut` simplification `max(K+M, min(K+1, K+M))` → `K+M`) |
+| `GATE_ONLY=G0 agent_work/gates/gate.sh 07-e2e` | overall=pass (`tools`, `gofmt`, `vet`, `build`, `detlint`, `panics`, `deps`, `comments`, `selfcontained` all pass) |
+
+### Anything not done
+
+- Full gate `agent_work/gates/gate.sh 07-e2e` is left to the orchestrator per brief.
+- Zero findings disputed; all six findings and Note B are closed.
+
+
 
 
