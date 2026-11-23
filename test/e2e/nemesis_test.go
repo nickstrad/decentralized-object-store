@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
+	"github.com/nickstrad/decentralized-object-store/internal/saga"
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
@@ -75,38 +77,44 @@ type nemesisStats struct {
 	availabilityGets                int
 	discards, declared, migrated    int
 	migratedObjects, migratedShards int
+	ambiguousRecovered              int
 	compensated                     int
+	finalRegion                     string
 	converge                        []time.Duration
 	repair                          []time.Duration
 	tally                           map[string]int
 }
 
 type nemesis struct {
-	c        *simCluster
-	r        *rand.Rand
-	st       nemesisStats
-	pending  []*Call
-	keys     []string
-	last     map[string]*Call
-	deleted  map[string]bool
-	dirty    map[string]bool
-	touched  map[env.NodeID]bool
-	down     map[env.NodeID]bool
-	paused   map[env.NodeID]bool
-	netFault bool
-	stable   []*Call
-	mig      *Call
-	migCoord Node
-	region   string
-	seq      int
-	warmM    int
-	noGrace  bool
-	loneWipe bool
+	c                  *simCluster
+	r                  *rand.Rand
+	st                 nemesisStats
+	pending            []*Call
+	keys               []string
+	last               map[string]*Call
+	deleted            map[string]bool
+	dirty              map[string]bool
+	touched            map[env.NodeID]bool
+	down               map[env.NodeID]bool
+	paused             map[env.NodeID]bool
+	netFault           bool
+	stable             []*Call
+	mig                *Call
+	migCoord           Node
+	migTo              string
+	seenSagas          map[saga.ID]bool
+	region             string
+	seq                int
+	warmM              int
+	noGrace            bool
+	loneWipe           bool
+	forgetAmbiguousMig bool
+	beforeCycle        func(n *nemesis, cycleIdx int) error
 }
 
 func newNemesis(c *simCluster) *nemesis {
 	n := &nemesis{c: c, r: sim.NewStream(c.s.Seed(), "e2e/nemesis"), last: map[string]*Call{}, deleted: map[string]bool{},
-		region: c.regions[0]}
+		seenSagas: map[saga.ID]bool{}, region: c.regions[0]}
 	for i := range 24 {
 		n.keys = append(n.keys, fmt.Sprintf("k%02d", i))
 	}
@@ -320,7 +328,7 @@ func (n *nemesis) apply(op chaosOp) error {
 		if c.node(id) == nil || len(n.down)+len(n.paused) >= nemMaxDown || !n.allows(id, "") {
 			return skip()
 		}
-		if n.mig != nil && n.migCoord.ID == string(id) && op.kind == opWipeNode {
+		if op.kind == opWipeNode && ((n.mig != nil && n.migCoord.ID == string(id)) || n.hasActiveSaga(id)) {
 			return skip()
 		}
 		if op.kind == opWipeNode && !n.loneWipe && !n.metadataElsewhere(id) {
@@ -390,8 +398,14 @@ func (n *nemesis) apply(op chaosOp) error {
 			return skip()
 		}
 		coord := n.entry(true)
+		if nd := c.anyNode(env.NodeID(coord.ID)); nd != nil {
+			for _, sid := range nd.Engine().IDs() {
+				n.seenSagas[sid] = true
+			}
+		}
 		to := c.regions[(slices.Index(c.regions, n.region)+1+op.b%2)%len(c.regions)]
 		n.migCoord = coord
+		n.migTo = to
 		n.mig = c.StartMigration(coord, bucketM, to)
 		n.st.applied++
 		return nil
@@ -467,32 +481,138 @@ func bucketShardsIn(c *simCluster, bucket, region string) (int, int, error) {
 	return objs, shards, nil
 }
 
+func (n *nemesis) findNewSaga(coord Node) (saga.ID, bool) {
+	nd := n.c.node(env.NodeID(coord.ID))
+	if nd == nil {
+		return "", false
+	}
+	for _, id := range nd.Engine().IDs() {
+		if !n.seenSagas[id] {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+func (n *nemesis) hasActiveSaga(id env.NodeID) bool {
+	nd := n.c.anyNode(id)
+	if nd == nil {
+		return false
+	}
+	eng := nd.Engine()
+	for _, sid := range eng.IDs() {
+		if st, err := eng.Status(sid); err == nil && !st.State.Terminal() {
+			return true
+		}
+	}
+	return false
+}
+
+func liveBucketRegs(c *simCluster, bucket string) []string {
+	ns := c.upNodes()
+	if len(ns) == 0 {
+		return nil
+	}
+	rd, err := ns[0].OCC().Reader()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, k := range rd.Keys() {
+		if len(k) == 0 || occ.Kind(k[0]) != occ.KindTag || !rd.Record(k).Live() {
+			continue
+		}
+		_, parts, err := occ.ParseKey(k)
+		if err == nil && len(parts) == 3 && parts[0] == bucket && parts[1] == "" && strings.HasPrefix(parts[2], "~reg/") {
+			out = append(out, strings.TrimPrefix(parts[2], "~reg/"))
+		}
+	}
+	return out
+}
+
+func (n *nemesis) refreshRegion() error {
+	ns := n.c.upNodes()
+	if len(ns) == 0 {
+		return failf("no node is up")
+	}
+	rd, err := ns[0].OCC().Reader()
+	if err != nil {
+		return err
+	}
+	r, err := rd.Route(bucketM)
+	if err != nil {
+		return failf("route of %s missing after convergence: %v", bucketM, err)
+	}
+	n.region = string(r)
+	return nil
+}
+
 func (n *nemesis) finishMigration() error {
 	c := n.c
 	if n.mig == nil {
-		return nil
+		return n.refreshRegion()
 	}
 	if err := c.Wait(n.mig); err != nil {
 		return err
 	}
 	start := n.mig
-	n.mig = nil
+	coord := n.migCoord
+	wantTo := n.migTo
+	prevRegion := n.region
+	defer func() {
+		n.mig = nil
+		n.migTo = ""
+	}()
+	migID := ""
 	if start.Err != nil {
-		if errors.Is(start.Err, storage.ErrBusy) || errors.Is(start.Err, storage.ErrUnavailable) || errors.Is(start.Err, env.ErrTimeout) || errors.Is(start.Err, env.ErrUnreachable) {
-			return nil
+		switch {
+		case errors.Is(start.Err, env.ErrTimeout) || errors.Is(start.Err, env.ErrUnreachable):
+			if n.forgetAmbiguousMig {
+				return nil
+			}
+			sid, ok := n.findNewSaga(coord)
+			if !ok {
+				if regs := liveBucketRegs(c, bucketM); len(regs) > 0 {
+					return failf("ambiguous migration start on %s left live registration %s without a saga in engine", coord.ID, regs[0])
+				}
+				return n.refreshRegion()
+			}
+			n.seenSagas[sid] = true
+			n.st.ambiguousRecovered++
+			migID = string(sid)
+		case errors.Is(start.Err, storage.ErrBusy) || errors.Is(start.Err, storage.ErrUnavailable):
+			return n.refreshRegion()
+		default:
+			return failf("start migration via %s: %v", start.At.ID, start.Err)
 		}
-		return failf("start migration via %s: %v", start.At.ID, start.Err)
+	} else {
+		migID = start.Mig.ID
+		n.seenSagas[saga.ID(migID)] = true
+		wantTo = start.Mig.To
 	}
-	mi, _, _, err := awaitMigration(c, bounds{migrate: nemHealBound}, n.migCoord, start.Mig.ID, nil)
+	mi, _, _, err := awaitMigration(c, bounds{migrate: nemHealBound}, coord, migID, nil)
 	if err != nil {
+		return err
+	}
+	if _, err := c.Await("convergence after migration", nemHealBound, c.Converged); err != nil {
+		return err
+	}
+	if err := n.refreshRegion(); err != nil {
 		return err
 	}
 	switch mi.State {
 	case "completed":
+		if n.region != wantTo {
+			return failf("completed migration %s of %s left route on %s, want %s", migID, bucketM, n.region, wantTo)
+		}
 		n.st.migrated++
-		n.region = start.Mig.To
 	case "compensated":
+		if n.region != prevRegion {
+			return failf("compensated migration %s of %s left route on %s, want %s", migID, bucketM, n.region, prevRegion)
+		}
 		n.st.compensated++
+	default:
+		return failf("migration %s ended in unexpected state %q", migID, mi.State)
 	}
 	_, err = c.Await("no shard of the migrated bucket outside its region", nemHealBound, func() (bool, error) {
 		left, err := shardsOutside(c, bucketM, n.region)
@@ -502,9 +622,6 @@ func (n *nemesis) finishMigration() error {
 		return err
 	}
 	if mi.State == "completed" {
-		if _, err := c.Await("convergence after migration", nemHealBound, c.Converged); err != nil {
-			return err
-		}
 		objs, shards, err := bucketShardsIn(c, bucketM, n.region)
 		if err != nil {
 			return err
@@ -546,9 +663,14 @@ func (n *nemesis) run(plan nemesisPlan) error {
 			return err
 		}
 	}
-	for _, cy := range plan.cycles {
+	for ci, cy := range plan.cycles {
 		n.st.cycles++
 		n.touched, n.down, n.paused, n.dirty, n.netFault = map[env.NodeID]bool{}, map[env.NodeID]bool{}, map[env.NodeID]bool{}, map[string]bool{}, false
+		if n.beforeCycle != nil {
+			if err := n.beforeCycle(n, ci); err != nil {
+				return err
+			}
+		}
 		n.stable = nil
 		for _, k := range n.last {
 			n.stable = append(n.stable, k)
@@ -617,6 +739,7 @@ func (n *nemesis) run(plan nemesisPlan) error {
 		losers[d.loser.ID()] = true
 	}
 	n.st.discards = len(losers)
+	n.st.finalRegion = n.region
 	return c.ledger.Wrong()
 }
 

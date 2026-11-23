@@ -321,3 +321,28 @@ func TestCanaryFuzzRoutedBucketCannotPlaceShards(t *testing.T) {
 		t.Logf("caught: %v", err)
 	})
 }
+
+func TestCanaryNemesisForgottenAmbiguousMigrationFails(t *testing.T) {
+	const seed = 702
+	t.Run("2-cycle run fails with no migration when timed-out start is forgotten", func(t *testing.T) {
+		s, _, err := verifyAmbiguousMigrationTracked(seed, 2, true)
+		if err == nil {
+			t.Fatal("ambiguous migration run passed with forgetAmbiguousMig enabled")
+		}
+		if s.Err() == nil || !strings.Contains(err.Error(), "bucket cannot migrate") {
+			t.Fatalf("failed for another reason than forgotten ambiguous migration: %v", err)
+		}
+		t.Logf("caught: %v", err)
+	})
+	t.Run("1-cycle tracking assertions catch forgotten ambiguous start", func(t *testing.T) {
+		_, _, err := verifyAmbiguousMigrationTracked(seed, 1, true)
+		if err == nil {
+			t.Fatal("1-cycle ambiguous migration check passed with forgetAmbiguousMig enabled")
+		}
+		want := "ambiguous migration start was not recovered"
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("failed for another reason than untracked ambiguous start: %v", err)
+		}
+		t.Logf("caught: %v", err)
+	})
+}

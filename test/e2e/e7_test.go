@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
 	"github.com/nickstrad/decentralized-object-store/internal/sim/simtest"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
@@ -85,6 +86,7 @@ func TestE7NemesisHealingCyclesS(t *testing.T) {
 		m.add("e7/declared_lost", int64(st.declared))
 		m.add("e7/migrations_completed", int64(st.migrated))
 		m.add("e7/migrations_compensated", int64(st.compensated))
+		m.add("e7/ambiguous_migrations_recovered", int64(st.ambiguousRecovered))
 		m.add("e7/migrated_objects", int64(st.migratedObjects))
 		m.add("e7/migrated_shards", int64(st.migratedShards))
 		for _, d := range st.converge {
@@ -181,6 +183,151 @@ func TestFuzzClusterNemesisCorpusMovesShards(t *testing.T) {
 	t.Logf("MEASURE fuzz_corpus/migrations_compensated %d", st.compensated)
 	t.Logf("MEASURE fuzz_corpus/migrated_objects %d", st.migratedObjects)
 	t.Logf("MEASURE fuzz_corpus/migrated_shards %d", st.migratedShards)
+}
+
+func ambiguousMigrationRun(seed int64, cycles int, forget bool, st *nemesisStats) func(int64) *sim.Sim {
+	return runNemesis(seed, fuzzOptions(), func(n *nemesis) nemesisPlan {
+		n.noGrace = true
+		n.warmM = fuzzWarmM
+		n.forgetAmbiguousMig = forget
+		n.beforeCycle = func(n *nemesis, ci int) error {
+			if ci != 0 {
+				return nil
+			}
+			var clients []env.NodeID
+			for _, r := range n.c.regions {
+				clients = append(clients, env.NodeID("client-"+r))
+			}
+			n.netFault = true
+			return n.c.apply(sim.Fault{Kind: sim.FaultPartitionOneWay, Side: n.c.ids, Other: clients})
+		}
+		var plan nemesisPlan
+		for range cycles {
+			plan.cycles = append(plan.cycles, cycle{
+				chaos: e7Chaos,
+				ops:   []chaosOp{{kind: opMigrate, a: 0, b: 0, at: 500 * time.Millisecond}},
+			})
+		}
+		return plan
+	}, st)
+}
+
+func verifyAmbiguousMigrationTracked(seed int64, cycles int, forget bool) (*sim.Sim, nemesisStats, error) {
+	var st nemesisStats
+	s := ambiguousMigrationRun(seed, cycles, forget, &st)(seed)
+	if err := s.Err(); err != nil {
+		return s, st, err
+	}
+	if st.ambiguousRecovered != 1 {
+		return s, st, failf("ambiguous migration start was not recovered: got %d recovered, want 1", st.ambiguousRecovered)
+	}
+	if st.migrated != cycles {
+		return s, st, failf("completed migrations = %d, want %d", st.migrated, cycles)
+	}
+	wantShards := cycles * fuzzWarmM * (fuzzOptions().cfg.Layout.K + fuzzOptions().cfg.Layout.M)
+	if st.migratedShards < wantShards {
+		return s, st, failf("migrated shards = %d, want at least %d", st.migratedShards, wantShards)
+	}
+	wantRegion := "r1"
+	if cycles == 2 {
+		wantRegion = "r2"
+	}
+	if st.finalRegion != wantRegion {
+		return s, st, failf("final region = %q, want %q", st.finalRegion, wantRegion)
+	}
+	return s, st, nil
+}
+
+func TestNemesisAmbiguousMigrationStartIsTracked(t *testing.T) {
+	const seed = 702
+	for _, cycles := range []int{1, 2} {
+		var st nemesisStats
+		simtest.RequireDeterministic(t, seed, ambiguousMigrationRun(seed, cycles, false, &st))
+		if st.ambiguousRecovered != 1 {
+			t.Fatalf("cycles=%d: ambiguousRecovered = %d, want 1", cycles, st.ambiguousRecovered)
+		}
+		if st.migrated != cycles {
+			t.Fatalf("cycles=%d: migrated = %d, want %d", cycles, st.migrated, cycles)
+		}
+		wantShards := cycles * fuzzWarmM * (fuzzOptions().cfg.Layout.K + fuzzOptions().cfg.Layout.M)
+		if st.migratedShards < wantShards {
+			t.Fatalf("cycles=%d: migratedShards = %d, want >= %d", cycles, st.migratedShards, wantShards)
+		}
+		wantRegion := "r1"
+		if cycles == 2 {
+			wantRegion = "r2"
+		}
+		if st.finalRegion != wantRegion {
+			t.Fatalf("cycles=%d: finalRegion = %q, want %q", cycles, st.finalRegion, wantRegion)
+		}
+		t.Logf("cycles=%d recovered=%d migrated=%d shards=%d finalRegion=%s", cycles, st.ambiguousRecovered, st.migrated, st.migratedShards, st.finalRegion)
+	}
+	t.Run("dropped request timeout starts no saga and next cycle migrates from original region", func(t *testing.T) {
+		var st nemesisStats
+		simtest.RequireDeterministic(t, seed, runNemesis(seed, fuzzOptions(), func(n *nemesis) nemesisPlan {
+			n.noGrace = true
+			n.warmM = fuzzWarmM
+			n.beforeCycle = func(n *nemesis, ci int) error {
+				if ci != 0 {
+					return nil
+				}
+				var clients []env.NodeID
+				for _, r := range n.c.regions {
+					clients = append(clients, env.NodeID("client-"+r))
+				}
+				n.netFault = true
+				return n.c.apply(sim.Fault{Kind: sim.FaultPartitionOneWay, Side: clients, Other: n.c.ids})
+			}
+			return nemesisPlan{cycles: []cycle{
+				{chaos: e7Chaos, ops: []chaosOp{{kind: opMigrate, a: 0, b: 0, at: 500 * time.Millisecond}}},
+				{chaos: e7Chaos, ops: []chaosOp{{kind: opMigrate, a: 0, b: 0, at: 500 * time.Millisecond}}},
+			}}
+		}, &st))
+		if st.ambiguousRecovered != 0 {
+			t.Fatalf("ambiguousRecovered = %d, want 0 when request never reached coordinator", st.ambiguousRecovered)
+		}
+		if st.migrated != 1 || st.finalRegion != "r1" {
+			t.Fatalf("migrated=%d finalRegion=%q, want 1 and r1", st.migrated, st.finalRegion)
+		}
+	})
+	t.Run("wipe targeting coordinator while start outcome is unknown is skipped", func(t *testing.T) {
+		var st nemesisStats
+		var coordID env.NodeID
+		var incAfter uint32
+		simtest.RequireDeterministic(t, seed, runNemesis(seed, fuzzOptions(), func(n *nemesis) nemesisPlan {
+			n.noGrace = true
+			n.warmM = fuzzWarmM
+			n.beforeCycle = func(n *nemesis, ci int) error {
+				var clients []env.NodeID
+				for _, r := range n.c.regions {
+					clients = append(clients, env.NodeID("client-"+r))
+				}
+				n.netFault = true
+				n.c.s.At(n.c.s.Now().Add(time.Second), "wipe-coord-while-ambiguous", func() {
+					coordID = env.NodeID(n.migCoord.ID)
+					for idx, id := range n.c.ids {
+						if id == coordID {
+							if err := n.apply(chaosOp{kind: opWipeNode, a: idx}); err != nil {
+								n.c.fail(err)
+							}
+							incAfter = n.c.s.Status(coordID).Incarnation
+							break
+						}
+					}
+				})
+				return n.c.apply(sim.Fault{Kind: sim.FaultPartitionOneWay, Side: n.c.ids, Other: clients})
+			}
+			return nemesisPlan{cycles: []cycle{
+				{chaos: e7Chaos, ops: []chaosOp{{kind: opMigrate, a: 0, b: 0, at: 500 * time.Millisecond}}},
+			}}
+		}, &st))
+		if coordID == "" || incAfter != 1 {
+			t.Fatalf("coordinator %s incarnation = %d, want 1 (never wiped while migration outcome unknown)", coordID, incAfter)
+		}
+		if st.skipped < 1 || st.ambiguousRecovered != 1 || st.migrated != 1 || st.finalRegion != "r1" {
+			t.Fatalf("unexpected stats: skipped=%d recovered=%d migrated=%d finalRegion=%q", st.skipped, st.ambiguousRecovered, st.migrated, st.finalRegion)
+		}
+	})
 }
 
 func FuzzClusterNemesis(f *testing.F) {
