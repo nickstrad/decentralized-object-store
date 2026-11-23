@@ -249,6 +249,24 @@ In the `dev` container on a shared 4-core machine.
   because garbage collection removed the shards inside the await bound. Check the source
   region the moment the saga completes.
 
+## Found by the gate after the fix round
+
+- A 500-seed sweep with a new seed base failed `internal/merkle`
+  `TestLyingPeerDST/.../seed=214339956433005` ("the liar was never engaged: failed 23 invalid
+  0") on a correct product: a per-seed guard required something only probable. It is now a
+  per-seed check of what every seed shows plus a sweep-level floor from ten seeds up, and the
+  seed is pinned (`e130ca7`; 1 of 1,503 seeds measured). Same lesson as the E7 check: a
+  guard against a vacuous pass must itself be exact per seed, or sit at the sweep with a
+  minimum seed count.
+- The real-process step (gate G5R) failed both times it ran straight after the hour-long
+  sweep (PUTs answered 503 on a one-second shard request timeout) and passed every other
+  time: alone, and after ten minutes of heavy tests at a load of 4. Waiting for the load to
+  drop did not help. The cause after sustained load is not established. The gate runs the
+  step first among the test gates. The product-side remedy is a configurable shard request
+  timeout, which this chunk did not build.
+- `GATE_OUT` must be a path inside the repository: the gate runs in a container, and a path
+  under `/tmp` is lost with it.
+
 ## To reuse in Chunk 8 and later
 
 - `internal/nodetest` (`lineage.go`): `Lineage`, `ContentOf`, `LWWAfter`, `Covers`,
