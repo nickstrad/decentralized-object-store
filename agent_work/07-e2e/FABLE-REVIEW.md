@@ -137,3 +137,49 @@ Read in full: the stage 1 diff; from stage 2 the diffs of `nemesis_test.go`,
 `e2efault.go` and its test, `scenario_e4_test.go`, `internal/storage/errors.go`,
 `internal/storage/httpapi/http.go` and their tests. Skimmed: the non-zero guards in E1,
 E3, E5, E6 and `oracle_self_test.go`.
+
+---
+
+# Round 2 — confirm of the fix round
+
+VERDICT: PASS (all six findings and note B closed; two notes, no action required for landing)
+
+Reviewed range: `87ca0a2..2617109` on `chunk/07-e2e` (the fix round by a fresh Gemini 4 Neon
+builder: `00e269e`, `96db03e`, `3911ed0`, `78edab5`, `bf05175`, `4de93e2`, `2d62a51`,
+`2617109`). No product code changed in the range.
+
+| Finding | Status | Basis |
+|---|---|---|
+| 1 (major) E7 check fails seed 102 on a correct product | CLOSED | The sweep-level guess is gone; the runner snapshots the live keys of bucket `m` on the coordinator when the migration starts and requires each of them to hold at least `k` verified shards in the destination region once the migration completes. Seed 102 passes alone (run by me), and so does seed 290. My mutation switching the per-key check off is KILLED by the new E7 canary (`the scenario passed with the planted fault on`). Keys in `m` are unique and never overwritten or deleted by the runner, so a snapshot key cannot legitimately vanish; the builder's 500-seed sweep (301 E7 seeds) passed |
+| 2 (minor) untested wipe guard | CLOSED | Guard removed with the reasoning written down (the coordinator is protected while `n.mig` is set, and `finishMigration` follows every started or recovered saga to its end before clearing it); the subtest that proved nothing is replaced by one in which a slow copy step outlives the call timeout, with a canary for the forgotten start. Read, and both run in my default-seed run |
+| 3 (minor) availability check loosened without a floor | CLOSED | Reads are voided only when they ended at or after the cycle's first network fault, or the touching of their node. My mutation restoring the wholesale rule is KILLED by `TestNemesisSettleValidatesTerminalErrorsForEveryOp` (`availability get finished before netFaultAt must still fail`). Builder's measurement over the 500-seed sweep: min 6 / p50 20 before the loosening, min 0 / p50 7 after it, min 6 / p50 20 now. Floor of 10 per seed on sweeps of 10 seeds or more, safe for one seed |
+| 4 (nit) E2 early reads lenient | CLOSED | Required whenever the side holds `k` shards; builder's runs: 126 of 126 seeds at `DST_SEEDS=500`, tier R 3 of 3 |
+| 5 (nit) names | CLOSED | `sideCanPut` is `K+M`; `dest_*` (present in the destination afterwards) and `moved_*` (pre-existing objects only) are separate and defined in the notes |
+| 6 (nit) one table test for every joined cause | CLOSED | Eight causes, both join orders, through `node.CodeTable()` and the HTTP table; builder shows them failing with the product fix undone |
+| Note B (tier R write concurrency) | CLOSED | Stated as a limit in section 8 of the notes |
+
+## Notes
+
+- **D.** The per-key check sums verified shards over all stripes of an object. Every object the
+  runner writes to bucket `m` fits one stripe (warm-up 4 KiB, traffic under 16 KiB, stripe
+  64 KiB), so the check is exact today. If multi-stripe objects are ever written to `m`, make
+  it per stripe.
+- **E. Not a finding; new work from the owner's CI ruling of 2026-11-22** (push-triggered CI
+  runs quick tests only). At default seeds the package takes about 310 s here, of which the
+  78-cell migration failure matrix (`TestE5MigrationEveryFailurePointS`, three seeds per cell,
+  234 runs) is about 970 of roughly 1,090 CPU-seconds. The fast lane needs a short mode for it;
+  briefed separately to the builder. The default run and every sweep stay as they are.
+
+## What I ran in round 2 (scratch copies of `2617109`, through Docker)
+
+| Check | Result |
+|---|---|
+| `go test ./test/e2e -run '^TestE7NemesisHealingCyclesS$' -seed=102 -count=1` | ok |
+| same, `-seed=290` | ok |
+| Mutation: per-key check off (`if false && have < K`), then `go test ./test/e2e -run 'TestCanaryE7|TestCanaryFuzz|CorpusMovesShards' -count=1` | KILLED by `TestCanaryE7CompletedMigrationMissingPreExistingShardsFails` |
+| Mutation: void every availability read once any network fault is on, then `go test ./test/e2e -run 'TestNemesisSettle|TestE7Avail' -count=1` | KILLED by `TestNemesisSettleValidatesTerminalErrorsForEveryOp` |
+| `go test -count=1 -v ./test/e2e` | ok, 308.8 s, 13 skips (tier R, off by default) |
+
+Not run by me in this round: the 500-seed sweep, the race run, the fuzz run and tier R (the
+builder's results above are taken as reported; the full gate re-runs all of them), and the
+Opus adversarial pass, which follows.
