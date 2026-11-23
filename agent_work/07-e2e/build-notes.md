@@ -639,4 +639,161 @@ All Go commands ran inside `docker compose run --rm -T dev ...`; `GATE_ONLY=G0` 
   1. Run the full gate (`agent_work/gates/gate.sh 07-e2e`) and proceed to Fable review, Opus mutation check, and stage 2 (Findings 4–8).
   2. Consider re-running the 15-minute hardening fuzz budget on `FuzzClusterNemesis` once stage 2 lands so the hardening archive reflects the repaired 12-node `2+1` non-empty migration setup.
 
+## 12. Finish round, stage 2 (Neon): REVIEW-1 nits and note, recorded harness findings
+
+Seat: Gemini 4 Neon (builder), branch `chunk/07-e2e`. All REVIEW-1 nits (Findings 4–7), the note (Finding 8), and both recorded adversarial harness findings (C7, C10) are closed with zero Go comments added (`GATE_ONLY=G0` `comments` check passes against baseline `d667977`).
+
+**FLAG — product code changed outside `internal/noderuntime/e2efault.go`:**
+Tightening `(*nemesis).settle` for recorded harness finding C7 turned up a real error-classification bug in `internal/storage` on E7 seed `1` (see Item E and "Failures found" below):
+- `internal/storage/errors.go` (`CodeEntries`): moved `{Code: CodeUnavailable, Err: ErrUnavailable}` ahead of `CodeNotFound` and `CodeCorrupt` (wire code numbers unchanged: 99, 96, 97, 98, 100).
+- `internal/storage/httpapi/http.go` (`StatusTable`): moved `{Err: storage.ErrBusy, Status: 503}` and `{Err: storage.ErrUnavailable, Status: 503}` ahead of `{Err: storage.ErrNotFound, Status: 404}` and `{Err: env.ErrNotFound, Status: 404}` (keeping `storage.ErrNoSuchBucket` and `occ.ErrNotFound` at 404).
+- Tests proving the bug and fix: `TestCodeTableJoinedUnavailablePrecedesShardCauses` (`internal/storage/errors_test.go`) and `TestStatusTableJoinedUnavailablePrecedesShardCauses` (`internal/storage/httpapi/http_test.go`), both failed before the fix (`Encode` returned 96/97 instead of 99; `StatusOf` returned 404 instead of 503) and pass after.
+
+### Item A (Finding 4) — E4 canary matches any failure
+
+- **What was wrong:** `TestCanaryE4AMigrationThatSkipsDeletingTheSourceFails` (`test/e2e/canary_test.go`) passed `""` to `expectCanaryFailure`, accepting any failure of `scenarioE4`. `expectCanaryFailure` silently skipped substring matching whenever `want == ""`.
+- **What changed:**
+  - `test/e2e/canary_test.go`: extracted `checkCanaryFailure(err error, want string) error`, which refuses empty or whitespace-only `want`, refuses `err == nil`, and requires `strings.Contains(err.Error(), want)`. `expectCanaryFailure` delegates to it.
+  - Updated `TestCanaryE4AMigrationThatSkipsDeletingTheSourceFails` to match `"no shard of the bucket left in r0"`.
+  - Audited all 10 other `expectCanaryFailure` call sites in `test/e2e/canary_test.go`; all already passed non-empty specific strings, and `TestCanaryE5ACopyThatIsNeverCompensatedLeavesOrphans` was tightened from `"check failed"` to `"still holds a staged entry"`.
+- **Test and self-test:** `TestExpectCanaryFailureRejectsEmptyMatch` proves `checkCanaryFailure` rejects `""`, `"   "`, `nil`, and unrelated errors while accepting matching errors. All Tier S canaries pass:
+  - E4 caught: `no shard of the bucket left in r0: not within 40s: e2e: scenario check failed` (matched `"no shard of the bucket left in r0"`).
+  - E5 caught: `sagasim: cell verify-fail-before-action-untorn: node n000 still holds a staged entry for o0: sagasim: check failed` (matched `"still holds a staged entry"`).
+
+### Item B (Finding 5) — counters and traffic never required to be non-zero
+
+- **Product contract for `Health.Discards` vs `RecentDiscards`:** In `internal/occ/store.go` (`Store.record`, `decodeState`) and `internal/node/objects.go` (`Node.Health`), each discard event observed on a node increments persisted `s.discards` (`Health.Discards`, saturating at `MaxUint64`) and appends to the bounded tail `s.tail` (`Health.RecentDiscards`, cap `occ.DiscardTailLen = 64`), persisted atomically together. Therefore on every up node: `uint64(len(h.RecentDiscards)) == min(h.Discards, uint64(occ.DiscardTailLen))`. Because one lost version may be observed by multiple nodes (over-count, never under-count), across the cluster `sum(h.Discards) >= uint64(res.contested.discarded) > 0` and `max(h.Discards) > 0`.
+- **What changed (E2, E8, E9):**
+  - `test/e2e/scenario_e2_test.go`: `discardLog` now returns `discardSummary{losers, most, total}`, refuses an empty `upNodes(c)`, and checks `uint64(len(h.RecentDiscards)) == min(h.Discards, uint64(occ.DiscardTailLen))` on every up node. `checkContests` requires `len(cs) > 0` and `res.acked > 0 && res.current > 0`. Both `scenarioE2` and `scenarioE8` require `res.discards > 0 && ds.total >= uint64(res.contested.discarded)`; `scenarioE2` also requires `p.objects >= 2` and `res.meta > 0`; `scenarioE8` also requires `p.objects > 0`, `res.conditional > 0`, `len(qs) > 0`, and `res.staleRefused >= p.objects`.
+  - `test/e2e/tierr_test.go`: in `scenarioE9`, added atomic `active` and `preOK` counters around worker batches and hold the signal until `>= 2s` elapsed with `preOK >= 4 && active >= 2` (15 s bound, failing closed if traffic never establishes), so in-flight load is guaranteed at SIGTERM. Added `checkE9Traffic(sig, res)` requiring `res.ok > 0` and `res.inflightOK+res.inflightFailed > 0` on `SIGTERM`, plus `len(acked) > 0` before the post-restart readback loop.
+- **Sweep of all other scenarios (Tier S and Tier R):**
+  - **E1 (`scenario_e1_test.go`, S and R):** Closed empty-parameter / empty-spread holes: require `len(p.sizes) > 0`, `res.objects > 0`, `res.reads > 0`, `len(stripes) > 0` per version in `checkSpread`, and `res.stripes > 0` whenever non-empty objects exist.
+  - **E3 (`scenario_e3_test.go`, S and R):** Closed vacuous-rot holes: require `p.damaged > 0 && p.objects >= 2*p.damaged`, `res.bucketBytes > 0`, `len(first) > 0`, `res.reads > 0`, `len(second) > 0 && res.damagedBytes > 0`, `res.rebuiltBytes > 0`, and (when `movedCounter` is implemented on Tier S) `res.movedBytes > 0`. (Before this fix, empty `second` gave `damagedBytes == 0`, making `rebuiltBytes` and `movedBytes` checks vacuously pass.)
+  - **E4 (`scenario_e4_test.go`, S and R):** Closed empty-traffic / empty-probe holes: require `p.objects > 0`, `res.traffic > 0 && res.trafficOK > 0`, `res.objects > 0`, and inside `routedTo` require `len(probes) > 0` and `len(stripes) > 0` per probe.
+  - **E5 (`e5sim_test.go` S, `tierr_test.go` `scenarioE5R` R):** Closed empty-table holes: require `len(e.data) > 0` in `e5Cluster.check`, `len(cells) > 0` and `len(mine) > 0` in `TestE5MigrationEveryFailurePointS`, and `res.killedAt >= 1` in `scenarioE5R`. Source-readback loop (`len(pre) == 24`), `routedTo`, and `shardsOutside` in `scenarioE5R` were checked and are non-empty.
+  - **E6 (`scenario_e6_test.go`, S and R):** Closed vacuous-catchup / vacuous-refill / zero-observer holes: require `p.perWave > 0`, ensure `victim` holds at least 1 shard after wave 1 (writing extra objects if needed while keeping `victim = nodes[4]` for the E6 canary), require `observers > 0` in `rejoined` and `res.incAfter > res.incBefore`, require `res.victimShards > 0` on Tier S, pick a `wiped` node with `> 0` shards (preferring `nodes[8]`) and require `res.wipedShards > 0 && len(want) > 0`, and require `res.acked > 0 && res.reads > 0`.
+  - **E7 (`nemesis_test.go`, `e7_test.go`):** Require `len(plan.cycles) > 0` and `n.st.puts+n.st.gets > 0` in `nemesis.run`. In `TestE7NemesisHealingCyclesS`, require per seed `st.cycles == e7Cycles`, `st.applied > 0`, `st.putsOK > 0`, and `st.getsOK > 0`. (`availabilityGets` is NOT forced `> 0` per single seed because a 4-cycle seed can legitimately draw a network fault in every cycle, as seed 290 did; `TestFuzzClusterNemesis` also permits minimal 1-cycle fuzz inputs with 0 faults.)
+  - **`finalChecks` (`simoracle_test.go`, called by E2/E4/E6/E8 Tier S):** Require `oc.readable+oc.lost > 0` so `checkLiveReadableOrLost` cannot pass with zero live manifests.
+  - **Tier R hygiene & default-build (`tierr_test.go`):** Judged fine: `TestTierRHarnessLeavesNothingBehindWhenATestFails` already asserts `len(rec.PIDs) != 3 || len(rec.Ports) != 6 || len(rec.Dirs) < 2`; `TestDefaultBuildCarriesNoFaultInjection` already loops over a non-empty literal slice of 3 markers and requires every marker present in the tagged binary before checking absence in the default binary.
+- **Canary and self-test proving it bites:**
+  - `TestCanaryE2AndE8UnrecordedDiscardCounterFails` (`test/e2e/canary_test.go`, using test-only `faultyDiscardHealthCluster` wrapper over `simCluster`): all 3 subcases failed on the old code (`the scenario passed with the planted fault on`) and pass after the repair:
+    - `E2 discards logged but Health.Discards is zero` (matched `"Health.Discards=0"`): caught `node n000 reports Health.Discards=0 with 25 RecentDiscards (want 0): e2e: scenario check failed`.
+    - `E8 discards logged but Health.Discards is zero` (matched `"Health.Discards=0"`): caught `node n000 reports Health.Discards=0 with 11 RecentDiscards (want 0): e2e: scenario check failed`.
+    - `E2 discards logged but Health.Discards undercounts RecentDiscards` (matched `"Health.Discards=1"`): caught `node n000 reports Health.Discards=1 with 25 RecentDiscards (want 1): e2e: scenario check failed`.
+  - `TestCheckE9TrafficRequiresLoadAndInflight` (`test/e2e/tierr_test.go`): 6 table cases proving `checkE9Traffic` rejects `ok == 0` (`"0 successful requests"`) and `inflightOK+inflightFailed == 0` (`"0 requests in flight"`) on `SIGTERM`, and accepts non-zero combinations.
+  - Measured on Tier R `TestE9ShutdownUnderLoadR`: `shutdown=1.57s`, `in_flight_at_sigterm_finished=7`, `in_flight_at_sigterm_failed_cleanly=0`, `requests_ok=44`, `acked_read_after_restart=24`.
+
+### Item C (Finding 6) — `s.Err()` vs `s.Verify()`, and `nemesisStats.declared`
+
+- **Audit of every `.Err(` call in `test/e2e` and `internal/nodetest`:**
+  - `internal/nodetest`: 0 matches.
+  - `test/e2e` end-of-run checks that bypassed `simtest.RequireDeterministic` (all 3 switched to `s.Verify()`):
+    1. `FuzzClusterNemesis` (`test/e2e/e7_test.go`)
+    2. `checkFuzzCorpus` (`test/e2e/e7_test.go`)
+    3. `verifyAmbiguousMigrationTracked` (`test/e2e/e7_test.go`)
+  - Remaining `.Err(` calls in `test/e2e` are either mid-run/post-construction guards where `RequireDeterministic` calls `s.Verify()` at end of run (`harness_test.go:28`, `e5sim_test.go:43`, `e7_test.go:33`, `simcluster_test.go:160,200,313,320,327`), or canary failure checks (`canary_test.go:125,152,360`) expecting a planted failure error.
+- **`nemesisStats.declared`:** Kept and populated (`n.st.declared = len(c.o.declared)` before the `len(c.o.declared) > 0` failure check and at end of `nemesis.run`) so `MEASURE e7/declared_lost` stays accurate both on passing runs (`0`) and if a loss is ever declared inside the budget.
+
+### Item D (Finding 7) — `e2efault` blocklist reload misses equal-size rewrites
+
+- **What was wrong:** `(*blocklist).reload` (`internal/noderuntime/e2efault.go`) cached `(fi.ModTime(), fi.Size())` from `os.Stat` and skipped `os.ReadFile` when both matched, missing rapid equal-length rewrites within one filesystem mtime tick; non-ENOENT read errors were also dropped silently.
+- **What changed:**
+  - `internal/noderuntime/e2efault.go` (`//go:build e2efault`): removed `mod`/`size` and `os.Stat`; `reload` calls `os.ReadFile(path)` directly on each 50 ms throttled check. `fs.ErrNotExist` sets an empty peer set with no error. Any other read error keeps the last good `b.peers` (initializing empty if nil) and surfaces the error via `blocklistLogf("noderuntime: e2efault: read %s: %v", ...)` (defaults to `log.Printf`, writing to stderr / `objnode`'s log file with no dropped error return).
+- **Tests proving it bites and passes:**
+  - `internal/noderuntime/e2efault_internal_test.go` (`//go:build e2efault`):
+    - `TestBlocklistReloadSeesEqualSizeRewrite`: writes `"peer-a\n"`, then rewrites twice back to back with equal-length `"peer-b\n"` and `"peer-c\n"` preserving identical mtime via `os.Chtimes`. **Failed on old code** (`equal-size rewrite 1 (peer-a -> peer-b with identical mtime) was missed`); passes after repair.
+    - `TestBlocklistReloadMissingClearsAndReadErrorKeepsLastGood`: proves missing file clears the set with no logged error, and replacing the file with a directory (`EISDIR`) preserves `"peer-a"` in the peer set and surfaces the error via `blocklistLogf`.
+  - `TestDefaultBuildCarriesNoFaultInjection` passes, confirming the default `objnode` binary remains free of `.e2e-blocklist`, `noderuntime.blockedPeer`, and `noderuntime.BlocklistPath`.
+
+### Item E (Recorded harness finding C7) — `(*nemesis).settle` only checked PUT errors
+
+- **What was wrong:** `(*nemesis).settle` (`test/e2e/nemesis_test.go`) validated terminal errors only for `"put"`. Ordinary `"get"`, `"delete"`, `"tag"`, and unknown ops accepted any error (including `storage.ErrCorrupt` or arbitrary unknown errors) without failing.
+- **Allowed terminal error sets per operation (from PLAN 2.6 and `internal/node/objects.go` / `internal/occ/store.go`):**
+  - Common transport/node-lifecycle set (all 4 ops): `env.ErrTimeout`, `env.ErrUnreachable`, `occ.ErrNotReady`, `node.ErrNotReady`, `storage.ErrNoSuchBucket` (node wiped and not yet synced bucket record). `storage.ErrCorrupt` is explicitly forbidden for every op.
+  - `"put"` (unconditional `PutObject`, no quotas): common set + `storage.ErrUnavailable` + (`storage.ErrBusy` only when `k.Bucket == bucketM`).
+  - `"get"` (`GetObject` on `bucketW`): common set + `storage.ErrUnavailable` + `occ.ErrNotFound`. Availability gets (`k.Size == -1`) additionally require `nil` or `occ.ErrNotFound` when `!n.netFault && !n.touched[k.At] && !n.dirty[k.Key]`.
+  - `"tag"` (unconditional `PutTag` on `bucketW`, tag `"t"`): common set + `occ.ErrNotFound` (key missing/deleted or wiped node not yet synced manifest).
+  - `"delete"` (unconditional `DeleteObject` on `bucketW`): common set + `occ.ErrNotFound` (`occ.Store.Delete` returns `occ.ErrNotFound` when key is not live) + (`storage.ErrBusy` only when `k.Bucket == bucketM`).
+  - Any other `k.Op`: always rejected.
+- **What changed:**
+  - `test/e2e/nemesis_test.go`: added `allowedNemesisTransportError`, `allowedNemesisError`, validated every op kind (and unknown ops) in `(*nemesis).settle`. Also fixed pre-existing availability-check slip in `settle()` by re-checking `!n.netFault && !n.touched[env.NodeID(k.At.ID)]` (see "Failures found").
+  - `internal/storage/errors.go`, `internal/storage/httpapi/http.go`: fixed `ErrUnavailable` precedence over per-shard `ErrNotFound`/`ErrCorrupt` (see top flag and "Failures found").
+  - `test/e2e/testdata/seeds.txt`: pinned E7 seed `1`.
+- **Self-tests proving it bites:** `TestNemesisSettleValidatesTerminalErrorsForEveryOp` (`test/e2e/oracle_self_test.go`, 39 subtests): before the repair, `put` to `bucketW` with `ErrBusy`, all disallowed `get`/`tag`/`delete` cases (`ErrCorrupt`, unknown error, `ErrInvalid`, `ErrUnavailable` on tag/delete, `storage.ErrNotFound` on get/delete, `ErrPreconditionFailed`), and unknown op `"bogus"` all failed the self-test; after the repair all 39 subtests pass.
+
+### Item F (Recorded harness finding C10) — `newRealCluster` accepts a failed node launch and can collide ports
+
+- **What was wrong:** `newRealCluster` (`test/e2e/realcluster_test.go`) allocated ports via repeated `freePort()` calls that closed each listener before allocating the next (allowing the OS to hand the same port to two nodes in one cluster), and waited only on `c.Converged()`, which filters `upNodes(c)` — so an `objnode` process that exited on bind failure was ignored and `newRealCluster` returned a shrunken cluster.
+- **What changed:**
+  - `test/e2e/realcluster_test.go`:
+    - Replaced `freePort` with `allocDistinctPorts(n int) ([]int, error)`, which holds all `n` TCP listeners and UDP sockets open simultaneously until all `n` distinct ports are reserved, so one cluster can never allocate the same port twice.
+    - External-process collision handling: if another process on the host takes a port between reservation release and `objnode` bind (TOCTOU), `objnode` exits with `bind: address already in use`; `awaitStartup` detects the exited process on the next 100 ms poll, fails closed immediately with an error naming the node ID, region, exit status, and its log tail, and `startRealCluster`'s deferred cleanup kills every launched process (waiting on `<-p.exited`) and removes the cluster temp dir so zero stray processes or files remain.
+    - Extracted `startRealCluster(t, seed, o) (*realCluster, error)` and `awaitStartup` / `allStartedAndConverged`: requires all `len(c.procs)` intended processes running, each HTTP endpoint's `/_health` returning `Ready == true` with `h.Node == p.node.ID` (identity verified), identical `MetaDigest`/`MetaRoot` across all `N` nodes, and all `N` nodes reported alive in `/_cluster/members`.
+    - Also lowered default `realPutSlots` / `realBounds.writeBatch` from 4 to 1 (keeping `putSlots: 4` for E9) to prevent 4× concurrent fsync bursts from tripping `objnode`'s 1 s `RequestTimeout` on the shared 4-core VM during Tier R E2/E3.
+- **Tests proving it bites:**
+  - `TestAllocDistinctPortsNeverCollides` (`test/e2e/tierr_test.go`): allocates 40 distinct ports and verifies uniqueness.
+  - `TestTierRStartupFailsOnPlantedLaunchFailure` (`test/e2e/tierr_test.go`, Tier R):
+    - `wrapper binary exits non-zero for one node` (exits 73 for `r2`, execs real race-built `objnode` for `r0`/`r1`, matching C10's reproduction): caught `node 127.0.0.1:45919 (r2) exited with status 73 during startup; log tail: planted launch failure for region r2: e2e: scenario check failed`, verified all 3 PIDs return `ESRCH` and cluster dir removed.
+    - `occupied port causes bind failure surfaced with node and log tail` (real TCP listener holding node 2's HTTP port): caught `node 127.0.0.1:37701 (r2) exited with status 1 during startup; log tail: ... bind: address already in use ...`, verified all 3 PIDs return `ESRCH` and cluster dir removed.
+
+### Item G (Finding 8) — Note items
+
+- **E4 Tier S object sizes and seed share:**
+  - `test/e2e/scenario_e4_test.go`, `test/e2e/tiers_test.go`: added optional `multiStripeSize` and `trafficSize` to `e4Params`; changed Tier S `TestE4MigrationUnderTrafficS` from `objects: 8, size: 2*simStripe+5` (8 × 128 KiB initial + ~100 × 64 KiB traffic writes) at share `1/20` to `objects: 4, size: 1024, multiStripeSize: simStripe+5, trafficSize: 512` (1 two-stripe 64 KiB+5 B object + 3 one-stripe 1 KiB objects + 512 B traffic writes, still exercising multi-stripe shard copy, Merkle verify, and source purge on every seed) at share **`1/10`**. Tier R E4 and all other scenarios' seed shares are unchanged.
+  - **Before vs after measured:**
+    - Before (`1/20`): 9 seeds in 47.47 s wall = **5.27 s/seed wall**; at `DST_SEEDS=500`: 25 unpinned seeds (~142 s wall for E4; 1494 s package wall in initial build).
+    - After (`1/10`): 10 seeds in 22.25 s wall = **2.22 s/seed wall** (2.37× faster); at `DST_SEEDS=500`: **50 unpinned seeds (52 total with 2 pinned seeds)** (~115 s wall for E4, 2× E4 seed coverage at lower E4 wall time).
+    - Full package `DST_SEEDS=500 go test -count=1 ./test/e2e -timeout 60m`: **1629.78 s** (~27.2 min; +135 s vs initial 1494 s because pinning seed `1` in `testdata/seeds.txt` added 78 extra E5 cell runs — 280 vs 202 — plus the stage 1 and stage 2 tests/canaries).
+- **Default `go test ./test/e2e` seed count:** At default `go test ./test/e2e` (`DefaultSeeds = 3`), `seedsFor` runs **1 unpinned seed** per scenario (plus all pinned seeds in `testdata/seeds.txt`: currently 2, `166963932986536` and `1`); no change made.
+- **Limits — E7 lone-holder fault-budget narrowing (Chunk 4 citation):** The E7 wipe-budget rule (`nemesis.metadataElsewhere`, section 6 and 8) matches the exact durability limit already stated in Chunk 4 (`docs/knowledge/chunk-04-occ.md:27-28`: *"The one unrecorded loss: a version whose every holder, its writer included, lost its disk before passing it on. No node ever saw it lose."*), because `internal/node` acknowledges local-first metadata/manifest writes after a single local fsync.
+- **ACL and quota `CommitSink` coverage:** No change made; Chunk 6's `PutACL` and `SetQuota` do not invoke `n.committed`, and ACL discards / quota convergence remain verified independently via `Health.RecentDiscards`, `Health.Discards`, and all-node quota queries in E2 and E8.
+
+### Note on stage 1 (observed while replaying seed 102)
+
+In `test/e2e/e7_test.go:62-64` (committed in stage 1), `TestE7NemesisHealingCyclesS`'s `t.Cleanup` fails when `totMig > 0 && totPutsMOK > 0 && totMigShards == 0`. On a multi-seed sweep this holds, but on a single-seed `-seed=102` replay it produced a false failure: seed `102` completed 1 migration of `m` in an early cycle while `m` was still empty (`warmM == 0` in E7) and acknowledged its 1 `puts_m_ok` in a later cycle after the migration. Left untouched per brief ("do not undo stage 1"); a follow-up could guard that sweep check on `seedsRun > 1` or track per-migration shard counts only when `m` already held an object before `opMigrate`.
+
+### Failures found
+
+1. **Product defect — `storage.ErrUnavailable` misclassified as `CodeNotFound` (96) / HTTP 404 (and `CodeCorrupt` 97) when joined with per-shard causes:**
+   - **Found by:** stricter C7 `(*nemesis).settle` on E7 seed `1` (`TestE7NemesisHealingCyclesS/shard=1/seed=1`).
+   - **Pinned:** `1` appended to `test/e2e/testdata/seeds.txt`.
+   - **Replay command:** `go test ./test/e2e -run '^TestE7NemesisHealingCyclesS$/^shard=1$/^seed=1$' -seed=1 -count=1`.
+   - **Error observed:** `get w/k15 via n017: disallowed error: remote error (code 96): storage: get w/k15: stripe 0: 3 of 6 shards verified, need 4: storage: unavailable / shard 3 on n008 attempt 1: remote error (code 96): storage: read shard shards/w/f5/de7dd0a497155148/0.3: storage: not`.
+   - **Diagnosis & fix:** `storage.Node.Get` (`internal/storage/node.go:514`) and `storage.DecodeStripe` (`internal/storage/stripe.go:130`) join `storage.ErrUnavailable` with per-shard causes (`st.causes`, which may include `storage.ErrNotFound` from a wiped holder or `storage.ErrCorrupt` from a bit-rotted shard). `storage.CodeEntries()` listed `CodeNotFound` (96) and `CodeCorrupt` (97) before `CodeUnavailable` (99), so `env.CodeTable.Encode` put code 96 or 97 on the wire instead of 99. The same precedence bug existed in `httpapi.StatusTable()` (`internal/storage/httpapi/http.go:94,96` listed `storage.ErrNotFound`/`env.ErrNotFound` at 404 before `storage.ErrUnavailable` at 503). Fixed in `f70e2c2` with unit tests `TestCodeTableJoinedUnavailablePrecedesShardCauses` and `TestStatusTableJoinedUnavailablePrecedesShardCauses`; seed `1` and all 301 E7 seeds in `DST_SEEDS=500` pass.
+2. **Test harness bug — `(*nemesis).settle` availability check did not re-check `n.netFault` or `n.touched`:**
+   - **Found by:** `DST_SEEDS=500` sweep on E7 seeds `102` and `290` (`availability within the fault budget: get k01/k00 via untouched n012 failed with no network fault in the cycle: ... timeout`).
+   - **Replay commands:** `go test ./test/e2e -run '^TestE7NemesisHealingCyclesS$' -seed=102 -count=1` and `-seed=290 -count=1`.
+   - **Diagnosis & fix:** `nemesis.traffic()` scheduled an availability GET (`Size: -1`) early in a cycle while `n.netFault == false` and `n012` was untouched, then a later tick in the same cycle applied a network fault or touched `n012`. `settle()` re-checked `!n.dirty[k.Key]` but forgot `!n.netFault && !n.touched[k.At]`. Fixed in `d32405c` with self-test subcases in `TestNemesisSettleValidatesTerminalErrorsForEveryOp`; seeds `102`, `290`, and all 301 E7 seeds in `DST_SEEDS=500` pass.
+3. **Tier R load limit — `realPutSlots = 4` triggered 1 s shard-write timeouts under load on E2/E3:**
+   - **Found by:** full Tier R run (`TestE2PartitionAndHealR` and `TestE3BitRotRepairR` returned HTTP 503 `4 of 6` / `3 of 6 shards durable, need 5` with `1s: timeout` under 4-core VM load ~2.9).
+   - **Diagnosis & fix:** Matches the documented 1 s `RequestTimeout` operating limit (section 6). Lowered default `realPutSlots` and `realBounds.writeBatch` from 4 to 1 (keeping `putSlots: 4` on E9) in `996b289`; full Tier R suite (13 tests) passed in 241.93 s.
+
+### Commands run and results (stage 2)
+
+All Go commands ran inside `docker compose run --rm -T dev ...`; `GATE_ONLY=G0` ran `agent_work/gates/gate.sh 07-e2e` inside the `dev` container.
+
+| Command | Result |
+|---|---|
+| `gofmt -l .` | empty |
+| `go vet ./...` | clean |
+| `go vet -tags e2efault ./...` | clean |
+| `go build ./...` | ok |
+| `go test -count=1 ./test/e2e ./internal/storage/... ./internal/node/... ./internal/nodetest/... ./internal/noderuntime/... ./cmd/objnode/...` | ok (`e2e` 336.1 s, `storage` 4.4 s, `httpapi` 1.9 s, `node` 88.4 s, `nodetest` no test files, `noderuntime` 8.6 s, `objnode` 2.9 s) |
+| `go test -count=1 -tags e2efault ./internal/noderuntime` | ok, 7.87 s (including `TestBlocklistReloadSeesEqualSizeRewrite` and `TestBlocklistReloadMissingClearsAndReadErrorKeepsLastGood`) |
+| `DST_SEEDS=500 go test -count=1 ./test/e2e -timeout 60m` | ok, 1629.78 s (27.2 min; on final Go commit `541384c`) |
+| `go test ./test/e2e -run '^$' -fuzz '^FuzzClusterNemesis$' -fuzztime 120s -fuzzminimizetime 5s` | PASS, 121.46 s, 332 execs, 44 new (total 316), 0 failures |
+| `E2E_TIER_R=1 go test ./test/e2e -run 'R$\|TierR\|DefaultBuild\|CanaryE9' -count=1 -v -timeout 40m` | PASS, 13 tests (including `TestTierRStartupFailsOnPlantedLaunchFailure`), 241.93 s |
+| `go test -race -count=1 ./test/e2e ./internal/noderuntime ./cmd/objnode ./internal/storage/...` | ok (`e2e` 430.5 s, `noderuntime` 9.8 s, `objnode` 3.2 s, `storage` 11.9 s, `httpapi` 3.0 s) |
+| `GATE_ONLY=G0 agent_work/gates/gate.sh 07-e2e` | overall=pass (`tools`, `gofmt`, `vet`, `build`, `detlint`, `panics`, `deps`, `comments`, `selfcontained` all pass) |
+
+### Anything not done, and requests to the orchestrator
+
+- **Not done:** Full gate `agent_work/gates/gate.sh 07-e2e` (left to orchestrator per brief).
+- **Requests to the orchestrator:**
+  1. Review the small product fix in `f70e2c2` (`internal/storage/errors.go`, `internal/storage/httpapi/http.go` — `ErrUnavailable` precedence over per-shard `ErrNotFound`/`ErrCorrupt`), found by C7 on E7 seed `1`.
+  2. Decide whether PLAN 2.9's wording changes for per-scenario seed shares (E4 now `1/10` = 50 unpinned seeds at `DST_SEEDS=500`, other shares unchanged).
+  3. Consider guarding stage 1's single-seed E7 cleanup check (`test/e2e/e7_test.go:62`) so single-seed replays like `-seed=102` do not false-fail when a migration runs before the first `puts_m_ok`.
+  4. Run the full gate, Fable review, and Opus mutation check.
+
+
 
