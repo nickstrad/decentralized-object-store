@@ -100,9 +100,10 @@ func decodeResult(b []byte) (apiResult, []byte, error) {
 }
 
 type apiNode struct {
-	p     env.Process
-	n     *node.Node
-	onPut func(n *node.Node, bucket, key string)
+	p         env.Process
+	n         *node.Node
+	onPut     func(n *node.Node, bucket, key string)
+	intercept func(n *node.Node, op byte) error
 }
 
 func (a *apiNode) Start()                               { a.p.Start() }
@@ -139,6 +140,12 @@ func (a *apiNode) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 		}
 		b, err := encodeResult(r, data)
 		reply(b, err)
+	}
+	if a.intercept != nil {
+		if err := a.intercept(n, req[1]); err != nil {
+			reply(nil, err)
+			return
+		}
 	}
 	switch req[1] {
 	case opCreate:

@@ -346,3 +346,40 @@ func TestCanaryNemesisForgottenAmbiguousMigrationFails(t *testing.T) {
 		t.Logf("caught: %v", err)
 	})
 }
+
+func TestCanaryE2ObjectOpsUnavailableDuringSplitFails(t *testing.T) {
+	cases := []struct {
+		name      string
+		blockPut  bool
+		blockGet  bool
+		wantError string
+	}{
+		{name: "put and get unavailable during split", blockPut: true, blockGet: true, wantError: "must succeed"},
+		{name: "only get unavailable during split", blockPut: false, blockGet: true, wantError: "get e2/"},
+		{name: "only put unavailable during split", blockPut: true, blockGet: false, wantError: "put e2/"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newSimCluster(1, defaultSimOptions())
+			c.apiIntercept = func(n *node.Node, op byte) error {
+				if len(n.Gossip().Members()) >= len(c.ids) {
+					return nil
+				}
+				if tc.blockPut && op == opPut {
+					return storage.ErrUnavailable
+				}
+				if tc.blockGet && op == opGet {
+					return storage.ErrUnavailable
+				}
+				return nil
+			}
+			if err := c.boot(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := scenarioE2(c, simBounds, e2Params{objects: 6, size: 3000, detect: 500 * time.Millisecond, keepCut: 2 * time.Second}); err != nil {
+				c.fail(err)
+			}
+			expectCanaryFailure(t, c.s, tc.wantError)
+		})
+	}
+}

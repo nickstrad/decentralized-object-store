@@ -53,20 +53,21 @@ func defaultSimOptions() simOptions {
 }
 
 type simCluster struct {
-	s        *sim.Sim
-	ids      []env.NodeID
-	nodes    []Node
-	cli      map[string]env.Env
-	disks    map[env.NodeID]env.Disk
-	cfg      node.Config
-	o        *simOracle
-	ledger   *Ledger
-	moved    map[byte]uint64
-	opts     simOptions
-	calls    int
-	regions  []string
-	procWrap func(id env.NodeID, p env.Process) env.Process
-	onHeal   func()
+	s            *sim.Sim
+	ids          []env.NodeID
+	nodes        []Node
+	cli          map[string]env.Env
+	disks        map[env.NodeID]env.Disk
+	cfg          node.Config
+	o            *simOracle
+	ledger       *Ledger
+	moved        map[byte]uint64
+	opts         simOptions
+	calls        int
+	regions      []string
+	procWrap     func(id env.NodeID, p env.Process) env.Process
+	apiIntercept func(n *node.Node, op byte) error
+	onHeal       func()
 }
 
 func newSimCluster(seed int64, opts simOptions) *simCluster {
@@ -135,7 +136,7 @@ func (c *simCluster) factory(e env.Env) env.Process {
 	if c.procWrap != nil {
 		p = c.procWrap(id, p)
 	}
-	return &apiNode{p: p, n: n, onPut: c.o.notePut}
+	return &apiNode{p: p, n: n, onPut: c.o.notePut, intercept: c.apiIntercept}
 }
 
 type countNet struct {

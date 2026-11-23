@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"slices"
@@ -167,6 +168,37 @@ func allowedReadDuringPartition(k *Call) bool {
 	return allowedDuringPartition(k) || errors.Is(k.Err, occ.ErrNotFound) || errors.Is(k.Err, storage.ErrNotFound)
 }
 
+func sideCanPut(side []Node, l storage.Layout) bool {
+	need := max(l.K+l.M, min(l.K+1, l.K+l.M))
+	return len(side) >= need
+}
+
+func sideHasKShards(all map[string]map[uint32]map[uint16][]Node, version string, side []Node, k int) bool {
+	stripes, ok := all[version]
+	if !ok || len(stripes) == 0 {
+		return false
+	}
+	in := map[string]bool{}
+	for _, n := range side {
+		in[n.ID] = true
+	}
+	for _, idx := range stripes {
+		have := 0
+		for _, holders := range idx {
+			for _, h := range holders {
+				if in[h.ID] {
+					have++
+					break
+				}
+			}
+		}
+		if have < k {
+			return false
+		}
+	}
+	return true
+}
+
 type e2Params struct {
 	objects, size int
 	detect        time.Duration
@@ -174,33 +206,35 @@ type e2Params struct {
 }
 
 type e2Result struct {
-	puts, putsAcked, putsUnavailable int
-	gets, getsOK                     int
-	meta                             int
-	contested                        contestResult
-	discards                         uint64
-	lost                             uint64
-	converge, detect                 time.Duration
+	puts, putsAcked, putsUnavailable   int
+	postPutsRequired, postGetsRequired int
+	gets, getsOK                       int
+	meta                               int
+	contested                          contestResult
+	discards                           uint64
+	lost                               uint64
+	converge, detect                   time.Duration
 }
 
 func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 	var res e2Result
 	var err error
 	const bucket = "e2"
+	l := c.Layout()
 	if err := createBucket(c, b, storage.BucketSpec{Name: bucket}); err != nil {
 		return res, err
 	}
-	var pre []*Call
+	var preObjs []*Call
 	for i := range p.objects {
-		pre = append(pre, c.Put(pick(c, c.Nodes()), bucket, fmt.Sprintf("k%02d", i), randomBytes(c.Rand(), p.size), storage.Condition{}))
+		preObjs = append(preObjs, c.Put(pick(c, c.Nodes()), bucket, fmt.Sprintf("k%02d", i), randomBytes(c.Rand(), p.size), storage.Condition{}))
 	}
-	if err := waitAll(c, pre...); err != nil {
+	if err := waitAll(c, preObjs...); err != nil {
 		return res, err
 	}
 	if _, err := c.Await("objects replicated", b.converge, c.Converged); err != nil {
 		return res, err
 	}
-	pre = nil
+	var pre []*Call
 	for i := range p.objects {
 		pre = append(pre, c.PutTag(pick(c, c.Nodes()), bucket, fmt.Sprintf("k%02d", i), "owner", "pre", storage.Condition{}))
 	}
@@ -211,13 +245,17 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 	if _, err := c.Await("writes before the cut replicated", b.converge, c.Converged); err != nil {
 		return res, err
 	}
+	preShards, err := collectShards(c, bucket)
+	if err != nil {
+		return res, err
+	}
 	cut := c.Regions()[0]
 	sideA, sideB := inRegion(c, cut), outside(c, cut)
 	if err := c.PartitionRegion(cut); err != nil {
 		return res, err
 	}
 	var contests []contest
-	var puts, gets, meta []*Call
+	var earlyPuts, earlyGets, meta []*Call
 	for i := range p.objects / 2 {
 		key := fmt.Sprintf("k%02d", i)
 		ta := c.PutTag(pick(c, sideA), bucket, key, "early", "a", storage.Condition{})
@@ -226,9 +264,9 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 		contests = append(contests, tagContest(c, bucket, key, "early", ta, tb))
 		ea := c.Put(pick(c, sideA), bucket, fmt.Sprintf("ea%02d", i), randomBytes(c.Rand(), p.size), storage.Condition{})
 		eb := c.Put(pick(c, sideB), bucket, fmt.Sprintf("eb%02d", i), randomBytes(c.Rand(), p.size), storage.Condition{})
-		puts = append(puts, ea, eb)
+		earlyPuts = append(earlyPuts, ea, eb)
 		contests = append(contests, objectContest(c, bucket, ea.Key, ea), objectContest(c, bucket, eb.Key, eb))
-		gets = append(gets, c.Get(pick(c, sideA), bucket, key), c.Get(pick(c, sideB), bucket, key))
+		earlyGets = append(earlyGets, c.Get(pick(c, sideA), bucket, key), c.Get(pick(c, sideB), bucket, key))
 	}
 	if res.detect, err = c.Await("each side of the cut sees only itself", b.converge, splitViews(c, sideA, sideB)); err != nil {
 		return res, err
@@ -236,6 +274,54 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 	if err := c.Sleep(p.detect); err != nil {
 		return res, err
 	}
+	type preGetCheck struct {
+		call   *Call
+		want   *Call
+		mustOK bool
+	}
+	var postPreChecks []preGetCheck
+	var postPreCalls []*Call
+	for i, po := range preObjs {
+		key := fmt.Sprintf("k%02d", i)
+		for _, side := range [][]Node{sideA, sideB} {
+			canRead := sideHasKShards(preShards, po.Info.Version, side, l.K)
+			g := c.Get(pick(c, side), bucket, key)
+			postPreChecks = append(postPreChecks, preGetCheck{call: g, want: po, mustOK: canRead})
+			postPreCalls = append(postPreCalls, g)
+		}
+	}
+	if err := c.Wait(postPreCalls...); err != nil {
+		return res, err
+	}
+	for _, cg := range postPreChecks {
+		res.gets++
+		if cg.mustOK {
+			res.postGetsRequired++
+			if cg.call.Err != nil {
+				return res, failf("post-split get %s/%s via %s must succeed (side holds >= k=%d shards): %v", cg.call.Bucket, cg.call.Key, cg.call.At.ID, l.K, cg.call.Err)
+			}
+			if sha256.Sum256(cg.call.Data) != cg.want.Sum || cg.call.Info.ETag != cg.want.Info.ETag {
+				return res, failf("post-split get %s/%s via %s returned wrong bytes or etag %s (want %s)", cg.call.Bucket, cg.call.Key, cg.call.At.ID, short(cg.call.Info.ETag), short(cg.want.Info.ETag))
+			}
+			res.getsOK++
+		} else if !errors.Is(cg.call.Err, storage.ErrUnavailable) {
+			return res, failf("post-split get %s/%s via %s with < k=%d shards returned %v, want unavailable", cg.call.Bucket, cg.call.Key, cg.call.At.ID, l.K, cg.call.Err)
+		}
+	}
+	type putCheck struct {
+		call   *Call
+		side   []Node
+		mustOK bool
+	}
+	type getCheck struct {
+		call            *Call
+		mustOK          bool
+		mustUnavailable bool
+	}
+	canPutA, canPutB := sideCanPut(sideA, l), sideCanPut(sideB, l)
+	var postPuts []putCheck
+	var postGets []getCheck
+	var postPutCalls, postGetCalls []*Call
 	for i := range p.objects {
 		key := fmt.Sprintf("k%02d", i)
 		ta := c.PutTag(pick(c, sideA), bucket, key, "owner", "a", storage.Condition{})
@@ -245,24 +331,36 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 		if i%2 == 0 {
 			pa := c.Put(pick(c, sideA), bucket, key, randomBytes(c.Rand(), p.size), storage.Condition{})
 			pb := c.Put(pick(c, sideB), bucket, key, randomBytes(c.Rand(), p.size+1), storage.Condition{})
-			puts = append(puts, pa, pb)
+			postPuts = append(postPuts, putCheck{call: pa, side: sideA, mustOK: canPutA}, putCheck{call: pb, side: sideB, mustOK: canPutB})
+			postPutCalls = append(postPutCalls, pa, pb)
 			contests = append(contests, objectContest(c, bucket, key, pa, pb))
 		} else {
-			side := sideA
+			side, mustOK := sideA, canPutA
 			if i%4 == 1 {
-				side = sideB
+				side, mustOK = sideB, canPutB
 			}
 			pn := c.Put(pick(c, side), bucket, fmt.Sprintf("n%02d", i), randomBytes(c.Rand(), p.size), storage.Condition{})
-			puts = append(puts, pn)
+			postPuts = append(postPuts, putCheck{call: pn, side: side, mustOK: mustOK})
+			postPutCalls = append(postPutCalls, pn)
 			contests = append(contests, objectContest(c, bucket, pn.Key, pn))
 		}
-		gets = append(gets, c.Get(pick(c, sideA), bucket, key), c.Get(pick(c, sideB), bucket, key))
+		ga := c.Get(pick(c, sideA), bucket, key)
+		gb := c.Get(pick(c, sideB), bucket, key)
+		canReadA := sideHasKShards(preShards, preObjs[i].Info.Version, sideA, l.K)
+		canReadB := sideHasKShards(preShards, preObjs[i].Info.Version, sideB, l.K)
+		overA := i%2 == 0 && canPutA
+		overB := i%2 == 0 && canPutB
+		postGets = append(postGets,
+			getCheck{call: ga, mustOK: canReadA, mustUnavailable: !canReadA && !overA},
+			getCheck{call: gb, mustOK: canReadB, mustUnavailable: !canReadB && !overB},
+		)
+		postGetCalls = append(postGetCalls, ga, gb)
 	}
 	aa := c.PutACL(pick(c, sideA), bucket, "alice", "rw", storage.Condition{})
 	ab := c.PutACL(pick(c, sideB), bucket, "alice", "ra", storage.Condition{})
 	meta = append(meta, aa, ab)
 	contests = append(contests, aclContest(c, bucket, "alice", aa, ab))
-	if err := c.Wait(slices.Concat(puts, gets, meta)...); err != nil {
+	if err := c.Wait(slices.Concat(earlyPuts, postPutCalls, earlyGets, postGetCalls, meta)...); err != nil {
 		return res, err
 	}
 	for _, k := range meta {
@@ -271,7 +369,7 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 		}
 	}
 	res.meta = len(meta)
-	for _, k := range puts {
+	for _, k := range earlyPuts {
 		res.puts++
 		switch {
 		case k.Err == nil:
@@ -282,7 +380,22 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 			return res, failf("put %s/%s via %s during the partition: %v (want success or unavailable)", k.Bucket, k.Key, k.At.ID, k.Err)
 		}
 	}
-	for _, k := range gets {
+	for _, cp := range postPuts {
+		res.puts++
+		if cp.mustOK {
+			res.postPutsRequired++
+			if cp.call.Err != nil {
+				return res, failf("post-split put %s/%s via %s must succeed (side size %d >= k+m=%d): %v", cp.call.Bucket, cp.call.Key, cp.call.At.ID, len(cp.side), l.K+l.M, cp.call.Err)
+			}
+			res.putsAcked++
+		} else {
+			if !errors.Is(cp.call.Err, storage.ErrUnavailable) {
+				return res, failf("post-split put %s/%s via %s (side size %d < k+m=%d) returned %v, want unavailable", cp.call.Bucket, cp.call.Key, cp.call.At.ID, len(cp.side), l.K+l.M, cp.call.Err)
+			}
+			res.putsUnavailable++
+		}
+	}
+	for _, k := range earlyGets {
 		res.gets++
 		if !allowedReadDuringPartition(k) {
 			return res, failf("get %s/%s via %s during the partition: %v (want the bytes, unavailable or not found)", k.Bucket, k.Key, k.At.ID, k.Err)
@@ -290,6 +403,34 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 		if k.Err == nil {
 			res.getsOK++
 		}
+	}
+	for _, cg := range postGets {
+		res.gets++
+		switch {
+		case cg.mustOK:
+			res.postGetsRequired++
+			if cg.call.Err != nil {
+				return res, failf("post-split get %s/%s via %s must succeed (surviving shards allow read): %v", cg.call.Bucket, cg.call.Key, cg.call.At.ID, cg.call.Err)
+			}
+			res.getsOK++
+		case cg.mustUnavailable:
+			if !errors.Is(cg.call.Err, storage.ErrUnavailable) {
+				return res, failf("post-split get %s/%s via %s with < k=%d shards returned %v, want unavailable", cg.call.Bucket, cg.call.Key, cg.call.At.ID, l.K, cg.call.Err)
+			}
+		default:
+			if !allowedReadDuringPartition(cg.call) {
+				return res, failf("get %s/%s via %s during the partition: %v (want the bytes, unavailable or not found)", cg.call.Bucket, cg.call.Key, cg.call.At.ID, cg.call.Err)
+			}
+			if cg.call.Err == nil {
+				res.getsOK++
+			}
+		}
+	}
+	if res.postGetsRequired == 0 || res.getsOK == 0 {
+		return res, failf("partition phase saw no required object read succeed (required=%d, ok=%d)", res.postGetsRequired, res.getsOK)
+	}
+	if res.postPutsRequired == 0 || res.putsAcked == 0 {
+		return res, failf("partition phase saw no required object write succeed (required=%d, acked=%d)", res.postPutsRequired, res.putsAcked)
 	}
 	if err := c.Sleep(p.keepCut); err != nil {
 		return res, err
