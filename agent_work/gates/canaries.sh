@@ -10,8 +10,8 @@
 #   all): the cheap G0/G6 canaries, which a push can break by changing the product tree
 #   under their plants (the G1–G5 canaries depend on the product tree too and wait for
 #   the full run). The
-#   full set contains several complete gate runs and takes hours on the grown tree; CI
-#   runs it from its own workflow when the tester changes, weekly, and on demand.
+#   full set contains several complete gate runs and takes hours on the grown tree, so it
+#   is an on-demand run only: here, or the "Gate canaries" workflow started by hand.
 #   A full unfiltered run writes agent_work/0a-foundation/gates/canaries.json. Exit 0
 #   when every canary is caught.
 set -u

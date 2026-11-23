@@ -3,35 +3,17 @@ name: Gate canaries
 # Testing the tester: agent_work/gates/canaries.sh plants one violation at a time in a copy
 # of the tree and requires the gate to go red on the check that owns it. Several canaries
 # are full gate runs, so the whole set costs many times one gate run and grows with the
-# tree (over two hours once five protocol packages had landed, which no longer fitted the
-# CI job or the gap between pushes). It therefore runs when the tester itself changes, on
-# demand, and once a week — not on every push (ci.yml keeps the fast G0/G6 subset on every
-# push). Runs queue; a later push never cancels one.
+# tree (over five hours once the integrated node had landed). It is a long run, so it is
+# on demand only (owner ruling 2026-11-22: nothing long runs on a push or on a schedule):
+# start it here by hand, or run agent_work/gates/canaries.sh locally. Tick "fast" for the
+# G0/G6 subset (a few minutes).
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'agent_work/gates/**'
-      - '.github/workflows/**'
-      - '.github/scripts/**'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - 'compose.yaml'
-      - 'go.mod'
-      - 'go.sum'
-  pull_request:
-    paths:
-      - 'agent_work/gates/**'
-      - '.github/workflows/**'
-      - '.github/scripts/**'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - 'compose.yaml'
-      - 'go.mod'
-      - 'go.sum'
-  schedule:
-    - cron: '17 3 * * 0'
   workflow_dispatch:
+    inputs:
+      fast:
+        description: Only the fast G0/G6 canaries
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -50,6 +32,8 @@ jobs:
         with:
           fetch-depth: 0
       - name: Gate canaries
+        env:
+          CANARY_FAST: ${{ inputs.fast && '1' || '' }}
         run: agent_work/gates/canaries.sh
       - name: Upload canary result
         if: always()

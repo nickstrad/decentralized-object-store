@@ -465,7 +465,7 @@ explanatory prose around the diagrams is Neon's.
 | `kb/` | the kb tool vendored whole (a nested Go module with its own dependencies; outside the root module, so the zero-dependency check is unaffected) |
 | `.kb/` | location file for the in-repo knowledge store |
 | `.github/workflows/pages.yml` | builds the site (book, C4 section, plan) and deploys to GitHub Pages on every push to main |
-| `.github/workflows/ci.yml` | runs the gate suite through `docker compose` on a Linux runner; no macOS job (OQ-16) |
+| `.github/workflows/ci.yml` | the fast lane on every push, through `docker compose` on a Linux runner: build, static checks, unit tests and the fixed-seed smoke (`agent_work/gates/ci-fast.sh`, a few minutes). The full gate suite, fuzz budgets, seed sweeps and gate canaries are on-demand runs, local or by hand (owner ruling 2026-11-22); the full local gate stays the landing authority. No macOS job (OQ-16) |
 | `agent_work/INDEX.md` | index of every script: name, purpose, chunk, author seat, what it proved / last result |
 | `agent_work/orch/` | orchestration scripts: launch, wait, seat probes, Neon/Astra runners, land, knowledge sync |
 | `agent_work/gates/` | gate scripts (`gate.sh`, `fuzz-short.sh`, `detlint/`, prose and self-containment checks) and their canaries |
@@ -539,7 +539,8 @@ Chunk 6) a running multi-region cluster; gate scripts and their canaries
 orchestration scripts (`agent_work/orch/`); kb vendored into `kb/` with `kb-sync.sh` and an
 empty in-repo store; the Pages site grown from the kickoff scaffold into the book site
 (front page, book section fed from `book/`, C4 section, plan) and verified serving;
-`ci.yml` running the gates through Docker on Linux.
+`ci.yml` running the gates through Docker on Linux (since the owner ruling of 2026-11-22: the
+fast lane only; see the layout table).
 - Tests first: one canary per gate — a planted unformatted file, banned `time.Now`, a
   second `require` line, rapid imported from a non-test file, an unlisted panic, a comment
   in pre-prose Go, a `/root/` path in a doc, a result file produced outside the container —

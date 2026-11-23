@@ -1,5 +1,9 @@
 name: CI
 
+# The fast lane only (owner ruling 2026-11-22): build, static checks, unit tests and the
+# fixed-seed smoke of the simulation and end-to-end tests, a few minutes per push. The full
+# gate suite, fuzz budgets, seed sweeps and gate canaries are on-demand runs; the commands
+# are listed in agent_work/gates/ci-fast.sh.
 on:
   push:
     branches: [main]
@@ -14,31 +18,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gates:
-    name: Gate suite through Docker
+  fast:
+    name: Fast lane through Docker
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Run gates G0-G6 in the dev container
-        env:
-          GATE_STAGE: final
-        run: agent_work/gates/gate.sh ci
+      - name: Build, static checks, unit tests and fixed-seed smoke in the dev container
+        run: agent_work/gates/ci-fast.sh
       - name: Prose provenance of everything this push landed
         env:
           BEFORE: ${{ github.event.before || github.event.pull_request.base.sha }}
         run: agent_work/gates/ci-prose.sh "$BEFORE" HEAD
-      - name: Fast gate canaries (G0 and G6 plants on this tree)
-        env:
-          CANARY_FAST: "1"
-        run: agent_work/gates/canaries.sh
-      - name: Upload gate result
+      - name: Upload fast-lane result
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gate-result
+          name: fast-lane-result
           path: |
             agent_work/ci/gates/result.json
             agent_work/ci/gates/*.log
