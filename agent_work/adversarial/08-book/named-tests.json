@@ -1,0 +1,1310 @@
+{
+  "BenchmarkChaos100": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/meta_test.go",
+        "line": 251,
+        "body": "func BenchmarkChaos100(b *testing.B) {\n\trun := chaos(100)\n\tvar steps uint64\n\tfor i := 0; b.Loop(); i++ {\n\t\ts := run(int64(i + 1))\n\t\tsteps += s.Steps()\n\t}\n\tb.ReportMetric(float64(steps)/b.Elapsed().Seconds(), \"events/s\")\n}\n"
+      }
+    ]
+  },
+  "FuzzSimSchedule": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/fuzz_test.go",
+        "line": 34,
+        "body": "func FuzzSimSchedule(f *testing.F) {\n\tf.Add([]byte{})\n\tf.Add([]byte{0})\n\tf.Add([]byte{1, 1, 0, 0})\n\tf.Add([]byte{0, 0, 0, 0, 0, 0, 0, 0})\n\tf.Add([]byte{255, 255, 255, 255, 255, 255, 255, 255, 255})\n\tfor k := 0; k < 20; k++ {\n\t\tf.Add([]byte{3, byte(k), byte(k * 7), byte(k * 13), 9, byte(k + 1), 2, 4})\n\t}\n\tf.Fuzz(func(t *testing.T, data []byte) {\n\t\tif len(data) > 4096 {\n\t\t\tdata = data[:4096]\n\t\t}\n\t\tsimtest.RequireDeterministic(t, 1, scheduleRun(data))\n\t})\n}\n\n// TestScheduleFromBytes proves that decoding bytes into TimedFaults is\n// deterministic, produces non-decreasing timestamps from start, and handles empty input."
+      }
+    ]
+  },
+  "TestCanaryDroppedInvariant": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/meta_test.go",
+        "line": 240,
+        "body": "func TestCanaryDroppedInvariant(t *testing.T) {\n\tclean := simtoy.ChaosRun(simtoy.ChaosOptions{Nodes: 20})\n\tif _, err := simtest.CheckDeterministic(1, clean); err != nil {\n\t\tt.Fatalf(\"clean run failed: %v\", err)\n\t}\n\trun := simtoy.ChaosRun(simtoy.ChaosOptions{Nodes: 20, Configure: sim.PlantDroppedInvariants})\n\trequireCanaryCaught(t, run, sim.ErrInvariantNotRun)\n}\n\n// BenchmarkChaos100 measures simulator throughput in events/s on a 100-node\n// full chaos run including invariants and digest computation."
+      }
+    ]
+  },
+  "TestCanaryMapOrder": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/meta_test.go",
+        "line": 227,
+        "body": "func TestCanaryMapOrder(t *testing.T) {\n\trun := simtoy.ChaosRun(simtoy.ChaosOptions{Nodes: 20, Wrap: func(e env.Env, p env.Process) env.Process {\n\t\tpeers := map[env.NodeID]bool{}\n\t\tfor _, id := range sim.NodeIDs(20) {\n\t\t\tpeers[id] = true\n\t\t}\n\t\treturn &mapOrder{Process: p, e: e, peers: peers}\n\t}})\n\trequireCanaryCaught(t, run, simtest.ErrNondeterministic)\n}\n\n// TestCanaryDroppedInvariant proves that Verify catches silent invariant\n// skipping by planting PlantDroppedInvariants so scheduled invariants never run."
+      }
+    ]
+  },
+  "TestCanaryUnseededDraw": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/meta_test.go",
+        "line": 217,
+        "body": "func TestCanaryUnseededDraw(t *testing.T) {\n\trun := simtoy.ChaosRun(simtoy.ChaosOptions{Nodes: 20, Wrap: func(e env.Env, p env.Process) env.Process {\n\t\treturn &unseeded{Process: p, e: e}\n\t}})\n\trequireCanaryCaught(t, run, simtest.ErrNondeterministic)\n}\n\n// TestCanaryMapOrder proves that CheckDeterministic catches map-order\n// dependence by planting a wrapper that forwards datagrams to the first key\n// yielded by a Go map iteration."
+      }
+    ]
+  },
+  "TestDifferentSeedsDiffer": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/meta_test.go",
+        "line": 155,
+        "body": "func TestDifferentSeedsDiffer(t *testing.T) {\n\tfor _, n := range metaSizes {\n\t\tt.Run(fmt.Sprintf(\"nodes=%d\", n), func(t *testing.T) {\n\t\t\ta, b := chaos(n)(1).Digests(), chaos(n)(2).Digests()\n\t\t\tif a.Events == b.Events || a.State == b.State {\n\t\t\t\tt.Fatalf(\"seeds 1 and 2 share a digest: %s vs %s\", a, b)\n\t\t\t}\n\t\t})\n\t}\n}\n\ntype unseeded struct {\n\tenv.Process\n\te env.Env\n}\n"
+      }
+    ]
+  },
+  "TestGoldenDigests": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/meta_test.go",
+        "line": 99,
+        "body": "func TestGoldenDigests(t *testing.T) {\n\tpath := filepath.Join(\"testdata\", \"golden.txt\")\n\ttype row struct {\n\t\tn    int\n\t\tseed int64\n\t\twant string\n\t}\n\tvar rows []row\n\tif *updateGolden {\n\t\tvar b strings.Builder\n\t\tb.WriteString(\"# nodes seed digests\\n\")\n\t\tfor _, n := range metaSizes {\n\t\t\tfor _, seed := range []int64{1, 2, 3} {\n\t\t\t\ts := chaos(n)(seed)\n\t\t\t\tmustNil(t, s.Verify())\n\t\t\t\tfmt.Fprintf(&b, \"%d %d %s\\n\", n, seed, s.Digests())\n\t\t\t}\n\t\t}\n\t\tmustNil(t, os.MkdirAll(\"testdata\", 0o755))\n\t\tmustNil(t, os.WriteFile(path, []byte(b.String()), 0o644))\n\t}\n\tdata, err := os.ReadFile(path)\n\tif err != nil {\n\t\tt.Fatalf(\"read golden file (regenerate with -update-golden): %v\", err)\n\t}\n\tfor _, line := range strings.Split(string(data), \"\\n\") {\n\t\tif line == \"\" || strings.HasPrefix(line, \"#\") {\n\t\t\tcontinue\n\t\t}\n\t\tf := strings.SplitN(line, \" \", 3)\n\t\tif len(f) != 3 {\n\t\t\tt.Fatalf(\"bad golden line %q\", line)\n\t\t}\n\t\tn, err1 := strconv.Atoi(f[0])\n\t\tseed, err2 := strconv.ParseInt(f[1], 10, 64)\n\t\tif err := errors.Join(err1, err2); err != nil {\n\t\t\tt.Fatalf(\"bad golden line %q: %v\", line, err)\n\t\t}\n\t\trows = append(rows, row{n, seed, f[2]})\n\t}\n\tif len(rows) != 9 {\n\t\tt.Fatalf(\"golden file has %d rows, want 9\", len(rows))\n\t}\n\tfor _, r := range rows {\n\t\tt.Run(fmt.Sprintf(\"nodes=%d/seed=%d\", r.n, r.seed), func(t *testing.T) {\n\t\t\ts := chaos(r.n)(r.seed)\n\t\t\tmustNil(t, s.Verify())\n\t\t\tif got := s.Digests().String(); got != r.want {\n\t\t\t\tt.Fatalf(\"digests changed:\\n got  %s\\n want %s\", got, r.want)\n\t\t\t}\n\t\t})\n\t}\n}\n\n// TestDifferentSeedsDiffer proves that distinct seeds drive distinct event logs\n// and final cluster states."
+      }
+    ]
+  },
+  "TestPropDiskModel": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/prop_test.go",
+        "line": 481,
+        "body": "func TestPropDiskModel(t *testing.T) {\n\trapid.Check(t, func(t *rapid.T) {\n\t\tm := &diskMachine{model: map[string]*diskModelBlob{}, names: []string{\"a\", \"b\", \"c/d\"}}\n\t\tm.s = sim.New(sim.Config{Seed: rapid.Int64().Draw(t, \"seed\")})\n\t\tif err := m.s.AddNode(sim.NodeSpec{ID: \"a\"}, func(e env.Env) env.Process {\n\t\t\tm.cur = e\n\t\t\treturn &recorder{e: e}\n\t\t}); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tif err := m.s.RunUntil(0); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tname := rapid.SampledFrom(m.names)\n\t\tdata := rapid.SliceOfN(rapid.Byte(), 0, 12)\n\t\tt.Repeat(map[string]func(*rapid.T){\n\t\t\t\"write\": func(t *rapid.T) {\n\t\t\t\tn, d := name.Draw(t, \"name\"), data.Draw(t, \"data\")\n\t\t\t\tif err := m.cur.Disk.Write(n, d); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tb := m.blob(n)\n\t\t\t\tb.written, b.wExists, b.dirty, b.appendOnly = append([]byte{}, d...), true, true, false\n\t\t\t\tb.wDamaged = false\n\t\t\t},\n\t\t\t\"append\": func(t *rapid.T) {\n\t\t\t\tn, d := name.Draw(t, \"name\"), data.Draw(t, \"data\")\n\t\t\t\tif err := m.cur.Disk.Append(n, d); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tb := m.blob(n)\n\t\t\t\tif !b.dirty {\n\t\t\t\t\tb.appendOnly = true\n\t\t\t\t}\n\t\t\t\tif !b.wExists {\n\t\t\t\t\tb.wDamaged = false\n\t\t\t\t}\n\t\t\t\tb.written = append(append([]byte{}, b.written...), d...)\n\t\t\t\tb.wExists, b.dirty = true, true\n\t\t\t},\n\t\t\t\"sync\": func(t *rapid.T) {\n\t\t\t\tn := name.Draw(t, \"name\")\n\t\t\t\terr := m.cur.Disk.Sync(n)\n\t\t\t\tb := m.model[n]\n\t\t\t\tif b == nil || !b.wExists && !b.dExists {\n\t\t\t\t\tif !errors.Is(err, env.ErrNotFound) {\n\t\t\t\t\t\tt.Fatalf(\"Sync of missing = %v\", err)\n\t\t\t\t\t}\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\tif err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tb.durable, b.dExists, b.dirty, b.appendOnly = append([]byte{}, b.written...), b.wExists, false, false\n\t\t\t\tb.dDamaged = b.wExists && b.wDamaged\n\t\t\t},\n\t\t\t\"delete\": func(t *rapid.T) {\n\t\t\t\tn := name.Draw(t, \"name\")\n\t\t\t\terr := m.cur.Disk.Delete(n)\n\t\t\t\tb := m.model[n]\n\t\t\t\tif b == nil || !b.wExists {\n\t\t\t\t\tif !errors.Is(err, env.ErrNotFound) {\n\t\t\t\t\t\tt.Fatalf(\"Delete of missing = %v\", err)\n\t\t\t\t\t}\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\tif err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tb.written, b.wExists, b.dirty, b.appendOnly = nil, false, true, false\n\t\t\t\tb.wDamaged = false\n\t\t\t},\n\t\t\t\"crash\": func(t *rapid.T) {\n\t\t\t\tif err := m.s.Crash(\"a\"); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tfor _, b := range m.model {\n\t\t\t\t\tb.written, b.wExists, b.dirty, b.appendOnly = append([]byte{}, b.durable...), b.dExists, false, false\n\t\t\t\t\tb.wDamaged = b.dDamaged && b.dExists\n\t\t\t\t}\n\t\t\t\tm.restart(t)\n\t\t\t},\n\t\t\t\"crashTorn\": func(t *rapid.T) {\n\t\t\t\tif err := m.s.CrashTorn(\"a\"); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tfor _, n := range m.names {\n\t\t\t\t\tb := m.model[n]\n\t\t\t\t\tif b == nil {\n\t\t\t\t\t\tcontinue\n\t\t\t\t\t}\n\t\t\t\t\tif b.dirty && b.appendOnly && b.wExists {\n\t\t\t\t\t\tgot, ok := m.s.Disk(\"a\").Peek(n)\n\t\t\t\t\t\tswitch {\n\t\t\t\t\t\tcase !ok && !b.dExists:\n\t\t\t\t\t\tcase !ok || len(got) < len(b.durable) || !bytes.Equal(got[:len(b.durable)], b.durable) ||\n\t\t\t\t\t\t\t!bytes.HasPrefix(b.written[len(b.durable):], got[len(b.durable):]):\n\t\t\t\t\t\t\tt.Fatalf(\"torn %s = %q %v, written %q durable %q\", n, got, ok, b.written, b.durable)\n\t\t\t\t\t\tdefault:\n\t\t\t\t\t\t\tb.durable, b.dExists = append([]byte{}, got...), true\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\tb.written, b.wExists, b.dirty, b.appendOnly = append([]byte{}, b.durable...), b.dExists, false, false\n\t\t\t\t\tb.wDamaged = b.dDamaged && b.dExists\n\t\t\t\t}\n\t\t\t\tm.restart(t)\n\t\t\t},\n\t\t\t\"bitrot\": func(t *rapid.T) {\n\t\t\t\tn := name.Draw(t, \"name\")\n\t\t\t\tb := m.model[n]\n\t\t\t\terr := m.s.BitRot(\"a\", n)\n\t\t\t\tif b == nil || !b.dExists || len(b.durable) == 0 {\n\t\t\t\t\tif err == nil {\n\t\t\t\t\t\tt.Fatalf(\"BitRot of %s with no durable bytes succeeded\", n)\n\t\t\t\t\t}\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\tif err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tgot, _ := m.s.Disk(\"a\").PeekDurable(n)\n\t\t\t\tflips := 0\n\t\t\t\tfor i := range got {\n\t\t\t\t\tflips += bits.OnesCount8(got[i] ^ b.durable[i])\n\t\t\t\t}\n\t\t\t\tif flips != 1 {\n\t\t\t\t\tt.Fatalf(\"bit-rot flipped %d bits\", flips)\n\t\t\t\t}\n\t\t\t\tif !b.dirty {\n\t\t\t\t\tb.written = append([]byte{}, got...)\n\t\t\t\t\tb.wDamaged = true\n\t\t\t\t}\n\t\t\t\tb.durable = append([]byte{}, got...)\n\t\t\t\tb.dDamaged = true\n\t\t\t},\n\t\t\t\"wipe\": func(t *rapid.T) {\n\t\t\t\tif err := m.s.WipeDisk(\"a\"); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tfor _, b := range m.model {\n\t\t\t\t\tif b.wExists || b.dExists {\n\t\t\t\t\t\tb.dDamaged = true\n\t\t\t\t\t}\n\t\t\t\t\tb.wDamaged = false\n\t\t\t\t\tb.written, b.wExists, b.durable, b.dExists, b.dirty, b.appendOnly = nil, false, nil, false, false, false\n\t\t\t\t}\n\t\t\t},\n\t\t\t\"failRead\": func(t *rapid.T) {\n\t\t\t\tn := name.Draw(t, \"name\")\n\t\t\t\tif err := m.s.FailReads(\"a\", n, 1); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tif _, err := m.cur.Disk.Read(n); !errors.Is(err, env.ErrIO) {\n\t\t\t\t\tt.Fatalf(\"Read after FailReads = %v\", err)\n\t\t\t\t}\n\t\t\t},\n\t\t\t\"\": func(t *rapid.T) { m.check(t) },\n\t\t})\n\t})\n}\n\ntype streamMachine struct {\n\ts    *sim.Sim\n\tids  []env.NodeID\n\trecs map[env.NodeID]*recorder\n\tsent map[[2]env.NodeID]int\n}\n"
+      }
+    ]
+  },
+  "TestPropHealedNetworkDelivers": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/prop_test.go",
+        "line": 172,
+        "body": "func TestPropHealedNetworkDelivers(t *testing.T) {\n\trapid.Check(t, func(t *rapid.T) {\n\t\tn := rapid.IntRange(2, 6).Draw(t, \"n\")\n\t\tnc := sim.DefaultNetConfig()\n\t\ts := sim.New(sim.Config{Seed: rapid.Int64().Draw(t, \"seed\"), Net: nc})\n\t\tids := sim.NodeIDs(n)\n\t\trecs := map[env.NodeID]*recorder{}\n\t\tfor i, id := range ids {\n\t\t\tif err := s.AddNode(sim.NodeSpec{ID: id, Region: env.Region(fmt.Sprintf(\"r%d\", i%2))}, func(e env.Env) env.Process {\n\t\t\t\tr := &recorder{e: e}\n\t\t\t\trecs[e.ID] = r\n\t\t\t\treturn r\n\t\t\t}); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t}\n\t\tif err := s.RunUntil(0); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tpick := rapid.SampledFrom(ids)\n\t\tfaults := rapid.IntRange(0, 8).Draw(t, \"faults\")\n\t\tfor i := 0; i < faults; i++ {\n\t\t\ta, b := pick.Draw(t, \"a\"), pick.Draw(t, \"b\")\n\t\t\tvar err error\n\t\t\tswitch rapid.IntRange(0, 6).Draw(t, \"kind\") {\n\t\t\tcase 0:\n\t\t\t\tmustNil(t, s.Partition([]env.NodeID{a}, []env.NodeID{b}))\n\t\t\tcase 1:\n\t\t\t\tmustNil(t, s.PartitionOneWay([]env.NodeID{a}, []env.NodeID{b}))\n\t\t\tcase 2:\n\t\t\t\terr = s.Isolate(a)\n\t\t\tcase 3:\n\t\t\t\terr = s.PartitionRegion(s.Region(a))\n\t\t\tcase 4:\n\t\t\t\terr = s.SetLinkLoss(a, b, rapid.Uint32Range(0, 1_000_000).Draw(t, \"ppm\"))\n\t\t\tcase 5:\n\t\t\t\terr = s.Clog(a, b)\n\t\t\tcase 6:\n\t\t\t\t_ = recs[a].e.Net.Send(b, []byte(\"pre\"))\n\t\t\t}\n\t\t\tif err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t}\n\t\tif err := s.RunFor(time.Second); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\ts.HealNet()\n\t\tmsgs := rapid.IntRange(1, 30).Draw(t, \"msgs\")\n\t\twantDatagrams := map[env.NodeID]int{}\n\t\twantReplies := map[env.NodeID]int{}\n\t\tfor i := 0; i < msgs; i++ {\n\t\t\ta, b := pick.Draw(t, \"from\"), pick.Draw(t, \"to\")\n\t\t\tif rapid.Bool().Draw(t, \"request\") {\n\t\t\t\trecs[a].request(b, fmt.Sprintf(\"post%d\", i), time.Minute)\n\t\t\t\twantReplies[a]++\n\t\t\t\tcontinue\n\t\t\t}\n\t\t\tif err := recs[a].e.Net.Send(b, []byte(fmt.Sprintf(\"post%d\", i))); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\twantDatagrams[b]++\n\t\t}\n\t\tif err := s.RunFor(10 * time.Second); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tfor _, id := range ids {\n\t\t\tgot := 0\n\t\t\tfor _, d := range recs[id].datagrams {\n\t\t\t\tif strings.HasPrefix(d.msg, \"post\") {\n\t\t\t\t\tgot++\n\t\t\t\t}\n\t\t\t}\n\t\t\tif got != wantDatagrams[id] {\n\t\t\t\tt.Fatalf(\"%s received %d post-heal datagrams, want %d\", id, got, wantDatagrams[id])\n\t\t\t}\n\t\t\tok := 0\n\t\t\tfor _, r := range recs[id].replies {\n\t\t\t\tif r.err != nil {\n\t\t\t\t\tt.Fatalf(\"%s post-heal request failed: %v\", id, r.err)\n\t\t\t\t}\n\t\t\t\tif strings.HasPrefix(r.reply, \"echo:post\") {\n\t\t\t\t\tok++\n\t\t\t\t}\n\t\t\t}\n\t\t\tif ok != wantReplies[id] {\n\t\t\t\tt.Fatalf(\"%s got %d replies, want %d\", id, ok, wantReplies[id])\n\t\t\t}\n\t\t}\n\t})\n}\n\ntype withUngroupedBlobs struct {\n\tenv.Process\n\te      env.Env\n\tshards time.Duration\n}\n"
+      }
+    ]
+  },
+  "TestPropNemesisRespectsBudget": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/prop_test.go",
+        "line": 347,
+        "body": "func TestPropNemesisRespectsBudget(t *testing.T) {\n\trapid.Check(t, func(t *rapid.T) {\n\t\tn := rapid.IntRange(3, 8).Draw(t, \"n\")\n\t\ts := sim.New(sim.Config{Seed: rapid.Int64().Draw(t, \"seed\")})\n\t\tids := sim.NodeIDs(n)\n\t\ttoy := simtoy.Factory(simtoy.Config{Peers: ids})\n\t\tvar shards time.Duration\n\t\tif rapid.Bool().Draw(t, \"newGroups\") {\n\t\t\tshards = time.Duration(rapid.IntRange(50, 400).Draw(t, \"shardEveryMs\")) * time.Millisecond\n\t\t}\n\t\tif err := s.AddCluster(ids, 3, func(e env.Env) env.Process {\n\t\t\treturn &withUngroupedBlobs{Process: toy(e), e: e, shards: shards}\n\t\t}); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tb := sim.Budget{\n\t\t\tMinLive:            rapid.IntRange(0, n).Draw(t, \"minLive\"),\n\t\t\tMaxDamagedDisks:    rapid.IntRange(0, n).Draw(t, \"maxDisks\"),\n\t\t\tMaxDamagedPerGroup: rapid.IntRange(0, 3).Draw(t, \"perGroup\"),\n\t\t}\n\t\tif rapid.Bool().Draw(t, \"groups\") {\n\t\t\tb.GroupOf = shardGroups\n\t\t}\n\t\tkinds := sim.ChaosKinds()\n\t\tif rapid.Bool().Draw(t, \"diskHeavy\") {\n\t\t\tkinds = []sim.FaultKind{sim.FaultBitRot, sim.FaultReadError, sim.FaultWipeDisk, sim.FaultWipeRejoin, sim.FaultCrash, sim.FaultRestart}\n\t\t}\n\t\tcfg := sim.NemesisConfig{\n\t\t\tStart: 0, Phases: rapid.IntRange(1, 3).Draw(t, \"phases\"),\n\t\t\tChaos: 2 * time.Second, Heal: time.Second, MaxGap: 50 * time.Millisecond, Budget: b, Kinds: kinds,\n\t\t}\n\t\tnem, err := s.StartNemesis(cfg)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\ts.AddInvariant(\"budget\", 1, func() error { return b.Check(s) })\n\t\ts.AddInvariant(\"budget/independent\", 1, func() error { return budgetHolds(s, b) })\n\t\tif err := s.RunUntil(nem.QuietAt()); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tif err := s.Verify(); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tapplied := 0\n\t\tfor _, st := range nem.History() {\n\t\t\tif st.Outcome == sim.OutcomeApplied {\n\t\t\t\tapplied++\n\t\t\t}\n\t\t}\n\t\tif applied == 0 && b.MaxDamagedDisks > 0 && b.MinLive < n {\n\t\t\tt.Fatalf(\"nemesis applied nothing: %+v\", nem.History())\n\t\t}\n\t})\n}\n\ntype diskModelBlob struct {\n\twritten, durable  []byte\n\twExists, dExists  bool\n\tdirty, appendOnly bool\n\tdDamaged          bool\n\twDamaged          bool\n}\n\ntype diskMachine struct {\n\ts     *sim.Sim\n\tcur   env.Env\n\tmodel map[string]*diskModelBlob\n\tnames []string\n}\n"
+      }
+    ]
+  },
+  "TestPropNemesisTimingIgnoresInventory": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/prop_test.go",
+        "line": 834,
+        "body": "func TestPropNemesisTimingIgnoresInventory(t *testing.T) {\n\trapid.Check(t, func(t *rapid.T) {\n\t\tseed := rapid.Int64().Draw(t, \"seed\")\n\t\tn := rapid.IntRange(2, 6).Draw(t, \"n\")\n\t\tbudget := sim.Budget{Lifted: true}\n\t\tif rapid.Bool().Draw(t, \"budget\") {\n\t\t\tbudget = sim.Budget{\n\t\t\t\tMinLive:            rapid.IntRange(0, n).Draw(t, \"minLive\"),\n\t\t\t\tMaxDamagedDisks:    rapid.IntRange(0, n).Draw(t, \"maxDisks\"),\n\t\t\t\tMaxDamagedPerGroup: rapid.IntRange(0, 2).Draw(t, \"perGroup\"),\n\t\t\t}\n\t\t\tif rapid.Bool().Draw(t, \"groups\") {\n\t\t\t\tbudget.GroupOf = scribbleGroups\n\t\t\t}\n\t\t}\n\t\tplan := func(label string) []scribblePlan {\n\t\t\tout := make([]scribblePlan, n)\n\t\t\tfor i := range out {\n\t\t\t\tout[i].blobs = rapid.IntRange(0, 3).Draw(t, fmt.Sprintf(\"%s/blobs/%d\", label, i))\n\t\t\t\tif rapid.Bool().Draw(t, fmt.Sprintf(\"%s/ticks/%d\", label, i)) {\n\t\t\t\t\tout[i].every = time.Duration(rapid.IntRange(20, 300).Draw(t, fmt.Sprintf(\"%s/everyMs/%d\", label, i))) * time.Millisecond\n\t\t\t\t}\n\t\t\t}\n\t\t\treturn out\n\t\t}\n\t\trun := func(p []scribblePlan) []sim.NemesisStep {\n\t\t\ts := sim.New(sim.Config{Seed: seed})\n\t\t\tids := sim.NodeIDs(n)\n\t\t\tfor i, id := range ids {\n\t\t\t\tw := p[i]\n\t\t\t\tif err := s.AddNode(sim.NodeSpec{ID: id, Region: env.Region(fmt.Sprintf(\"r%d\", i%2))}, func(e env.Env) env.Process {\n\t\t\t\t\treturn &scribbler{e: e, plan: w}\n\t\t\t\t}); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t}\n\t\t\tnem, err := s.StartNemesis(sim.NemesisConfig{\n\t\t\t\tStart: 0, Phases: 2, Chaos: 2 * time.Second, Heal: time.Second, MaxGap: 50 * time.Millisecond, Budget: budget,\n\t\t\t})\n\t\t\tif err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tif err := s.RunUntil(nem.QuietAt()); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\treturn nem.History()\n\t\t}\n\t\ta, b := run(plan(\"a\")), run(plan(\"b\"))\n\t\tif len(a) != len(b) {\n\t\t\tt.Fatalf(\"nemesis lengths %d vs %d\", len(a), len(b))\n\t\t}\n\t\tfor i := range a {\n\t\t\tfa, fb := a[i].Fault, b[i].Fault\n\t\t\tfa.Blob, fb.Blob = \"\", \"\"\n\t\t\tif a[i].At != b[i].At || !bytes.Equal(fa.Encode(), fb.Encode()) {\n\t\t\t\tt.Fatalf(\"step %d: %v vs %v\", i, a[i], b[i])\n\t\t\t}\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestPropNetworkDrawsDoNotShiftTheNemesis": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/prop_test.go",
+        "line": 55,
+        "body": "func TestPropNetworkDrawsDoNotShiftTheNemesis(t *testing.T) {\n\trapid.Check(t, func(t *rapid.T) {\n\t\tseed := rapid.Int64().Draw(t, \"seed\")\n\t\tdrop := rapid.Uint32Range(1, 900_000).Draw(t, \"drop\")\n\t\trun := func(dropPPM uint32) []sim.NemesisStep {\n\t\t\tnc := sim.DefaultNetConfig()\n\t\t\tnc.DropPPM = dropPPM\n\t\t\ts := sim.New(sim.Config{Seed: seed, Net: nc})\n\t\t\tids := sim.NodeIDs(5)\n\t\t\tif err := s.AddCluster(ids, 2, simtoy.Factory(simtoy.Config{Peers: ids})); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tn, err := s.StartNemesis(sim.NemesisConfig{\n\t\t\t\tStart: 0, Phases: 2, Chaos: 2 * time.Second, Heal: time.Second, MaxGap: 100 * time.Millisecond,\n\t\t\t\tKinds:  []sim.FaultKind{sim.FaultCrash, sim.FaultRestart, sim.FaultPause, sim.FaultResume, sim.FaultPartition, sim.FaultPartitionOneWay, sim.FaultIsolate, sim.FaultLinkLoss, sim.FaultClog, sim.FaultUnclog},\n\t\t\t\tBudget: sim.Budget{MinLive: 2},\n\t\t\t})\n\t\t\tif err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tif err := s.RunUntil(n.QuietAt()); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\treturn n.History()\n\t\t}\n\t\ta, b := run(0), run(drop)\n\t\tif len(a) != len(b) {\n\t\t\tt.Fatalf(\"nemesis lengths %d vs %d\", len(a), len(b))\n\t\t}\n\t\tfor i := range a {\n\t\t\tif a[i].At != b[i].At || a[i].Fault.String() != b[i].Fault.String() || a[i].Outcome != b[i].Outcome {\n\t\t\t\tt.Fatalf(\"step %d: %v vs %v\", i, a[i], b[i])\n\t\t\t}\n\t\t}\n\t})\n}\n\ntype ticker struct {\n\te     env.Env\n\tpeers []env.NodeID\n\tleft  int\n\tlast  env.Time\n\tbad   error\n}\n"
+      }
+    ]
+  },
+  "TestPropStreamOrderPerConnection": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/prop_test.go",
+        "line": 694,
+        "body": "func TestPropStreamOrderPerConnection(t *testing.T) {\n\trapid.Check(t, func(t *rapid.T) {\n\t\tn := rapid.IntRange(2, 4).Draw(t, \"n\")\n\t\tm := &streamMachine{s: sim.New(sim.Config{Seed: rapid.Int64().Draw(t, \"seed\")}), ids: sim.NodeIDs(n),\n\t\t\trecs: map[env.NodeID]*recorder{}, sent: map[[2]env.NodeID]int{}}\n\t\tfor _, id := range m.ids {\n\t\t\tif err := m.s.AddNode(sim.NodeSpec{ID: id, Region: \"r\"}, func(e env.Env) env.Process {\n\t\t\t\tr := &recorder{e: e}\n\t\t\t\tm.recs[e.ID] = r\n\t\t\t\treturn r\n\t\t\t}); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t}\n\t\tif err := m.s.RunUntil(0); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tpick := rapid.SampledFrom(m.ids)\n\t\tpair := func(t *rapid.T) (env.NodeID, env.NodeID) {\n\t\t\ta := pick.Draw(t, \"a\")\n\t\t\tb := rapid.SampledFrom(m.ids).Filter(func(x env.NodeID) bool { return x != a }).Draw(t, \"b\")\n\t\t\treturn a, b\n\t\t}\n\t\tt.Repeat(map[string]func(*rapid.T){\n\t\t\t\"request\": func(t *rapid.T) {\n\t\t\t\ta, b := pair(t)\n\t\t\t\tk := m.sent[[2]env.NodeID{a, b}]\n\t\t\t\tm.sent[[2]env.NodeID{a, b}] = k + 1\n\t\t\t\tm.recs[a].request(b, streamLabel(a, b, k), time.Hour)\n\t\t\t},\n\t\t\t\"pause\": func(t *rapid.T) {\n\t\t\t\tid := pick.Draw(t, \"id\")\n\t\t\t\tif m.s.Status(id).Paused {\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\tif err := m.s.Pause(id); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t},\n\t\t\t\"resume\": func(t *rapid.T) {\n\t\t\t\tid := pick.Draw(t, \"id\")\n\t\t\t\tif !m.s.Status(id).Paused {\n\t\t\t\t\treturn\n\t\t\t\t}\n\t\t\t\tif err := m.s.Resume(id); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t},\n\t\t\t\"clog\": func(t *rapid.T) {\n\t\t\t\ta, b := pair(t)\n\t\t\t\tif err := m.s.Clog(a, b); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t},\n\t\t\t\"unclog\": func(t *rapid.T) {\n\t\t\t\ta, b := pair(t)\n\t\t\t\tif err := m.s.Unclog(a, b); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t},\n\t\t\t\"healAll\": func(t *rapid.T) { m.s.HealAll() },\n\t\t\t\"healNet\": func(t *rapid.T) { m.s.HealNet() },\n\t\t\t\"run\": func(t *rapid.T) {\n\t\t\t\td := time.Duration(rapid.IntRange(0, 6).Draw(t, \"ms\")) * time.Millisecond\n\t\t\t\tif err := m.s.RunFor(d); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tm.checkOrder(t)\n\t\t\t},\n\t\t})\n\t\tm.s.HealAll()\n\t\tif err := m.s.RunFor(time.Minute); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tm.checkOrder(t)\n\t\tfor _, a := range m.ids {\n\t\t\tfor _, b := range m.ids {\n\t\t\t\tgot := 0\n\t\t\t\tfor _, req := range m.recs[b].requests {\n\t\t\t\t\tif from, _, _ := parseStreamLabel(t, req); from == a {\n\t\t\t\t\t\tgot++\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tif want := m.sent[[2]env.NodeID{a, b}]; got != want {\n\t\t\t\t\tt.Fatalf(\"%s received %d requests from %s, sent %d\", b, got, a, want)\n\t\t\t\t}\n\t\t\t}\n\t\t\ttotal := 0\n\t\t\tfor _, b := range m.ids {\n\t\t\t\ttotal += m.sent[[2]env.NodeID{a, b}]\n\t\t\t}\n\t\t\tif len(m.recs[a].replies) != total {\n\t\t\t\tt.Fatalf(\"%s got %d replies for %d requests\", a, len(m.recs[a].replies), total)\n\t\t\t}\n\t\t}\n\t})\n}\n\ntype scribblePlan struct {\n\tblobs int\n\tevery time.Duration\n}\n\ntype scribbler struct {\n\te    env.Env\n\tplan scribblePlan\n}\n"
+      }
+    ]
+  },
+  "TestPropStreamsIndependent": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/prop_test.go",
+        "line": 23,
+        "body": "func TestPropStreamsIndependent(t *testing.T) {\n\trapid.Check(t, func(t *rapid.T) {\n\t\tseed := rapid.Int64().Draw(t, \"seed\")\n\t\tlabels := []string{sim.StreamNet, sim.StreamDisk, sim.StreamNemesis, sim.StreamWorkload, sim.NodeStream(\"n000\"), sim.NodeStream(\"n001\")}\n\t\ta := rapid.IntRange(0, len(labels)-1).Draw(t, \"a\")\n\t\tb := rapid.IntRange(0, len(labels)-1).Filter(func(i int) bool { return i != a }).Draw(t, \"b\")\n\t\textra := rapid.IntRange(0, 1000).Draw(t, \"extra\")\n\n\t\tra, rb := sim.NewStream(seed, labels[a]), sim.NewStream(seed, labels[b])\n\t\tfor i := 0; i < extra; i++ {\n\t\t\tra.Uint64()\n\t\t}\n\t\tfresh := sim.NewStream(seed, labels[b])\n\t\tfor i := 0; i < 16; i++ {\n\t\t\tif rb.Uint64() != fresh.Uint64() {\n\t\t\t\tt.Fatalf(\"draws on %q changed %q\", labels[a], labels[b])\n\t\t\t}\n\t\t}\n\t\tx, y := sim.NewStream(seed, labels[a]), sim.NewStream(seed, labels[b])\n\t\tsame := true\n\t\tfor i := 0; i < 4; i++ {\n\t\t\tsame = same && x.Uint64() == y.Uint64()\n\t\t}\n\t\tif same {\n\t\t\tt.Fatalf(\"streams %q and %q start identically\", labels[a], labels[b])\n\t\t}\n\t})\n}\n\n// TestPropNetworkDrawsDoNotShiftTheNemesis proves that changing network drop\n// rates (and thus net-stream draws and protocol traffic) leaves a non-disk\n// nemesis schedule and its outcomes unchanged."
+      }
+    ]
+  },
+  "TestPropTimeMonotonic": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/prop_test.go",
+        "line": 125,
+        "body": "func TestPropTimeMonotonic(t *testing.T) {\n\trapid.Check(t, func(t *rapid.T) {\n\t\tn := rapid.IntRange(1, 5).Draw(t, \"n\")\n\t\tnc := sim.DefaultNetConfig()\n\t\tlo := rapid.Int64Range(0, 10_000_000).Draw(t, \"lo\")\n\t\thi := rapid.Int64Range(lo, 50_000_000).Draw(t, \"hi\")\n\t\tnc.Latency = sim.Range{Min: time.Duration(lo), Max: time.Duration(hi)}\n\t\tnc.DuplicatePPM = rapid.Uint32Range(0, 1_000_000).Draw(t, \"dup\")\n\t\ts := sim.New(sim.Config{Seed: rapid.Int64().Draw(t, \"seed\"), Net: nc})\n\t\tids := sim.NodeIDs(n)\n\t\tvar procs []*ticker\n\t\tfor _, id := range ids {\n\t\t\tsp := sim.NodeSpec{\n\t\t\t\tID:       id,\n\t\t\t\tSkew:     time.Duration(rapid.Int64Range(-int64(time.Second), int64(time.Second)).Draw(t, \"skew\")),\n\t\t\t\tDriftPPM: rapid.Int64Range(-sim.MaxDriftPPM, sim.MaxDriftPPM).Draw(t, \"drift\"),\n\t\t\t}\n\t\t\tleft := rapid.IntRange(0, 40).Draw(t, \"ticks\")\n\t\t\tif err := s.AddNode(sp, func(e env.Env) env.Process {\n\t\t\t\tk := &ticker{e: e, peers: ids, left: left, last: -1 << 62}\n\t\t\t\tprocs = append(procs, k)\n\t\t\t\treturn k\n\t\t\t}); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t}\n\t\tvar last env.Time\n\t\ts.AddInvariant(\"global time monotonic\", 1, func() error {\n\t\t\tif s.Now() < last {\n\t\t\t\treturn fmt.Errorf(\"global time went from %d to %d\", last, s.Now())\n\t\t\t}\n\t\t\tlast = s.Now()\n\t\t\treturn nil\n\t\t})\n\t\tif err := s.RunUntilQuiet(); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tfor _, k := range procs {\n\t\t\tif k.bad != nil {\n\t\t\t\tt.Fatal(k.bad)\n\t\t\t}\n\t\t}\n\t})\n}\n\n// TestPropHealedNetworkDelivers proves that after arbitrary topology faults\n// and HealNet, every datagram and request sent afterward is delivered."
+      }
+    ]
+  },
+  "TestReplayAcrossProcesses": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/meta_test.go",
+        "line": 50,
+        "body": "func TestReplayAcrossProcesses(t *testing.T) {\n\tif spec := os.Getenv(childEnv); spec != \"\" {\n\t\tvar n int\n\t\tvar seed int64\n\t\tif _, err := fmt.Sscanf(spec, \"%d:%d\", &n, &seed); err != nil {\n\t\t\tt.Fatalf(\"bad %s=%q: %v\", childEnv, spec, err)\n\t\t}\n\t\ts := chaos(n)(seed)\n\t\tif err := s.Verify(); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tfmt.Printf(\"DIGESTS %s\\n\", s.Digests())\n\t\treturn\n\t}\n\tif testing.Short() {\n\t\tt.Skip(\"re-executes the test binary\")\n\t}\n\tseed := simtest.Seeds(t)[0]\n\tvariants := [][]string{{\"GOMAXPROCS=1\", \"GOGC=1\"}, {\"GOMAXPROCS=4\", \"GOGC=off\"}}\n\tfor _, n := range metaSizes {\n\t\tt.Run(fmt.Sprintf(\"nodes=%d\", n), func(t *testing.T) {\n\t\t\ts := chaos(n)(seed)\n\t\t\tmustNil(t, s.Verify())\n\t\t\twant := s.Digests().String()\n\t\t\tfor _, v := range variants {\n\t\t\t\tcmd := exec.Command(os.Args[0], \"-test.run=^TestReplayAcrossProcesses$\", \"-test.count=1\")\n\t\t\t\tcmd.Env = append(append(os.Environ(), fmt.Sprintf(\"%s=%d:%d\", childEnv, n, seed)), v...)\n\t\t\t\tout, err := cmd.CombinedOutput()\n\t\t\t\tif err != nil {\n\t\t\t\t\tt.Fatalf(\"child %v: %v\\n%s\", v, err, out)\n\t\t\t\t}\n\t\t\t\tgot := \"\"\n\t\t\t\tsc := bufio.NewScanner(strings.NewReader(string(out)))\n\t\t\t\tfor sc.Scan() {\n\t\t\t\t\tif rest, ok := strings.CutPrefix(sc.Text(), \"DIGESTS \"); ok {\n\t\t\t\t\t\tgot = rest\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tif got != want {\n\t\t\t\t\tt.Fatalf(\"seed %d nodes %d: child %v digests %q, parent %q\\n%s\",\n\t\t\t\t\t\tseed, n, v, got, want, simtest.ReplayCommand(t, seed))\n\t\t\t\t}\n\t\t\t}\n\t\t})\n\t}\n}\n\n// TestGoldenDigests proves that pinned seeds 1..3 at 20, 50, and 100 nodes\n// match testdata/golden.txt so accidental schedule shifts are caught."
+      }
+    ]
+  },
+  "TestReplaySameProcess": {
+    "chapters": [
+      "book/chapters/01-deterministic-simulation.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/sim/meta_test.go",
+        "line": 33,
+        "body": "func TestReplaySameProcess(t *testing.T) {\n\tfor _, n := range metaSizes {\n\t\tt.Run(fmt.Sprintf(\"nodes=%d\", n), func(t *testing.T) {\n\t\t\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\t\t\ts := simtest.RequireDeterministic(t, seed, chaos(n))\n\t\t\t\tif !simtoy.Converged(s) {\n\t\t\t\t\tt.Fatalf(\"not converged at %d\", s.Now())\n\t\t\t\t}\n\t\t\t})\n\t\t})\n\t}\n}\n\nconst childEnv = \"SIM_REPLAY_CHILD\"\n\n// TestReplayAcrossProcesses proves byte-identical event and state digests across\n// separate OS processes with differing GOMAXPROCS and GOGC settings."
+      }
+    ]
+  },
+  "FuzzGossipWire": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/fuzz_test.go",
+        "line": 17,
+        "body": "func FuzzGossipWire(f *testing.F) {\n\tf.Add([]byte{})\n\tf.Add([]byte{gossip.Version})\n\tf.Add([]byte{gossip.Version, byte(gossip.KindPing), 0, 0, 0, 1, 0, 0})\n\tf.Add([]byte{gossip.Version, byte(gossip.KindSyncResp), 0, 0, 0, 0, 0xff, 0xff})\n\tfor _, c := range wireCases() {\n\t\tb, err := c.msg.Encode()\n\t\tif err != nil {\n\t\t\tf.Fatal(err)\n\t\t}\n\t\tf.Add(b)\n\t}\n\tself, _ := gossip.Message{Kind: gossip.KindGossip, Updates: []gossip.Member{mem(\"self\", 1<<32-1, gossip.StateDead)}}.Encode()\n\tf.Add(self)\n\tf.Fuzz(func(t *testing.T, data []byte) {\n\t\tif len(data) > fuzzMaxInput {\n\t\t\treturn\n\t\t}\n\t\tm, err := gossip.Decode(data)\n\t\tif err != nil {\n\t\t\tif !errors.Is(err, gossip.ErrMalformed) {\n\t\t\t\tt.Fatalf(\"Decode error %v is not ErrMalformed\", err)\n\t\t\t}\n\t\t} else {\n\t\t\tagain, err := m.Encode()\n\t\t\tif err != nil {\n\t\t\t\tt.Fatalf(\"decoded message does not re-encode: %v\", err)\n\t\t\t}\n\t\t\tif !bytes.Equal(again, data) {\n\t\t\t\tt.Fatalf(\"decode then encode is not the identity:\\n in  %x\\n out %x\", data, again)\n\t\t\t}\n\t\t}\n\n\t\th := newHarness(t, \"self\", gossip.Config{})\n\t\tannounce(h, \"p01\", \"p02\", \"p03\", \"p04\")\n\t\th.node.Start()\n\t\tbefore := h.node.Self().Incarnation\n\t\th.node.OnDatagram(\"p01\", data)\n\t\treplied := 0\n\t\th.node.OnRequest(\"p02\", data, func(resp []byte, err error) {\n\t\t\treplied++\n\t\t\tif err == nil {\n\t\t\t\tif r, derr := gossip.Decode(resp); derr != nil || r.Kind != gossip.KindSyncResp {\n\t\t\t\t\tt.Fatalf(\"sync reply %x does not decode as a sync response: %v\", resp, derr)\n\t\t\t\t}\n\t\t\t} else if !errors.Is(err, gossip.ErrMalformed) {\n\t\t\t\tt.Fatalf(\"request refused with %v\", err)\n\t\t\t}\n\t\t})\n\t\tif replied != 1 {\n\t\t\tt.Fatalf(\"request answered %d times\", replied)\n\t\t}\n\t\th.clock.advance(3 * gossip.DefaultProbeInterval)\n\t\tself := h.node.Self()\n\t\tif self.State != gossip.StateAlive || self.Incarnation < before {\n\t\t\tt.Fatalf(\"invariant broken: self %+v, incarnation before %d\", self, before)\n\t\t}\n\t\tall := h.node.All()\n\t\tif !slices.IsSortedFunc(all, func(a, b gossip.Member) int { return compareID(a.ID, b.ID) }) {\n\t\t\tt.Fatalf(\"view not sorted: %+v\", all)\n\t\t}\n\t\tfor i := 1; i < len(all); i++ {\n\t\t\tif all[i].ID == all[i-1].ID {\n\t\t\t\tt.Fatalf(\"duplicate member %s\", all[i].ID)\n\t\t\t}\n\t\t}\n\t\tfor _, s := range h.net.sent {\n\t\t\tif len(s.msg) > gossip.DefaultMaxPacket {\n\t\t\t\tt.Fatalf(\"sent %d bytes\", len(s.msg))\n\t\t\t}\n\t\t\tif _, err := gossip.Decode(s.msg); err != nil {\n\t\t\t\tt.Fatalf(\"node sent an undecodable packet: %v\", err)\n\t\t\t}\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "FuzzViewMergeLaws": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/prop_test.go",
+        "line": 139,
+        "body": "func FuzzViewMergeLaws(f *testing.F) {\n\tfor _, b := range viewMergeSeeds(f) {\n\t\tf.Add(b)\n\t}\n\tf.Fuzz(rapid.MakeFuzz(propViewMergeCommutative))\n}\n\n// TestFuzzSeedsRunWithoutSkipping proves that every corpus seed of\n// FuzzViewMergeLaws executes to completion under plain go test without skipping."
+      }
+    ]
+  },
+  "TestCanaryNoIndirectProbe": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/dst_test.go",
+        "line": 515,
+        "body": "func TestCanaryNoIndirectProbe(t *testing.T) {\n\tt.Parallel()\n\tvar sus, died tally\n\tt.Cleanup(func() {\n\t\tt.Logf(\"MEASURE canary suspicions %s\", sus.summary())\n\t\tt.Logf(\"MEASURE canary evictions %s\", died.summary())\n\t})\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\tvar out asymOut\n\t\tsimtest.RequireDeterministic(t, seed, asymRunFn(gossip.WithoutIndirectProbes(gossip.Config{}), &out))\n\t\tsus.add(int64(out.suspected))\n\t\tdied.add(int64(out.died))\n\t\tif out.suspected == 0 && out.died == 0 {\n\t\t\tt.Fatal(\"with indirect probes off the asymmetric-link check still passed: the test cannot see the bug\")\n\t\t}\n\t})\n}\n\ntype crashOut struct {\n\tdetect    time.Duration\n\tfalseDead int\n}\n"
+      }
+    ]
+  },
+  "TestDeadEntriesStayPurgedDST": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/dst_test.go",
+        "line": 913,
+        "body": "func TestDeadEntriesStayPurgedDST(t *testing.T) {\n\tt.Parallel()\n\tfor _, leave := range []bool{false, true} {\n\t\tname := \"after a crash\"\n\t\tif leave {\n\t\t\tname = \"after a leave\"\n\t\t}\n\t\tt.Run(name, func(t *testing.T) {\n\t\t\tt.Parallel()\n\t\t\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\t\t\tsimtest.RequireDeterministic(t, seed, lifetimeRun(leave))\n\t\t\t})\n\t\t})\n\t}\n}\n"
+      }
+    ]
+  },
+  "TestDeadEntryLifetime": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/repair_test.go",
+        "line": 80,
+        "body": "func TestDeadEntryLifetime(t *testing.T) {\n\tt.Run(\"two nodes that purge a dead member at different times never resurrect it in each other\", func(t *testing.T) {\n\t\tcfg := gossip.Config{DeadRetention: 10 * time.Second}\n\t\ta, b := newHarness(t, \"a\", cfg), newHarness(t, \"b\", cfg)\n\t\ta.deliver(\"b\", gossipMsg(mem(\"b\", 0, gossip.StateAlive), mem(\"c\", 0, gossip.StateAlive)))\n\t\tb.deliver(\"a\", gossipMsg(mem(\"a\", 0, gossip.StateAlive), mem(\"c\", 0, gossip.StateAlive)))\n\t\ta.node.Start()\n\t\tb.node.Start()\n\t\ta.deliver(\"b\", gossipMsg(mem(\"c\", 0, gossip.StateDead)))\n\t\tstep := func(d time.Duration) {\n\t\t\ta.clock.advance(d)\n\t\t\tb.clock.advance(d)\n\t\t\tdrainRequests(a, b)\n\t\t\ta.net.take()\n\t\t\tb.net.take()\n\t\t}\n\t\tstep(3 * time.Second)\n\t\tb.deliver(\"a\", gossipMsg(mem(\"c\", 0, gossip.StateDead)))\n\t\tstep(8 * time.Second)\n\t\tif _, err := a.node.Lookup(\"c\"); !errors.Is(err, gossip.ErrNotMember) {\n\t\t\tt.Fatalf(\"a did not purge c at 11s: %v\", err)\n\t\t}\n\t\texchange(t, a, \"a\", b, \"b\")\n\t\texchange(t, b, \"b\", a, \"a\")\n\t\tif _, err := a.node.Lookup(\"c\"); !errors.Is(err, gossip.ErrNotMember) {\n\t\t\tt.Fatalf(\"a took c back from b's retained entry: %v\", err)\n\t\t}\n\t\tstep(3 * time.Second)\n\t\tif _, err := b.node.Lookup(\"c\"); !errors.Is(err, gossip.ErrNotMember) {\n\t\t\tt.Fatalf(\"b did not purge c at 14s: %v\", err)\n\t\t}\n\t\tfor range 50 {\n\t\t\texchange(t, a, \"a\", b, \"b\")\n\t\t\texchange(t, b, \"b\", a, \"a\")\n\t\t\ta.deliver(\"b\", gossip.Message{Kind: gossip.KindPing, Seq: 1})\n\t\t\tb.deliver(\"a\", gossip.Message{Kind: gossip.KindPing, Seq: 1})\n\t\t\tstep(time.Second)\n\t\t}\n\t\tfor _, h := range []*harness{a, b} {\n\t\t\tif m, err := h.node.Lookup(\"c\"); err == nil {\n\t\t\t\tt.Fatalf(\"c came back as %+v\", m)\n\t\t\t}\n\t\t\tif h.node.Stats().Purged != 1 {\n\t\t\t\tt.Fatalf(\"c purged %d times\", h.node.Stats().Purged)\n\t\t\t}\n\t\t\tif m, ok := tombstone(h.node, \"c\"); !ok || m != mem(\"c\", 0, gossip.StateDead) {\n\t\t\t\tt.Fatalf(\"tombstone of c: %+v %v\", m, ok)\n\t\t\t}\n\t\t}\n\t})\n\tt.Run(\"a stale alive below a purged death brings back the death, never the stale entry\", func(t *testing.T) {\n\t\tfor _, c := range []struct {\n\t\t\tname    string\n\t\t\thistory []gossip.Member\n\t\t\treplay  gossip.Member\n\t\t\twant    gossip.Member\n\t\t}{\n\t\t\t{\"dead at 9, alive at 0 replayed\", []gossip.Member{mem(\"x\", 9, gossip.StateDead)}, mem(\"x\", 0, gossip.StateAlive), mem(\"x\", 9, gossip.StateDead)},\n\t\t\t{\"alive then dead at 7, alive at 0 replayed\", []gossip.Member{mem(\"x\", 7, gossip.StateAlive), mem(\"x\", 7, gossip.StateDead)}, mem(\"x\", 0, gossip.StateAlive), mem(\"x\", 7, gossip.StateDead)},\n\t\t\t{\"dead at 7, alive at 7 replayed\", []gossip.Member{mem(\"x\", 7, gossip.StateDead)}, mem(\"x\", 7, gossip.StateAlive), mem(\"x\", 7, gossip.StateDead)},\n\t\t\t{\"left at 3, suspect at 2 replayed\", []gossip.Member{mem(\"x\", 3, gossip.StateLeft)}, mem(\"x\", 2, gossip.StateSuspect), mem(\"x\", 3, gossip.StateLeft)},\n\t\t} {\n\t\t\tt.Run(c.name, func(t *testing.T) {\n\t\t\t\th := newHarness(t, \"self\", gossip.Config{DeadRetention: time.Second})\n\t\t\t\tannounce(h, \"p01\")\n\t\t\t\th.node.Start()\n\t\t\t\tfor _, u := range c.history {\n\t\t\t\t\th.deliver(\"p01\", gossipMsg(u))\n\t\t\t\t}\n\t\t\t\th.clock.advance(2 * time.Second)\n\t\t\t\tif _, err := h.node.Lookup(\"x\"); !errors.Is(err, gossip.ErrNotMember) {\n\t\t\t\t\tt.Fatalf(\"not purged: %v\", err)\n\t\t\t\t}\n\t\t\t\th.takeEvents()\n\t\t\t\th.net.take()\n\t\t\t\th.deliver(\"p01\", gossipMsg(c.replay))\n\t\t\t\tgot, err := h.node.Lookup(\"x\")\n\t\t\t\tif err != nil || got != c.want {\n\t\t\t\t\tt.Fatalf(\"after replay Lookup = %+v %v, want %+v\", got, err, c.want)\n\t\t\t\t}\n\t\t\t\tif ev := h.takeEvents(); len(ev) != 0 {\n\t\t\t\t\tt.Fatalf(\"reinstating the verdict emitted %+v\", ev)\n\t\t\t\t}\n\t\t\t\tif _, ok := tombstone(h.node, \"x\"); ok {\n\t\t\t\t\tt.Fatal(\"x is both in the view and in the tombstones\")\n\t\t\t\t}\n\t\t\t\tif h.node.Stats().Reinstated != 1 {\n\t\t\t\t\tt.Fatalf(\"Reinstated = %d\", h.node.Stats().Reinstated)\n\t\t\t\t}\n\t\t\t\th.deliver(\"p01\", gossip.Message{Kind: gossip.KindPing, Seq: 5})\n\t\t\t\tif carries(t, h.net.take(), \"x\") {\n\t\t\t\t\tt.Fatal(\"a reinstated verdict was queued for gossip\")\n\t\t\t\t}\n\t\t\t\th.clock.advance(2 * time.Second)\n\t\t\t\tif _, err := h.node.Lookup(\"x\"); !errors.Is(err, gossip.ErrNotMember) {\n\t\t\t\t\tt.Fatalf(\"reinstated verdict not purged again: %v\", err)\n\t\t\t\t}\n\t\t\t\tif m, ok := tombstone(h.node, \"x\"); !ok || m != c.want {\n\t\t\t\t\tt.Fatalf(\"tombstone after second purge %+v %v\", m, ok)\n\t\t\t\t}\n\t\t\t})\n\t\t}\n\t})\n\tt.Run(\"an equal or older verdict about a purged member is dropped\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{DeadRetention: time.Second})\n\t\th.node.Start()\n\t\th.deliver(\"p01\", gossipMsg(mem(\"x\", 7, gossip.StateDead)))\n\t\th.clock.advance(2 * time.Second)\n\t\tfor _, u := range []gossip.Member{mem(\"x\", 7, gossip.StateDead), mem(\"x\", 3, gossip.StateLeft), mem(\"x\", 6, gossip.StateDead)} {\n\t\t\th.deliver(\"p01\", gossipMsg(u))\n\t\t\tif m, err := h.node.Lookup(\"x\"); err == nil {\n\t\t\t\tt.Fatalf(\"%+v brought back %+v\", u, m)\n\t\t\t}\n\t\t}\n\t\tif h.node.Stats().Reinstated != 0 {\n\t\t\tt.Fatalf(\"Reinstated = %d\", h.node.Stats().Reinstated)\n\t\t}\n\t})\n\tt.Run(\"a higher incarnation after the purge is a new life\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{DeadRetention: time.Second})\n\t\th.node.Start()\n\t\th.deliver(\"p01\", gossipMsg(mem(\"x\", 7, gossip.StateDead)))\n\t\th.clock.advance(2 * time.Second)\n\t\th.takeEvents()\n\t\th.deliver(\"p01\", gossipMsg(mem(\"x\", 8, gossip.StateAlive)))\n\t\tif m, err := h.node.Lookup(\"x\"); err != nil || m != mem(\"x\", 8, gossip.StateAlive) {\n\t\t\tt.Fatalf(\"Lookup = %+v %v\", m, err)\n\t\t}\n\t\tif ev := h.takeEvents(); len(ev) != 1 || ev[0].Kind != gossip.EventJoined {\n\t\t\tt.Fatalf(\"events %+v\", ev)\n\t\t}\n\t\tif _, ok := tombstone(h.node, \"x\"); ok {\n\t\t\tt.Fatal(\"tombstone kept after a new life\")\n\t\t}\n\t})\n\tt.Run(\"a wiped node rejoining at incarnation 0 is told its purged death and refutes above it\", func(t *testing.T) {\n\t\tseed := newHarness(t, \"s\", gossip.Config{DeadRetention: time.Second})\n\t\tseed.node.Start()\n\t\tseed.deliver(\"p01\", gossipMsg(mem(\"w\", 9, gossip.StateDead)))\n\t\tseed.clock.advance(2 * time.Second)\n\t\tdrainRequests(seed)\n\t\tw := newHarness(t, \"w\", gossip.Config{})\n\t\texchange(t, w, \"w\", seed, \"s\")\n\t\tif self := w.node.Self(); self.Incarnation != 10 || self.State != gossip.StateAlive {\n\t\t\tt.Fatalf(\"rejoined as %+v\", self)\n\t\t}\n\t\tseed.takeEvents()\n\t\tw.deliver(\"s\", gossip.Message{Kind: gossip.KindPing, Seq: 1})\n\t\tacks := w.net.take()\n\t\tfor _, s := range acks {\n\t\t\tseed.node.OnDatagram(\"w\", s.msg)\n\t\t}\n\t\tif m, err := seed.node.Lookup(\"w\"); err != nil || m.State != gossip.StateAlive || m.Incarnation != 10 {\n\t\t\tt.Fatalf(\"seed holds %+v %v\", m, err)\n\t\t}\n\t\tif ev := seed.takeEvents(); len(ev) != 1 || ev[0].Kind != gossip.EventJoined {\n\t\t\tt.Fatalf(\"seed events %+v\", ev)\n\t\t}\n\t})\n\tt.Run(\"a death learned about an unknown member is kept but not gossiped\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{})\n\t\tannounce(h, \"p01\", \"p02\")\n\t\th.deliver(\"p01\", gossipMsg(mem(\"m\", 3, gossip.StateDead), mem(\"n\", 1, gossip.StateLeft)))\n\t\tif m, err := h.node.Lookup(\"m\"); err != nil || m.State != gossip.StateDead {\n\t\t\tt.Fatalf(\"Lookup(m) = %+v %v\", m, err)\n\t\t}\n\t\th.net.take()\n\t\tfor i := range 20 {\n\t\t\th.deliver(\"p02\", gossip.Message{Kind: gossip.KindPing, Seq: uint32(i)})\n\t\t}\n\t\tss := h.net.take()\n\t\tif carries(t, ss, \"m\") || carries(t, ss, \"n\") {\n\t\t\tt.Fatal(\"a second-hand verdict about an unknown member was gossiped\")\n\t\t}\n\t\th.deliver(\"p01\", gossipMsg(mem(\"p02\", 0, gossip.StateDead)))\n\t\th.net.take()\n\t\th.deliver(\"p01\", gossip.Message{Kind: gossip.KindPing, Seq: 99})\n\t\tif !carries(t, h.net.take(), \"p02\") {\n\t\t\tt.Fatal(\"the death of a known member was not gossiped\")\n\t\t}\n\t})\n\tt.Run(\"the tombstones are capped and the oldest is evicted first\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{DeadRetention: time.Second})\n\t\th.node.Start()\n\t\tvar ms []gossip.Member\n\t\tfor i := range gossip.MaxTombstones + 1 {\n\t\t\tms = append(ms, mem(fmt.Sprintf(\"d%05d\", i), 4, gossip.StateDead))\n\t\t}\n\t\th.node.OnRequest(\"p01\", syncReq(t, ms...), func([]byte, error) {})\n\t\th.clock.advance(2 * time.Second)\n\t\tdrainRequests(h)\n\t\tif n := len(h.node.Tombstones()); n != gossip.MaxTombstones {\n\t\t\tt.Fatalf(\"%d tombstones, cap %d\", n, gossip.MaxTombstones)\n\t\t}\n\t\tif h.node.Stats().TombstonesEvicted != 1 {\n\t\t\tt.Fatalf(\"TombstonesEvicted = %d\", h.node.Stats().TombstonesEvicted)\n\t\t}\n\t\tif _, ok := tombstone(h.node, \"d00000\"); ok {\n\t\t\tt.Fatal(\"the oldest tombstone was not the one evicted\")\n\t\t}\n\t\th.takeEvents()\n\t\th.deliver(\"p01\", gossipMsg(mem(\"d00000\", 0, gossip.StateAlive), mem(\"d00001\", 0, gossip.StateAlive)))\n\t\tif m, err := h.node.Lookup(\"d00000\"); err != nil || m.State != gossip.StateAlive {\n\t\t\tt.Fatalf(\"an evicted ID is not accepted as new: %+v %v\", m, err)\n\t\t}\n\t\tif m, err := h.node.Lookup(\"d00001\"); err != nil || m.State != gossip.StateDead {\n\t\t\tt.Fatalf(\"a retained tombstone did not answer the stale alive: %+v %v\", m, err)\n\t\t}\n\t})\n\tt.Run(\"one member buried and reinstated many times never grows the tombstone backlog past twice the cap\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{DeadRetention: time.Second})\n\t\th.node.Start()\n\t\th.deliver(\"p01\", gossipMsg(mem(\"x\", 5, gossip.StateDead)))\n\t\tfor i := range 2*gossip.MaxTombstones + 10 {\n\t\t\th.clock.advance(2 * time.Second)\n\t\t\tdrainRequests(h)\n\t\t\th.net.take()\n\t\t\tif _, ok := tombstone(h.node, \"x\"); !ok {\n\t\t\t\tt.Fatalf(\"cycle %d: x not buried\", i)\n\t\t\t}\n\t\t\th.deliver(\"p01\", gossipMsg(mem(\"x\", 1, gossip.StateAlive)))\n\t\t\tif n := gossip.TombBacklog(h.node); n > 2*gossip.MaxTombstones+1 {\n\t\t\t\tt.Fatalf(\"cycle %d: tombstone backlog %d\", i, n)\n\t\t\t}\n\t\t}\n\t\tif n := len(h.node.Tombstones()); n != 0 {\n\t\t\tt.Fatalf(\"%d tombstones while x is reinstated\", n)\n\t\t}\n\t})\n\tt.Run(\"the heal sync contacts a purged dead member but never a purged left one\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{DeadRetention: time.Second})\n\t\tannounce(h, \"p01\")\n\t\th.node.Start()\n\t\th.deliver(\"p01\", gossipMsg(mem(\"gone\", 2, gossip.StateDead), mem(\"bye\", 2, gossip.StateLeft)))\n\t\th.clock.advance(2 * time.Second)\n\t\tdrainRequests(h)\n\t\tcontacted := map[env.NodeID]int{}\n\t\tfor range 40 {\n\t\t\th.clock.advance(gossip.DefaultSyncInterval)\n\t\t\tfor _, r := range h.net.takeRequests() {\n\t\t\t\tcontacted[r.to]++\n\t\t\t\tr.cb(nil, env.ErrTimeout)\n\t\t\t}\n\t\t}\n\t\tif contacted[\"gone\"] == 0 || contacted[\"bye\"] != 0 {\n\t\t\tt.Fatalf(\"contacted %v\", contacted)\n\t\t}\n\t})\n}\n\n// TestJoinSeedsAreRemembered proves that seeds passed to Join are retried while\n// alone and used by heal syncs, remembered seeds are capped at MaxSeeds, and a\n// self-only seed list triggers no join retries."
+      }
+    ]
+  },
+  "TestFuzzSeedsDrawNonEmptyViews": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/prop_test.go",
+        "line": 164,
+        "body": "func TestFuzzSeedsDrawNonEmptyViews(t *testing.T) {\n\tseeds := viewMergeSeeds(t)\n\tlarge := 0\n\tfor i, b := range seeds {\n\t\tn := -1\n\t\tt.Run(fmt.Sprintf(\"seed %d\", i), func(t *testing.T) {\n\t\t\trapid.MakeFuzz(func(rt *rapid.T) { n = len(drawMergeUpdates(rt)) })(t, b)\n\t\t})\n\t\tif n >= 5 {\n\t\t\tlarge++\n\t\t}\n\t}\n\tif large < 2 {\n\t\tt.Fatalf(\"%d of %d FuzzViewMergeLaws seeds draw five or more updates, want at least 2\", large, len(seeds))\n\t}\n}\n"
+      }
+    ]
+  },
+  "TestJoinNoReachableSeedDST": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/dst_test.go",
+        "line": 817,
+        "body": "func TestJoinNoReachableSeedDST(t *testing.T) {\n\tt.Parallel()\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\tvar got error\n\t\tsimtest.RequireDeterministic(t, seed, joinFailRun(&got))\n\t\tif !errors.Is(got, gossip.ErrJoinFailed) || !errors.Is(got, env.ErrUnreachable) {\n\t\t\tt.Fatalf(\"join error %v, want ErrJoinFailed wrapping env.ErrUnreachable\", got)\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestJoinSeedsAreRemembered": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/repair_test.go",
+        "line": 333,
+        "body": "func TestJoinSeedsAreRemembered(t *testing.T) {\n\tt.Run(\"seeds given to Join are retried while alone and contacted by the heal sync\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{})\n\t\th.node.Start()\n\t\tif err := h.node.Join([]env.NodeID{\"s1\"}, nil); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tdrainRequests(h)\n\t\talone := 0\n\t\tfor range 5 {\n\t\t\th.clock.advance(gossip.DefaultProbeInterval)\n\t\t\tfor _, r := range h.net.takeRequests() {\n\t\t\t\tif r.to == \"s1\" {\n\t\t\t\t\talone++\n\t\t\t\t}\n\t\t\t\tr.cb(nil, env.ErrTimeout)\n\t\t\t}\n\t\t}\n\t\tif alone < 4 {\n\t\t\tt.Fatalf(\"join seed retried %d times in 5 lonely periods\", alone)\n\t\t}\n\t\tannounce(h, \"p01\")\n\t\thealed := 0\n\t\tfor range 40 {\n\t\t\th.clock.advance(gossip.DefaultSyncInterval)\n\t\t\tfor _, r := range h.net.takeRequests() {\n\t\t\t\tif r.to == \"s1\" {\n\t\t\t\t\thealed++\n\t\t\t\t}\n\t\t\t\tr.cb(nil, env.ErrTimeout)\n\t\t\t}\n\t\t}\n\t\tif healed == 0 {\n\t\t\tt.Fatal(\"the heal sync never contacted the join seed\")\n\t\t}\n\t})\n\tt.Run(\"remembered seeds are capped at MaxSeeds and a longer configured list is refused\", func(t *testing.T) {\n\t\tvar many []env.NodeID\n\t\tfor i := range gossip.MaxSeeds + 10 {\n\t\t\tmany = append(many, env.NodeID(fmt.Sprintf(\"s%03d\", i)))\n\t\t}\n\t\th := newHarness(t, \"self\", gossip.Config{})\n\t\tif err := h.node.Join(append(many, many[0], \"self\"), nil); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tif n := len(h.net.takeRequests()); n != gossip.MaxSeeds+10 {\n\t\t\tt.Fatalf(\"join contacted %d seeds\", n)\n\t\t}\n\t\tif n := gossip.SeedCount(h.node); n != gossip.MaxSeeds {\n\t\t\tt.Fatalf(\"%d seeds remembered\", n)\n\t\t}\n\t\tif err := (gossip.Config{Seeds: many}).WithDefaults().Validate(); !errors.Is(err, env.ErrInvalidArgument) {\n\t\t\tt.Fatalf(\"%d configured seeds: %v\", len(many), err)\n\t\t}\n\t})\n\tt.Run(\"a node whose only seed is itself never retries a join\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{Seeds: []env.NodeID{\"self\"}})\n\t\th.node.Start()\n\t\th.clock.advance(5 * gossip.DefaultProbeInterval)\n\t\tif n := h.node.Stats().Rejoins; n != 0 {\n\t\t\tt.Fatalf(\"Rejoins = %d\", n)\n\t\t}\n\t\tif r := h.net.takeRequests(); len(r) != 0 {\n\t\t\tt.Fatalf(\"requests %+v\", r)\n\t\t}\n\t})\n}\n\n// TestRelayBounds proves that ping-req floods stay capped at MaxRelays with\n// excess counted in RelaysDropped, expired relays are pruned on arrival without\n// a tick, answered relays keep the expiry FIFO bounded at 2*MaxRelays, and\n// relays whose outbound ping fails are not retained."
+      }
+    ]
+  },
+  "TestProbeAndIndirectProbe": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/node_test.go",
+        "line": 131,
+        "body": "func TestProbeAndIndirectProbe(t *testing.T) {\n\tsetup := func(t *testing.T, cfg gossip.Config) (*harness, env.NodeID, uint32) {\n\t\th := newHarness(t, \"self\", cfg)\n\t\tannounce(h, peerIDs(5)...)\n\t\th.node.Start()\n\t\tfor {\n\t\t\th.clock.advance(10 * time.Millisecond)\n\t\t\tif p := pings(t, h.net.take()); len(p) == 1 {\n\t\t\t\tm, _ := gossip.Decode(p[0].msg)\n\t\t\t\treturn h, p[0].to, m.Seq\n\t\t\t}\n\t\t}\n\t}\n\tt.Run(\"a ping is answered with an ack carrying the same sequence number\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{})\n\t\th.deliver(\"p01\", gossip.Message{Kind: gossip.KindPing, Seq: 5})\n\t\tms := decodeAll(t, h.net.sent)\n\t\tif len(ms) != 1 || ms[0].Kind != gossip.KindAck || ms[0].Seq != 5 || h.net.sent[0].to != \"p01\" {\n\t\t\tt.Fatalf(\"reply: %+v\", ms)\n\t\t}\n\t})\n\tt.Run(\"an unanswered ping triggers ping-req through k other members\", func(t *testing.T) {\n\t\th, target, seq := setup(t, gossip.Config{})\n\t\th.clock.advance(gossip.DefaultProbeTimeout)\n\t\tvar via []env.NodeID\n\t\tfor i, m := range decodeAll(t, h.net.sent) {\n\t\t\tif m.Kind != gossip.KindPingReq {\n\t\t\t\tcontinue\n\t\t\t}\n\t\t\tif m.Target != target || m.Seq != seq {\n\t\t\t\tt.Fatalf(\"ping-req %+v, want target %s seq %d\", m, target, seq)\n\t\t\t}\n\t\t\tvia = append(via, h.net.sent[i].to)\n\t\t}\n\t\tslices.Sort(via)\n\t\tif len(via) != gossip.DefaultIndirectProbes || slices.Contains(via, target) || len(slices.Compact(via)) != gossip.DefaultIndirectProbes {\n\t\t\tt.Fatalf(\"intermediaries %v for target %s\", via, target)\n\t\t}\n\t\tif h.node.Stats().IndirectProbes != 1 {\n\t\t\tt.Fatalf(\"IndirectProbes = %d\", h.node.Stats().IndirectProbes)\n\t\t}\n\t})\n\tt.Run(\"an indirect ack saves the target from suspicion\", func(t *testing.T) {\n\t\th, target, seq := setup(t, gossip.Config{})\n\t\th.clock.advance(gossip.DefaultProbeTimeout)\n\t\th.deliver(\"p05\", gossip.Message{Kind: gossip.KindAck, Seq: seq})\n\t\th.clock.advance(gossip.DefaultProbeInterval)\n\t\tif m, _ := lookupState(t, h.node, string(target)); m.State != gossip.StateAlive {\n\t\t\tt.Fatalf(\"target %s is %s after an indirect ack\", target, m.State)\n\t\t}\n\t})\n\tt.Run(\"no ack at all makes the target suspect, and dead after the suspicion timeout\", func(t *testing.T) {\n\t\th, target, _ := setup(t, gossip.Config{})\n\t\th.takeEvents()\n\t\th.clock.advance(gossip.DefaultProbeInterval)\n\t\tif m, _ := lookupState(t, h.node, string(target)); m.State != gossip.StateSuspect {\n\t\t\tt.Fatalf(\"target is %s, want suspect\", m.State)\n\t\t}\n\t\tevs := h.takeEvents()\n\t\tif len(evs) != 1 || evs[0].Kind != gossip.EventSuspected || evs[0].Member.ID != target {\n\t\t\tt.Fatalf(\"events %+v\", evs)\n\t\t}\n\t\ttimeout := gossip.Config{}.WithDefaults().SuspicionTimeout(6)\n\t\th.clock.advance(timeout - gossip.DefaultProbeInterval)\n\t\tif m, _ := lookupState(t, h.node, string(target)); m.State != gossip.StateSuspect {\n\t\t\tt.Fatalf(\"target is %s before the timeout\", m.State)\n\t\t}\n\t\th.clock.advance(gossip.DefaultProbeInterval)\n\t\tif m, _ := lookupState(t, h.node, string(target)); m.State != gossip.StateDead {\n\t\t\tt.Fatalf(\"target is %s after the timeout, want dead\", m.State)\n\t\t}\n\t\tvar died bool\n\t\tfor _, ev := range h.takeEvents() {\n\t\t\tif ev.Kind == gossip.EventDied && ev.Member.ID == target {\n\t\t\t\tdied = true\n\t\t\t}\n\t\t}\n\t\tif !died {\n\t\t\tt.Fatal(\"no died event\")\n\t\t}\n\t})\n\tt.Run(\"a refutation during the suspicion timeout cancels the death\", func(t *testing.T) {\n\t\th, target, _ := setup(t, gossip.Config{})\n\t\th.clock.advance(gossip.DefaultProbeInterval)\n\t\th.deliver(target, gossipMsg(mem(string(target), 1, gossip.StateAlive)))\n\t\th.takeEvents()\n\t\th.clock.advance(gossip.Config{}.WithDefaults().SuspicionTimeout(6) * 2)\n\t\tfor _, ev := range h.takeEvents() {\n\t\t\tif ev.Kind == gossip.EventDied && ev.Member.ID == target && ev.Member.Incarnation == 0 {\n\t\t\t\tt.Fatal(\"the suspicion at incarnation 0 killed the member after it refuted\")\n\t\t\t}\n\t\t}\n\t})\n\tt.Run(\"the indirect stage can be switched off only by the test switch\", func(t *testing.T) {\n\t\tcfg := gossip.WithoutIndirectProbes(gossip.Config{})\n\t\th, _, _ := setup(t, cfg)\n\t\th.clock.advance(gossip.DefaultProbeTimeout)\n\t\tfor _, m := range decodeAll(t, h.net.sent) {\n\t\t\tif m.Kind == gossip.KindPingReq {\n\t\t\t\tt.Fatal(\"ping-req sent with indirect probes off\")\n\t\t\t}\n\t\t}\n\t})\n\tt.Run(\"a ping-req is relayed and the target's ack forwarded with the requester's sequence number\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{})\n\t\tannounce(h, peerIDs(3)...)\n\t\th.deliver(\"p01\", gossip.Message{Kind: gossip.KindPingReq, Seq: 77, Target: \"p03\"})\n\t\tss := h.net.take()\n\t\tms := decodeAll(t, ss)\n\t\tif len(ms) != 1 || ms[0].Kind != gossip.KindPing || ss[0].to != \"p03\" {\n\t\t\tt.Fatalf(\"relay sent %+v\", ms)\n\t\t}\n\t\th.deliver(\"p03\", gossip.Message{Kind: gossip.KindAck, Seq: ms[0].Seq + 1000})\n\t\tif len(h.net.sent) != 0 {\n\t\t\tt.Fatal(\"an unknown ack was forwarded\")\n\t\t}\n\t\th.deliver(\"p03\", gossip.Message{Kind: gossip.KindAck, Seq: ms[0].Seq})\n\t\tss = h.net.take()\n\t\tms = decodeAll(t, ss)\n\t\tif len(ms) != 1 || ms[0].Kind != gossip.KindAck || ms[0].Seq != 77 || ss[0].to != \"p01\" {\n\t\t\tt.Fatalf(\"forwarded %+v to %v\", ms, ss)\n\t\t}\n\t\th.deliver(\"p03\", gossip.Message{Kind: gossip.KindAck, Seq: ms[0].Seq})\n\t\tif len(h.net.sent) != 0 {\n\t\t\tt.Fatal(\"a duplicate ack was forwarded twice\")\n\t\t}\n\t})\n\tt.Run(\"a relay expires and a late ack is not forwarded\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{})\n\t\tannounce(h, peerIDs(3)...)\n\t\th.node.Start()\n\t\th.deliver(\"p01\", gossip.Message{Kind: gossip.KindPingReq, Seq: 9, Target: \"p03\"})\n\t\tvar relaySeq uint32\n\t\tfor i, m := range decodeAll(t, h.net.take()) {\n\t\t\t_ = i\n\t\t\trelaySeq = m.Seq\n\t\t}\n\t\th.clock.advance(3 * gossip.DefaultProbeInterval)\n\t\th.net.take()\n\t\th.deliver(\"p03\", gossip.Message{Kind: gossip.KindAck, Seq: relaySeq})\n\t\tfor _, m := range decodeAll(t, h.net.take()) {\n\t\t\tif m.Kind == gossip.KindAck && m.Seq == 9 {\n\t\t\t\tt.Fatal(\"expired relay forwarded\")\n\t\t\t}\n\t\t}\n\t})\n\tt.Run(\"the suspicion timeout and retransmit limit scale with log2 of the member count\", func(t *testing.T) {\n\t\tc := gossip.Config{}.WithDefaults()\n\t\tfor _, r := range []struct {\n\t\t\tn        int\n\t\t\twantLog  int\n\t\t\twantSusp time.Duration\n\t\t}{{0, 1, 4 * time.Second}, {1, 1, 4 * time.Second}, {2, 1, 4 * time.Second}, {8, 3, 12 * time.Second}, {9, 4, 16 * time.Second}, {100, 7, 28 * time.Second}} {\n\t\t\tif got := c.SuspicionTimeout(r.n); got != r.wantSusp {\n\t\t\t\tt.Errorf(\"SuspicionTimeout(%d) = %v, want %v\", r.n, got, r.wantSusp)\n\t\t\t}\n\t\t\tif got := c.RetransmitLimit(r.n); got != gossip.DefaultRetransmitMult*r.wantLog {\n\t\t\t\tt.Errorf(\"RetransmitLimit(%d) = %d, want %d\", r.n, got, gossip.DefaultRetransmitMult*r.wantLog)\n\t\t\t}\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestPropIncarnationMonotonic": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/prop_test.go",
+        "line": 296,
+        "body": "func TestPropIncarnationMonotonic(t *testing.T) {\n\trapid.Check(t, propIncarnationMonotonic)\n\trapid.Check(t, propRecordMonotonicAcrossPurge)\n\trapid.Check(t, func(t *rapid.T) {\n\t\tups := rapid.SliceOfN(genUpdate(propIDs, 6), 0, 40).Draw(t, \"updates\")\n\t\tv := gossip.NewView()\n\t\tlast := map[env.NodeID]uint32{}\n\t\tfor _, u := range ups {\n\t\t\tv.Apply(u)\n\t\t\tfor _, m := range v.All() {\n\t\t\t\tif m.Incarnation < last[m.ID] {\n\t\t\t\t\tt.Fatalf(\"view incarnation of %s went from %d to %d\", m.ID, last[m.ID], m.Incarnation)\n\t\t\t\t}\n\t\t\t\tlast[m.ID] = m.Incarnation\n\t\t\t}\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestPropViewMergeIsCommutative": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/prop_test.go",
+        "line": 94,
+        "body": "func TestPropViewMergeIsCommutative(t *testing.T) {\n\trapid.Check(t, propViewMergeCommutative)\n}\n\n// viewMergeSeeds returns byte buffers for FuzzViewMergeLaws: three synthetic\n// patterns plus non-empty rapid draw buffers from testdata/merge-seeds.txt."
+      }
+    ]
+  },
+  "TestRelayBounds": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/repair_test.go",
+        "line": 405,
+        "body": "func TestRelayBounds(t *testing.T) {\n\tconst flood = 10_000\n\tt.Run(\"a ping-req flood keeps at most MaxRelays relays and counts the rest\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{})\n\t\tfor i := range flood {\n\t\t\th.deliver(\"p01\", gossip.Message{Kind: gossip.KindPingReq, Seq: uint32(i), Target: \"victim\"})\n\t\t}\n\t\tss := h.net.take()\n\t\tif len(ss) != gossip.MaxRelays {\n\t\t\tt.Fatalf(\"%d pings relayed, cap %d\", len(ss), gossip.MaxRelays)\n\t\t}\n\t\tif n := gossip.RelayCount(h.node); n != gossip.MaxRelays {\n\t\t\tt.Fatalf(\"%d relays held\", n)\n\t\t}\n\t\tif n := h.node.Stats().RelaysDropped; n != flood-gossip.MaxRelays {\n\t\t\tt.Fatalf(\"RelaysDropped = %d\", n)\n\t\t}\n\t\tfor i := range flood {\n\t\t\th.deliver(\"victim\", gossip.Message{Kind: gossip.KindAck, Seq: uint32(1<<31 + i)})\n\t\t}\n\t\tif len(h.net.sent) != 0 {\n\t\t\tt.Fatal(\"an unknown ack was forwarded\")\n\t\t}\n\t\tfor _, m := range decodeAll(t, ss) {\n\t\t\th.deliver(\"victim\", gossip.Message{Kind: gossip.KindAck, Seq: m.Seq})\n\t\t}\n\t\tif n := len(h.net.take()); n != gossip.MaxRelays {\n\t\t\tt.Fatalf(\"%d acks forwarded\", n)\n\t\t}\n\t\tif n := gossip.RelayCount(h.node); n != 0 {\n\t\t\tt.Fatalf(\"%d relays left after every ack\", n)\n\t\t}\n\t})\n\tt.Run(\"expired relays are pruned when a ping-req arrives, without a tick\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{})\n\t\tfor i := range gossip.MaxRelays {\n\t\t\th.deliver(\"p01\", gossip.Message{Kind: gossip.KindPingReq, Seq: uint32(i), Target: \"victim\"})\n\t\t}\n\t\th.clock.advance(gossip.DefaultProbeInterval + time.Millisecond)\n\t\th.net.take()\n\t\th.deliver(\"p01\", gossip.Message{Kind: gossip.KindPingReq, Seq: 7, Target: \"victim\"})\n\t\tif n := len(h.net.take()); n != 1 {\n\t\t\tt.Fatalf(\"%d pings after the old relays expired\", n)\n\t\t}\n\t\tif n := gossip.RelayCount(h.node); n != 1 {\n\t\t\tt.Fatalf(\"%d relays held\", n)\n\t\t}\n\t})\n\tt.Run(\"relays answered at once never let the expiry list grow past twice the cap\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{})\n\t\tfor i := range 3 * gossip.MaxRelays {\n\t\t\th.deliver(\"p01\", gossip.Message{Kind: gossip.KindPingReq, Seq: uint32(i), Target: \"victim\"})\n\t\t\tms := decodeAll(t, h.net.take())\n\t\t\th.deliver(\"victim\", gossip.Message{Kind: gossip.KindAck, Seq: ms[0].Seq})\n\t\t\th.net.take()\n\t\t\tif n := gossip.RelayBacklog(h.node); n > 2*gossip.MaxRelays+1 {\n\t\t\t\tt.Fatalf(\"expiry list holds %d entries after %d relays\", n, i+1)\n\t\t\t}\n\t\t}\n\t\tif h.node.Stats().RelaysDropped != 0 || gossip.RelayCount(h.node) != 0 {\n\t\t\tt.Fatalf(\"dropped %d, held %d\", h.node.Stats().RelaysDropped, gossip.RelayCount(h.node))\n\t\t}\n\t})\n\tt.Run(\"a relay whose ping could not be sent is not kept\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{})\n\t\th.net.sendErr = env.ErrUnreachable\n\t\th.deliver(\"p01\", gossip.Message{Kind: gossip.KindPingReq, Seq: 3, Target: \"victim\"})\n\t\tif n := gossip.RelayCount(h.node); n != 0 {\n\t\t\tt.Fatalf(\"%d relays kept for an unsent ping\", n)\n\t\t}\n\t})\n}\n\n// TestViewBounds proves that Config.MaxMembers caps view growth (recording\n// ErrViewFull while allowing known members to transition and purges to free\n// room), a view filled to MaxUpdates still encodes valid syncs and datagrams,\n// and out-of-range MaxMembers values are rejected."
+      }
+    ]
+  },
+  "TestSWIMAsymmetricLinkDST": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/dst_test.go",
+        "line": 495,
+        "body": "func TestSWIMAsymmetricLinkDST(t *testing.T) {\n\tt.Parallel()\n\tvar sus tally\n\tt.Cleanup(func() { t.Logf(\"MEASURE asymmetric suspicions %s\", sus.summary()) })\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\tvar out asymOut\n\t\tsimtest.RequireDeterministic(t, seed, asymRunFn(gossip.Config{}, &out))\n\t\tsus.add(int64(out.suspected))\n\t\tif out.died != 0 {\n\t\t\tt.Fatalf(\"%d evictions under a single one-way link\", out.died)\n\t\t}\n\t\tif out.suspected != 0 {\n\t\t\tt.Fatalf(\"%d suspicions under a single one-way link with indirect probes\", out.suspected)\n\t\t}\n\t})\n}\n\n// TestCanaryNoIndirectProbe plants a bug\u2014disabling indirect probes via\n// WithoutIndirectProbes\u2014in the asymmetric-link scenario and proves that the\n// scenario catches it on every seed (suspicions occur instead of zero)."
+      }
+    ]
+  },
+  "TestSWIMConvergenceDST": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/dst_test.go",
+        "line": 443,
+        "body": "func TestSWIMConvergenceDST(t *testing.T) {\n\tt.Parallel()\n\tfor _, n := range []int{20, 50, 100} {\n\t\tt.Run(fmt.Sprintf(\"N=%d\", n), func(t *testing.T) {\n\t\t\tt.Parallel()\n\t\t\tvar periods, msgs, falseDead tally\n\t\t\tt.Cleanup(func() {\n\t\t\t\tt.Logf(\"MEASURE converge N=%d log2N=%d bound=%d periods: periods-to-converge %s\", n, ceilLog2(n), convergeC*ceilLog2(n), periods.summary())\n\t\t\t\tt.Logf(\"MEASURE converge N=%d milli-datagrams per node per period %s\", n, msgs.summary())\n\t\t\t\tt.Logf(\"MEASURE converge N=%d false Died events (healthy nodes, any observer) %s\", n, falseDead.summary())\n\t\t\t})\n\t\t\tshardedSweep(t, convergeShards, func(t *testing.T, seed int64) {\n\t\t\t\tvar out convergeOut\n\t\t\t\tsimtest.RequireDeterministic(t, seed, convergeRun(n, &out))\n\t\t\t\tperiods.add(out.periods)\n\t\t\t\tmsgs.add(out.milliMsgs)\n\t\t\t\tfalseDead.add(int64(out.falseDead))\n\t\t\t})\n\t\t})\n\t}\n}\n\ntype asymOut struct {\n\tsuspected int\n\tdied      int\n}\n"
+      }
+    ]
+  },
+  "TestSWIMCrashDetectionDST": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/dst_test.go",
+        "line": 578,
+        "body": "func TestSWIMCrashDetectionDST(t *testing.T) {\n\tt.Parallel()\n\tvar det tally\n\tt.Cleanup(func() {\n\t\tt.Logf(\"MEASURE crash detection ms (N=%d, loss %d ppm, bound %v) %s\", crashNodes, crashLossPPM, detectBound, det.summary())\n\t})\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\tvar out crashOut\n\t\tsimtest.RequireDeterministic(t, seed, crashRun(&out))\n\t\tdet.add(out.detect.Milliseconds())\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestSWIMLongPartitionHealDST": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/dst_test.go",
+        "line": 1002,
+        "body": "func TestSWIMLongPartitionHealDST(t *testing.T) {\n\tt.Parallel()\n\tfor _, seedCrashed := range []bool{false, true} {\n\t\tname := \"members joined through Join and the seed is across the cut\"\n\t\tif seedCrashed {\n\t\t\tname = \"the only seed crashed, so only tombstones point across the cut\"\n\t\t}\n\t\tt.Run(name, func(t *testing.T) {\n\t\t\tt.Parallel()\n\t\t\tvar heal tally\n\t\t\tt.Cleanup(func() {\n\t\t\t\tt.Logf(\"MEASURE long partition heal ms (%s, N=%d, retention %v, bound %v) %s\", name, longNodes, longRetention, longHealBound, heal.summary())\n\t\t\t})\n\t\t\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\t\t\tvar out time.Duration\n\t\t\t\tsimtest.RequireDeterministic(t, seed, longPartitionRun(seedCrashed, &out))\n\t\t\t\theal.add(out.Milliseconds())\n\t\t\t})\n\t\t})\n\t}\n}\n"
+      }
+    ]
+  },
+  "TestSWIMPartitionHealDST": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/dst_test.go",
+        "line": 643,
+        "body": "func TestSWIMPartitionHealDST(t *testing.T) {\n\tt.Parallel()\n\tvar heal tally\n\tt.Cleanup(func() {\n\t\tt.Logf(\"MEASURE partition heal ms (N=%d, bound %v) %s\", partitionNodes, healBound, heal.summary())\n\t})\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\tvar out time.Duration\n\t\tsimtest.RequireDeterministic(t, seed, partitionRun(&out))\n\t\theal.add(out.Milliseconds())\n\t})\n}\n\ntype refuteOut struct {\n\tsuspected int\n\tdied      int\n\tinc       uint32\n}\n"
+      }
+    ]
+  },
+  "TestSWIMRefutationDST": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/dst_test.go",
+        "line": 699,
+        "body": "func TestSWIMRefutationDST(t *testing.T) {\n\tt.Parallel()\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\tvar out refuteOut\n\t\tsimtest.RequireDeterministic(t, seed, refuteRunFn(&out))\n\t\tif out.suspected == 0 {\n\t\t\tt.Fatal(\"the paused node was never suspected: the scenario did not exercise refutation\")\n\t\t}\n\t\tif out.died != 0 {\n\t\t\tt.Fatalf(\"the falsely suspected node was declared dead %d times\", out.died)\n\t\t}\n\t\tif out.inc == 0 {\n\t\t\tt.Fatal(\"the suspected node never raised its incarnation\")\n\t\t}\n\t})\n}\n\ntype restartOut struct {\n\tbefore gossip.Member\n\tafter  gossip.Member\n}\n"
+      }
+    ]
+  },
+  "TestSWIMRestartSameIDDST": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/dst_test.go",
+        "line": 768,
+        "body": "func TestSWIMRestartSameIDDST(t *testing.T) {\n\tt.Parallel()\n\tfor _, wait := range []bool{true, false} {\n\t\tname := \"restarted before anyone noticed the crash\"\n\t\tif wait {\n\t\t\tname = \"restarted after every node declared it dead\"\n\t\t}\n\t\tt.Run(name, func(t *testing.T) {\n\t\t\tt.Parallel()\n\t\t\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\t\t\tvar out restartOut\n\t\t\t\tsimtest.RequireDeterministic(t, seed, restartRun(wait, &out))\n\t\t\t\tif out.after.Incarnation < out.before.Incarnation || (out.before.State != gossip.StateAlive && out.after.Incarnation == out.before.Incarnation) {\n\t\t\t\t\tt.Fatalf(\"rejoined as %+v over the old entry %+v\", out.after, out.before)\n\t\t\t\t}\n\t\t\t})\n\t\t})\n\t}\n}\n"
+      }
+    ]
+  },
+  "TestViewBounds": {
+    "chapters": [
+      "book/chapters/02-swim-gossip.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/gossip/repair_test.go",
+        "line": 482,
+        "body": "func TestViewBounds(t *testing.T) {\n\tt.Run(\"a sync request cannot grow the view past MaxMembers\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{MaxMembers: 10, DeadRetention: time.Second})\n\t\th.node.Start()\n\t\tvar ms []gossip.Member\n\t\tfor i := range 20 {\n\t\t\tms = append(ms, mem(fmt.Sprintf(\"m%02d\", i), 0, gossip.StateAlive))\n\t\t}\n\t\tvar resp []byte\n\t\tvar rerr error\n\t\th.node.OnRequest(\"m00\", syncReq(t, ms...), func(b []byte, err error) { resp, rerr = b, err })\n\t\tif rerr != nil {\n\t\t\tt.Fatal(rerr)\n\t\t}\n\t\tif n := len(h.node.All()); n != 10 {\n\t\t\tt.Fatalf(\"view holds %d members, cap 10\", n)\n\t\t}\n\t\tif h.node.Stats().ViewFull != 11 || !errors.Is(h.node.LastError(), gossip.ErrViewFull) {\n\t\t\tt.Fatalf(\"ViewFull = %d, last %v\", h.node.Stats().ViewFull, h.node.LastError())\n\t\t}\n\t\tif m, err := gossip.Decode(resp); err != nil || len(m.Updates) != 10 {\n\t\t\tt.Fatalf(\"reply %+v %v\", m, err)\n\t\t}\n\t\th.deliver(\"m00\", gossipMsg(mem(\"m01\", 0, gossip.StateDead)))\n\t\tif m, _ := h.node.Lookup(\"m01\"); m.State != gossip.StateDead {\n\t\t\tt.Fatalf(\"a known member could not change while the view was full: %+v\", m)\n\t\t}\n\t\th.clock.advance(2 * time.Second)\n\t\tdrainRequests(h)\n\t\th.deliver(\"m00\", gossipMsg(mem(\"m15\", 0, gossip.StateAlive)))\n\t\tif _, err := h.node.Lookup(\"m15\"); err != nil {\n\t\t\tt.Fatalf(\"a purge did not free room: %v\", err)\n\t\t}\n\t})\n\tt.Run(\"a view filled to MaxUpdates still encodes as a sync and its packets stay decodable\", func(t *testing.T) {\n\t\th := newHarness(t, \"self\", gossip.Config{MaxPacket: gossip.MaxPacketLimit})\n\t\tms := make([]gossip.Member, 0, gossip.MaxUpdates)\n\t\tfor i := range gossip.MaxUpdates {\n\t\t\tms = append(ms, gossip.Member{ID: env.NodeID(fmt.Sprintf(\"%05d\", i)), Incarnation: 0, State: gossip.StateAlive})\n\t\t}\n\t\tvar rerr error\n\t\treplied := false\n\t\th.node.OnRequest(\"00000\", syncReq(t, ms...), func(_ []byte, err error) { replied, rerr = true, err })\n\t\tif !replied || rerr != nil {\n\t\t\tt.Fatalf(\"reply %v %v\", replied, rerr)\n\t\t}\n\t\tif n := len(h.node.All()); n != gossip.MaxUpdates {\n\t\t\tt.Fatalf(\"view holds %d, want %d\", n, gossip.MaxUpdates)\n\t\t}\n\t\tif err := h.node.Join([]env.NodeID{\"00001\"}, nil); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\treqs := h.net.takeRequests()\n\t\tif len(reqs) != 1 {\n\t\t\tt.Fatalf(\"%d join requests\", len(reqs))\n\t\t}\n\t\tif m, err := gossip.Decode(reqs[0].req); err != nil || len(m.Updates) != gossip.MaxUpdates {\n\t\t\tt.Fatalf(\"join request does not decode: %v\", err)\n\t\t}\n\t\th.deliver(\"00002\", gossip.Message{Kind: gossip.KindPing, Seq: 1})\n\t\tfor _, m := range decodeAll(t, h.net.take()) {\n\t\t\tif len(m.Updates) > gossip.MaxUpdates {\n\t\t\t\tt.Fatalf(\"%d updates in one packet\", len(m.Updates))\n\t\t\t}\n\t\t}\n\t})\n\tt.Run(\"MaxMembers outside 1..MaxUpdates is refused\", func(t *testing.T) {\n\t\tfor _, v := range []int{-1, gossip.MaxUpdates + 1} {\n\t\t\tif err := (gossip.Config{MaxMembers: v}).WithDefaults().Validate(); !errors.Is(err, env.ErrInvalidArgument) {\n\t\t\t\tt.Fatalf(\"MaxMembers %d: %v\", v, err)\n\t\t\t}\n\t\t}\n\t\tif got := (gossip.Config{}).WithDefaults().MaxMembers; got != gossip.MaxUpdates {\n\t\t\tt.Fatalf(\"default MaxMembers %d\", got)\n\t\t}\n\t})\n}\n\n// TestCallbacksNeverRunInsideTheRegisteringCall proves that Join and Subscribe\n// never invoke their callbacks synchronously and that Join callbacks report\n// ErrClosed (merging nothing) if Leave happens before completion."
+      }
+    ]
+  },
+  "BenchmarkEncode1MiBStripe": {
+    "chapters": [
+      "book/chapters/03-reed-solomon-erasure-coding.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/erasure/bench_test.go",
+        "line": 29,
+        "body": "func BenchmarkEncode1MiBStripe(b *testing.B) {\n\tcodec, shards := benchStripe(b)\n\tb.SetBytes(1 << 20)\n\tfor b.Loop() {\n\t\tif err := codec.Encode(shards); err != nil {\n\t\t\tb.Fatal(err)\n\t\t}\n\t}\n}\n\n// BenchmarkReconstructTwoDataShards1MiBStripe measures ReconstructData\n// throughput when two data shards of a 1 MiB (4+2) stripe are missing."
+      }
+    ]
+  },
+  "BenchmarkReconstructAllMissing1MiBStripe": {
+    "chapters": [
+      "book/chapters/03-reed-solomon-erasure-coding.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/erasure/bench_test.go",
+        "line": 54,
+        "body": "func BenchmarkReconstructAllMissing1MiBStripe(b *testing.B) {\n\tcodec, shards := benchStripe(b)\n\tb.SetBytes(1 << 20)\n\tfor b.Loop() {\n\t\tshards[1], shards[4] = nil, nil\n\t\tif err := codec.Reconstruct(shards); err != nil {\n\t\t\tb.Fatal(err)\n\t\t}\n\t}\n}\n"
+      }
+    ]
+  },
+  "BenchmarkReconstructTwoDataShards1MiBStripe": {
+    "chapters": [
+      "book/chapters/03-reed-solomon-erasure-coding.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/erasure/bench_test.go",
+        "line": 41,
+        "body": "func BenchmarkReconstructTwoDataShards1MiBStripe(b *testing.B) {\n\tcodec, shards := benchStripe(b)\n\tb.SetBytes(1 << 20)\n\tfor b.Loop() {\n\t\tshards[0], shards[2] = nil, nil\n\t\tif err := codec.ReconstructData(shards); err != nil {\n\t\t\tb.Fatal(err)\n\t\t}\n\t}\n}\n\n// BenchmarkReconstructAllMissing1MiBStripe measures Reconstruct throughput when\n// one data shard and one parity shard of a 1 MiB (4+2) stripe are missing."
+      }
+    ]
+  },
+  "BenchmarkStripedPutGet8MiB": {
+    "chapters": [
+      "book/chapters/03-reed-solomon-erasure-coding.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/storage/bench_test.go",
+        "line": 15,
+        "body": "func BenchmarkStripedPutGet8MiB(b *testing.B)  { benchPutGet(b, 8<<20) }"
+      }
+    ]
+  },
+  "FuzzErasureCoding": {
+    "chapters": [
+      "book/chapters/03-reed-solomon-erasure-coding.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/erasure/codec_test.go",
+        "line": 533,
+        "body": "func FuzzErasureCoding(f *testing.F) {\n\tfor _, seed := range codingFuzzSeeds() {\n\t\tf.Add(seed)\n\t}\n\tf.Fuzz(rapid.MakeFuzz(propErasureCoding))\n}\n\n// TestPropErasureCodingAnyLossSet checks that any erasure set of size <= m\n// reconstructs exact bytes and any set of size > m returns ErrTooFewShards."
+      }
+    ]
+  },
+  "FuzzGF256": {
+    "chapters": [
+      "book/chapters/03-reed-solomon-erasure-coding.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/erasure/gf256_test.go",
+        "line": 224,
+        "body": "func FuzzGF256(f *testing.F) {\n\tfor _, seed := range gf256FuzzSeeds() {\n\t\tf.Add(seed)\n\t}\n\tf.Fuzz(rapid.MakeFuzz(propFieldAxioms))\n}\n"
+      }
+    ]
+  },
+  "FuzzShardDecode": {
+    "chapters": [
+      "book/chapters/03-reed-solomon-erasure-coding.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/storage/shard_test.go",
+        "line": 189,
+        "body": "func FuzzShardDecode(f *testing.F) {\n\tgood, err := storage.EncodeShard(sampleHeader(), []byte(\"payload bytes\"))\n\tif err != nil {\n\t\tf.Fatal(err)\n\t}\n\tf.Add([]byte{})\n\tf.Add([]byte{0})\n\tf.Add(good)\n\tf.Add(good[:storage.HeaderSize])\n\tf.Add(good[:len(good)-1])\n\tf.Add(append(append([]byte{}, good...), 1))\n\tempty, err := storage.EncodeShard(storage.ShardHeader{K: 1, M: 0}, nil)\n\tif err != nil {\n\t\tf.Fatal(err)\n\t}\n\tf.Add(empty)\n\tf.Fuzz(func(t *testing.T, blob []byte) {\n\t\th, payload, err := storage.DecodeShard(blob)\n\t\tif err != nil {\n\t\t\tif !errors.Is(err, storage.ErrCorrupt) {\n\t\t\t\tt.Fatalf(\"decode error %v is not ErrCorrupt\", err)\n\t\t\t}\n\t\t\treturn\n\t\t}\n\t\tif h.PayloadLen != len(payload) || len(blob) != storage.HeaderSize+len(payload) {\n\t\t\tt.Fatalf(\"accepted a blob whose length disagrees with its header\")\n\t\t}\n\t\tsum := sha256.Sum256(append(append([]byte{}, blob[:32]...), payload...))\n\t\tif sum != h.Checksum {\n\t\t\tt.Fatal(\"accepted a blob whose checksum does not match: checksum bypass\")\n\t\t}\n\t\tagain, err := storage.EncodeShard(storage.ShardHeader{K: h.K, M: h.M, Index: h.Index, Stripe: h.Stripe, Version: h.Version}, payload)\n\t\tif err != nil || !bytes.Equal(again, blob) {\n\t\t\tt.Fatalf(\"an accepted blob does not re-encode to itself: %v\", err)\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestCanaryChecksumSkipBreaksCorruptionProperty": {
+    "chapters": [
+      "book/chapters/03-reed-solomon-erasure-coding.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/storage/stripe_test.go",
+        "line": 289,
+        "body": "func TestCanaryChecksumSkipBreaksCorruptionProperty(t *testing.T) {\n\tif runPlanted(t, propCorruptionBecomesErasure) {\n\t\tt.Fatal(\"the property fails without the planted bug\")\n\t}\n\trestore := storage.PlantSkipChecksum()\n\tdefer restore()\n\tcodec, err := erasure.New(2, 1)\n\tmustNil(t, err)\n\tblobs, _ := encodeStripe(t, codec, 1, 0, []byte(\"abcd\"))\n\tblobs[0][storage.HeaderSize] ^= 1\n\tif _, _, err := storage.DecodeShard(blobs[0]); err != nil {\n\t\tt.Fatalf(\"the planted bug did not take effect: %v\", err)\n\t}\n\tif !runPlanted(t, propCorruptionBecomesErasure) {\n\t\tt.Fatal(\"TestPropCorruptionBecomesErasure passes with checksum verification skipped: the property cannot see corruption\")\n\t}\n}\n\n// TestDecodeStripeRejectsForgedShards proves header and manifest-checksum\n// checks reject a self-consistent forged shard, a shard from another code, and\n// a wrong-length shard, and shows that without manifest checksums a forged\n// shard would decode wrong bytes."
+      }
+    ]
+  },
+  "TestCanaryChecksumSkipFailsStripedDST": {
+    "chapters": [
+      "book/chapters/03-reed-solomon-erasure-coding.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/storage/dst_test.go",
+        "line": 290,
+        "body": "func TestCanaryChecksumSkipFailsStripedDST(t *testing.T) {\n\trestore := storage.PlantSkipChecksum()\n\tdefer restore()\n\tvar outs []*dstOutcome\n\t_, err := simtest.CheckDeterministic(1, stripedRun(dstMode{}, &outs))\n\tif err == nil {\n\t\tt.Fatalf(\"the striped DST passes with checksum verification skipped (%d gets, %d ok)\", outs[0].gets, outs[0].ok)\n\t}\n\tif !errors.Is(err, storage.ErrCorrupt) {\n\t\tt.Fatalf(\"the striped DST failed for another reason: %v\", err)\n\t}\n}\n"
+      }
+    ]
+  },
+  "TestNodePutReleasesTheObjectAtTheAck": {
+    "chapters": [
+      "book/chapters/03-reed-solomon-erasure-coding.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/storage/node_repair_test.go",
+        "line": 184,
+        "body": "func TestNodePutReleasesTheObjectAtTheAck(t *testing.T) {\n\tcodes, err := storage.Codes()\n\tmustNil(t, err)\n\tlat := sim.Range{Min: time.Microsecond, Max: time.Microsecond}\n\ts := sim.New(sim.Config{Seed: 220211, Codes: codes, Net: sim.NetConfig{Latency: lat, InterRegionLatency: lat}})\n\tids := sim.NodeIDs(6)\n\tcfg := storage.Config{Layout: storage.Layout{K: 4, M: 2, StripeSize: 1 << 10}, Members: clusterMembers(ids, 3), Window: 1}\n\tmustNil(t, s.AddCluster(ids, 3, nodeFactory(cfg)))\n\tmustNil(t, s.RunUntilQuiet())\n\tmustNil(t, s.Pause(ids[5]))\n\tn := nodeOf(t, s, ids[0])\n\tdata := bytes.Repeat([]byte{9}, 16<<10)\n\theld := weak.Make(&data[0])\n\tdone := false\n\tn.Put(\"b\", \"k\", data, func(_ *storage.Manifest, err error) {\n\t\tmustNil(t, err)\n\t\tdone = true\n\t})\n\tdata = nil\n\tmustNil(t, s.RunFor(storage.DefaultRequestTimeout/2))\n\tif !done {\n\t\tt.Fatal(\"the put did not ack with one paused holder\")\n\t}\n\tif n.Stats().PutOutstanding == 0 {\n\t\tt.Fatal(\"no request is outstanding after the ack; the test needs late requests\")\n\t}\n\truntime.GC()\n\tif held.Value() != nil {\n\t\tt.Fatalf(\"the object buffer is still reachable after the ack with %d late requests outstanding\", n.Stats().PutOutstanding)\n\t}\n\tmustNil(t, s.Resume(ids[5]))\n\tmustNil(t, s.RunUntilQuiet())\n}\n"
+      }
+    ]
+  },
+  "TestPropChunkStoreModel": {
+    "chapters": [
+      "book/chapters/03-reed-solomon-erasure-coding.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/storage/chunkstore_test.go",
+        "line": 323,
+        "body": "func TestPropChunkStoreModel(t *testing.T) {\n\trapid.Check(t, func(rt *rapid.T) {\n\t\trd := newRestartableDisk(rt)\n\t\tst := storage.NewChunkStore(rd.disk)\n\t\tm := &chunkModel{written: map[storage.ShardID][]byte{}, durable: map[storage.ShardID][]byte{}, rotW: map[storage.ShardID]bool{}, rotD: map[storage.ShardID]bool{}, dirty: map[storage.ShardID]bool{}}\n\t\tids := make([]storage.ShardID, 0, 8)\n\t\tfor v := 1; v <= 2; v++ {\n\t\t\tfor idx := 0; idx < 4; idx++ {\n\t\t\t\tids = append(ids, storage.ShardID{Bucket: \"m\", Version: storage.VersionID(v), Stripe: uint32(idx % 2), Index: uint16(idx)})\n\t\t\t}\n\t\t}\n\t\tgenID := rapid.SampledFrom(ids)\n\t\tgenPayload := rapid.SampledFrom([][]byte{{}, {1}, []byte(\"two\"), []byte(\"payload four\")})\n\t\tdurableIs := func(rt *rapid.T, id storage.ShardID, want []byte) {\n\t\t\tgot, ok := rd.s.Disk(rd.id).PeekDurable(id.BlobName())\n\t\t\tif want == nil {\n\t\t\t\tif ok {\n\t\t\t\t\trt.Fatalf(\"%v is durable after a call that reported it absent\", id)\n\t\t\t\t}\n\t\t\t\treturn\n\t\t\t}\n\t\t\tif !ok || !bytes.Equal(got, shardFor(rt, id, want)) {\n\t\t\t\trt.Fatalf(\"%v is not durable with the acknowledged bytes (present %v)\", id, ok)\n\t\t\t}\n\t\t}\n\t\trt.Repeat(map[string]func(*rapid.T){\n\t\t\t\"put\": func(rt *rapid.T) {\n\t\t\t\tid := genID.Draw(rt, \"id\")\n\t\t\t\tp := genPayload.Draw(rt, \"payload\")\n\t\t\t\terr := st.Put(id, shardFor(rt, id, p))\n\t\t\t\tprev, ok := m.written[id]\n\t\t\t\tswitch {\n\t\t\t\tcase !ok || m.rotW[id]:\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\trt.Fatalf(\"put %v: %v\", id, err)\n\t\t\t\t\t}\n\t\t\t\t\tm.setBoth(id, p)\n\t\t\t\t\tdurableIs(rt, id, p)\n\t\t\t\tcase bytes.Equal(prev, p):\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\trt.Fatalf(\"idempotent put %v: %v\", id, err)\n\t\t\t\t\t}\n\t\t\t\t\tm.setBoth(id, p)\n\t\t\t\t\tdurableIs(rt, id, p)\n\t\t\t\tdefault:\n\t\t\t\t\tif !errors.Is(err, storage.ErrExists) {\n\t\t\t\t\t\trt.Fatalf(\"conflicting put %v: %v\", id, err)\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t},\n\t\t\t\"delete\": func(rt *rapid.T) {\n\t\t\t\tid := genID.Draw(rt, \"id\")\n\t\t\t\terr := st.Delete(id)\n\t\t\t\tif !m.has(id) {\n\t\t\t\t\tif !errors.Is(err, storage.ErrNotFound) {\n\t\t\t\t\t\trt.Fatalf(\"delete of missing %v: %v\", id, err)\n\t\t\t\t\t}\n\t\t\t\t} else if err != nil {\n\t\t\t\t\trt.Fatalf(\"delete %v: %v\", id, err)\n\t\t\t\t}\n\t\t\t\tm.dropBoth(id)\n\t\t\t\tdurableIs(rt, id, nil)\n\t\t\t},\n\t\t\t\"rot\": func(rt *rapid.T) {\n\t\t\t\tid := genID.Draw(rt, \"id\")\n\t\t\t\tif !m.clean(id) {\n\t\t\t\t\trt.Skip(\"nothing clean to rot\")\n\t\t\t\t}\n\t\t\t\tif err := rd.s.BitRot(rd.id, id.BlobName()); err != nil {\n\t\t\t\t\trt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tm.rotW[id], m.rotD[id] = true, true\n\t\t\t},\n\t\t\t\"unsynced write\": func(rt *rapid.T) {\n\t\t\t\tid := genID.Draw(rt, \"id\")\n\t\t\t\tp := genPayload.Draw(rt, \"payload\")\n\t\t\t\tif err := rd.disk.Write(id.BlobName(), shardFor(rt, id, p)); err != nil {\n\t\t\t\t\trt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tm.written[id] = p\n\t\t\t\tm.dirty[id] = true\n\t\t\t\tdelete(m.rotW, id)\n\t\t\t},\n\t\t\t\"unsynced delete\": func(rt *rapid.T) {\n\t\t\t\tid := genID.Draw(rt, \"id\")\n\t\t\t\tif !m.has(id) {\n\t\t\t\t\trt.Skip(\"nothing written to delete\")\n\t\t\t\t}\n\t\t\t\tif err := rd.disk.Delete(id.BlobName()); err != nil {\n\t\t\t\t\trt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tdelete(m.written, id)\n\t\t\t\tm.dirty[id] = true\n\t\t\t\tdelete(m.rotW, id)\n\t\t\t},\n\t\t\t\"crash\": func(rt *rapid.T) {\n\t\t\t\trd.crash(rt)\n\t\t\t\tst = storage.NewChunkStore(rd.disk)\n\t\t\t\tm.crash()\n\t\t\t},\n\t\t\t\"\": func(rt *rapid.T) {\n\t\t\t\tfor _, id := range ids {\n\t\t\t\t\t_, p, err := st.Get(id)\n\t\t\t\t\twant, ok := m.written[id]\n\t\t\t\t\tswitch {\n\t\t\t\t\tcase !ok:\n\t\t\t\t\t\tif !errors.Is(err, storage.ErrNotFound) {\n\t\t\t\t\t\t\trt.Fatalf(\"get missing %v: %v\", id, err)\n\t\t\t\t\t\t}\n\t\t\t\t\tcase m.rotW[id]:\n\t\t\t\t\t\tif !errors.Is(err, storage.ErrCorrupt) {\n\t\t\t\t\t\t\trt.Fatalf(\"get rotted %v: %v %q\", id, err, p)\n\t\t\t\t\t\t}\n\t\t\t\t\tdefault:\n\t\t\t\t\t\tif err != nil || !bytes.Equal(p, want) {\n\t\t\t\t\t\t\trt.Fatalf(\"get %v = %q, %v; want %q\", id, p, err, want)\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tlisted, err := st.List(\"m\")\n\t\t\t\tif err != nil {\n\t\t\t\t\trt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tif len(listed) != len(m.written) {\n\t\t\t\t\trt.Fatalf(\"List has %d shards, model %d\", len(listed), len(m.written))\n\t\t\t\t}\n\t\t\t\tfor _, id := range listed {\n\t\t\t\t\tif !m.has(id) {\n\t\t\t\t\t\trt.Fatalf(\"List has %v, not in the model\", id)\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t},\n\t\t})\n\t})\n}\n\n// TestChunkStorePutOfUnsyncedIdenticalBytesIsDurable proves Put syncs even\n// when matching bytes already exist in the unsynced written layer."
+      }
+    ]
+  },
+  "TestStripedPutGetDST": {
+    "chapters": [
+      "book/chapters/03-reed-solomon-erasure-coding.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/storage/dst_test.go",
+        "line": 249,
+        "body": "func TestStripedPutGetDST(t *testing.T) {\n\tfor _, mode := range []dstMode{{lifted: false}, {lifted: true}} {\n\t\tname := \"within-budget\"\n\t\tif mode.lifted {\n\t\t\tname = \"budget-lifted\"\n\t\t}\n\t\tt.Run(name, func(t *testing.T) {\n\t\t\tagg := dstOutcome{minDurableAtAck: dstK + dstM}\n\t\t\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\t\t\tvar outs []*dstOutcome\n\t\t\t\tsimtest.RequireDeterministic(t, seed, stripedRun(mode, &outs))\n\t\t\t\tr := outs[0]\n\t\t\t\tif r.gets < dstGets/2 {\n\t\t\t\t\tt.Fatalf(\"only %d gets completed\", r.gets)\n\t\t\t\t}\n\t\t\t\tif mode.lifted && r.unavailable == 0 {\n\t\t\t\t\tt.Fatal(\"the lifted run never saw ErrUnavailable\")\n\t\t\t\t}\n\t\t\t\tagg.putMax = max(agg.putMax, r.putMax)\n\t\t\t\tagg.getMax = max(agg.getMax, r.getMax)\n\t\t\t\tagg.maxRequests = max(agg.maxRequests, r.maxRequests)\n\t\t\t\tagg.gets += r.gets\n\t\t\t\tagg.ok += r.ok\n\t\t\t\tagg.unavailable += r.unavailable\n\t\t\t\tagg.fallbacks += r.fallbacks\n\t\t\t\tagg.applied += r.applied\n\t\t\t\tagg.rejected += r.rejected\n\t\t\t\tagg.transientOnly += r.transientOnly\n\t\t\t\tagg.minDurableAtAck = min(agg.minDurableAtAck, r.minDurableAtAck)\n\t\t\t})\n\t\t\tif agg.fallbacks == 0 || agg.applied == 0 {\n\t\t\t\tt.Fatalf(\"the faults never reached a read: %d gets fell back, %d faults applied\", agg.fallbacks, agg.applied)\n\t\t\t}\n\t\t\tt.Logf(\"MEASURED %s: put max %v (bound %v), get max %v (bound %v), max mean requests per stripe %d (bound %d), gets %d ok %d unavailable %d fell-back %d, faults applied %d rejected-by-budget %d, unavailable-with-transient-cause %d, fewest durable shards of a stripe at its PUT ack %d (need %d)\",\n\t\t\t\tname, agg.putMax, dstPutBound, agg.getMax, dstGetBound, agg.maxRequests, dstMaxRequests, agg.gets, agg.ok, agg.unavailable, agg.fallbacks, agg.applied, agg.rejected, agg.transientOnly, agg.minDurableAtAck, dstK+1)\n\t\t})\n\t}\n}\n\n// TestCanaryChecksumSkipFailsStripedDST plants a bug that skips SHA-256\n// verification in DecodeShard and proves the striped DST catches it as ErrCorrupt."
+      }
+    ]
+  },
+  "FuzzMerkleDiff": {
+    "chapters": [
+      "book/chapters/04-merkle-anti-entropy.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/merkle/prop_test.go",
+        "line": 188,
+        "body": "func FuzzMerkleDiff(f *testing.F) {\n\tf.Add([]byte{})\n\tf.Add([]byte{0})\n\tf.Add([]byte{1, 2, 3, 4, 5, 6, 7, 8})\n\tf.Add([]byte{255, 255, 255, 255, 0, 0, 0, 0, 1})\n\tf.Fuzz(rapid.MakeFuzz(propDiffComplete))\n}\n"
+      }
+    ]
+  },
+  "FuzzMerkleWire": {
+    "chapters": [
+      "book/chapters/04-merkle-anti-entropy.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/merkle/wire_test.go",
+        "line": 169,
+        "body": "func FuzzMerkleWire(f *testing.F) {\n\tf.Add([]byte{})\n\tf.Add([]byte{0x04})\n\tf.Add(encodeRequest(request{depth: 2, level: 0, root: h32(1)}))\n\tf.Add(encodeRequest(request{depth: 2, level: 1, paths: []uint64{0, 1 << 60}}))\n\tf.Add(encodeRequest(request{depth: 2, level: 2, paths: []uint64{0x12 << 56}}))\n\tf.Add(encodeRequest(request{depth: 2, level: 2, paths: []uint64{0x12 << 56}, resume: true, after: \"a\"}))\n\tf.Add(encodeResponse(response{kind: msgInner, level: 0, bitmaps: []uint16{0xc000}, hashes: []Hash{h32(1), h32(2)}}))\n\tf.Add(encodeResponse(response{kind: msgLeaves, level: 2, leaves: [][]Entry{{{Key: \"a\", Hash: h32(3)}}}}))\n\tf.Add(encodeResponse(response{kind: msgLeaves, level: 2, more: true, leaves: [][]Entry{nil, {{Key: \"a\", Hash: h32(3)}}}}))\n\tf.Add([]byte{0x02, 0, 0xff, 0xff, 0x03})\n\ttr, err := New(2)\n\tif err != nil {\n\t\tf.Fatal(err)\n\t}\n\tfor i := 0; i < 64; i++ {\n\t\tif err := tr.Set(string(rune('a'+i%26))+string(rune('a'+i/26)), Sum([]byte{byte(i)})); err != nil {\n\t\t\tf.Fatal(err)\n\t\t}\n\t}\n\tf.Fuzz(func(t *testing.T, data []byte) {\n\t\tif len(data) > 64<<10 {\n\t\t\treturn\n\t\t}\n\t\tif req, err := decodeRequest(data); err == nil {\n\t\t\tif !bytes.Equal(encodeRequest(req), data) {\n\t\t\t\tt.Fatalf(\"request % x does not re-encode to itself\", data)\n\t\t\t}\n\t\t} else if !errors.Is(err, ErrMalformed) && !errors.Is(err, ErrDepth) {\n\t\t\tt.Fatalf(\"decodeRequest error %v\", err)\n\t\t}\n\t\tif resp, err := decodeResponse(data); err == nil {\n\t\t\tif !bytes.Equal(encodeResponse(resp), data) {\n\t\t\t\tt.Fatalf(\"response % x does not re-encode to itself\", data)\n\t\t\t}\n\t\t} else if !errors.Is(err, ErrMalformed) && !errors.Is(err, ErrDepth) {\n\t\t\tt.Fatalf(\"decodeResponse error %v\", err)\n\t\t}\n\t\tif out, err := tr.Answer(data); err == nil {\n\t\t\tif _, err := decodeResponse(out); err != nil {\n\t\t\t\tt.Fatalf(\"Answer produced an undecodable reply: %v\", err)\n\t\t\t}\n\t\t\tif len(out) > MaxReplyBytes {\n\t\t\t\tt.Fatalf(\"Answer produced %d bytes, over MaxReplyBytes\", len(out))\n\t\t\t}\n\t\t} else if !errors.Is(err, ErrMalformed) && !errors.Is(err, ErrDepth) {\n\t\t\tt.Fatalf(\"Answer error %v\", err)\n\t\t}\n\t\tfor steps := 0; steps < 3; steps++ {\n\t\t\ts := tr.Diff(Limits{Frontier: 4})\n\t\t\tfor i := 0; i < steps; i++ {\n\t\t\t\treq, ok := s.Request()\n\t\t\t\tif !ok {\n\t\t\t\t\tbreak\n\t\t\t\t}\n\t\t\t\tother := tr.Snapshot()\n\t\t\t\tother.Delete(\"aa\")\n\t\t\t\tresp, err := other.Answer(req)\n\t\t\t\tif err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tif err := s.Feed(resp); err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t}\n\t\t\tif _, ok := s.Request(); !ok {\n\t\t\t\tcontinue\n\t\t\t}\n\t\t\tif err := s.Feed(data); err != nil && !errors.Is(err, ErrMalformed) && !errors.Is(err, ErrDepth) {\n\t\t\t\tt.Fatalf(\"Feed error %v\", err)\n\t\t\t}\n\t\t\tfor n := 0; n < 16; n++ {\n\t\t\t\tif _, ok := s.Request(); !ok {\n\t\t\t\t\tbreak\n\t\t\t\t}\n\t\t\t\ts.Fail(ErrMalformed)\n\t\t\t}\n\t\t\tif !s.Done() {\n\t\t\t\tt.Fatal(\"session not done\")\n\t\t\t}\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestBitRotRepairDST": {
+    "chapters": [
+      "book/chapters/04-merkle-anti-entropy.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/merkle/dst_test.go",
+        "line": 367,
+        "body": "func TestBitRotRepairDST(t *testing.T) {\n\tt.Run(\"rot during traffic is detected and repaired\", func(t *testing.T) {\n\t\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\t\ts := simtest.RequireDeterministic(t, seed, bitRotRun(true))\n\t\t\tw := take(s)\n\t\t\tif w.convergeAt == 0 {\n\t\t\t\tt.Fatalf(\"replicas did not converge within %v of quiet\", BitRotConvergeBound)\n\t\t\t}\n\t\t\tif len(w.rotFirst) != 0 {\n\t\t\t\tt.Fatalf(\"%d damaged blobs never repaired\", len(w.rotFirst))\n\t\t\t}\n\t\t\tif w.rotEvents == 0 || w.repairs == 0 {\n\t\t\t\tt.Fatalf(\"no rot happened (events %d, repairs %d)\", w.rotEvents, w.repairs)\n\t\t\t}\n\t\t\tif w.maxRepair > BitRotRepairBound {\n\t\t\t\tt.Fatalf(\"slowest repair %v over the bound %v\", w.maxRepair, BitRotRepairBound)\n\t\t\t}\n\t\t\tmoved := w.fetchedBytes()\n\t\t\tif moved > RepairCopiesPerRot*w.rotBytes {\n\t\t\t\tt.Fatalf(\"fetched %d bytes for %d rotted bytes\", moved, w.rotBytes)\n\t\t\t}\n\t\t\tvar rot uint64\n\t\t\tfor _, st := range w.stats() {\n\t\t\t\trot += st.Changed\n\t\t\t}\n\t\t\tif rot == 0 {\n\t\t\t\tt.Fatal(\"the scrub never saw changed bytes\")\n\t\t\t}\n\t\t\tt.Logf(\"rot events %d rotted bytes %d fetched %d slowest repair %v converged %v after quiet\",\n\t\t\t\tw.rotEvents, w.rotBytes, moved, w.maxRepair, w.convergeAt.Sub(w.quietAt))\n\t\t})\n\t})\n\tt.Run(\"without damage no chunk bytes move\", func(t *testing.T) {\n\t\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\t\ts := simtest.RequireDeterministic(t, seed, cleanRun)\n\t\t\tw := take(s)\n\t\t\tif w.convergeAt == 0 {\n\t\t\t\tt.Fatal(\"did not converge\")\n\t\t\t}\n\t\t\tif n := w.fetchedBytes(); n != w.settledFetched {\n\t\t\t\tt.Fatalf(\"fetched %d bytes after the writes settled (%d before) with no damage\", n-w.settledFetched, w.settledFetched)\n\t\t\t}\n\t\t})\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestCanarySkippedBranch": {
+    "chapters": [
+      "book/chapters/04-merkle-anti-entropy.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/merkle/canary_test.go",
+        "line": 21,
+        "body": "func TestCanarySkippedBranch(t *testing.T) {\n\tlocal := map[string]merkle.Hash{}\n\tremote := map[string]merkle.Hash{}\n\tfor i, k := range keysInLeaf(t, 1, 15, 8) {\n\t\tremote[k] = sum(fmt.Sprint(i))\n\t}\n\tfor i := 0; i < 50; i++ {\n\t\tk := fmt.Sprintf(\"shared-%d\", i)\n\t\tlocal[k], remote[k] = sum(k), sum(k)\n\t}\n\tcompare := func() error {\n\t\tres, err := merkle.Compare(treeOf(t, 2, local), treeOf(t, 2, remote), merkle.Limits{})\n\t\tif err != nil {\n\t\t\treturn err\n\t\t}\n\t\treturn checkComplete(local, remote, res)\n\t}\n\tif err := compare(); err != nil {\n\t\tt.Fatalf(\"the completeness check fails without the planted bug: %v\", err)\n\t}\n\tt.Run(\"the completeness check catches the skipped branch\", func(t *testing.T) {\n\t\tdefer merkle.SetSkipBranch(true)()\n\t\tif err := compare(); err == nil {\n\t\t\tt.Fatal(\"a diff that skips branch f passed the completeness check\")\n\t\t}\n\t})\n\tfor _, seed := range canarySeeds {\n\t\ts, err := simtest.CheckDeterministic(seed, canaryRun)\n\t\tif w := take(s); err != nil || w.convergeAt == 0 {\n\t\t\tt.Fatalf(\"seed %d: the scenario does not converge without the planted bug: %v\", seed, err)\n\t\t}\n\t}\n\tt.Run(\"the missed-write scenario fails to converge\", func(t *testing.T) {\n\t\tdefer merkle.SetSkipBranch(true)()\n\t\tfor _, seed := range canarySeeds {\n\t\t\ts, err := simtest.CheckDeterministic(seed, canaryRun)\n\t\t\tw := take(s)\n\t\t\tif !errors.Is(err, sim.ErrDeadline) || w.convergeAt != 0 {\n\t\t\t\tt.Fatalf(\"seed %d: want a convergence deadline stall, got err=%v convergeAt=%v\", seed, err, w.convergeAt)\n\t\t\t}\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestLyingPeerDST": {
+    "chapters": [
+      "book/chapters/04-merkle-anti-entropy.md",
+      "book/chapters/08-end-to-end-and-hardening.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/merkle/dst_test.go",
+        "line": 605,
+        "body": "func TestLyingPeerDST(t *testing.T) {\n\tt.Run(\"honest replicas converge beside a liar and never store its bytes\", func(t *testing.T) {\n\t\tvar seeds int\n\t\tvar sweepInvalid uint64\n\t\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\t\ts := simtest.RequireDeterministic(t, seed, lyingRun)\n\t\t\tw := take(s)\n\t\t\tif w.convergeAt == 0 {\n\t\t\t\tt.Fatalf(\"honest replicas did not converge within %v\", LyingConvergeBound)\n\t\t\t}\n\t\t\tvar failed, invalid uint64\n\t\t\tfor _, st := range w.stats() {\n\t\t\t\tif st.MaxRoundTrips > uint64(w.depth+1) {\n\t\t\t\t\tt.Fatalf(\"a round took %d round trips at depth %d\", st.MaxRoundTrips, w.depth)\n\t\t\t\t}\n\t\t\t\tfailed += st.Failed\n\t\t\t\tinvalid += st.Invalid\n\t\t\t}\n\t\t\tl, ok := s.Process(w.ids[3]).(*liar)\n\t\t\tif !ok || l.n == 0 || failed == 0 {\n\t\t\t\tt.Fatalf(\"the liar was never engaged: contacted %v failed %d\", ok && l.n > 0, failed)\n\t\t\t}\n\t\t\tseeds++\n\t\t\tsweepInvalid += invalid\n\t\t})\n\t\tif seeds >= lyingSweepFloor && sweepInvalid == 0 {\n\t\t\tt.Fatalf(\"no fabricated entry was refused across %d seeds\", seeds)\n\t\t}\n\t})\n\tt.Run(\"a lone liar cannot plant bytes\", func(t *testing.T) {\n\t\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\t\ts := simtest.RequireDeterministic(t, seed, loneLiarRun)\n\t\t\ttake(s)\n\t\t\tst := storeOf(s, s.Nodes()[0])\n\t\t\tstats := st.w.Stats()\n\t\t\tif stats.Rejected == 0 || !errors.Is(st.w.LastErr(), merkle.ErrRejected) {\n\t\t\t\tt.Fatalf(\"no fetched bytes were rejected: %+v, last error %v\", stats, st.w.LastErr())\n\t\t\t}\n\t\t\tif stats.Repaired != 0 || len(s.Disk(s.Nodes()[0]).Names()) != 0 {\n\t\t\t\tt.Fatalf(\"the liar planted %d chunks\", stats.Repaired)\n\t\t\t}\n\t\t\tif stats.MaxRoundTrips > uint64(merkle.DepthFor(dstChunks)+1) {\n\t\t\t\tt.Fatalf(\"a round took %d round trips\", stats.MaxRoundTrips)\n\t\t\t}\n\t\t})\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestMeasureDiffCost": {
+    "chapters": [
+      "book/chapters/04-merkle-anti-entropy.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/merkle/canary_test.go",
+        "line": 83,
+        "body": "func TestMeasureDiffCost(t *testing.T) {\n\tif os.Getenv(measureEnv) == \"\" {\n\t\tt.Skip(\"set \" + measureEnv + \"=1 to print the cost table\")\n\t}\n\tfor _, n := range []int{1_000, 10_000, 100_000} {\n\t\tdepth := merkle.DepthFor(n)\n\t\tentries := make([]merkle.Entry, 0, n)\n\t\tfor i := 0; i < n; i++ {\n\t\t\tk := fmt.Sprintf(\"object-%07d\", i)\n\t\t\tentries = append(entries, merkle.Entry{Key: k, Hash: sum(k)})\n\t\t}\n\t\tbase, err := merkle.Build(depth, entries)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tfor _, d := range []int{1, 10, 100} {\n\t\t\tother := base.Snapshot()\n\t\t\tfor i := 0; i < d; i++ {\n\t\t\t\tk := fmt.Sprintf(\"object-%07d\", (i*7919)%n)\n\t\t\t\tswitch i % 3 {\n\t\t\t\tcase 0:\n\t\t\t\t\terr = other.Set(k, sum(\"changed\"+k))\n\t\t\t\tcase 1:\n\t\t\t\t\tother.Delete(k)\n\t\t\t\tdefault:\n\t\t\t\t\terr = other.Set(fmt.Sprintf(\"new-%d\", i), sum(k))\n\t\t\t\t}\n\t\t\t\tif err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t}\n\t\t\tstart := time.Now()\n\t\t\tres, err := merkle.Compare(base, other, merkle.Limits{})\n\t\t\tif err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tel := time.Since(start)\n\t\t\tfmt.Printf(\"MEASURE N=%d depth=%d d=%d found=%d roundtrips=%d hashes=%d bound16d(depth+1)=%d exactbound=%d leafload=%d bytes=%d+%d time=%v\\n\",\n\t\t\t\tn, depth, d, len(res.Diffs), res.Cost.RoundTrips, res.Cost.Hashes, 16*d*(depth+1), costBound(d, depth, other.LeafLoad()),\n\t\t\t\tother.LeafLoad(), res.Cost.BytesSent, res.Cost.BytesReceived, el)\n\t\t}\n\t}\n}\n"
+      }
+    ]
+  },
+  "TestMissedWriteRepairDST": {
+    "chapters": [
+      "book/chapters/04-merkle-anti-entropy.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/merkle/dst_test.go",
+        "line": 463,
+        "body": "func TestMissedWriteRepairDST(t *testing.T) {\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\ts := simtest.RequireDeterministic(t, seed, missedWriteRun)\n\t\tw := take(s)\n\t\tif w.convergeAt == 0 {\n\t\t\tt.Fatalf(\"not converged within %v of heal\", MissedWriteBound)\n\t\t}\n\t\tvar repaired, replErrs uint64\n\t\tfor _, st := range w.stats() {\n\t\t\trepaired += st.Repaired\n\t\t}\n\t\tfor _, id := range w.honest {\n\t\t\treplErrs += storeOf(s, id).replErrs\n\t\t}\n\t\tif replErrs == 0 || repaired == 0 {\n\t\t\tt.Fatalf(\"the partition dropped %d replica writes and anti-entropy repaired %d\", replErrs, repaired)\n\t\t}\n\t\tt.Logf(\"dropped %d repaired %d converged %v after heal\", replErrs, repaired, w.convergeAt.Sub(w.quietAt))\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestRepairUnderLossDST": {
+    "chapters": [
+      "book/chapters/04-merkle-anti-entropy.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/merkle/dst_test.go",
+        "line": 512,
+        "body": "func TestRepairUnderLossDST(t *testing.T) {\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\ts := simtest.RequireDeterministic(t, seed, lossRun)\n\t\tw := take(s)\n\t\tif w.convergeAt == 0 {\n\t\t\tt.Fatalf(\"not converged within %v under %d ppm loss\", LossConvergeBound, LossPPM)\n\t\t}\n\t\tvar failed, completed uint64\n\t\tfor _, st := range w.stats() {\n\t\t\tinflight := uint64(0)\n\t\t\tif st.InFlight {\n\t\t\t\tinflight = 1\n\t\t\t}\n\t\t\tif st.Rounds != st.Completed+st.Failed+inflight {\n\t\t\t\tt.Fatalf(\"rounds %d != completed %d + failed %d + in flight %d\", st.Rounds, st.Completed, st.Failed, inflight)\n\t\t\t}\n\t\t\tfailed += st.Failed\n\t\t\tcompleted += st.Completed\n\t\t}\n\t\tif failed == 0 || completed == 0 {\n\t\t\tt.Fatalf(\"failed %d completed %d: loss did not bite\", failed, completed)\n\t\t}\n\t\tt.Logf(\"rounds failed %d completed %d converged %v after the last write\", failed, completed, w.convergeAt.Sub(w.quietAt))\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestScrubRefillsAWipedDiskDST": {
+    "chapters": [
+      "book/chapters/04-merkle-anti-entropy.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/merkle/worker_test.go",
+        "line": 359,
+        "body": "func TestScrubRefillsAWipedDiskDST(t *testing.T) {\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\ts := simtest.RequireDeterministic(t, seed, scrubRun)\n\t\tw := take(s)\n\t\tif w.convergeAt == 0 {\n\t\t\tt.Fatalf(\"wiped replica not refilled within %v\", refillBound)\n\t\t}\n\t\tvictim := storeOf(s, w.ids[0]).w.Stats()\n\t\tif victim.Dropped < uint64(len(w.keys)) || victim.Repaired < uint64(len(w.keys)) {\n\t\t\tt.Fatalf(\"victim dropped %d repaired %d of %d\", victim.Dropped, victim.Repaired, len(w.keys))\n\t\t}\n\t\tif storeOf(s, w.ids[1]).w.Stats().ReadErrors == 0 {\n\t\t\tt.Fatal(\"injected read errors were not seen by the scrub\")\n\t\t}\n\t\tt.Logf(\"refilled %d chunks in %v\", victim.Repaired, w.convergeAt.Sub(wipeAt))\n\t})\n}\n"
+      }
+    ]
+  },
+  "BenchmarkMergeDoc": {
+    "chapters": [
+      "book/chapters/05-optimistic-concurrency-control.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/occ/bench_test.go",
+        "line": 30,
+        "body": "func BenchmarkMergeDoc(b *testing.B) {\n\tfor _, n := range []int{1_000, 10_000} {\n\t\tb.Run(fmt.Sprintf(\"records=%d\", n), func(b *testing.B) {\n\t\t\tx, y := benchDocs(b, n)\n\t\t\tb.ResetTimer()\n\t\t\tfor range b.N {\n\t\t\t\tz := x.Clone()\n\t\t\t\tz.Merge(y)\n\t\t\t}\n\t\t})\n\t\tb.Run(fmt.Sprintf(\"store merge with discards records=%d\", n), func(b *testing.B) {\n\t\t\tx, y := benchDocs(b, n)\n\t\t\tb.ResetTimer()\n\t\t\tfor range b.N {\n\t\t\t\tb.StopTimer()\n\t\t\t\tcfg := storeConfig(\"z\", 1, 3, &fakeClock{now: 1_000_000})\n\t\t\t\tcfg.Doc = x.Clone()\n\t\t\t\ts, err := occ.NewStore(cfg)\n\t\t\t\tif err != nil {\n\t\t\t\t\tb.Fatal(err)\n\t\t\t\t}\n\t\t\t\tb.StartTimer()\n\t\t\t\tif _, err := s.Merge(y); err != nil {\n\t\t\t\t\tb.Fatal(err)\n\t\t\t\t}\n\t\t\t}\n\t\t})\n\t\tb.Run(fmt.Sprintf(\"encode+decode records=%d\", n), func(b *testing.B) {\n\t\t\tx, y := benchDocs(b, n)\n\t\t\tx.Merge(y)\n\t\t\tb.ReportMetric(float64(len(x.Encode())), \"bytes\")\n\t\t\tb.ResetTimer()\n\t\t\tfor range b.N {\n\t\t\t\tif _, err := occ.Decode(x.Clone().Encode()); err != nil {\n\t\t\t\t\tb.Fatal(err)\n\t\t\t\t}\n\t\t\t}\n\t\t})\n\t}\n}\n"
+      }
+    ]
+  },
+  "FuzzOCCConditionalWrite": {
+    "chapters": [
+      "book/chapters/05-optimistic-concurrency-control.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/occ/prop_test.go",
+        "line": 252,
+        "body": "func FuzzOCCConditionalWrite(f *testing.F) {\n\tfuzzSeeds(f)\n\tf.Fuzz(rapid.MakeFuzz(propEveryLossRecorded))\n}\n\n// TestPropCheckAndSetModel proves single-replica conditional Put and Delete\n// against a reference model: operations succeed iff the precondition holds,\n// every new version gets a distinct ETag, and no discards occur."
+      }
+    ]
+  },
+  "FuzzOCCDecode": {
+    "chapters": [
+      "book/chapters/05-optimistic-concurrency-control.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/occ/encoding_test.go",
+        "line": 408,
+        "body": "func FuzzOCCDecode(f *testing.F) {\n\tf.Add([]byte{})\n\tf.Add([]byte(\"OCC\\x02\"))\n\tf.Add([]byte(\"OCC\\x02\\x00\"))\n\tf.Add(goldenDoc().Encode())\n\tfor _, h := range hostileDocs() {\n\t\tf.Add(h.Encode())\n\t}\n\tf.Add(occ.EncodeStateBlob(3, 1, 0, goldenDoc().Encode()))\n\tf.Add(occ.EncodeOpRequest(occ.OpPut, \"k\", occ.IfMatch(occ.ETag{1}), []byte(\"v\")))\n\thonest := goldenDoc()\n\thostile := hostileDocs()[0]\n\tf.Fuzz(func(t *testing.T, data []byte) {\n\t\tif len(data) > 64<<10 {\n\t\t\treturn\n\t\t}\n\t\t_, _ = occ.DecodeStateBlob(data)\n\t\t_, _, _ = occ.ParseKey(string(data))\n\t\t_, _ = occ.DecodeUsage(data)\n\t\t_, _ = occ.DecodeObjectMeta(data)\n\t\t_, _ = occ.DecodeResult(data)\n\t\td, work, err := occ.DecodeWork(data)\n\t\tif work > 4*len(data)+8 {\n\t\t\tt.Fatalf(\"decode work %d for %d bytes\", work, len(data))\n\t\t}\n\t\tif err != nil {\n\t\t\tif !errors.Is(err, occ.ErrMalformed) || d != nil {\n\t\t\t\tt.Fatalf(\"decode error %v is not ErrMalformed\", err)\n\t\t\t}\n\t\t\treturn\n\t\t}\n\t\tif !bytes.Equal(d.Encode(), data) {\n\t\t\tt.Fatal(\"encode(decode(b)) != b\")\n\t\t}\n\t\tagain, err := occ.Decode(d.Encode())\n\t\tif err != nil || !again.Equal(d) {\n\t\t\tt.Fatalf(\"decode(encode(d)) != d: %v\", err)\n\t\t}\n\t\tif err := checkLaws(d, honest, d); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tif err := checkLaws(honest, d, hostile); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\ts, _ := newTestStore(t, \"a\", 1, 1)\n\t\tmustPut(t, s, \"k\", \"mine\", occ.IfNoneMatch())\n\t\tif _, err := s.Merge(d); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "FuzzOCCMergeLaws": {
+    "chapters": [
+      "book/chapters/05-optimistic-concurrency-control.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/occ/prop_test.go",
+        "line": 414,
+        "body": "func FuzzOCCMergeLaws(f *testing.F) {\n\tfuzzSeeds(f)\n\tf.Fuzz(rapid.MakeFuzz(propMergeLaws))\n}\n\n// TestPropConvergence proves that delivering full states and single-key deltas\n// in any permuted, duplicated order converges to byte-identical docs and ETags."
+      }
+    ]
+  },
+  "TestConditionalWriteRaceDST": {
+    "chapters": [
+      "book/chapters/05-optimistic-concurrency-control.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/occ/dst_test.go",
+        "line": 713,
+        "body": "func TestConditionalWriteRaceDST(t *testing.T) {\n\tt.Run(\"two writers on one node: exactly one wins\", func(t *testing.T) {\n\t\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\t\tsimtest.RequireDeterministic(t, seed, raceRun(false))\n\t\t})\n\t})\n\tt.Run(\"two writers across a partition: both acknowledged, one survives, the other's discard is recorded\", func(t *testing.T) {\n\t\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\t\tsimtest.RequireDeterministic(t, seed, raceRun(true))\n\t\t})\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestDiscardGapNeverClaimed": {
+    "chapters": [
+      "book/chapters/05-optimistic-concurrency-control.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/occ/lww2_test.go",
+        "line": 20,
+        "body": "func TestDiscardGapNeverClaimed(t *testing.T) {\n\tfor _, secondWriter := range []string{\"a\", \"b\"} {\n\t\tt.Run(\"next2 written by \"+secondWriter, func(t *testing.T) {\n\t\t\ta, ca, la := newLoggedStore(t, \"a\", 1, 1)\n\t\t\tb, cb, _ := newLoggedStore(t, \"b\", 1, 2)\n\t\t\tc, _, lc := newLoggedStore(t, \"c\", 1, 3)\n\t\t\tmustPut(t, a, \"k\", \"one\", occ.IfNoneMatch())\n\t\t\tmustMerge(t, b, a.Doc())\n\t\t\tca.now += 10\n\t\t\tcb.now += 20\n\t\t\tlost := mustPut(t, a, \"k\", \"lost\", occ.IfMatch(a.Record(\"k\").ETag()))\n\t\t\tmustMerge(t, c, a.Doc())\n\t\t\tmustPut(t, b, \"k\", \"winner\", occ.IfMatch(b.Record(\"k\").ETag()))\n\t\t\tmustMerge(t, a, b.Doc())\n\t\t\tif len(la.discards) != 1 || la.discards[0].Loser.ID() != lost.ID() {\n\t\t\t\tt.Fatal(\"setup: a must discard its own write\")\n\t\t\t}\n\t\t\tca.now += 100\n\t\t\tnext1 := mustPut(t, a, \"k\", \"next1\", occ.IfMatch(a.Record(\"k\").ETag()))\n\t\t\tw := a\n\t\t\tif secondWriter == \"b\" {\n\t\t\t\tmustMerge(t, b, a.Doc())\n\t\t\t\tcb.now += 1000\n\t\t\t\tw = b\n\t\t\t} else {\n\t\t\t\tca.now += 100\n\t\t\t}\n\t\t\tnext2 := mustPut(t, w, \"k\", \"next2\", occ.IfMatch(w.Record(\"k\").ETag()))\n\t\t\tfor _, v := range []occ.Version{next1, next2} {\n\t\t\t\tif v.Supersedes(lost) {\n\t\t\t\t\tt.Fatalf(\"%s claims the discarded dot %s:%d it never saw: clock %s\", value(occ.NewRecord(v)), lost.Dot().Actor, lost.Dot().Counter, v.Clock())\n\t\t\t\t}\n\t\t\t}\n\t\t\tmustMerge(t, c, w.Doc())\n\t\t\tif c.LWWDiscards() != 1 || len(lc.discards) != 1 || lc.discards[0].Loser.ID() != lost.ID() || len(lc.lines) != 1 {\n\t\t\t\tt.Fatalf(\"c held the lost version and replaced it with next2 that never saw it: discards %d, hooks %d, lines %d\", c.LWWDiscards(), len(lc.discards), len(lc.lines))\n\t\t\t}\n\t\t})\n\t}\n}\n\n// TestDotsAreNeverReused proves that a discarded write's dot is never reissued\n// or falsely claimed across six follow-up writes by two nodes, and a replica\n// holding the lost version records a discard on replacing it after each write."
+      }
+    ]
+  },
+  "TestDotsAreNeverReused": {
+    "chapters": [
+      "book/chapters/05-optimistic-concurrency-control.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/occ/lww2_test.go",
+        "line": 64,
+        "body": "func TestDotsAreNeverReused(t *testing.T) {\n\ta, ca, la := newLoggedStore(t, \"a\", 1, 1)\n\tb, cb, _ := newLoggedStore(t, \"b\", 1, 2)\n\tc, _, _ := newLoggedStore(t, \"c\", 1, 3)\n\tdots := map[occ.Dot]occ.VersionID{}\n\tnote := func(v occ.Version) {\n\t\tt.Helper()\n\t\tif id, ok := dots[v.Dot()]; ok && id != v.ID() {\n\t\t\tt.Fatalf(\"dot %s:%d issued twice\", v.Dot().Actor, v.Dot().Counter)\n\t\t}\n\t\tdots[v.Dot()] = v.ID()\n\t}\n\tnote(mustPut(t, a, \"k\", \"one\", occ.IfNoneMatch()))\n\tmustMerge(t, b, a.Doc())\n\tca.now += 10\n\tcb.now += 20\n\tlost := mustPut(t, a, \"k\", \"lost\", occ.IfMatch(a.Record(\"k\").ETag()))\n\tnote(lost)\n\tmustMerge(t, c, a.Doc())\n\tholding := c.Doc()\n\tnote(mustPut(t, b, \"k\", \"winner\", occ.IfMatch(b.Record(\"k\").ETag())))\n\tmustMerge(t, a, b.Doc())\n\tif len(la.discards) != 1 || la.discards[0].Loser.ID() != lost.ID() {\n\t\tt.Fatal(\"setup: a must discard its own write\")\n\t}\n\tfor i := range 6 {\n\t\tw, clk := a, ca\n\t\tif i%3 == 2 {\n\t\t\tmustMerge(t, b, a.Doc())\n\t\t\tw, clk = b, cb\n\t\t}\n\t\tclk.now += 100\n\t\tnext := mustPut(t, w, \"k\", fmt.Sprintf(\"next%d\", i+1), occ.IfMatch(w.Record(\"k\").ETag()))\n\t\tnote(next)\n\t\tif w == b {\n\t\t\tmustMerge(t, a, b.Doc())\n\t\t}\n\t\tif next.Supersedes(lost) {\n\t\t\tt.Fatalf(\"write %d claims the discarded dot: clock %s\", i+1, next.Clock())\n\t\t}\n\t\tfresh, _, lf := newLoggedStore(t, \"c\", 1, 3)\n\t\tmustMerge(t, fresh, holding)\n\t\tmustMerge(t, fresh, w.Doc())\n\t\tif len(lf.discards) != 1 || lf.discards[0].Loser.ID() != lost.ID() {\n\t\t\tt.Fatalf(\"after write %d a node that held the lost version replaced it with no record\", i+1)\n\t\t}\n\t}\n}\n\n// TestIncomingConcurrentLoserIsRecorded proves that rejecting an incoming\n// concurrent loser records it once (deduplicating re-sends), ignores causal\n// old news, and leaves no trace on Persist failure."
+      }
+    ]
+  },
+  "TestHostileMessagesBoundedWork": {
+    "chapters": [
+      "book/chapters/05-optimistic-concurrency-control.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/occ/encoding_test.go",
+        "line": 286,
+        "body": "func TestHostileMessagesBoundedWork(t *testing.T) {\n\tlimit := sim.DefaultMaxMessage - 1\n\tif raceBuild() {\n\t\tlimit = 1 << 20\n\t}\n\tperKey := len(manyKeys(2, 0)) - len(manyKeys(1, 0))\n\tperEntry := len(bigContexts(2, 1, 1, 0)) - len(bigContexts(1, 1, 1, 0))\n\tshapes := []struct {\n\t\tname       string\n\t\theld, push func(scale int) []byte\n\t}{\n\t\t{\"many keys\", func(scale int) []byte { return manyKeys(fitCount(limit/scale, perKey), 1) },\n\t\t\tfunc(scale int) []byte { return manyKeys(fitCount(limit/scale, perKey), 2) }},\n\t\t{\"big contexts\", func(scale int) []byte { return bigContexts(fitCount(limit/scale/4, perEntry), 4, 1, 1) },\n\t\t\tfunc(scale int) []byte { return bigContexts(fitCount(limit/scale/4, perEntry), 4, 1, 2) }},\n\t}\n\tfor _, sh := range shapes {\n\t\tt.Run(sh.name, func(t *testing.T) {\n\t\t\tvar perByte [2]float64\n\t\t\tfor i, scale := range []int{8, 1} {\n\t\t\t\theld, push := sh.held(scale), sh.push(scale)\n\t\t\t\tif scale == 1 && (len(push) > sim.DefaultMaxMessage || len(push) < limit*9/10) {\n\t\t\t\t\tt.Fatalf(\"the hostile message is %d bytes, want close to %d\", len(push), limit)\n\t\t\t\t}\n\t\t\t\thd, hwork, err := occ.DecodeWork(held)\n\t\t\t\tif err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tpd, pwork, err := occ.DecodeWork(push)\n\t\t\t\tif err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tif hwork > 4*len(held) || pwork > 4*len(push) {\n\t\t\t\t\tt.Fatalf(\"decode work %d / %d for %d / %d bytes is not linear\", hwork, pwork, len(held), len(push))\n\t\t\t\t}\n\t\t\t\tc := &fakeClock{now: 1_000_000}\n\t\t\t\tcfg := storeConfig(\"a\", 1, 1, c)\n\t\t\t\tdiscards := 0\n\t\t\t\tcfg.OnDiscard = func(string, occ.Version, occ.Version) { discards++ }\n\t\t\t\ts, err := occ.NewStore(cfg)\n\t\t\t\tif err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tmustMerge(t, s, hd)\n\t\t\t\tw0 := s.Work()\n\t\t\t\tmustMerge(t, s, pd)\n\t\t\t\tmerge := s.Work() - w0\n\t\t\t\tif merge > len(held)+len(push) {\n\t\t\t\t\tt.Fatalf(\"merge work %d for %d + %d bytes is not linear\", merge, len(held), len(push))\n\t\t\t\t}\n\t\t\t\tif discards != pd.Len() || s.LWWDiscards() != uint64(pd.Len()) || !s.Doc().Equal(pd) {\n\t\t\t\t\tt.Fatalf(\"every forged replacement must be decided and recorded: %d of %d\", discards, pd.Len())\n\t\t\t\t}\n\t\t\t\tperByte[i] = float64(pwork+merge) / float64(len(push))\n\t\t\t\tt.Logf(\"MEASURE %s scale 1/%d: %d bytes, decode work %d, merge work %d\", sh.name, scale, len(push), pwork, merge)\n\t\t\t}\n\t\t\tif perByte[1] > 1.5*perByte[0] {\n\t\t\t\tt.Fatalf(\"work per byte grew from %.2f to %.2f with message size\", perByte[0], perByte[1])\n\t\t\t}\n\t\t})\n\t}\n}\n"
+      }
+    ]
+  },
+  "TestMultiRegionConvergenceDST": {
+    "chapters": [
+      "book/chapters/05-optimistic-concurrency-control.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/occ/dst_test.go",
+        "line": 476,
+        "body": "func TestMultiRegionConvergenceDST(t *testing.T) {\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\tsimtest.RequireDeterministic(t, seed, multiRegionRun)\n\t\tif lastWorld.acks == 0 {\n\t\t\tt.Fatal(\"the workload acknowledged nothing\")\n\t\t}\n\t\tlogWorld(t, lastWorld)\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestOfflineRegionDST": {
+    "chapters": [
+      "book/chapters/05-optimistic-concurrency-control.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/occ/dst_test.go",
+        "line": 563,
+        "body": "func TestOfflineRegionDST(t *testing.T) {\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\tsimtest.RequireDeterministic(t, seed, offlineRun)\n\t\tlogWorld(t, lastWorld)\n\t})\n}\n\ntype raceClient struct {\n\te    env.Env\n\tc    *occ.Client\n\tetag occ.ETag\n\tres  occ.Result\n\terr  error\n\tdone bool\n}\n"
+      }
+    ]
+  },
+  "TestPropClassificationMatchesOracle": {
+    "chapters": [
+      "book/chapters/05-optimistic-concurrency-control.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/occ/lww2_prop_test.go",
+        "line": 128,
+        "body": "func TestPropClassificationMatchesOracle(t *testing.T) {\n\trapid.Check(t, propClassificationMatchesOracle)\n}\n"
+      }
+    ]
+  },
+  "TestQuotaOvershootUnderPartitionDST": {
+    "chapters": [
+      "book/chapters/05-optimistic-concurrency-control.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/occ/dst_test.go",
+        "line": 841,
+        "body": "func TestQuotaOvershootUnderPartitionDST(t *testing.T) {\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\tsimtest.RequireDeterministic(t, seed, quotaRun)\n\t\tlogWorld(t, lastWorld)\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestWriterLostAfterDeliveryDST": {
+    "chapters": [
+      "book/chapters/05-optimistic-concurrency-control.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/occ/lww2_dst_test.go",
+        "line": 80,
+        "body": "func TestWriterLostAfterDeliveryDST(t *testing.T) {\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\tsimtest.RequireDeterministic(t, seed, writerLossRun)\n\t\tif lastWorld.tally[\"discarded\"] == 0 {\n\t\t\tt.Fatal(\"no delivered version lost to a concurrent write: the scenario did not exercise the hole\")\n\t\t}\n\t\tlogWorld(t, lastWorld)\n\t})\n}\n\n// TestCanaryIncomingLoserSilentDST plants the bug of silently dropping rejected\n// incoming concurrent losers and proves TestWriterLostAfterDeliveryDST fails."
+      }
+    ]
+  },
+  "FuzzSagaLogRecover": {
+    "chapters": [
+      "book/chapters/06-sagas.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/saga/prop_test.go",
+        "line": 531,
+        "body": "func FuzzSagaLogRecover(f *testing.F) {\n\trecs, blob := sampleLog(f)\n\tf.Add([]byte{})\n\tf.Add([]byte{0})\n\tf.Add(blob)\n\tf.Add(blob[:len(blob)-1])\n\tf.Add(blob[:7])\n\tbad := slices.Clone(blob)\n\tbad[20] ^= 4\n\tf.Add(bad)\n\tf.Add(encodeLog(f, recs[:4]...))\n\tf.Add(encodeLog(f, saga.Record{Kind: saga.RecBegin, Def: \"other\"}))\n\tf.Add(encodeLog(f, begin(), done(0, 1)))\n\tf.Add(append(encodeLog(f, begin()), 0xA5, 0, 0, 0, 1))\n\tf.Fuzz(func(t *testing.T, b []byte) {\n\t\tif len(b) > 64<<10 {\n\t\t\treturn\n\t\t}\n\t\trecs, valid, err := saga.DecodeLog(b)\n\t\tif valid < 0 || valid > len(b) {\n\t\t\tt.Fatalf(\"valid %d of %d\", valid, len(b))\n\t\t}\n\t\tif err != nil && !errors.Is(err, saga.ErrLogCorrupt) {\n\t\t\tt.Fatalf(\"untyped error %v\", err)\n\t\t}\n\t\tvar re []byte\n\t\tfor _, r := range recs {\n\t\t\tvar eerr error\n\t\t\tre, eerr = saga.AppendRecord(re, r)\n\t\t\tif eerr != nil {\n\t\t\t\tt.Fatalf(\"decoded record does not encode: %v\", eerr)\n\t\t\t}\n\t\t}\n\t\tif !bytes.Equal(re, b[:valid]) {\n\t\t\tt.Fatalf(\"records re-encode to %d bytes, valid prefix is %d\", len(re), valid)\n\t\t}\n\t\tif err == nil {\n\t\t\tagain, v2, err2 := saga.DecodeLog(b[:valid])\n\t\t\tif err2 != nil || v2 != valid || len(again) != len(recs) {\n\t\t\t\tt.Fatalf(\"valid prefix does not decode alone: %v\", err2)\n\t\t\t}\n\t\t}\n\t\tif _, rerr := saga.Resume(recs, 3, 2, 3); rerr != nil && !errors.Is(rerr, saga.ErrLogCorrupt) {\n\t\t\tt.Fatalf(\"Resume: untyped error %v\", rerr)\n\t\t}\n\t\td := newMemDisk()\n\t\tname := saga.DefaultPrefix + \"f\"\n\t\td.put(name, b)\n\t\tclk := &manualClock{}\n\t\te := memEnv(d, clk)\n\t\teng, nerr := saga.New(e, saga.Config{Policy: testPolicy()}, newFx(3, 2).def(e))\n\t\tif nerr != nil {\n\t\t\tt.Fatal(nerr)\n\t\t}\n\t\trerr := eng.Recover()\n\t\tif rerr != nil && !errors.Is(rerr, saga.ErrLogCorrupt) && !errors.Is(rerr, env.ErrInvalidArgument) {\n\t\t\tt.Fatalf(\"Recover: untyped error %v\", rerr)\n\t\t}\n\t\tfor i := 0; i < 1000 && clk.fireNext(); i++ {\n\t\t}\n\t\tafter, present := d.blobs[name]\n\t\tswitch {\n\t\tcase err != nil || rerr != nil:\n\t\t\tif !present || !bytes.Equal(after, b) {\n\t\t\t\tt.Fatalf(\"a refused log was changed\")\n\t\t\t}\n\t\tcase len(recs) == 0:\n\t\t\tif present {\n\t\t\t\tt.Fatalf(\"a log with no whole record was kept\")\n\t\t\t}\n\t\tdefault:\n\t\t\tif !present || !bytes.HasPrefix(after, b[:valid]) {\n\t\t\t\tt.Fatalf(\"recovery did not keep the valid prefix\")\n\t\t\t}\n\t\t\tfinal, _, ferr := saga.DecodeLog(after)\n\t\t\tif ferr != nil {\n\t\t\t\tt.Fatalf(\"recovered log is corrupt: %v\", ferr)\n\t\t\t}\n\t\t\tsnap, serr := saga.Resume(final, 3, 2, testPolicy().MaxAttempts)\n\t\t\tif serr != nil || !snap.State.Terminal() {\n\t\t\t\tt.Fatalf(\"recovered saga did not finish: %+v %v\", snap, serr)\n\t\t\t}\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestCanarySkippedCompensation": {
+    "chapters": [
+      "book/chapters/06-sagas.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/saga/dst_test.go",
+        "line": 105,
+        "body": "func TestCanarySkippedCompensation(t *testing.T) {\n\th := sagasim.ModelHarness()\n\tcell := sagasim.Cell{Step: saga.MigrationPivot, Kind: sagasim.FailBeforeAction}\n\tif cell.Want() != saga.StateCompensated {\n\t\tt.Fatalf(\"canary cell %s does not compensate\", cell.Name())\n\t}\n\tplant := func(cfg *saga.Config) { saga.PlantSkippedCompensation(cfg, 1) }\n\tfor _, step := range []int{0, 2} {\n\t\tother := func(cfg *saga.Config) { saga.PlantSkippedCompensation(cfg, step) }\n\t\t_, err := simtest.CheckDeterministic(1, sagasim.Run(h, cell, sagasim.RunOptions{Configure: other}))\n\t\tif step == 0 && !errors.Is(err, sagasim.ErrCheck) {\n\t\t\tt.Fatalf(\"skipping the allocate compensation went unnoticed: %v\", err)\n\t\t}\n\t\tif step == 2 && err != nil {\n\t\t\tt.Fatalf(\"skipping the verify compensation, which undoes nothing, failed: %v\", err)\n\t\t}\n\t}\n\tfor _, seed := range []int64{1, 2, 3} {\n\t\tif _, err := simtest.CheckDeterministic(seed, sagasim.Run(h, cell, sagasim.RunOptions{})); err != nil {\n\t\t\tt.Fatalf(\"seed %d: the clean cell fails: %v\", seed, err)\n\t\t}\n\t\t_, err := simtest.CheckDeterministic(seed, sagasim.Run(h, cell, sagasim.RunOptions{Configure: plant}))\n\t\tif err == nil {\n\t\t\tt.Fatalf(\"seed %d: skipping the copy compensation went unnoticed\", seed)\n\t\t}\n\t\tif !errors.Is(err, sagasim.ErrCheck) {\n\t\t\tt.Fatalf(\"seed %d: failed for another reason: %v\", seed, err)\n\t\t}\n\t}\n}\n\n// TestMigrationUnderNemesisDST proves that chained bucket migrations under\n// network, pause, crash, and read-error chaos converge after healing with the\n// bucket in exactly one location, more than 32 objects stored, and zero lost\n// acknowledged writes."
+      }
+    ]
+  },
+  "TestDuelingMigrationsDST": {
+    "chapters": [
+      "book/chapters/06-sagas.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/saga/dst_test.go",
+        "line": 165,
+        "body": "func TestDuelingMigrationsDST(t *testing.T) {\n\tp := sagasim.DuelParams{Converge: duelConverge, MaxStagger: duelMaxStagger, MinPartition: duelMinPart, MaxPartition: duelMaxPart}\n\twinners := map[string]int{}\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\tres := &sagasim.DuelReport{}\n\t\tsimtest.RequireDeterministic(t, seed, sagasim.DuelRun(p, res))\n\t\twinners[res.Pointer]++\n\t\tif after := res.Finished.Sub(res.Healed); after > duelAfterHeal {\n\t\t\tt.Fatalf(\"finished %v after the heal, bound %v\", after, duelAfterHeal)\n\t\t}\n\t\tt.Logf(\"DUEL seed=%d pointer=%s states=%v outcomes=%q afterheal=%v\", seed, res.Pointer, res.States, res.Outcomes, res.Finished.Sub(res.Healed))\n\t})\n\tt.Logf(\"DUEL winners %v\", winners)\n}\n\n// TestModelClusterReportsBadInput proves that invalid migration inputs\n// (self-move, missing bucket, unknown target) compensate cleanly without\n// disturbing the existing bucket."
+      }
+    ]
+  },
+  "TestMatrixCellsCoverEveryFailurePoint": {
+    "chapters": [
+      "book/chapters/06-sagas.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/saga/dst_test.go",
+        "line": 68,
+        "body": "func TestMatrixCellsCoverEveryFailurePoint(t *testing.T) {\n\tseen := map[string]bool{}\n\tfor _, c := range sagasim.Cells() {\n\t\tif seen[c.Name()] {\n\t\t\tt.Fatalf(\"duplicate cell %s\", c.Name())\n\t\t}\n\t\tseen[c.Name()] = true\n\t}\n\tfor step := 0; step < sagasim.MigrationSteps; step++ {\n\t\tfor _, k := range []sagasim.FailureKind{sagasim.FailBeforeAction, sagasim.FailAfterAction, sagasim.CrashBeforeAction, sagasim.CrashAfterAction} {\n\t\t\tfor _, torn := range []bool{false, true} {\n\t\t\t\tc := sagasim.Cell{Step: step, Kind: k, Torn: torn}\n\t\t\t\tif !seen[c.Name()] {\n\t\t\t\t\tt.Fatalf(\"missing cell %s\", c.Name())\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t\tif step < saga.MigrationPivot {\n\t\t\tfor _, k := range []sagasim.FailureKind{sagasim.FailMidCompensation, sagasim.CrashMidCompensation} {\n\t\t\t\tc := sagasim.Cell{Step: step, Kind: k, Torn: true}\n\t\t\t\tif !seen[c.Name()] {\n\t\t\t\t\tt.Fatalf(\"missing cell %s\", c.Name())\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\tfor _, k := range []sagasim.FailureKind{0, sagasim.FailBeforeAction, sagasim.CrashMidCompensation, 99} {\n\t\tif k.String() == \"\" {\n\t\t\tt.Fatalf(\"kind %d has no name\", k)\n\t\t}\n\t}\n}\n\n// TestCanarySkippedCompensation plants saga.PlantSkippedCompensation to skip\n// step 1 (copy) or step 0 (allocate) compensation without calling Compensate,\n// proving the matrix checks catch the leaked orphans or claim with ErrCheck\n// while skipping verify's no-op compensation passes."
+      }
+    ]
+  },
+  "TestMigrationFailurePointsDST": {
+    "chapters": [
+      "book/chapters/06-sagas.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/saga/dst_test.go",
+        "line": 41,
+        "body": "func TestMigrationFailurePointsDST(t *testing.T) {\n\th := sagasim.ModelHarness()\n\tcells := sagasim.Cells()\n\tif len(cells) != sagasim.MatrixCells {\n\t\tt.Fatalf(\"%d cells, want %d\", len(cells), sagasim.MatrixCells)\n\t}\n\tfor _, c := range cells {\n\t\tt.Run(c.Name(), func(t *testing.T) {\n\t\t\tt.Parallel()\n\t\t\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\t\t\trep := &sagasim.Report{}\n\t\t\t\tsimtest.RequireDeterministic(t, seed, sagasim.Run(h, c, sagasim.RunOptions{Report: rep}))\n\t\t\t\tif rep.State != c.Want() {\n\t\t\t\t\tt.Fatalf(\"terminal state %v, want %v\", rep.State, c.Want())\n\t\t\t\t}\n\t\t\t\tif rep.Elapsed > sagasim.MatrixBound {\n\t\t\t\t\tt.Fatalf(\"took %v, bound %v\", rep.Elapsed, sagasim.MatrixBound)\n\t\t\t\t}\n\t\t\t\tt.Logf(\"MATRIX %s seed=%d state=%v elapsed=%v crashes=%d torn=%d calls=%v\", c.Name(), seed, rep.State, rep.Elapsed, rep.Crashes, rep.Torn, rep.Calls)\n\t\t\t})\n\t\t})\n\t}\n}\n\n// TestMatrixCellsCoverEveryFailurePoint proves that sagasim.Cells has no\n// duplicates and includes every step and failure-kind combination (with\n// mid-compensation cells restricted to pre-pivot steps)."
+      }
+    ]
+  },
+  "TestMigrationUnderNemesisDST": {
+    "chapters": [
+      "book/chapters/06-sagas.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/saga/dst_test.go",
+        "line": 140,
+        "body": "func TestMigrationUnderNemesisDST(t *testing.T) {\n\tp := sagasim.NemesisParams{\n\t\tStart: nemesisStart, Phases: nemesisPhases, Chaos: nemesisChaos, Heal: nemesisHeal, MaxGap: nemesisMaxGap,\n\t\tConverge: nemesisConverge, Writes: nemesisWrites, WriteGap: nemesisWriteGap, Tick: nemesisTick,\n\t\tObjects: nemesisObjects,\n\t}\n\tsimtest.Sweep(t, func(t *testing.T, seed int64) {\n\t\tres := &sagasim.NemesisReport{}\n\t\tsimtest.RequireDeterministic(t, seed, sagasim.NemesisRun(p, res))\n\t\tif res.Sagas < nemesisMinSagas {\n\t\t\tt.Fatalf(\"only %d migrations ran under the nemesis\", res.Sagas)\n\t\t}\n\t\tif res.Stored <= oldObjectCliff {\n\t\t\tt.Fatalf(\"the bucket ended with %d objects, not above the old %d-object limit\", res.Stored, oldObjectCliff)\n\t\t}\n\t\tif res.Settled > nemesisConverge {\n\t\t\tt.Fatalf(\"settled %v after the last heal, bound %v\", res.Settled, nemesisConverge)\n\t\t}\n\t\tt.Logf(\"NEMESIS seed=%d sagas=%d completed=%d compensated=%d settled=%v acked=%d stored=%d final=%s attempts=%v\", seed, res.Sagas, res.Completed, res.Compensated, res.Settled, res.Acked, res.Stored, res.Final, res.Attempts)\n\t})\n}\n\n// TestDuelingMigrationsDST proves that two coordinators migrating the same\n// bucket to different targets across a partition converge after healing to one\n// live location, an agreed pointer across all replicas, and a cleaned-up loser."
+      }
+    ]
+  },
+  "TestPropNoStepAfterTerminal": {
+    "chapters": [
+      "book/chapters/06-sagas.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/saga/prop_test.go",
+        "line": 325,
+        "body": "func TestPropNoStepAfterTerminal(t *testing.T) {\n\trapid.Check(t, func(t *rapid.T) {\n\t\tsc := drawScenario(t)\n\t\tseed := rapid.Int64().Draw(t, \"seed\")\n\t\textra := rapid.IntRange(0, 3).Draw(t, \"extraCrashes\")\n\t\tslowFirst := rapid.Bool().Draw(t, \"slowFirst\")\n\t\ts, f, err := runScenario(seed, sc, func(s *sim.Sim, f *fx) {\n\t\t\tif slowFirst {\n\t\t\t\tf.latency = propSlow\n\t\t\t\ts.At(env.Time(propSlow), \"speed up\", func() { f.latency = stepLatency })\n\t\t\t}\n\t\t\tfor j := 0; j < extra; j++ {\n\t\t\t\tat := env.Time(time.Minute + time.Duration(j)*10*time.Second)\n\t\t\t\ts.At(at, \"late crash\", func() { _ = s.CrashTorn(hostID) })\n\t\t\t\ts.At(at.Add(time.Second), \"late restart\", func() { _ = s.Restart(hostID) })\n\t\t\t}\n\t\t})\n\t\tif err != nil {\n\t\t\tt.Fatalf(\"run: %v\", err)\n\t\t}\n\t\tif len(f.afterEnd) != 0 {\n\t\t\tt.Fatalf(\"calls after the end record was durable: %v\", f.afterEnd)\n\t\t}\n\t\trecs := durableRecords(t, s, \"t\")\n\t\tif len(recs) == 0 {\n\t\t\treturn\n\t\t}\n\t\tsnap, err := saga.Resume(recs, sc.n, sc.pivot, propMaxAttempts)\n\t\tif err != nil {\n\t\t\tt.Fatalf(\"log %s: %v\", kinds(recs), err)\n\t\t}\n\t\tif !snap.State.Terminal() {\n\t\t\tt.Fatalf(\"saga not terminal: %+v\", snap)\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestPropRecoveryIdempotent": {
+    "chapters": [
+      "book/chapters/06-sagas.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/saga/prop_test.go",
+        "line": 467,
+        "body": "func TestPropRecoveryIdempotent(t *testing.T) {\n\trapid.Check(t, func(t *rapid.T) {\n\t\tsteps := rapid.IntRange(1, 4).Draw(t, \"steps\")\n\t\tpivot := rapid.IntRange(0, steps).Draw(t, \"pivot\")\n\t\trecs := genLog(t, steps, pivot, propMaxAttempts)\n\t\tvar blob []byte\n\t\tfor _, r := range recs {\n\t\t\tvar err error\n\t\t\tblob, err = saga.AppendRecord(blob, r)\n\t\t\tif err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t}\n\t\tcut := rapid.IntRange(0, len(blob)).Draw(t, \"cut\")\n\t\tname := saga.DefaultPrefix + \"t\"\n\t\tonce := recoverOnce(map[string][]byte{name: blob[:cut]}, steps, pivot)\n\t\tif once.err != nil {\n\t\t\tt.Fatalf(\"recover: %v\", once.err)\n\t\t}\n\t\ttwice := recoverOnce(once.disk, steps, pivot)\n\t\tif twice.err != nil {\n\t\t\tt.Fatalf(\"second recover: %v\", twice.err)\n\t\t}\n\t\tif !sameDisk(once.disk, twice.disk) {\n\t\t\tt.Fatalf(\"recovering twice changed the disk\")\n\t\t}\n\t\tif !sameStatus(once.status, twice.status) || once.first != twice.first || once.acted != twice.acted {\n\t\t\tt.Fatalf(\"recovering twice differs: %+v %+v / %+v %+v\", once.status, once.first, twice.status, twice.first)\n\t\t}\n\t\tprefix, valid, err := saga.DecodeLog(blob[:cut])\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tgot, present := once.disk[name]\n\t\tif len(prefix) == 0 {\n\t\t\tif present {\n\t\t\t\tt.Fatalf(\"a log with no whole record was kept\")\n\t\t\t}\n\t\t\treturn\n\t\t}\n\t\tif !bytes.Equal(got, blob[:valid]) {\n\t\t\tt.Fatalf(\"recovered blob is not the valid prefix\")\n\t\t}\n\t\tsnap, err := saga.Resume(prefix, steps, pivot, propMaxAttempts)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\twantKind := map[saga.Action]saga.RecordKind{saga.ActDo: saga.RecIntent, saga.ActAbort: saga.RecAbort, saga.ActCompensate: saga.RecCompIntent, saga.ActEnd: saga.RecEnd}\n\t\tif snap.Next == saga.ActNone {\n\t\t\tif once.acted {\n\t\t\t\tt.Fatalf(\"a terminal saga acted: %+v\", once.first)\n\t\t\t}\n\t\t\treturn\n\t\t}\n\t\tif !once.acted || once.first.Kind != wantKind[snap.Next] {\n\t\t\tt.Fatalf(\"first action %+v, want %v from %+v\", once.first, wantKind[snap.Next], snap)\n\t\t}\n\t})\n}\n\n// FuzzSagaLogRecover proves that arbitrary byte slices never panic DecodeLog,\n// Resume, or Engine.Recover: every input either returns ErrLogCorrupt/\n// ErrInvalidArgument without modifying disk, deletes an empty/torn-only log, or\n// preserves the valid prefix and finishes cleanly."
+      }
+    ]
+  },
+  "TestPropTerminalState": {
+    "chapters": [
+      "book/chapters/06-sagas.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/saga/prop_test.go",
+        "line": 299,
+        "body": "func TestPropTerminalState(t *testing.T) {\n\tvar exhausted, postPerm int\n\trapid.Check(t, func(t *rapid.T) {\n\t\tsc := drawScenario(t)\n\t\tseed := rapid.Int64().Draw(t, \"seed\")\n\t\ts, f, err := runScenario(seed, sc, nil)\n\t\tif err != nil {\n\t\t\tt.Fatalf(\"run: %v\", err)\n\t\t}\n\t\tcheckTerminal(t, s, f, sc)\n\t\tfor i := 0; i < sc.n; i++ {\n\t\t\tif sc.exhausts(i) && f.doCalls[i] > 0 {\n\t\t\t\texhausted++\n\t\t\t}\n\t\t\tif sc.postPerm[i] > 0 && f.doCalls[i] > sc.postPerm[i] {\n\t\t\t\tpostPerm++\n\t\t\t}\n\t\t}\n\t})\n\tif exhausted == 0 || postPerm == 0 {\n\t\tt.Fatalf(\"the draws never reached retry exhaustion (%d) or a post-pivot ErrPermanent (%d)\", exhausted, postPerm)\n\t}\n}\n\n// TestPropNoStepAfterTerminal proves that no forward step or compensation runs\n// once RecEnd is durable, including under slow callbacks and late torn crashes."
+      }
+    ]
+  },
+  "FuzzFrame": {
+    "chapters": [
+      "book/chapters/07-object-store-and-sync-engine.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/noderuntime/frame_test.go",
+        "line": 121,
+        "body": "func FuzzFrame(f *testing.F) {\n\tgood, _ := encodeRequest(requestFrame{ID: 3, From: \"n:1\", Body: []byte(\"x\")})\n\tframed, _ := appendFrame(nil, good)\n\tf.Add(framed)\n\tf.Add([]byte{})\n\tf.Add([]byte{0, 0, 0, 0})\n\tf.Add([]byte{0xff, 0xff, 0xff, 0xff, 1})\n\tf.Add(append([]byte{0, 0, 0, 13}, encodeResponse(responseFrame{ID: 1, Code: 0})...))\n\tf.Add([]byte{1, 3, 'a', 'b', 'c', 9})\n\tf.Fuzz(func(t *testing.T, b []byte) {\n\t\tif p, err := readFrame(bytes.NewReader(b), 1<<16); err == nil {\n\t\t\tif len(p) > 1<<16 || len(b) < frameLenSize+len(p) {\n\t\t\t\tt.Fatalf(\"frame of %d bytes from %d input bytes\", len(p), len(b))\n\t\t\t}\n\t\t\tif r, err := decodeRequest(p); err == nil {\n\t\t\t\tagain, err := encodeRequest(r)\n\t\t\t\tif err != nil || !bytes.Equal(again, p) {\n\t\t\t\t\tt.Fatalf(\"request does not re-encode to its bytes: %v\", err)\n\t\t\t\t}\n\t\t\t}\n\t\t\tif r, err := decodeResponse(p); err == nil && len(r.Msg) <= env.MaxErrorMessage {\n\t\t\t\tif again := encodeResponse(r); !bytes.Equal(again, p) {\n\t\t\t\t\tt.Fatalf(\"response does not re-encode to its bytes\")\n\t\t\t\t}\n\t\t\t}\n\t\t} else if !errors.Is(err, node.ErrFrame) && !errors.Is(err, env.ErrTooLarge) {\n\t\t\tt.Fatalf(\"frame error %v is neither node.ErrFrame nor ErrTooLarge\", err)\n\t\t}\n\t\tif from, body, err := decodeDatagram(b); err == nil {\n\t\t\tagain, err := encodeDatagram(from, body)\n\t\t\tif err == nil && !bytes.Equal(again, b) {\n\t\t\t\tt.Fatalf(\"datagram does not re-encode to its bytes\")\n\t\t\t}\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "FuzzObjectAPI": {
+    "chapters": [
+      "book/chapters/07-object-store-and-sync-engine.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/storage/httpapi/http_test.go",
+        "line": 833,
+        "body": "func FuzzObjectAPI(f *testing.F) {\n\tf.Add([]byte(\"\\x01/b\\x00\\x00\\x00\\x01/b/k\\x00\\x00hello\\x00\\x00/b/k\\x00\\x00\\x00\"))\n\tf.Add([]byte(\"\\x01/b/k\\x00*\\x00x\\x00\"))\n\tf.Add([]byte{})\n\tf.Add([]byte(\"\\x05/_migrations\\x00\\x00{\\\"bucket\\\":\\\"b\\\",\\\"to\\\":\\\"r\\\"}\\x00\"))\n\tf.Add([]byte(\"\\x00/b?tags\\x00\\\"etag\\\"\\x00\\x00\\x03/b/k\\x00\\x00\\x00\"))\n\tf.Add([]byte(\"\\x01/b\\x00\\x00\\x00\\x01/b/k\\x00\\x00v1\\x00\\x01/b/k\\x00\\x01\\\"\\\"\\x00v2\\x00\"))\n\tf.Add([]byte(\"\\x01/b\\x00\\x00\\x00\\x01/b/k\\x00\\x00v1\\x00\\x01/b/k\\x00\\x01   \\x00v2\\x00\\x03/b/k\\x00\\x01W/\\\"@\\\"\\x00\\x00\"))\n\tf.Add([]byte(\"\\x01/b\\x00\\x00\\x00\\x01/b/k\\x00\\x00v1\\x00\\x01/b/k\\x00\\x01\\\"x\\\", \\\"@\\\"\\x00v2\\x00\\x01/b/k\\x00\\x02\\x00v3\\x00\"))\n\tf.Add([]byte(\"\\x01/b\\x00\\x00\\x00\\x00\\x01/b/k\\x00\\x00v1\\x00\\x00\\x01/b/k\\x00\\x01\\\"a,b\\\", \\\"@\\\"\\x00v2\\x00\\x00\\x03/b/k\\x00\\x01\\\"a,@\\\"\\x00\\x00\\x00\\x03/b/k\\x00\\x01\\\"a,b\\\",\\\"@\\\"\\x00\\x00\"))\n\tf.Add([]byte(\"\\x01/b\\x00\\x00\\x00\\x00\\x01/b/k\\x00\\x00v1\\x00\\x00\\x01/b/k\\x00\\x01, W/\\\"a,\\\" ,,\\\"@\\\",\\x00v2\\x00\\x00\\x03/b/k\\x00\\x01\\\"@\\\" \\\"@\\\"\\x00\\x00\\x00\\x01/b/k\\x00\\x01\\\"a, \\\"@\\\"\\x00v3\\x00\"))\n\tf.Fuzz(func(t *testing.T, in []byte) {\n\t\tm := newModel()\n\t\th := httpapi.NewHandler(m, httpapi.Limits{MaxObjectSize: 4096, MaxSmallBody: 1024})\n\t\tputs := map[string][]byte{}\n\t\tetags := map[string]string{}\n\t\tparts := bytes.Split(in, []byte{0})\n\t\tfor i := 0; i+3 < len(parts) && i < 4*12; i += 4 {\n\t\t\tif len(parts[i]) == 0 {\n\t\t\t\tcontinue\n\t\t\t}\n\t\t\tmethod := fuzzMethods[int(parts[i][0])%len(fuzzMethods)]\n\t\t\tpath := string(parts[i][1:])\n\t\t\tif !strings.HasPrefix(path, \"/\") || strings.ContainsAny(path, \" \\r\\n\\t#\") {\n\t\t\t\tpath = \"/\" + strings.Map(func(r rune) rune {\n\t\t\t\t\tif r < 0x21 || r == 0x7f || r == '#' || r == '%' {\n\t\t\t\t\t\treturn -1\n\t\t\t\t\t}\n\t\t\t\t\treturn r\n\t\t\t\t}, path)\n\t\t\t}\n\t\t\treq, err := http.NewRequest(method, \"http://h\"+path, bytes.NewReader(parts[i+2]))\n\t\t\tif err != nil {\n\t\t\t\tcontinue\n\t\t\t}\n\t\t\tkey := req.URL.Path\n\t\t\tname, value := \"\", string(parts[i+1])\n\t\t\tif len(value) > 0 && value[0] < 4 {\n\t\t\t\tname, value = fuzzHeaders[value[0]], value[1:]\n\t\t\t} else if value != \"\" {\n\t\t\t\tname = \"If-Match\"\n\t\t\t\tif value == \"*\" {\n\t\t\t\t\tname = \"If-None-Match\"\n\t\t\t\t}\n\t\t\t}\n\t\t\tvalue = strings.ReplaceAll(value, \"@\", etags[key])\n\t\t\tif got, want := parsed(value), referenceEntityTags(value); !sameTagList(got, want) {\n\t\t\t\tt.Fatalf(\"ParseEntityTags(%q) = %+v, the reference tokeniser gives %+v\", value, got, want)\n\t\t\t}\n\t\t\tif name != \"\" && strings.ContainsAny(value, \"\\r\\n\\x00\") {\n\t\t\t\tname = \"\"\n\t\t\t}\n\t\t\tif name != \"\" {\n\t\t\t\treq.Header[name] = []string{value}\n\t\t\t}\n\t\t\tcur, present := etags[key]\n\t\t\tw := httptest.NewRecorder()\n\t\t\th.ServeHTTP(w, req)\n\t\t\tif !fuzzStatus[w.Code] {\n\t\t\t\tt.Fatalf(\"%s %s: status %d outside the table\", method, path, w.Code)\n\t\t\t}\n\t\t\tapplied := req.URL.RawQuery == \"\" && strings.Count(key, \"/\") == 2 &&\n\t\t\t\t(method == \"PUT\" && w.Code == 200 || method == \"DELETE\" && w.Code == 204)\n\t\t\tif applied && name != \"\" && !mayApply(name, value, present, cur) {\n\t\t\t\tt.Fatalf(\"%s %s with %s: %q applied (status %d) though the precondition cannot hold (exists=%v, etag %s)\", method, key, name, value, w.Code, present, cur)\n\t\t\t}\n\t\t\tif method == \"PUT\" && w.Code == 200 && strings.Count(key, \"/\") == 2 && req.URL.RawQuery == \"\" {\n\t\t\t\tputs[key] = parts[i+2]\n\t\t\t\tif w.Header().Get(\"ETag\") == \"\" {\n\t\t\t\t\tt.Fatalf(\"PUT %s: no ETag\", key)\n\t\t\t\t}\n\t\t\t\tetags[key] = strings.Trim(w.Header().Get(\"ETag\"), `\"`)\n\t\t\t}\n\t\t\tif method == \"DELETE\" && w.Code == 204 {\n\t\t\t\tdelete(puts, key)\n\t\t\t\tdelete(etags, key)\n\t\t\t}\n\t\t\tif method == \"GET\" && w.Code == 200 && req.URL.RawQuery == \"\" {\n\t\t\t\tif want, ok := puts[key]; ok && !bytes.Equal(w.Body.Bytes(), want) {\n\t\t\t\t\tt.Fatalf(\"GET %s returned %q, last acknowledged PUT wrote %q\", key, w.Body.Bytes(), want)\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestAStaleShardWriteToAWipedHolderOfADeclaredLostVersionIsCollected": {
+    "chapters": [
+      "book/chapters/07-object-store-and-sync-engine.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/node/lost_test.go",
+        "line": 611,
+        "body": "func TestAStaleShardWriteToAWipedHolderOfADeclaredLostVersionIsCollected(t *testing.T) {\n\th, _ := lossHarness(t, 10, storage.Layout{K: 2, M: 2, StripeSize: 1024}, 0)\n\th.gc.off = true\n\tw, a := h.ids[9], h.ids[0]\n\tif err := h.s.Clog(w, a); err != nil {\n\t\tt.Fatal(err)\n\t}\n\toi, err := h.syncPut(t, w, storage.PutRequest{Bucket: \"g\", Key: \"k\", Data: make([]byte, 700)})\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tman := h.mans[oi.Version]\n\tif _, ok := holderOf(man, 0, w); ok {\n\t\tt.Fatal(\"the case needs a writer outside the placement\")\n\t}\n\tname, ok := holderOf(man, 0, a)\n\tif !ok {\n\t\tt.Fatalf(\"the case needs %s in the placement\", a)\n\t}\n\trotted := 0\n\tfor _, ref := range man.Stripes[0].Shards {\n\t\tif ref.Node == a || rotted == 2 {\n\t\t\tcontinue\n\t\t}\n\t\tn, _ := holderOf(man, 0, ref.Node)\n\t\tif err := h.s.BitRot(ref.Node, n); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\trotted++\n\t}\n\tif err := h.s.RunUntilConverged(h.s.Now().Add(30*time.Second), func() bool { return len(h.declared) > 0 && h.converged() }); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := h.s.WipeRejoin(a); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := h.s.RunFor(time.Millisecond); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := h.s.Unclog(w, a); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tstored := func() bool {\n\t\t_, ok := h.s.Disk(a).Peek(name)\n\t\treturn ok\n\t}\n\tif err := h.s.RunUntilConverged(h.s.Now().Add(time.Second), stored); err != nil {\n\t\tt.Fatalf(\"the case needs the stale shard write to land on the wiped holder: %v\", err)\n\t}\n\tif err := h.s.RunUntilConverged(h.s.Now().Add(60*time.Second), h.converged); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := h.s.RunFor(h.cfg.GCGrace + 30*time.Second); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := h.s.Err(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tfor _, id := range h.ids {\n\t\tif left := shardsOf(h, id, oi.Version); len(left) > 0 {\n\t\t\tt.Fatalf(\"%s still holds %v of the declared-lost version after the grace period\", id, left)\n\t\t}\n\t}\n\tfor _, n := range h.up() {\n\t\trd, err := n.OCC().Reader()\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tif rd.Record(occ.ManifestKey(\"g\", \"k\")).Live() {\n\t\t\tt.Fatalf(\"%s: the declared-lost version is live again\", n.ID())\n\t\t}\n\t\tif !rd.Record(occ.TagKey(\"g\", \"k\", \"~lost/\"+oi.Version)).Live() {\n\t\t\tt.Fatalf(\"%s: the loss record is gone\", n.ID())\n\t\t}\n\t\tif _, _, err := h.syncGet(t, n.ID(), \"g\", \"k\"); !isNotFoundErr(err) {\n\t\t\tt.Fatalf(\"%s: get of the declared-lost object returned %v, want not found\", n.ID(), err)\n\t\t}\n\t}\n\tif len(h.declared) != 1 {\n\t\tt.Fatalf(\"declarations %v, want exactly one\", h.declared)\n\t}\n}\n"
+      }
+    ]
+  },
+  "TestCanaryDeleteResurrected": {
+    "chapters": [
+      "book/chapters/07-object-store-and-sync-engine.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/node/dst_crash_test.go",
+        "line": 244,
+        "body": "func TestCanaryDeleteResurrected(t *testing.T) {\n\tnode.SetCanaryIgnoreTombstones(true)\n\tt.Cleanup(func() { node.SetCanaryIgnoreTombstones(false) })\n\tcaught := 0\n\tfor _, seed := range []int64{1, 2, 3} {\n\t\tvar res crashResult\n\t\ts := crashRun(&res)(seed)\n\t\tif s.Err() != nil && res.resurrected {\n\t\t\tcaught++\n\t\t}\n\t}\n\tif caught == 0 {\n\t\tt.Fatal(\"with tombstones ignored by anti-entropy, no deleted object came back on any seed\")\n\t}\n}\n\nvar driftSeeds = []int64{7, 383}\n\n// TestCrashScenarioUsageMatchesARecountOnTheSeedsThatDrifted replays the\n// specific crash seeds where a partition-era recount left usage drifted,\n// proving auditQuotas restores agreement with live manifests."
+      }
+    ]
+  },
+  "TestCanaryNodeSkipsDiscardRecount": {
+    "chapters": [
+      "book/chapters/07-object-store-and-sync-engine.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/node/dst_partition_test.go",
+        "line": 299,
+        "body": "func TestCanaryNodeSkipsDiscardRecount(t *testing.T) {\n\tnode.SetCanaryNoDiscardRecount(true)\n\tnode.SetCanaryNoQuotaAudit(true)\n\tt.Cleanup(func() { node.SetCanaryNoDiscardRecount(false); node.SetCanaryNoQuotaAudit(false) })\n\tfailed := 0\n\tfor _, seed := range []int64{1, 2, 3} {\n\t\tvar res partitionResult\n\t\ts := partitionRun(&res)(seed)\n\t\tif s.Err() != nil && !res.quotaOK {\n\t\t\tfailed++\n\t\t}\n\t}\n\tif failed == 0 {\n\t\tt.Fatal(\"with the recount after a quota discard switched off, the quota check still passed on every seed\")\n\t}\n\tdrift := 0\n\tfor _, seed := range []int64{1, 2} {\n\t\tif quotaDriftRun(seed).Err() != nil {\n\t\t\tdrift++\n\t\t}\n\t}\n\tif drift == 0 {\n\t\tt.Fatal(\"with the recount after a discard switched off, the unequal-size overwrite across a partition still left usage right\")\n\t}\n}\n"
+      }
+    ]
+  },
+  "TestCanaryNodeSkipsQuotaAudit": {
+    "chapters": [
+      "book/chapters/07-object-store-and-sync-engine.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/node/dst_crash_test.go",
+        "line": 274,
+        "body": "func TestCanaryNodeSkipsQuotaAudit(t *testing.T) {\n\tnode.SetCanaryNoQuotaAudit(true)\n\tt.Cleanup(func() { node.SetCanaryNoQuotaAudit(false) })\n\tfailed := 0\n\tfor _, seed := range driftSeeds {\n\t\tvar res crashResult\n\t\tif crashRun(&res)(seed).Err() != nil {\n\t\t\tfailed++\n\t\t}\n\t}\n\tif failed != len(driftSeeds) {\n\t\tt.Fatalf(\"with the quota audit switched off, %d of %d drift seeds still matched a recount\", len(driftSeeds)-failed, len(driftSeeds))\n\t}\n}\n"
+      }
+    ]
+  },
+  "TestCanaryShutdownLeak": {
+    "chapters": [
+      "book/chapters/07-object-store-and-sync-engine.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/noderuntime/runtime_net_test.go",
+        "line": 202,
+        "body": "func TestCanaryShutdownLeak(t *testing.T) {\n\tbefore := leakcheck.Take()\n\trelease := make(chan struct{})\n\tnoderuntime.SetCanaryUntrackedGoroutine(release)\n\tt.Cleanup(func() { noderuntime.SetCanaryUntrackedGoroutine(nil) })\n\trts, _, err := noderuntime.StartLoopbackCluster(t, 1, nil, func(_ int, ids []env.NodeID, dir string) noderuntime.RuntimeConfig {\n\t\treturn noderuntime.RuntimeConfig{ID: ids[0], Region: \"r0\", DataDir: dir, Node: realConfig()}\n\t})\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := rts[0].Close(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := before.Leaked(200 * time.Millisecond); !errors.Is(err, leakcheck.ErrLeak) {\n\t\tt.Fatalf(\"a goroutine started without the runtime's WaitGroup passed the leak check: %v\", err)\n\t}\n\tclose(release)\n\tif err := before.Leaked(5 * time.Second); err != nil {\n\t\tt.Fatalf(\"leak check still failing after the canary goroutine exited: %v\", err)\n\t}\n}\n\n// TestRealRuntimeLeavesNoGoroutineBehind proves starting a 2-node loopback\n// cluster, waiting for join, and closing both nodes leaks zero goroutines."
+      }
+    ]
+  },
+  "TestClusterPartitionHealDST": {
+    "chapters": [
+      "book/chapters/07-object-store-and-sync-engine.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/node/dst_partition_test.go",
+        "line": 273,
+        "body": "func TestClusterPartitionHealDST(t *testing.T) {\n\tt.Parallel()\n\tvar m measure\n\tsweepSharded(t, func(t *testing.T, seed int64) {\n\t\tvar res partitionResult\n\t\tsimtest.RequireDeterministic(t, seed, partitionRun(&res))\n\t\tm.add(\"partition/converge_ms\", res.converge.Milliseconds())\n\t\tm.add(\"partition/quota_settle_ms\", res.quotaSettle.Milliseconds())\n\t\tm.add(\"partition/discard_events\", int64(res.events))\n\t\tm.add(\"partition/distinct_losers\", int64(res.distinctLosers))\n\t\tm.add(\"partition/object_losers\", int64(res.objectLosers))\n\t\tm.add(\"partition/quota_overshoot_bytes\", res.overshoot)\n\t\tm.add(\"partition/recount_writes\", int64(res.recountWrites))\n\t\tm.add(\"partition/collected_loser_shards\", int64(res.collectedLoser))\n\t\tm.add(\"partition/acked\", int64(res.acked))\n\t\tm.add(\"partition/quota_refused\", int64(res.quotaRefused))\n\t\tfor k, v := range res.tally {\n\t\t\tm.add(\"partition/oracle_\"+k, int64(v))\n\t\t}\n\t})\n\tt.Cleanup(func() { m.report(t) })\n}\n\n// TestCanaryNodeSkipsDiscardRecount plants a bug disabling both\n// discard-triggered recounts and auditQuotas and proves partitionRun and\n// quotaDriftRun fail their post-heal usage checks."
+      }
+    ]
+  },
+  "TestConformance": {
+    "chapters": [
+      "book/chapters/07-object-store-and-sync-engine.md"
+    ],
+    "definitions": []
+  },
+  "TestFileDiskCrashLeavesOldOrNewBytes": {
+    "chapters": [
+      "book/chapters/07-object-store-and-sync-engine.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/noderuntime/crashfs_test.go",
+        "line": 348,
+        "body": "func TestFileDiskCrashLeavesOldOrNewBytes(t *testing.T) {\n\tfor _, c := range crashCases() {\n\t\tfor _, mode := range []string{\"crash\", \"fail-then-crash\", \"short-write\"} {\n\t\t\tfor k := 1; ; k++ {\n\t\t\t\tm := freshMemFS()\n\t\t\t\td, err := openFileDisk(m, \"/d\")\n\t\t\t\tif err != nil {\n\t\t\t\t\tt.Fatal(err)\n\t\t\t\t}\n\t\t\t\tif err := c.setup(d); err != nil {\n\t\t\t\t\tt.Fatalf(\"%s: set-up: %v\", c.name, err)\n\t\t\t\t}\n\t\t\t\tm.ops = 0\n\t\t\t\tswitch mode {\n\t\t\t\tcase \"crash\":\n\t\t\t\t\tm.crashAt = k\n\t\t\t\tcase \"fail-then-crash\":\n\t\t\t\t\tm.failAt = k\n\t\t\t\tcase \"short-write\":\n\t\t\t\t\tm.short = k == 1\n\t\t\t\t}\n\t\t\t\topErr := c.op(d)\n\t\t\t\tran := m.ops\n\t\t\t\tif !m.crashed {\n\t\t\t\t\tm.crashed = true\n\t\t\t\t}\n\t\t\t\tfor _, keep := range []bool{false, true} {\n\t\t\t\t\tgot, ok, err := readBack(m.afterCrash(keep), c.blob)\n\t\t\t\t\tif err != nil {\n\t\t\t\t\t\tt.Fatalf(\"%s, %s at step %d, metadata kept=%v: reopen: %v\", c.name, mode, k, keep, err)\n\t\t\t\t\t}\n\t\t\t\t\tisOld := (c.old == nil && !ok) || (c.old != nil && ok && bytes.Equal(got, c.old))\n\t\t\t\t\tisNew := (c.new == nil && !ok) || (c.new != nil && ok && bytes.Equal(got, c.new))\n\t\t\t\t\tif c.appends && ok && c.old != nil && len(got) > len(c.old) && bytes.HasPrefix(c.new, got) {\n\t\t\t\t\t\tisOld = true\n\t\t\t\t\t}\n\t\t\t\t\tif opErr == nil && !isNew {\n\t\t\t\t\t\tt.Fatalf(\"%s, %s at step %d, metadata kept=%v: Sync returned nil but after the crash the blob is %q (present %v), want the new bytes\", c.name, mode, k, keep, got, ok)\n\t\t\t\t\t}\n\t\t\t\t\tif !isOld && !isNew {\n\t\t\t\t\t\tt.Fatalf(\"%s, %s at step %d, metadata kept=%v: after the crash the blob is %q (present %v): neither the old nor the new bytes\", c.name, mode, k, keep, got, ok)\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t\tif mode == \"short-write\" || k > ran {\n\t\t\t\t\tbreak\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n\nvar _ = time.Second\n"
+      }
+    ]
+  },
+  "FuzzClusterNemesis": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "test/e2e/e7_test.go",
+        "line": 492,
+        "body": "func FuzzClusterNemesis(f *testing.F) {\n\tfor _, b := range fuzzCorpus() {\n\t\tf.Add(b)\n\t}\n\tf.Fuzz(func(t *testing.T, data []byte) {\n\t\tif len(data) > 64<<10 {\n\t\t\tt.Skip(\"input over 64 KiB\")\n\t\t}\n\t\ts, _ := runFuzzInput(fuzzOptions(), fuzzWarmM, data)\n\t\tif err := s.Verify(); err != nil {\n\t\t\tsimtest.Report(t, s)\n\t\t\tt.Fatalf(\"seed %d: %v\", fuzzSeed(data), err)\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestCanaryE2ObjectOpsUnavailableDuringSplitFails": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md"
+    ],
+    "definitions": [
+      {
+        "file": "test/e2e/canary_test.go",
+        "line": 488,
+        "body": "func TestCanaryE2ObjectOpsUnavailableDuringSplitFails(t *testing.T) {\n\tcases := []struct {\n\t\tname      string\n\t\tblockPut  bool\n\t\tblockGet  bool\n\t\twantError string\n\t}{\n\t\t{name: \"put and get unavailable during split\", blockPut: true, blockGet: true, wantError: \"must succeed\"},\n\t\t{name: \"only get unavailable during split\", blockPut: false, blockGet: true, wantError: \"get e2/\"},\n\t\t{name: \"only put unavailable during split\", blockPut: true, blockGet: false, wantError: \"put e2/\"},\n\t}\n\tfor _, tc := range cases {\n\t\tt.Run(tc.name, func(t *testing.T) {\n\t\t\tc := newSimCluster(1, defaultSimOptions())\n\t\t\tc.apiIntercept = func(n *node.Node, op byte) error {\n\t\t\t\tif len(n.Gossip().Members()) >= len(c.ids) {\n\t\t\t\t\treturn nil\n\t\t\t\t}\n\t\t\t\tif tc.blockPut && op == opPut {\n\t\t\t\t\treturn storage.ErrUnavailable\n\t\t\t\t}\n\t\t\t\tif tc.blockGet && op == opGet {\n\t\t\t\t\treturn storage.ErrUnavailable\n\t\t\t\t}\n\t\t\t\treturn nil\n\t\t\t}\n\t\t\tif err := c.boot(); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t\tif _, err := scenarioE2(c, simBounds, e2Params{objects: 6, size: 3000, detect: 500 * time.Millisecond, keepCut: 2 * time.Second}); err != nil {\n\t\t\t\tc.fail(err)\n\t\t\t}\n\t\t\texpectCanaryFailure(t, c.s, tc.wantError)\n\t\t})\n\t}\n}\n\ntype faultyDiscardHealthCluster struct {\n\t*simCluster\n\tmutate func(h *storage.Health)\n}\n"
+      }
+    ]
+  },
+  "TestCanaryE7WipingTheOnlyCopyOfAnAcknowledgedWriteIsCaught": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md"
+    ],
+    "definitions": [
+      {
+        "file": "test/e2e/canary_test.go",
+        "line": 346,
+        "body": "func TestCanaryE7WipingTheOnlyCopyOfAnAcknowledgedWriteIsCaught(t *testing.T) {\n\tconst seed = 166963932986536\n\tvar st nemesisStats\n\ts := runNemesis(seed, e7Options(), func(n *nemesis) nemesisPlan {\n\t\tn.loneWipe = true\n\t\treturn randomPlan(n.r, e7Cycles, e7Chaos)\n\t}, &st)(seed)\n\texpectCanaryFailure(t, s, \"on no discard record\")\n}\n\ntype dropBucketOnCopyStep struct {\n\tsaga.Step\n\tcluster func() *simCluster\n\tbucket  string\n}\n"
+      }
+    ]
+  },
+  "TestCanaryFuzzRoutedBucketCannotPlaceShards": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md"
+    ],
+    "definitions": [
+      {
+        "file": "test/e2e/canary_test.go",
+        "line": 423,
+        "body": "func TestCanaryFuzzRoutedBucketCannotPlaceShards(t *testing.T) {\n\told := fuzzOptions()\n\told.nodes = 9\n\told.cfg.Layout = storage.Layout{K: 4, M: 2, StripeSize: simStripe}\n\tt.Run(\"warm-up fails immediately on unplaceable routed bucket\", func(t *testing.T) {\n\t\t_, err := checkFuzzCorpus(old, fuzzWarmM)\n\t\tif err == nil {\n\t\t\tt.Fatal(\"checkFuzzCorpus passed with 9-node 4+2 layout\")\n\t\t}\n\t\twant := \"fault-free warm-up put to routed bucket m\"\n\t\tif !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), \"unavailable\") {\n\t\t\tt.Fatalf(\"failed for another reason than unplaceable routed bucket: %v\", err)\n\t\t}\n\t\tt.Logf(\"caught: %v\", err)\n\t})\n\tt.Run(\"corpus check catches zero acknowledged puts to routed bucket without warm-up\", func(t *testing.T) {\n\t\t_, err := checkFuzzCorpus(old, 0)\n\t\tif err == nil {\n\t\t\tt.Fatal(\"checkFuzzCorpus(warmM=0) passed with 9-node 4+2 layout\")\n\t\t}\n\t\twant := \"acknowledged 0 traffic puts to routed bucket m\"\n\t\tif !strings.Contains(err.Error(), want) {\n\t\t\tt.Fatalf(\"failed for another reason: %v\", err)\n\t\t}\n\t\tt.Logf(\"caught: %v\", err)\n\t})\n}\n\n// TestCanaryNemesisForgottenAmbiguousMigrationFails enables forgetAmbiguousMig\n// and proves a timed-out StartMigration that actually started a saga is caught\n// by tracking assertions, a stale next-cycle region, and non-terminal saga\n// checks."
+      }
+    ]
+  },
+  "TestCanaryNemesisForgottenAmbiguousMigrationFails": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md"
+    ],
+    "definitions": [
+      {
+        "file": "test/e2e/canary_test.go",
+        "line": 455,
+        "body": "func TestCanaryNemesisForgottenAmbiguousMigrationFails(t *testing.T) {\n\tconst seed = 702\n\tt.Run(\"2-cycle run fails with no migration when timed-out start is forgotten\", func(t *testing.T) {\n\t\ts, _, err := verifyAmbiguousMigrationTracked(seed, 2, true)\n\t\tif err == nil {\n\t\t\tt.Fatal(\"ambiguous migration run passed with forgetAmbiguousMig enabled\")\n\t\t}\n\t\tif s.Err() == nil || !strings.Contains(err.Error(), \"bucket cannot migrate\") {\n\t\t\tt.Fatalf(\"failed for another reason than forgotten ambiguous migration: %v\", err)\n\t\t}\n\t\tt.Logf(\"caught: %v\", err)\n\t})\n\tt.Run(\"1-cycle tracking assertions catch forgotten ambiguous start\", func(t *testing.T) {\n\t\t_, _, err := verifyAmbiguousMigrationTracked(seed, 1, true)\n\t\tif err == nil {\n\t\t\tt.Fatal(\"1-cycle ambiguous migration check passed with forgetAmbiguousMig enabled\")\n\t\t}\n\t\twant := \"ambiguous migration start was not recovered\"\n\t\tif !strings.Contains(err.Error(), want) {\n\t\t\tt.Fatalf(\"failed for another reason than untracked ambiguous start: %v\", err)\n\t\t}\n\t\tt.Logf(\"caught: %v\", err)\n\t})\n\tt.Run(\"forgetting slow ambiguous start leaves non-terminal saga into next cycle\", func(t *testing.T) {\n\t\tvar st nemesisStats\n\t\ts := slowAmbiguousMigrationRun(seed, true, &st)(seed)\n\t\texpectCanaryFailure(t, s, \"still holds non-terminal saga\")\n\t})\n}\n\n// TestCanaryE2ObjectOpsUnavailableDuringSplitFails intercepts PUT, GET, or both\n// with ErrUnavailable whenever a node's view shrinks, proving E2 requires\n// surviving-side object operations to succeed during a partition."
+      }
+    ]
+  },
+  "TestDefaultBuildCarriesNoFaultInjection": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md"
+    ],
+    "definitions": [
+      {
+        "file": "test/e2e/tierr_test.go",
+        "line": 636,
+        "body": "func TestDefaultBuildCarriesNoFaultInjection(t *testing.T) {\n\trequireTierR(t)\n\tplain, err := os.ReadFile(buildObjnode(t, false, \"\"))\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\ttagged, err := os.ReadFile(buildObjnode(t, false, \"e2efault\"))\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tfor _, marker := range []string{blocklistSuffix, \"noderuntime.blockedPeer\", \"noderuntime.BlocklistPath\"} {\n\t\tif !bytes.Contains(tagged, []byte(marker)) {\n\t\t\tt.Fatalf(\"the e2efault build lacks %q, so this check could not see it\", marker)\n\t\t}\n\t\tif bytes.Contains(plain, []byte(marker)) {\n\t\t\tt.Fatalf(\"the default build contains %q\", marker)\n\t\t}\n\t}\n}\n\n// TestAllocDistinctPortsNeverCollides proves allocDistinctPorts returns 40\n// unique valid ports in one reservation batch."
+      }
+    ]
+  },
+  "TestE7NemesisHealingCyclesS": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md",
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "test/e2e/e7_test.go",
+        "line": 70,
+        "body": "func TestE7NemesisHealingCyclesS(t *testing.T) {\n\tt.Parallel()\n\tvar m measure\n\tvar mu sync.Mutex\n\tvar seedsRun, totPutsM, totPutsMOK, totMovedObjs, totAvailGets int\n\tt.Cleanup(func() {\n\t\tm.report(t)\n\t\tif t.Failed() {\n\t\t\treturn\n\t\t}\n\t\tif seedsRun >= 10 && totPutsM >= 4 && totPutsMOK == 0 {\n\t\t\tt.Fatalf(\"E7 acknowledged 0 of %d puts to routed bucket %s across %d seeds\", totPutsM, bucketM, seedsRun)\n\t\t}\n\t\tif seedsRun >= 20 && totMovedObjs == 0 {\n\t\t\tt.Fatalf(\"E7 migrated 0 pre-existing objects of bucket %s across %d seeds\", bucketM, seedsRun)\n\t\t}\n\t\tif err := checkE7AvailabilityFloor(seedsRun, totAvailGets); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t})\n\tsweep(t, seedsFor(t, 3, 5), func(t *testing.T, seed int64) {\n\t\tvar st nemesisStats\n\t\tsimtest.RequireDeterministic(t, seed, runNemesis(seed, e7Options(), func(n *nemesis) nemesisPlan { return randomPlan(n.r, e7Cycles, e7Chaos) }, &st))\n\t\tif st.cycles != e7Cycles {\n\t\t\tt.Fatalf(\"seed %d ran %d cycles, want %d\", seed, st.cycles, e7Cycles)\n\t\t}\n\t\tif st.applied == 0 {\n\t\t\tt.Fatalf(\"seed %d applied 0 chaos faults\", seed)\n\t\t}\n\t\tif st.putsOK == 0 || st.getsOK == 0 {\n\t\t\tt.Fatalf(\"seed %d saw putsOK=%d getsOK=%d, want both > 0\", seed, st.putsOK, st.getsOK)\n\t\t}\n\t\tmu.Lock()\n\t\tseedsRun++\n\t\ttotPutsM += st.putsM\n\t\ttotPutsMOK += st.putsMOK\n\t\ttotMovedObjs += st.movedObjects\n\t\ttotAvailGets += st.availabilityGets\n\t\tmu.Unlock()\n\t\tm.add(\"e7/cycles\", int64(st.cycles))\n\t\tm.add(\"e7/faults_applied\", int64(st.applied))\n\t\tm.add(\"e7/faults_skipped_by_budget\", int64(st.skipped))\n\t\tm.add(\"e7/puts\", int64(st.puts))\n\t\tm.add(\"e7/puts_ok\", int64(st.putsOK))\n\t\tm.add(\"e7/puts_m\", int64(st.putsM))\n\t\tm.add(\"e7/puts_m_ok\", int64(st.putsMOK))\n\t\tm.add(\"e7/gets\", int64(st.gets))\n\t\tm.add(\"e7/gets_ok\", int64(st.getsOK))\n\t\tm.add(\"e7/availability_gets\", int64(st.availabilityGets))\n\t\tm.add(\"e7/discards\", int64(st.discards))\n\t\tm.add(\"e7/declared_lost\", int64(st.declared))\n\t\tm.add(\"e7/migrations_completed\", int64(st.migrated))\n\t\tm.add(\"e7/migrations_compensated\", int64(st.compensated))\n\t\tm.add(\"e7/ambiguous_migrations_recovered\", int64(st.ambiguousRecovered))\n\t\tm.add(\"e7/dest_objects\", int64(st.destObjects))\n\t\tm.add(\"e7/dest_shards\", int64(st.destShards))\n\t\tm.add(\"e7/moved_objects\", int64(st.movedObjects))\n\t\tm.add(\"e7/moved_shards\", int64(st.movedShards))\n\t\tfor _, d := range st.converge {\n\t\t\tm.ms(\"e7/converge_after_heal\", d)\n\t\t}\n\t\tfor _, d := range st.repair {\n\t\t\tm.ms(\"e7/repair_after_converge\", d)\n\t\t}\n\t})\n}\n\n// fuzzOptions uses 12 nodes (4 per region) with a 2+1 layout so routed bucket m\n// keeps >= k+m=3 nodes in its region even under a single-node fault while\n// keeping per-execution fuzz cost low."
+      }
+    ]
+  },
+  "TestMigrationRetireBelowKRecopiesAndNeverGoesLive": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/node/dst_migstall_test.go",
+        "line": 1655,
+        "body": "func TestMigrationRetireBelowKRecopiesAndNeverGoesLive(t *testing.T) {\n\tt.Parallel()\n\tseeds := []int64{31337, 3, 4}\n\tfor _, seed := range seeds {\n\t\tt.Run(fmt.Sprintf(\"seed=%d\", seed), func(t *testing.T) {\n\t\t\tt.Parallel()\n\t\t\tsimtest.RequireDeterministic(t, seed, migRetireRecheckRun(3, true))\n\t\t})\n\t}\n}\n"
+      }
+    ]
+  },
+  "TestMigrationRetireBelowQuorumWaitsForRebuild": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/node/dst_migstall_test.go",
+        "line": 1640,
+        "body": "func TestMigrationRetireBelowQuorumWaitsForRebuild(t *testing.T) {\n\tt.Parallel()\n\tseeds := []int64{31337, 3, 4}\n\tfor _, seed := range seeds {\n\t\tt.Run(fmt.Sprintf(\"seed=%d\", seed), func(t *testing.T) {\n\t\t\tt.Parallel()\n\t\t\tsimtest.RequireDeterministic(t, seed, migRetireRecheckRun(2, false))\n\t\t})\n\t}\n}\n\n// TestMigrationRetireBelowKRecopiesAndNeverGoesLive proves Retire rejects a\n// staged version reduced to 3 verified shards (< k=4) after catch-up Root,\n// deletes the damaged staged record, and lets post-pivot retry re-copy from\n// the live source before completing."
+      }
+    ]
+  },
+  "TestMigrationVerifyBelowKCompensates": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/node/dst_migstall_test.go",
+        "line": 1265,
+        "body": "func TestMigrationVerifyBelowKCompensates(t *testing.T) {\n\tt.Parallel()\n\tseeds := []int64{31337, 3, 4}\n\tfor _, seed := range seeds {\n\t\tt.Run(fmt.Sprintf(\"seed=%d\", seed), func(t *testing.T) {\n\t\t\tt.Parallel()\n\t\t\tsimtest.RequireDeterministic(t, seed, migThresholdRun(3, saga.StateCompensated))\n\t\t})\n\t}\n}\n\n// TestMigrationVerifyBelowQuorumWaitsForRebuild proves that leaving 4 verified\n// shards (k=4 <= 4 < quorum=5) before StepVerify blocks StepFlip until\n// destination holders rebuild to quorum and then completes cleanly."
+      }
+    ]
+  },
+  "TestMigrationVerifyBelowQuorumWaitsForRebuild": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/node/dst_migstall_test.go",
+        "line": 1279,
+        "body": "func TestMigrationVerifyBelowQuorumWaitsForRebuild(t *testing.T) {\n\tt.Parallel()\n\tseeds := []int64{31337, 3, 4}\n\tfor _, seed := range seeds {\n\t\tt.Run(fmt.Sprintf(\"seed=%d\", seed), func(t *testing.T) {\n\t\t\tt.Parallel()\n\t\t\tsimtest.RequireDeterministic(t, seed, migThresholdRun(4, saga.StateCompleted))\n\t\t})\n\t}\n}\n\n// verifyWaveNet fires onWave right after the coordinator's opVerifyShards\n// (channel 5, op 4) wave finishes so tests can wipe destination holders in the\n// window between catch-up Root verification and Retire's manifest swap.\ntype verifyWaveNet struct {\n\tenv.Transport\n\tself     env.NodeID\n\tcoord    *env.NodeID\n\tactive   *bool\n\tinflight *int\n\tonWave   func()\n}\n"
+      }
+    ]
+  },
+  "TestNemesisAmbiguousMigrationStartIsTracked": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md"
+    ],
+    "definitions": [
+      {
+        "file": "test/e2e/e7_test.go",
+        "line": 396,
+        "body": "func TestNemesisAmbiguousMigrationStartIsTracked(t *testing.T) {\n\tconst seed = 702\n\tfor _, cycles := range []int{1, 2} {\n\t\tvar st nemesisStats\n\t\tsimtest.RequireDeterministic(t, seed, ambiguousMigrationRun(seed, cycles, false, &st))\n\t\tif st.ambiguousRecovered != 1 {\n\t\t\tt.Fatalf(\"cycles=%d: ambiguousRecovered = %d, want 1\", cycles, st.ambiguousRecovered)\n\t\t}\n\t\tif st.migrated != cycles {\n\t\t\tt.Fatalf(\"cycles=%d: migrated = %d, want %d\", cycles, st.migrated, cycles)\n\t\t}\n\t\twantShards := cycles * fuzzWarmM * (fuzzOptions().cfg.Layout.K + fuzzOptions().cfg.Layout.M)\n\t\tif st.movedShards < wantShards {\n\t\t\tt.Fatalf(\"cycles=%d: movedShards = %d, want >= %d\", cycles, st.movedShards, wantShards)\n\t\t}\n\t\twantRegion := \"r1\"\n\t\tif cycles == 2 {\n\t\t\twantRegion = \"r2\"\n\t\t}\n\t\tif st.finalRegion != wantRegion {\n\t\t\tt.Fatalf(\"cycles=%d: finalRegion = %q, want %q\", cycles, st.finalRegion, wantRegion)\n\t\t}\n\t\tt.Logf(\"cycles=%d recovered=%d migrated=%d movedShards=%d destShards=%d finalRegion=%s\", cycles, st.ambiguousRecovered, st.migrated, st.movedShards, st.destShards, st.finalRegion)\n\t}\n\tt.Run(\"dropped request timeout starts no saga and next cycle migrates from original region\", func(t *testing.T) {\n\t\tvar st nemesisStats\n\t\tsimtest.RequireDeterministic(t, seed, runNemesis(seed, fuzzOptions(), func(n *nemesis) nemesisPlan {\n\t\t\tn.noGrace = true\n\t\t\tn.warmM = fuzzWarmM\n\t\t\tn.beforeCycle = func(n *nemesis, ci int) error {\n\t\t\t\tif ci != 0 {\n\t\t\t\t\treturn nil\n\t\t\t\t}\n\t\t\t\tvar clients []env.NodeID\n\t\t\t\tfor _, r := range n.c.regions {\n\t\t\t\t\tclients = append(clients, env.NodeID(\"client-\"+r))\n\t\t\t\t}\n\t\t\t\tn.markNetFault()\n\t\t\t\treturn n.c.apply(sim.Fault{Kind: sim.FaultPartitionOneWay, Side: clients, Other: n.c.ids})\n\t\t\t}\n\t\t\treturn nemesisPlan{cycles: []cycle{\n\t\t\t\t{chaos: e7Chaos, ops: []chaosOp{{kind: opMigrate, a: 0, b: 0, at: 500 * time.Millisecond}}},\n\t\t\t\t{chaos: e7Chaos, ops: []chaosOp{{kind: opMigrate, a: 0, b: 0, at: 500 * time.Millisecond}}},\n\t\t\t}}\n\t\t}, &st))\n\t\tif st.ambiguousRecovered != 0 {\n\t\t\tt.Fatalf(\"ambiguousRecovered = %d, want 0 when request never reached coordinator\", st.ambiguousRecovered)\n\t\t}\n\t\tif st.migrated != 1 || st.finalRegion != \"r1\" {\n\t\t\tt.Fatalf(\"migrated=%d finalRegion=%q, want 1 and r1\", st.migrated, st.finalRegion)\n\t\t}\n\t})\n\tt.Run(\"ambiguous start finishes to terminal state before next cycle can wipe coordinator\", func(t *testing.T) {\n\t\tvar st nemesisStats\n\t\tsimtest.RequireDeterministic(t, seed, slowAmbiguousMigrationRun(seed, false, &st))\n\t\tif st.ambiguousRecovered != 1 || st.migrated != 1 || st.finalRegion != \"r1\" {\n\t\t\tt.Fatalf(\"unexpected stats: recovered=%d migrated=%d finalRegion=%q\", st.ambiguousRecovered, st.migrated, st.finalRegion)\n\t\t}\n\t\tif st.applied < 2 {\n\t\t\tt.Fatalf(\"expected migration and cycle-1 coordinator wipe to both apply, got applied=%d\", st.applied)\n\t\t}\n\t})\n}\n\n// TestE7AvailabilityFloorSafeForSingleSeed proves the sweep-level availability\n// floor never false-fails single-seed runs and catches under-floor sweeps."
+      }
+    ]
+  },
+  "TestReplayCommandsReproduceEverySeed": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md"
+    ],
+    "definitions": [
+      {
+        "file": "test/e2e/replay_test.go",
+        "line": 61,
+        "body": "func TestReplayCommandsReproduceEverySeed(t *testing.T) {\n\tt.Run(\"sweep replays every seed across all four shards\", func(t *testing.T) {\n\t\tconst planted = \"planted-replay-e8\"\n\t\tout, err := runSelf(t,\n\t\t\t[]string{\"DST_SEEDS=8\", \"E2E_FULL_SEEDS=1\", \"E2E_PLANT_E8_FAIL=\" + planted},\n\t\t\t\"-test.v\", \"-test.count=1\", \"-test.run\", \"^TestE8LocalFirstMetadataSyncS$\",\n\t\t)\n\t\tif err == nil {\n\t\t\tt.Fatalf(\"expected planted E8 failure sweep to fail, output:\\n%s\", out)\n\t\t}\n\t\treplays := parseReplayLines(out)\n\t\tif len(replays) < 8 {\n\t\t\tt.Fatalf(\"captured %d REPLAY lines under DST_SEEDS=8, want >= 8\\noutput:\\n%s\", len(replays), out)\n\t\t}\n\t\tshardsSeen := map[string]bool{}\n\t\tfor _, rp := range replays {\n\t\t\tfor _, sh := range []string{\"shard=0\", \"shard=1\", \"shard=2\", \"shard=3\"} {\n\t\t\t\tif strings.Contains(rp.run, sh) {\n\t\t\t\t\tshardsSeen[sh] = true\n\t\t\t\t}\n\t\t\t}\n\t\t\trout, rerr := runSelf(t,\n\t\t\t\t[]string{\"E2E_PLANT_E8_FAIL=\" + planted},\n\t\t\t\t\"-test.v\", \"-test.count=1\", \"-test.run\", rp.run, \"-seed=\"+rp.seed,\n\t\t\t)\n\t\t\tif rerr == nil {\n\t\t\t\tt.Fatalf(\"REPLAY passed instead of reproducing failure:\\n  %s\\noutput:\\n%s\", rp.line, rout)\n\t\t\t}\n\t\t\twant := planted + \" (seed=\" + rp.seed + \")\"\n\t\t\tif !strings.Contains(rout, want) {\n\t\t\t\tt.Fatalf(\"REPLAY failed without planted message %q:\\n  %s\\noutput:\\n%s\", want, rp.line, rout)\n\t\t\t}\n\t\t}\n\t\tif len(shardsSeen) != 4 {\n\t\t\tt.Fatalf(\"replays covered shards %v, want all 4 shards\", shardsSeen)\n\t\t}\n\t})\n\n\tt.Run(\"e5 cell replays reproduce failing cells and seeds\", func(t *testing.T) {\n\t\tconst planted = \"planted-replay-e5\"\n\t\tout, err := runSelf(t,\n\t\t\t[]string{\"DST_SEEDS=4\", \"E2E_FULL_SEEDS=1\", \"E2E_PLANT_E5_FAIL=\" + planted},\n\t\t\t\"-test.v\", \"-test.count=1\", \"-test.run\", \"^TestE5MigrationEveryFailurePointS$/^(allocate-fail-before-action-untorn|copy-fail-after-action-untorn)$\",\n\t\t)\n\t\tif err == nil {\n\t\t\tt.Fatalf(\"expected planted E5 failure run to fail, output:\\n%s\", out)\n\t\t}\n\t\treplays := parseReplayLines(out)\n\t\tif len(replays) < 4 {\n\t\t\tt.Fatalf(\"captured %d E5 REPLAY lines, want >= 4\\noutput:\\n%s\", len(replays), out)\n\t\t}\n\t\tfor _, rp := range replays {\n\t\t\trout, rerr := runSelf(t,\n\t\t\t\t[]string{\"E2E_PLANT_E5_FAIL=\" + planted},\n\t\t\t\t\"-test.v\", \"-test.count=1\", \"-test.run\", rp.run, \"-seed=\"+rp.seed,\n\t\t\t)\n\t\t\tif rerr == nil {\n\t\t\t\tt.Fatalf(\"E5 REPLAY passed instead of reproducing failure:\\n  %s\\noutput:\\n%s\", rp.line, rout)\n\t\t\t}\n\t\t\twant := \"seed=\" + rp.seed + \")\"\n\t\t\tif !strings.Contains(rout, planted) || !strings.Contains(rout, want) {\n\t\t\t\tt.Fatalf(\"E5 REPLAY failed without planted message %q and %q:\\n  %s\\noutput:\\n%s\", planted, want, rp.line, rout)\n\t\t\t}\n\t\t}\n\t})\n\n\tt.Run(\"explicit seed matching no seed subtest fails closed\", func(t *testing.T) {\n\t\tcases := []struct {\n\t\t\tname string\n\t\t\trun  string\n\t\t\tseed string\n\t\t}{\n\t\t\t{\"sweep wrong shard for seed=2\", \"^TestE8LocalFirstMetadataSyncS$/^shard=0$/^seed=2$\", \"2\"},\n\t\t\t{\"sweep nonexistent shard\", \"^TestE8LocalFirstMetadataSyncS$/^shard=99$/^seed=2$\", \"2\"},\n\t\t\t{\"e5 nonexistent cell\", \"^TestE5MigrationEveryFailurePointS$/^no-such-cell$/^seed=2$\", \"2\"},\n\t\t}\n\t\tfor _, tc := range cases {\n\t\t\tt.Run(tc.name, func(t *testing.T) {\n\t\t\t\tout, err := runSelf(t, nil, \"-test.v\", \"-test.count=1\", \"-test.run\", tc.run, \"-seed=\"+tc.seed)\n\t\t\t\tif err == nil {\n\t\t\t\t\tt.Fatalf(\"empty -seed run passed instead of failing closed:\\noutput:\\n%s\", out)\n\t\t\t\t}\n\t\t\t\tif !strings.Contains(out, \"ran 0 seed subtests\") {\n\t\t\t\t\tt.Fatalf(\"empty -seed run failed without expected message:\\noutput:\\n%s\", out)\n\t\t\t\t}\n\t\t\t})\n\t\t}\n\t})\n}\n"
+      }
+    ]
+  },
+  "TestTierRHarnessLeavesNothingBehindWhenATestFails": {
+    "chapters": [
+      "book/chapters/08-end-to-end-and-hardening.md"
+    ],
+    "definitions": [
+      {
+        "file": "test/e2e/tierr_test.go",
+        "line": 570,
+        "body": "func TestTierRHarnessLeavesNothingBehindWhenATestFails(t *testing.T) {\n\trequireTierR(t)\n\tif out := os.Getenv(\"E2E_CHILD_OUT\"); out != \"\" {\n\t\tc := newRealCluster(t, 99, realOptions{nodes: 3, layout: storage.Layout{K: 2, M: 1, StripeSize: realStripe}})\n\t\tvar rec hygieneRecord\n\t\tfor _, p := range c.procs {\n\t\t\trec.PIDs = append(rec.PIDs, p.cmd.Process.Pid)\n\t\t\trec.Ports = append(rec.Ports, p.ports...)\n\t\t}\n\t\tbinMu.Lock()\n\t\trec.Dirs = append(append(rec.Dirs, c.dir), binDirs...)\n\t\tbinMu.Unlock()\n\t\tb, err := json.Marshal(rec)\n\t\tif err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tif err := os.WriteFile(out, b, 0o644); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t\tt.Fatal(\"planted failure with a running cluster\")\n\t}\n\tout := filepath.Join(t.TempDir(), \"child.json\")\n\tcmd := exec.Command(os.Args[0], \"-test.run\", \"^TestTierRHarnessLeavesNothingBehindWhenATestFails$\", \"-test.count=1\")\n\tcmd.Env = append(os.Environ(), \"E2E_CHILD_OUT=\"+out, tierREnv+\"=1\")\n\tb, err := cmd.CombinedOutput()\n\tif err == nil {\n\t\tt.Fatalf(\"the child passed; its planted failure did not fire:\\n%s\", b)\n\t}\n\tif !strings.Contains(string(b), \"planted failure\") {\n\t\tt.Fatalf(\"the child failed for another reason: %v\\n%s\", err, b)\n\t}\n\traw, err := os.ReadFile(out)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tvar rec hygieneRecord\n\tif err := json.Unmarshal(raw, &rec); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif len(rec.PIDs) != 3 || len(rec.Ports) != 6 || len(rec.Dirs) < 2 {\n\t\tt.Fatalf(\"child record incomplete: %+v\", rec)\n\t}\n\tfor _, pid := range rec.PIDs {\n\t\tif err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {\n\t\t\tt.Errorf(\"process %d still exists after the failed test: %v\", pid, err)\n\t\t}\n\t}\n\tfor _, port := range rec.Ports {\n\t\tl, err := net.Listen(\"tcp\", fmt.Sprintf(\"127.0.0.1:%d\", port))\n\t\tif err != nil {\n\t\t\tt.Errorf(\"tcp port %d still taken: %v\", port, err)\n\t\t\tcontinue\n\t\t}\n\t\tif err := l.Close(); err != nil {\n\t\t\tt.Error(err)\n\t\t}\n\t}\n\tfor _, d := range rec.Dirs {\n\t\tif _, err := os.Stat(d); !errors.Is(err, os.ErrNotExist) {\n\t\t\tt.Errorf(\"directory %s left behind: %v\", d, err)\n\t\t}\n\t}\n}\n\n// TestDefaultBuildCarriesNoFaultInjection proves e2efault blocklist symbols\n// appear in the tagged objnode binary and are absent from the default binary."
+      }
+    ]
+  },
+  "TestConformanceOnLoopback": {
+    "chapters": [
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "internal/noderuntime/conformance_test.go",
+        "line": 296,
+        "body": "func TestConformanceOnLoopback(t *testing.T) {\n\tfor _, sc := range scenarios {\n\t\tt.Run(sc.name, func(t *testing.T) {\n\t\t\tc := startReal(t, 3, realConfig())\n\t\t\tif err := sc.run(realDriver{t: t, c: c}); err != nil {\n\t\t\t\tt.Fatal(err)\n\t\t\t}\n\t\t})\n\t}\n}\n\nvar _ = env.ErrClosed\n"
+      }
+    ]
+  },
+  "TestE2PartitionAndHealS": {
+    "chapters": [
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "test/e2e/tiers_test.go",
+        "line": 44,
+        "body": "func TestE2PartitionAndHealS(t *testing.T) {\n\tt.Parallel()\n\tvar m measure\n\tt.Cleanup(func() { m.report(t) })\n\tsweep(t, seedsFor(t, 1, 4), func(t *testing.T, seed int64) {\n\t\tvar res e2Result\n\t\tvar tally map[string]int\n\t\tvar oc outcome\n\t\trunSim(t, seed, defaultSimOptions(), func(c *simCluster) error {\n\t\t\tvar err error\n\t\t\tres, err = scenarioE2(c, simBounds, e2Params{objects: 6, size: 3000, detect: 500 * time.Millisecond, keepCut: 2 * time.Second})\n\t\t\tif err != nil {\n\t\t\t\treturn err\n\t\t\t}\n\t\t\ttally, oc, err = c.finalChecks(true)\n\t\t\treturn err\n\t\t})\n\t\tm.ms(\"e2/converge\", res.converge)\n\t\tm.ms(\"e2/detect\", res.detect)\n\t\tm.add(\"e2/puts_acked\", int64(res.putsAcked))\n\t\tm.add(\"e2/puts_unavailable\", int64(res.putsUnavailable))\n\t\tm.add(\"e2/post_puts_required\", int64(res.postPutsRequired))\n\t\tm.add(\"e2/gets_ok\", int64(res.getsOK))\n\t\tm.add(\"e2/early_gets_required\", int64(res.earlyGetsRequired))\n\t\tm.add(\"e2/post_gets_required\", int64(res.postGetsRequired))\n\t\tm.add(\"e2/contested_current\", int64(res.contested.current))\n\t\tm.add(\"e2/contested_discarded\", int64(res.contested.discarded))\n\t\tm.add(\"e2/discards_max_node\", int64(res.discards))\n\t\tm.add(\"e2/declared_lost\", int64(res.lost))\n\t\tm.add(\"e2/oracle_superseded\", int64(tally[\"superseded\"]))\n\t\tm.add(\"e2/oracle_discarded\", int64(tally[\"discarded\"]))\n\t\tm.add(\"e2/live_readable\", int64(oc.readable))\n\t\tm.add(\"e2/live_lost\", int64(oc.lost))\n\t})\n}\n\n// TestE3BitRotRepairS proves tier S bit-rot reads, proportional anti-entropy\n// repair (rebuilt and moved bytes), and absence recording short of loss."
+      }
+    ]
+  },
+  "TestE9ShutdownUnderLoadR": {
+    "chapters": [
+      "book/front/topic-map.md"
+    ],
+    "definitions": [
+      {
+        "file": "test/e2e/tierr_test.go",
+        "line": 529,
+        "body": "func TestE9ShutdownUnderLoadR(t *testing.T) {\n\trequireTierR(t)\n\to := defaultRealOptions()\n\to.putSlots = 4\n\tc := newRealCluster(t, 9, o)\n\tres, err := scenarioE9(c, syscall.SIGTERM)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tlogMeasure(t, \"e9r/shutdown_under_load\", res.shutdown)\n\tlogMeasure(t, \"e9r/in_flight_at_sigterm_finished\", res.inflightOK)\n\tlogMeasure(t, \"e9r/in_flight_at_sigterm_failed_cleanly\", res.inflightFailed)\n\tlogMeasure(t, \"e9r/requests_ok\", res.ok)\n\tlogMeasure(t, \"e9r/requests_refused_cleanly\", res.refused)\n\tlogMeasure(t, \"e9r/acked_read_after_restart\", res.readAfterRestart)\n\tlogMeasure(t, \"e9r/restart_to_converged\", res.restart)\n}\n\n// TestCanaryE9AKilledNodeFailsTheCleanShutdownChecks plants SIGKILL instead of\n// SIGTERM and proves scenarioE9 catches the non-zero exit status."
+      }
+    ]
+  }
+}

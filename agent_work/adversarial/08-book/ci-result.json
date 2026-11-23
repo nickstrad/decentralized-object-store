@@ -1,0 +1,97 @@
+{
+  "chunk": "ci",
+  "sha": "0910863f8f344a69aea87762835f6e017b884e77",
+  "stage": "final",
+  "comment_baseline": "none",
+  "started": "2026-11-23T20:27:37Z",
+  "finished": "2026-11-23T20:30:31Z",
+  "go_version": "go version go1.26.11 linux/amd64",
+  "image_id": "sha256:83113c08870258cde3d5ffbc0a1f002265f2e2c26b08e4a6d9bd580bfec68ab3",
+  "in_container": true,
+  "partial": true,
+  "dirty_tree": false,
+  "seed_from_sha": 9966576439092,
+  "fuzz_seconds": 30,
+  "short": true,
+  "overall": "pass",
+  "counts_for_landing": false,
+  "checks": [
+    {
+      "gate": "G0",
+      "check": "tools",
+      "status": "pass",
+      "seconds": 1,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "gofmt",
+      "status": "pass",
+      "seconds": 1,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "vet",
+      "status": "pass",
+      "seconds": 1,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "build",
+      "status": "pass",
+      "seconds": 1,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "detlint",
+      "status": "pass",
+      "seconds": 3,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "panics",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "deps",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    },
+    {
+      "gate": "G0",
+      "check": "comments",
+      "status": "pass",
+      "seconds": 0,
+      "note": "stage=final, comment rule is checked by prose-check.sh"
+    },
+    {
+      "gate": "G0",
+      "check": "selfcontained",
+      "status": "pass",
+      "seconds": 7,
+      "note": ""
+    },
+    {
+      "gate": "G1",
+      "check": "unit",
+      "status": "pass",
+      "seconds": 160,
+      "note": "short run (go test -short); does not count for landing"
+    },
+    {
+      "gate": "G6",
+      "check": "docker",
+      "status": "pass",
+      "seconds": 0,
+      "note": ""
+    }
+  ]
+}
