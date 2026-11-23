@@ -34,20 +34,34 @@ type contestResult struct {
 	acked, current, discarded, unacked int
 }
 
-func discardLog(c Cluster) (map[string]bool, uint64, error) {
-	losers := map[string]bool{}
-	var most uint64
-	for _, n := range upNodes(c) {
+type discardSummary struct {
+	losers map[string]bool
+	most   uint64
+	total  uint64
+}
+
+func discardLog(c Cluster) (discardSummary, error) {
+	ds := discardSummary{losers: map[string]bool{}}
+	ups := upNodes(c)
+	if len(ups) == 0 {
+		return ds, failf("no up nodes to read discard logs")
+	}
+	for _, n := range ups {
 		h, err := c.Health(n)
 		if err != nil {
-			return nil, 0, err
+			return ds, err
+		}
+		wantTail := min(h.Discards, uint64(occ.DiscardTailLen))
+		if uint64(len(h.RecentDiscards)) != wantTail {
+			return ds, failf("node %s reports Health.Discards=%d with %d RecentDiscards (want %d)", n.ID, h.Discards, len(h.RecentDiscards), wantTail)
 		}
 		for _, d := range h.RecentDiscards {
-			losers[d.Loser] = true
+			ds.losers[d.Loser] = true
 		}
-		most = max(most, h.Discards)
+		ds.most = max(ds.most, h.Discards)
+		ds.total += h.Discards
 	}
-	return losers, most, nil
+	return ds, nil
 }
 
 func lostObjects(c Cluster) (uint64, error) {
@@ -92,7 +106,10 @@ func splitViews(c Cluster, sides ...[]Node) func() (bool, error) {
 
 func checkContests(c Cluster, cs []contest) (contestResult, error) {
 	var res contestResult
-	losers, most, err := discardLog(c)
+	if len(cs) == 0 {
+		return res, failf("no contested writes to check")
+	}
+	ds, err := discardLog(c)
 	if err != nil {
 		return res, err
 	}
@@ -114,14 +131,17 @@ func checkContests(c Cluster, cs []contest) (contestResult, error) {
 			switch tag := etagOf(w); {
 			case ok && tag == cur:
 				res.current++
-			case losers[tag]:
+			case ds.losers[tag]:
 				res.discarded++
-			case most > uint64(occ.DiscardTailLen):
-				return res, failf("%s: acknowledged write %s via %s is not current and the discard tails (%d discards on one node) overflowed, so the check cannot finish", ct.what, short(tag), w.At.ID, most)
+			case ds.most > uint64(occ.DiscardTailLen):
+				return res, failf("%s: acknowledged write %s via %s is not current and the discard tails (%d discards on one node) overflowed, so the check cannot finish", ct.what, short(tag), w.At.ID, ds.most)
 			default:
 				return res, failf("%s: acknowledged write %s via %s is not current (current %s) and no node logged it as a discarded loser", ct.what, short(tag), w.At.ID, short(cur))
 			}
 		}
+	}
+	if res.acked == 0 || res.current == 0 {
+		return res, failf("contest check observed %d acked and %d current writes, want both > 0", res.acked, res.current)
 	}
 	return res, nil
 }
@@ -220,6 +240,9 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 	var res e2Result
 	var err error
 	const bucket = "e2"
+	if p.objects < 2 {
+		return res, failf("e2 requires at least 2 objects, got %d", p.objects)
+	}
 	l := c.Layout()
 	if err := createBucket(c, b, storage.BucketSpec{Name: bucket}); err != nil {
 		return res, err
@@ -426,6 +449,9 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 			}
 		}
 	}
+	if res.meta == 0 {
+		return res, failf("partition phase ran 0 metadata writes")
+	}
 	if res.postGetsRequired == 0 || res.getsOK == 0 {
 		return res, failf("partition phase saw no required object read succeed (required=%d, ok=%d)", res.postGetsRequired, res.getsOK)
 	}
@@ -446,10 +472,11 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 	if err != nil {
 		return res, err
 	}
-	_, res.discards, err = discardLog(c)
+	ds, err := discardLog(c)
 	if err != nil {
 		return res, err
 	}
+	res.discards = ds.most
 	res.lost, err = lostObjects(c)
 	if err != nil {
 		return res, err
@@ -459,6 +486,9 @@ func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 	}
 	if res.contested.discarded == 0 {
 		return res, failf("no acknowledged write was discarded; the partition produced no conflict to check")
+	}
+	if res.discards == 0 || ds.total < uint64(res.contested.discarded) {
+		return res, failf("discard counter inconsistent with contested discards: max_node=%d sum=%d contested_discarded=%d", res.discards, ds.total, res.contested.discarded)
 	}
 	return res, c.Ledger().Wrong()
 }
@@ -479,6 +509,9 @@ type e8Result struct {
 func scenarioE8(c Cluster, b bounds, p e8Params) (e8Result, error) {
 	var res e8Result
 	const bucket = "e8"
+	if p.objects <= 0 {
+		return res, failf("e8 requires at least 1 object, got %d", p.objects)
+	}
 	if err := createBucket(c, b, storage.BucketSpec{Name: bucket, QuotaBytes: 1 << 30, QuotaObjects: 1000}); err != nil {
 		return res, err
 	}
@@ -570,6 +603,9 @@ func scenarioE8(c Cluster, b bounds, p e8Params) (e8Result, error) {
 			return res, failf("%s %s/%s via %s refused while disconnected: %v", k.Op, k.Bucket, k.Key, k.At.ID, k.Err)
 		}
 	}
+	if res.conditional == 0 {
+		return res, failf("disconnected phase ran 0 conditional writes")
+	}
 	if err := c.Heal(); err != nil {
 		return res, err
 	}
@@ -585,13 +621,20 @@ func scenarioE8(c Cluster, b bounds, p e8Params) (e8Result, error) {
 	if res.contested.discarded == 0 {
 		return res, failf("no edit was discarded; the disconnected edits produced no conflict")
 	}
-	_, res.discards, err = discardLog(c)
+	ds, err := discardLog(c)
 	if err != nil {
 		return res, err
+	}
+	res.discards = ds.most
+	if res.discards == 0 || ds.total < uint64(res.contested.discarded) {
+		return res, failf("discard counter inconsistent with contested discards: max_node=%d sum=%d contested_discarded=%d", res.discards, ds.total, res.contested.discarded)
 	}
 	var qs []*Call
 	for _, n := range upNodes(c) {
 		qs = append(qs, c.Quota(n, bucket))
+	}
+	if len(qs) == 0 {
+		return res, failf("no up nodes to check quota convergence")
 	}
 	if err := waitAll(c, qs...); err != nil {
 		return res, err
@@ -628,6 +671,9 @@ func scenarioE8(c Cluster, b bounds, p e8Params) (e8Result, error) {
 			return res, failf("a conditional write naming the discarded version of %s/%s returned %v, want precondition failed", k.Bucket, k.Key, k.Err)
 		}
 		res.staleRefused++
+	}
+	if res.staleRefused < p.objects {
+		return res, failf("only %d stale conditional writes refused, want at least %d", res.staleRefused, p.objects)
 	}
 	return res, c.Ledger().Wrong()
 }

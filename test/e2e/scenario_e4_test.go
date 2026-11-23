@@ -65,6 +65,9 @@ func routedTo(c Cluster, b bounds, bucket, region string) error {
 	for _, n := range upNodes(c) {
 		probes = append(probes, c.Put(n, bucket, "probe-"+n.ID, randomBytes(c.Rand(), 100), storage.Condition{}))
 	}
+	if len(probes) == 0 {
+		return failf("no up nodes to probe routing for %s", bucket)
+	}
 	if err := waitAll(c, probes...); err != nil {
 		return err
 	}
@@ -74,7 +77,7 @@ func routedTo(c Cluster, b bounds, bucket, region string) error {
 	}
 	for _, k := range probes {
 		stripes, ok := all[k.Info.Version]
-		if !ok {
+		if !ok || len(stripes) == 0 {
 			return failf("probe through %s left no shard", k.At.ID)
 		}
 		for _, idx := range stripes {
@@ -105,6 +108,9 @@ type e4Result struct {
 func scenarioE4(c Cluster, b bounds, p e4Params) (e4Result, error) {
 	var res e4Result
 	const bucket = "e4"
+	if p.objects <= 0 {
+		return res, failf("e4 requires at least one initial object, got %d", p.objects)
+	}
 	from, to := c.Regions()[0], c.Regions()[1]
 	if err := createBucket(c, b, storage.BucketSpec{Name: bucket, Region: from}); err != nil {
 		return res, err
@@ -165,6 +171,9 @@ func scenarioE4(c Cluster, b bounds, p e4Params) (e4Result, error) {
 			res.trafficBusy++
 		}
 	}
+	if res.traffic == 0 || res.trafficOK == 0 {
+		return res, failf("migration saw no successful live traffic (total=%d, ok=%d, busy=%d)", res.traffic, res.trafficOK, res.trafficBusy)
+	}
 	if _, err := c.Await("converged after the migration", b.converge, c.Converged); err != nil {
 		return res, err
 	}
@@ -193,6 +202,9 @@ func scenarioE4(c Cluster, b bounds, p e4Params) (e4Result, error) {
 		}
 	}
 	res.objects = len(acked)
+	if res.objects == 0 {
+		return res, failf("e4 read back 0 objects after migration")
+	}
 	if err := routedTo(c, b, bucket, to); err != nil {
 		return res, err
 	}

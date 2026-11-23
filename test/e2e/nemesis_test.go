@@ -637,6 +637,9 @@ func (n *nemesis) finishMigration() error {
 
 func (n *nemesis) run(plan nemesisPlan) error {
 	c := n.c
+	if len(plan.cycles) == 0 {
+		return failf("nemesis plan has 0 cycles")
+	}
 	if err := createBucket(c, simBounds, storage.BucketSpec{Name: bucketW}); err != nil {
 		return err
 	}
@@ -740,6 +743,9 @@ func (n *nemesis) run(plan nemesisPlan) error {
 	}
 	n.st.discards = len(losers)
 	n.st.finalRegion = n.region
+	if n.st.puts+n.st.gets == 0 {
+		return failf("nemesis ran 0 client puts and gets")
+	}
 	return c.ledger.Wrong()
 }
 

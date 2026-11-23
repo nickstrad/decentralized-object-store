@@ -71,7 +71,7 @@ func checkSpread(c Cluster, bucket string, versions []string) (int, error) {
 	checked := 0
 	for _, v := range versions {
 		stripes, ok := all[v]
-		if !ok {
+		if !ok || len(stripes) == 0 {
 			return checked, failf("no shard of %s version %s on any disk", bucket, v)
 		}
 		for s, idx := range stripes {
@@ -89,6 +89,9 @@ func checkSpread(c Cluster, bucket string, versions []string) (int, error) {
 			checked++
 		}
 	}
+	if len(versions) > 0 && checked == 0 {
+		return checked, failf("no stripes checked for spread across %d versions of %s", len(versions), bucket)
+	}
 	return checked, nil
 }
 
@@ -105,6 +108,9 @@ type e1Result struct {
 func scenarioE1(c Cluster, b bounds, p e1Params) (e1Result, error) {
 	var res e1Result
 	const bucket = "e1"
+	if len(p.sizes) == 0 {
+		return res, failf("e1 requires at least one object size")
+	}
 	if err := createBucket(c, b, storage.BucketSpec{Name: bucket}); err != nil {
 		return res, err
 	}
@@ -166,7 +172,16 @@ func scenarioE1(c Cluster, b bounds, p e1Params) (e1Result, error) {
 	if err := c.Ledger().Wrong(); err != nil {
 		return res, err
 	}
+	if res.objects == 0 || res.reads == 0 {
+		return res, failf("e1 ran %d objects and %d reads, want both > 0", res.objects, res.reads)
+	}
 	n, err := checkSpread(c, bucket, versions)
 	res.stripes = n
-	return res, err
+	if err != nil {
+		return res, err
+	}
+	if len(versions) > 0 && res.stripes == 0 {
+		return res, failf("e1 checked 0 stripes across %d non-empty objects", len(versions))
+	}
+	return res, nil
 }

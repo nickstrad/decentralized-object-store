@@ -62,6 +62,9 @@ type e6Result struct {
 func scenarioE6(c Cluster, b bounds, p e6Params) (e6Result, error) {
 	var res e6Result
 	const bucket = "e6"
+	if p.perWave <= 0 {
+		return res, failf("e6 requires perWave > 0, got %d", p.perWave)
+	}
 	if err := createBucket(c, b, storage.BucketSpec{Name: bucket}); err != nil {
 		return res, err
 	}
@@ -90,6 +93,24 @@ func scenarioE6(c Cluster, b bounds, p e6Params) (e6Result, error) {
 	puts = append(puts, first...)
 	if _, err := c.Await("first wave replicated", b.converge, c.Converged); err != nil {
 		return res, err
+	}
+	for range 16 {
+		have, err := shardNames(c, victim)
+		if err != nil {
+			return res, err
+		}
+		if len(have) > 0 {
+			break
+		}
+		seq++
+		extra := c.Put(pick(c, others), bucket, fmt.Sprintf("w%03d", seq), randomBytes(c.Rand(), p.size+seq), storage.Condition{})
+		if err := waitAll(c, extra); err != nil {
+			return res, err
+		}
+		puts = append(puts, extra)
+		if _, err := c.Await("extra victim-shard write replicated", b.converge, c.Converged); err != nil {
+			return res, err
+		}
 	}
 	var err error
 	res.incBefore, _, err = incarnationOf(c, observer, victim)
@@ -127,10 +148,12 @@ func scenarioE6(c Cluster, b bounds, p e6Params) (e6Result, error) {
 		return res, err
 	}
 	rejoined := func() (bool, error) {
+		observers := 0
 		for _, n := range upNodes(c) {
 			if n == victim {
 				continue
 			}
+			observers++
 			inc, state, err := incarnationOf(c, n, victim)
 			if err != nil {
 				return false, err
@@ -138,6 +161,9 @@ func scenarioE6(c Cluster, b bounds, p e6Params) (e6Result, error) {
 			if state != "alive" || inc <= res.incBefore {
 				return false, nil
 			}
+		}
+		if observers == 0 {
+			return false, nil
 		}
 		return c.Converged()
 	}
@@ -148,12 +174,18 @@ func scenarioE6(c Cluster, b bounds, p e6Params) (e6Result, error) {
 	if err != nil {
 		return res, err
 	}
+	if res.incAfter <= res.incBefore {
+		return res, failf("%s incarnation did not increase after crash/restart (%d -> %d)", victim.ID, res.incBefore, res.incAfter)
+	}
 	if es, ok := c.(expectedShards); ok {
 		want, err := es.expectedShards(victim)
 		if err != nil {
 			return res, err
 		}
 		res.victimShards = len(want)
+		if res.victimShards == 0 {
+			return res, failf("restarted %s expected 0 shards, so shard catch-up was vacuous", victim.ID)
+		}
 		d, err := c.Await(fmt.Sprintf("%s holds every shard its manifests place on it", victim.ID), b.catchUp, func() (bool, error) { return holdsAll(c, victim, want) })
 		res.catchUp = res.rejoin + d
 		if err != nil {
@@ -179,7 +211,25 @@ func scenarioE6(c Cluster, b bounds, p e6Params) (e6Result, error) {
 	if err != nil {
 		return res, err
 	}
+	if len(before) == 0 {
+		for _, cand := range nodes {
+			if cand == victim || cand == observer {
+				continue
+			}
+			bs, err := shardNames(c, cand)
+			if err != nil {
+				return res, err
+			}
+			if len(bs) > 0 {
+				wiped, before = cand, bs
+				break
+			}
+		}
+	}
 	res.wipedShards = len(before)
+	if res.wipedShards == 0 {
+		return res, failf("no candidate node for wipe held any shards")
+	}
 	if err := c.Wipe(wiped); err != nil {
 		return res, err
 	}
@@ -188,6 +238,9 @@ func scenarioE6(c Cluster, b bounds, p e6Params) (e6Result, error) {
 		if want, err = es.expectedShards(wiped); err != nil {
 			return res, err
 		}
+	}
+	if len(want) == 0 {
+		return res, failf("wiped %s expected 0 shards to refill", wiped.ID)
 	}
 	if res.refill, err = c.Await(fmt.Sprintf("wiped %s refilled", wiped.ID), b.refill, func() (bool, error) {
 		ok, err := c.Converged()
@@ -207,5 +260,8 @@ func scenarioE6(c Cluster, b bounds, p e6Params) (e6Result, error) {
 	}
 	res.reads += len(reads)
 	res.acked = len(puts)
+	if res.acked == 0 || res.reads == 0 {
+		return res, failf("e6 observed %d acked puts and %d reads, want both > 0", res.acked, res.reads)
+	}
 	return res, c.Ledger().Wrong()
 }

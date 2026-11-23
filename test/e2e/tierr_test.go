@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -178,6 +179,9 @@ func scenarioE5R(c *realCluster, killCoordinator bool) (e5RResult, error) {
 	}); err != nil {
 		return res, err
 	}
+	if res.killedAt < 1 {
+		return res, failf("interrupted saga at step %d, want >= 1", res.killedAt)
+	}
 	if err := c.BlockOneWay([]Node{coord}, targets); err != nil {
 		return res, err
 	}
@@ -301,6 +305,49 @@ type e9Result struct {
 	readAfterRestart           int
 }
 
+func checkE9Traffic(sig syscall.Signal, res e9Result) error {
+	if sig != syscall.SIGTERM {
+		return nil
+	}
+	if res.ok == 0 {
+		return failf("shutdown under load saw 0 successful requests before %v (refused=%d)", sig, res.refused)
+	}
+	if res.inflightOK+res.inflightFailed == 0 {
+		return failf("shutdown under load had 0 requests in flight at %v (ok=%d, refused=%d)", sig, res.ok, res.refused)
+	}
+	return nil
+}
+
+func TestCheckE9TrafficRequiresLoadAndInflight(t *testing.T) {
+	cases := []struct {
+		name    string
+		sig     syscall.Signal
+		res     e9Result
+		wantErr string
+	}{
+		{"zero ok and zero inflight fails on SIGTERM", syscall.SIGTERM, e9Result{refused: 10}, "0 successful requests"},
+		{"zero ok with inflight fails on SIGTERM", syscall.SIGTERM, e9Result{inflightFailed: 3, refused: 3}, "0 successful requests"},
+		{"nonzero ok with zero inflight fails on SIGTERM", syscall.SIGTERM, e9Result{ok: 12, refused: 5}, "0 requests in flight"},
+		{"nonzero ok and inflight ok passes on SIGTERM", syscall.SIGTERM, e9Result{ok: 12, inflightOK: 2}, ""},
+		{"nonzero ok and inflight failed passes on SIGTERM", syscall.SIGTERM, e9Result{ok: 12, inflightFailed: 2, refused: 2}, ""},
+		{"nonzero ok and mixed inflight passes on SIGTERM", syscall.SIGTERM, e9Result{ok: 12, inflightOK: 3, inflightFailed: 1, refused: 1}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkE9Traffic(tc.sig, tc.res)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("checkE9Traffic returned unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("checkE9Traffic = %v, want error containing %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func scenarioE9(c *realCluster, sig syscall.Signal) (e9Result, error) {
 	var res e9Result
 	if err := createBucket(c, realBounds, storage.BucketSpec{Name: "e9"}); err != nil {
@@ -309,6 +356,8 @@ func scenarioE9(c *realCluster, sig syscall.Signal) (e9Result, error) {
 	target := c.Nodes()[5]
 	var mu sync.Mutex
 	var calls []*Call
+	var active atomic.Int64
+	var preOK atomic.Int64
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	for w := range 8 {
@@ -324,7 +373,10 @@ func scenarioE9(c *realCluster, sig syscall.Signal) (e9Result, error) {
 				if last != "" {
 					batch = append(batch, c.Get(target, "e9", last))
 				}
-				if err := c.Wait(batch...); err != nil {
+				active.Add(int64(len(batch)))
+				err := c.Wait(batch...)
+				active.Add(-int64(len(batch)))
+				if err != nil {
 					return
 				}
 				if batch[0].Err == nil {
@@ -332,13 +384,33 @@ func scenarioE9(c *realCluster, sig syscall.Signal) (e9Result, error) {
 				} else {
 					time.Sleep(20 * time.Millisecond)
 				}
+				for _, k := range batch {
+					if k.Err == nil {
+						preOK.Add(1)
+					}
+				}
 				mu.Lock()
 				calls = append(calls, batch...)
 				mu.Unlock()
 			}
 		})
 	}
-	time.Sleep(2 * time.Second)
+	warmStart := time.Now()
+	warmDeadline := warmStart.Add(15 * time.Second)
+	for {
+		if time.Since(warmStart) >= 2*time.Second && preOK.Load() >= 4 && active.Load() >= 2 {
+			break
+		}
+		if time.Now().After(warmDeadline) {
+			if preOK.Load() > 0 && active.Load() > 0 {
+				break
+			}
+			close(stop)
+			wg.Wait()
+			return res, failf("load generator did not establish traffic before %v (preOK=%d, active=%d)", sig, preOK.Load(), active.Load())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	p := c.proc(target)
 	sent := time.Now()
 	if err := p.signal(sig); err != nil {
@@ -382,6 +454,9 @@ func scenarioE9(c *realCluster, sig syscall.Signal) (e9Result, error) {
 			res.refused++
 		}
 	}
+	if err := checkE9Traffic(sig, res); err != nil {
+		return res, err
+	}
 	if err := c.ledger.Wrong(); err != nil {
 		return res, err
 	}
@@ -394,6 +469,9 @@ func scenarioE9(c *realCluster, sig syscall.Signal) (e9Result, error) {
 	}
 	var gets []*Call
 	acked := c.ledger.Acked()
+	if len(acked) == 0 {
+		return res, failf("no acknowledged writes to read back after restart")
+	}
 	for _, k := range acked {
 		gets = append(gets, c.Get(target, "e9", k.Key))
 	}

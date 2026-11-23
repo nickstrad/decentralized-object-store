@@ -66,6 +66,15 @@ func TestE7NemesisHealingCyclesS(t *testing.T) {
 	sweep(t, seedsFor(t, 3, 5), func(t *testing.T, seed int64) {
 		var st nemesisStats
 		simtest.RequireDeterministic(t, seed, runNemesis(seed, e7Options(), func(n *nemesis) nemesisPlan { return randomPlan(n.r, e7Cycles, e7Chaos) }, &st))
+		if st.cycles != e7Cycles {
+			t.Fatalf("seed %d ran %d cycles, want %d", seed, st.cycles, e7Cycles)
+		}
+		if st.applied == 0 {
+			t.Fatalf("seed %d applied 0 chaos faults", seed)
+		}
+		if st.putsOK == 0 || st.getsOK == 0 {
+			t.Fatalf("seed %d saw putsOK=%d getsOK=%d, want both > 0", seed, st.putsOK, st.getsOK)
+		}
 		mu.Lock()
 		totPutsM += st.putsM
 		totPutsMOK += st.putsMOK

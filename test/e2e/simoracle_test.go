@@ -415,6 +415,9 @@ func (c *simCluster) finalChecks(grace bool) (map[string]int, outcome, error) {
 	if err != nil {
 		return tally, oc, err
 	}
+	if oc.readable+oc.lost == 0 {
+		return tally, oc, failf("final check found 0 live objects")
+	}
 	if grace {
 		if err := c.Sleep(c.cfg.OrphanGrace + c.cfg.GCGrace + 10*time.Second); err != nil {
 			return tally, oc, err

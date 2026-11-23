@@ -124,6 +124,9 @@ func (e *e5Cluster) check(loc, gone string) error {
 	if err != nil {
 		return err
 	}
+	if len(e.data) == 0 {
+		return e5Check("no objects in migrating bucket %s", sagasim.Bucket)
+	}
 	keys := make([]string, 0, len(e.data))
 	for k := range e.data {
 		keys = append(keys, k)
@@ -209,6 +212,9 @@ func e5Seeds(seeds, pinned []int64, cell, cells int) []int64 {
 func TestE5MigrationEveryFailurePointS(t *testing.T) {
 	t.Parallel()
 	cells := sagasim.Cells()
+	if len(cells) == 0 {
+		t.Fatal("sagasim.Cells() is empty")
+	}
 	var m measure
 	t.Cleanup(func() { m.report(t) })
 	seeds := seedsFor(t, 1, 4)
@@ -221,6 +227,9 @@ func TestE5MigrationEveryFailurePointS(t *testing.T) {
 			continue
 		}
 		mine := e5Seeds(seeds, pinned, i, len(cells))
+		if len(mine) == 0 {
+			t.Fatalf("cell %s received 0 seeds", cell.Name())
+		}
 		t.Run(cell.Name(), func(t *testing.T) {
 			t.Parallel()
 			for _, seed := range mine {

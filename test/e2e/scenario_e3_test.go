@@ -140,6 +140,9 @@ func rotAndAwait(c Cluster, b bounds, rotted []shardAt) (time.Duration, int, err
 func scenarioE3(c Cluster, b bounds, p e3Params) (e3Result, error) {
 	var res e3Result
 	const bucket = "e3"
+	if p.damaged <= 0 || p.objects < 2*p.damaged {
+		return res, failf("e3 requires damaged > 0 and objects >= 2*damaged (got objects=%d, damaged=%d)", p.objects, p.damaged)
+	}
 	if err := createBucket(c, b, storage.BucketSpec{Name: bucket}); err != nil {
 		return res, err
 	}
@@ -168,9 +171,15 @@ func scenarioE3(c Cluster, b bounds, p e3Params) (e3Result, error) {
 			}
 		}
 	}
+	if res.bucketBytes == 0 {
+		return res, failf("e3 bucket %s holds 0 shard bytes", bucket)
+	}
 	first, err := pickRot(c, bucket, all, puts[:p.damaged])
 	if err != nil {
 		return res, err
+	}
+	if len(first) == 0 {
+		return res, failf("phase 1 selected 0 shards to rot")
 	}
 	for _, r := range first {
 		if err := c.Rot(r.node, r.name); err != nil {
@@ -190,6 +199,9 @@ func scenarioE3(c Cluster, b bounds, p e3Params) (e3Result, error) {
 		}
 	}
 	res.reads = len(gets)
+	if res.reads == 0 {
+		return res, failf("e3 ran 0 reads after bit-rot")
+	}
 	byNode := map[Node][]string{}
 	for _, r := range first {
 		byNode[r.node] = append(byNode[r.node], r.name)
@@ -209,6 +221,9 @@ func scenarioE3(c Cluster, b bounds, p e3Params) (e3Result, error) {
 	if err != nil {
 		return res, err
 	}
+	if len(second) == 0 {
+		return res, failf("phase 2 selected 0 shards to rot")
+	}
 	rebuilt0, err := sumCounter(c, "rebuilt_bytes")
 	if err != nil {
 		return res, err
@@ -223,6 +238,9 @@ func scenarioE3(c Cluster, b bounds, p e3Params) (e3Result, error) {
 	if err != nil {
 		return res, err
 	}
+	if res.damagedBytes == 0 {
+		return res, failf("phase 2 rotted 0 bytes across %d shards", len(second))
+	}
 	rebuilt1, err := sumCounter(c, "rebuilt_bytes")
 	if err != nil {
 		return res, err
@@ -231,13 +249,16 @@ func scenarioE3(c Cluster, b bounds, p e3Params) (e3Result, error) {
 	if hasMoved {
 		res.movedBytes = mc.storageBytesMoved() - moved0
 	}
-	if res.rebuiltBytes < uint64(res.damagedBytes)*9/10 || res.rebuiltBytes > uint64(2*res.damagedBytes) {
+	if res.rebuiltBytes == 0 || res.rebuiltBytes < uint64(res.damagedBytes)*9/10 || res.rebuiltBytes > uint64(2*res.damagedBytes) {
 		return res, failf("repair rebuilt %d bytes for %d damaged bytes", res.rebuiltBytes, res.damagedBytes)
 	}
 	layout := c.Layout()
 	limit := uint64((layout.K+layout.M)*res.damagedBytes) + 64<<10
 	if limit*2 > uint64(res.bucketBytes) {
 		return res, failf("the bucket (%d bytes) is too small to tell repair traffic for %d damaged bytes from a bucket copy", res.bucketBytes, res.damagedBytes)
+	}
+	if hasMoved && res.movedBytes == 0 {
+		return res, failf("repair moved 0 shard bytes for %d damaged bytes", res.damagedBytes)
 	}
 	if hasMoved && res.movedBytes > limit {
 		return res, failf("repair moved %d shard bytes for %d damaged bytes (limit %d) in a %d-byte bucket", res.movedBytes, res.damagedBytes, limit, res.bucketBytes)

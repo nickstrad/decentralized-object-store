@@ -411,3 +411,65 @@ func TestCanaryE2ObjectOpsUnavailableDuringSplitFails(t *testing.T) {
 		})
 	}
 }
+
+type faultyDiscardHealthCluster struct {
+	*simCluster
+	mutate func(h *storage.Health)
+}
+
+func (f faultyDiscardHealthCluster) Health(n Node) (storage.Health, error) {
+	h, err := f.simCluster.Health(n)
+	if err == nil && f.mutate != nil {
+		f.mutate(&h)
+	}
+	return h, err
+}
+
+func TestCanaryE2AndE8UnrecordedDiscardCounterFails(t *testing.T) {
+	cases := []struct {
+		name   string
+		run    func(c Cluster) error
+		mutate func(h *storage.Health)
+		want   string
+	}{
+		{
+			name: "E2 discards logged but Health.Discards is zero",
+			run: func(c Cluster) error {
+				_, err := scenarioE2(c, simBounds, e2Params{objects: 4, size: 3000, detect: 500 * time.Millisecond, keepCut: time.Second})
+				return err
+			},
+			mutate: func(h *storage.Health) { h.Discards = 0 },
+			want:   "Health.Discards=0",
+		},
+		{
+			name: "E8 discards logged but Health.Discards is zero",
+			run: func(c Cluster) error {
+				_, err := scenarioE8(c, simBounds, e8Params{objects: 4, detect: 500 * time.Millisecond})
+				return err
+			},
+			mutate: func(h *storage.Health) { h.Discards = 0 },
+			want:   "Health.Discards=0",
+		},
+		{
+			name: "E2 discards logged but Health.Discards undercounts RecentDiscards",
+			run: func(c Cluster) error {
+				_, err := scenarioE2(c, simBounds, e2Params{objects: 4, size: 3000, detect: 500 * time.Millisecond, keepCut: time.Second})
+				return err
+			},
+			mutate: func(h *storage.Health) {
+				if len(h.RecentDiscards) > 1 {
+					h.Discards = 1
+				}
+			},
+			want: "Health.Discards=1",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := runCanary(1, defaultSimOptions(), func(c *simCluster) error {
+				return tc.run(faultyDiscardHealthCluster{simCluster: c, mutate: tc.mutate})
+			})
+			expectCanaryFailure(t, s, tc.want)
+		})
+	}
+}
