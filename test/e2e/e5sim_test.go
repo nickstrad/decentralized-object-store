@@ -6,6 +6,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -346,7 +347,13 @@ func TestE5MigrationEveryFailurePointS(t *testing.T) {
 		t.Fatal("sagasim.Cells() is empty")
 	}
 	var m measure
-	t.Cleanup(func() { m.report(t) })
+	var ran atomic.Int64
+	t.Cleanup(func() {
+		m.report(t)
+		if explicit, ok, err := simtest.Seed(); err == nil && ok && !t.Failed() && ran.Load() == 0 {
+			t.Fatalf("explicit -seed=%d ran 0 seed subtests (check -run pattern)", explicit)
+		}
+	})
 	seeds := seedsFor(t, 1, 4)
 	if len(seeds) == 0 {
 		t.Fatal("seedsFor returned 0 seeds")
@@ -392,6 +399,15 @@ func TestE5MigrationEveryFailurePointS(t *testing.T) {
 			t.Parallel()
 			for _, seed := range mine {
 				t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
+					ran.Add(1)
+					if msg := os.Getenv("E2E_PLANT_E5_FAIL"); msg != "" {
+						simtest.RequireDeterministic(t, seed, func(seed int64) *sim.Sim {
+							s := sim.New(sim.Config{Seed: seed})
+							s.Fail(failf("%s (cell=%s seed=%d)", msg, cell.Name(), seed))
+							return s
+						})
+						return
+					}
 					rep := &sagasim.Report{}
 					simtest.RequireDeterministic(t, seed, sagasim.Run(e5Harness{}, cell, sagasim.RunOptions{Report: rep, Settle: 8 * time.Second}))
 					if rep.State != cell.Want() {

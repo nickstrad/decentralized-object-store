@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -131,6 +132,9 @@ func TestE8LocalFirstMetadataSyncS(t *testing.T) {
 		opts := defaultSimOptions()
 		opts.skew, opts.driftP = 2*time.Second, 500
 		runSim(t, seed, opts, func(c *simCluster) error {
+			if msg := os.Getenv("E2E_PLANT_E8_FAIL"); msg != "" {
+				return failf("%s (seed=%d)", msg, seed)
+			}
 			var err error
 			res, err = scenarioE8(c, simBounds, e8Params{objects: 6, detect: 500 * time.Millisecond})
 			if err != nil {

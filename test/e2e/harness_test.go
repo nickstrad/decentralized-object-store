@@ -5,6 +5,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -39,13 +40,24 @@ func runSim(t *testing.T, seed int64, opts simOptions, body func(c *simCluster) 
 	})
 }
 
+const sweepShards = 4
+
+func shardOf(seed int64) int {
+	return int(uint64(seed) % sweepShards)
+}
+
 func sweep(t *testing.T, seeds []int64, fn func(t *testing.T, seed int64)) {
 	t.Helper()
-	const shards = 4
-	for sh := range shards {
+	var ran atomic.Int64
+	t.Cleanup(func() {
+		if explicit, ok, err := simtest.Seed(); err == nil && ok && !t.Failed() && ran.Load() == 0 {
+			t.Fatalf("explicit -seed=%d ran 0 seed subtests (check -run pattern)", explicit)
+		}
+	})
+	for sh := range sweepShards {
 		var mine []int64
-		for i, s := range seeds {
-			if i%shards == sh {
+		for _, s := range seeds {
+			if shardOf(s) == sh {
 				mine = append(mine, s)
 			}
 		}
@@ -55,7 +67,10 @@ func sweep(t *testing.T, seeds []int64, fn func(t *testing.T, seed int64)) {
 		t.Run(fmt.Sprintf("shard=%d", sh), func(t *testing.T) {
 			t.Parallel()
 			for _, seed := range mine {
-				t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) { fn(t, seed) })
+				t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
+					ran.Add(1)
+					fn(t, seed)
+				})
 			}
 		})
 	}
