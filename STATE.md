@@ -89,12 +89,20 @@ adversarial seat; Astra has no Chunk 7 role. Chunk 8 returns to the seats above.
 
 ## Open items (none blocks the build)
 
-- CI: GREEN on main since 631b44e (2026-11-22). ci.yml runs gates, prose provenance and
-  the 33 fast canaries (`CANARY_FAST=1`) on every push in about 18 minutes; the full
-  canary set runs from .github/workflows/canaries.yml on tooling changes, weekly and on
-  demand (hours; check `gh run list --workflow "Gate canaries"` — the first full run was
-  still in progress when this was written). Both tooling changes were reviewed by Neon
-  (agent_work/ci-canaries/REVIEW-2.md, NITS closed).
+- CI — OWNER RULING (Nick, 2026-11-22, /root/briefs/objstore-ci-fast-ruling-2026-11-22.md):
+  push-triggered CI runs the FAST LANE ONLY. ci.yml runs `agent_work/gates/ci-fast.sh`
+  (gates G0, G1, G6 in the dev container: build, static checks, unit tests with coverage
+  floors, pinned seeds plus the default three-seed sweep) and prose provenance; about 1.5
+  minutes locally on main. A red fast lane is a real blocker. Everything long is on demand
+  and NOT deleted (commands in the ci-fast.sh header): the full gate, fuzz budgets, seed
+  sweeps, and the gate canaries (canaries.yml is now started by hand only; no push, PR or
+  weekly trigger). The full local gate on vm-1 is still the landing authority, unchanged.
+  WATCH at the Chunk 7 landing: the end-to-end suite adds minutes to G1 (261 s in the
+  builder's gate under load); if the fast lane leaves low single-digit minutes, trim what
+  the e2e package runs at default seeds, not the ruling.
+  Known and left alone: the full gate cannot finish on a GitHub runner (its host-side
+  cluster check cannot write into the container-owned result directory — the cause of the
+  last red CI runs on main); it runs on vm-1 as root.
 - docs/c4 diagrams 1 and 2 still draw a "Sync client" person marked "not to be built"
   (OQ-7 decided node-level sync only). Removing it renumbers both views — owner: Nick,
   or do it in Chunk 8's final C4 pass.
