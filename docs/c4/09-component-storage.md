@@ -1,6 +1,6 @@
 # C4 Level 3 — Component: storage (`internal/storage`)
 
-**As built.** The shard format, chunk store, striping, manifest, placement, shard request protocol and the node's put and get paths exist and match this diagram (checked against `internal/storage` when Chunk 2 landed, 2026-11-21). Relationships 1, 5, 11, 12, 16 and 17 are as built since Chunk 6 (checked against `internal/node`, 2026-11-22). The one caller of the package's engine is the Node core (`internal/node`). The package imports only `internal/env` and `internal/erasure`: it does not call gossip, the metadata layer or Merkle.
+**As built.** The shard format, chunk store, striping, manifest, placement, shard request protocol and the node's put and get paths exist and match this diagram (checked against `internal/storage` when Chunk 2 landed, 2026-11-21). Relationships 1, 5, 11, 12, 16 and 17 are as built since Chunk 6 (checked against `internal/node`, 2026-11-22; relationship 12 again for the migration's shard check, 2026-11-23). The one caller of the package's engine is the Node core (`internal/node`). The package imports only `internal/env` and `internal/erasure`: it does not call gossip, the metadata layer or Merkle.
 
 Model: diagram `component-storage` in [model.json](model.json). Source: PLAN.md sections 3, 4.2 (Chunks 2 and 6), 7.2, 7.4; code in `shard.go`, `chunkstore.go`, `stripe.go`, `manifest.go`, `placement.go`, `shardproto.go`, `node.go`.
 The HTTP object API is its own package, `internal/storage/httpapi`, and its own container (`c-api`). `api.go` in this package holds only what the API and the node core share: the request and response types and the API error sentinels (wire codes 160 to 163).
@@ -158,7 +158,7 @@ Terminal rendering, in 5 parts. Each numbered relationship appears in exactly on
 | 9 | Local chunk store | Environment interfaces | built | Write then sync, verified read, list, delete (Disk) |
 | 10 | Put and get paths | Object manifest | built | PUT fills in and returns the manifest; GET takes each shard's node and checksum from it |
 | 11 | Node core | Object manifest | built | Stores the encoded manifest, with the content type, as the object record under the object's OCC manifest key, and decodes it (`DecodeManifest`) for every read, inventory pass and migration copy |
-| 12 | Node core | Local chunk store | built | Shard inventory and repair through `Node.Store()`: lists a bucket's shards and reads their headers for the scrub, reads blobs to answer and to verify, writes a rebuilt shard (`Put`), and deletes collected and purged shards (`Delete`) |
+| 12 | Node core | Local chunk store | built | Shard inventory and repair through `Node.Store()`: lists a bucket's shards and reads their headers for the scrub, reads blobs to answer and to verify, and to check a copied shard against the checksum a migration names, writes a rebuilt shard (`Put`), and deletes collected and purged shards (`Delete`) |
 | 13 | Object striping | Shard file format | built | Wraps each shard in a header on encode; checks header and checksum on decode |
 | 14 | Put and get paths | Shard request protocol | built | Encodes requests to peers; decodes requests it serves |
 | 15 | Shard request protocol | Shard file format | built | Names the shard by its canonical blob name |
