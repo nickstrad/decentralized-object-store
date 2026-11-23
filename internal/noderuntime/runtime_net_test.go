@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -22,29 +24,6 @@ import (
 
 func TestMain(m *testing.M) { os.Exit(leakcheck.Main(m, 5*time.Second)) }
 
-func freeAddr(t testing.TB) string {
-	t.Helper()
-	for range 20 {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		addr := l.Addr().String()
-		u, err := net.ListenPacket("udp", addr)
-		if err := l.Close(); err != nil {
-			t.Fatal(err)
-		}
-		if err == nil {
-			if err := u.Close(); err != nil {
-				t.Fatal(err)
-			}
-			return addr
-		}
-	}
-	t.Fatal("no free loopback port")
-	return ""
-}
-
 func realConfig() node.Config {
 	return node.Config{
 		Layout:         storage.Layout{K: 2, M: 1, StripeSize: 64 << 10},
@@ -58,27 +37,27 @@ func realConfig() node.Config {
 }
 
 type realCluster struct {
-	rts []*noderuntime.Runtime
+	rts  []*noderuntime.Runtime
+	dirs []string
+	ids  []env.NodeID
+	cfg  node.Config
 }
 
-func startReal(t *testing.T, n int, cfg node.Config) *realCluster {
+func startRealWith(t testing.TB, n int, cfg node.Config, pick func(int) ([]string, error)) (*realCluster, error) {
 	t.Helper()
-	var ids []env.NodeID
-	for range n {
-		ids = append(ids, env.NodeID(freeAddr(t)))
+	var usedIDs []env.NodeID
+	var usedCfg node.Config
+	rts, dirs, err := noderuntime.StartLoopbackCluster(t, n, pick, func(i int, ids []env.NodeID, dir string) noderuntime.RuntimeConfig {
+		c := cfg
+		c.Seeds = ids
+		usedIDs = ids
+		usedCfg = c
+		return noderuntime.RuntimeConfig{ID: ids[i], Region: env.Region(fmt.Sprintf("r%d", i%3)), DataDir: dir, Node: c}
+	})
+	if err != nil {
+		return nil, err
 	}
-	cfg.Seeds = ids
-	c := &realCluster{}
-	for i, id := range ids {
-		rt, err := noderuntime.NewRuntime(noderuntime.RuntimeConfig{ID: id, Region: env.Region(fmt.Sprintf("r%d", i%3)), DataDir: t.TempDir(), Node: cfg})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := rt.Start(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-		c.rts = append(c.rts, rt)
-	}
+	c := &realCluster{rts: rts, dirs: dirs, ids: usedIDs, cfg: usedCfg}
 	t.Cleanup(func() {
 		for _, rt := range c.rts {
 			if err := rt.Close(); err != nil {
@@ -86,6 +65,15 @@ func startReal(t *testing.T, n int, cfg node.Config) *realCluster {
 			}
 		}
 	})
+	return c, nil
+}
+
+func startReal(t *testing.T, n int, cfg node.Config) *realCluster {
+	t.Helper()
+	c, err := startRealWith(t, n, cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return c
 }
 
@@ -216,14 +204,13 @@ func TestCanaryShutdownLeak(t *testing.T) {
 	release := make(chan struct{})
 	noderuntime.SetCanaryUntrackedGoroutine(release)
 	t.Cleanup(func() { noderuntime.SetCanaryUntrackedGoroutine(nil) })
-	rt, err := noderuntime.NewRuntime(noderuntime.RuntimeConfig{ID: env.NodeID(freeAddr(t)), Region: "r0", DataDir: t.TempDir(), Node: realConfig()})
+	rts, _, err := noderuntime.StartLoopbackCluster(t, 1, nil, func(_ int, ids []env.NodeID, dir string) noderuntime.RuntimeConfig {
+		return noderuntime.RuntimeConfig{ID: ids[0], Region: "r0", DataDir: dir, Node: realConfig()}
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := rt.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if err := rt.Close(); err != nil {
+	if err := rts[0].Close(); err != nil {
 		t.Fatal(err)
 	}
 	if err := before.Leaked(200 * time.Millisecond); !errors.Is(err, leakcheck.ErrLeak) {
@@ -249,4 +236,124 @@ func TestRealRuntimeLeavesNoGoroutineBehind(t *testing.T) {
 	if err := before.Leaked(5 * time.Second); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TestStartRealRetriesLostPortWithoutLeaking proves startRealWith retries a
+// cluster onto fresh ports on UDP address-in-use without leaking goroutines,
+// fails immediately on non-address-in-use errors, and stops after five
+// attempts when a port remains blocked.
+func TestStartRealRetriesLostPortWithoutLeaking(t *testing.T) {
+	t.Run("retries on UDP address already in use without leaking", func(t *testing.T) {
+		before := leakcheck.Take()
+		blocker, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := blocker.Close(); err != nil {
+				t.Error(err)
+			}
+		}()
+		blockedAddr := blocker.LocalAddr().String()
+		picks := 0
+		var firstAddrs []string
+		pick := func(n int) ([]string, error) {
+			picks++
+			if picks == 1 {
+				free, err := noderuntime.FreeLoopbackAddrs(n - 1)
+				if err != nil {
+					return nil, err
+				}
+				firstAddrs = append(slices.Clone(free), blockedAddr)
+				return slices.Clone(firstAddrs), nil
+			}
+			return noderuntime.FreeLoopbackAddrs(n)
+		}
+		c, err := startRealWith(t, 3, realConfig(), pick)
+		if err != nil {
+			t.Fatalf("startRealWith did not survive lost UDP port %s: %v", blockedAddr, err)
+		}
+		if picks != 2 {
+			t.Fatalf("address picker called %d times, want 2", picks)
+		}
+		for _, rt := range c.rts {
+			if string(rt.ID()) == blockedAddr {
+				t.Fatalf("cluster node used blocked address %s", blockedAddr)
+			}
+			if slices.Contains(firstAddrs, string(rt.ID())) {
+				t.Fatalf("cluster node reused first-attempt address %s", rt.ID())
+			}
+		}
+		eventually(t, 20*time.Second, "three nodes join after port retry", func() bool { return c.joined(3) })
+		for _, rt := range c.rts {
+			if err := rt.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := before.Leaked(5 * time.Second); err != nil {
+			t.Fatalf("goroutines leaked after retry and close: %v", err)
+		}
+	})
+
+	t.Run("non-address-in-use error fails at once without leaking", func(t *testing.T) {
+		before := leakcheck.Take()
+		picks := 0
+		pick := func(n int) ([]string, error) {
+			picks++
+			free, err := noderuntime.FreeLoopbackAddrs(n - 1)
+			if err != nil {
+				return nil, err
+			}
+			return append(free, "127.0.0.1:99999"), nil
+		}
+		c, err := startRealWith(t, 3, realConfig(), pick)
+		if err == nil {
+			t.Fatalf("startRealWith succeeded on invalid port: %+v", c)
+		}
+		if picks != 1 {
+			t.Fatalf("non-address-in-use error retried: picker called %d times, want 1 (err=%v)", picks, err)
+		}
+		if strings.Contains(err.Error(), "address already in use") {
+			t.Fatalf("unexpected address-in-use error: %v", err)
+		}
+		if err := before.Leaked(5 * time.Second); err != nil {
+			t.Fatalf("goroutines leaked after non-address-in-use start failure: %v", err)
+		}
+	})
+
+	t.Run("exhausting retries fails with last error without leaking", func(t *testing.T) {
+		before := leakcheck.Take()
+		blocker, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := blocker.Close(); err != nil {
+				t.Error(err)
+			}
+		}()
+		blockedAddr := blocker.LocalAddr().String()
+		picks := 0
+		pick := func(n int) ([]string, error) {
+			picks++
+			free, err := noderuntime.FreeLoopbackAddrs(n - 1)
+			if err != nil {
+				return nil, err
+			}
+			return append(free, blockedAddr), nil
+		}
+		c, err := startRealWith(t, 2, realConfig(), pick)
+		if err == nil {
+			t.Fatalf("startRealWith succeeded despite permanently blocked port %s: %+v", blockedAddr, c)
+		}
+		if picks != 5 {
+			t.Fatalf("address picker called %d times, want 5", picks)
+		}
+		if !strings.Contains(err.Error(), "address already in use") {
+			t.Fatalf("got error %v, want address already in use", err)
+		}
+		if err := before.Leaked(5 * time.Second); err != nil {
+			t.Fatalf("goroutines leaked after exhausting start retries: %v", err)
+		}
+	})
 }

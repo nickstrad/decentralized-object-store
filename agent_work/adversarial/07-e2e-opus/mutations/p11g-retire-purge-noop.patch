@@ -1,0 +1,12 @@
+diff -ruN a/internal/node/migrate.go b/internal/node/migrate.go
+--- a/internal/node/migrate.go	2026-11-23 05:02:30.327835781 +0000
++++ b/internal/node/migrate.go	2026-11-23 05:02:30.328835866 +0000
+@@ -828,7 +828,7 @@
+ 				done(err)
+ 				return
+ 			}
+-			g.purge(m.Bucket, g.n.deadVersions(rd, m.Bucket), func(err error) {
++			func(_ string, _ []storage.VersionID, f func(error)) { f(nil) }(m.Bucket, g.n.deadVersions(rd, m.Bucket), func(err error) {
+ 				if err != nil {
+ 					done(err)
+ 					return

@@ -28,7 +28,7 @@ func TestAckOracleKeepsIdenticalPayloadsOnTwoKeysApart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.acks.check(rd, only); err != nil {
+	if _, err := h.acks.Check(rd, only); err != nil {
 		t.Fatalf("the oracle failed a current write: %v", err)
 	}
 	if _, err := n.OCC().Delete(k1, occ.Unconditional()); err != nil {
@@ -38,7 +38,7 @@ func TestAckOracleKeepsIdenticalPayloadsOnTwoKeysApart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tally, err := h.acks.check(rd, only); err == nil {
+	if tally, err := h.acks.Check(rd, only); err == nil {
 		t.Fatalf("the oracle explained a silently lost write on k1 as %v because k2 once held the same payload", tally)
 	}
 }

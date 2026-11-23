@@ -134,18 +134,30 @@ func freePort(t *testing.T) string {
 // HTTP listener cannot bind.
 func TestServeAndShutdownOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	id := freePort(t)
-	ready := make(chan string, 1)
-	done := make(chan int, 1)
-	var stderr safeBuffer
-	go func() {
-		done <- run(ctx, []string{"-id", id, "-region", "a", "-data", t.TempDir(), "-http", "127.0.0.1:0", "-k", "1", "-m", "0", "-stripe", "1024"}, &stderr, func(a string, _ *noderuntime.Runtime) { ready <- a })
-	}()
-	var addr string
-	select {
-	case addr = <-ready:
-	case code := <-done:
-		t.Fatalf("objnode exited %d: %s", code, stderr.String())
+	defer cancel()
+	var (
+		id     string
+		addr   string
+		done   chan int
+		stderr *safeBuffer
+	)
+	for attempt := 0; addr == ""; attempt++ {
+		id = freePort(t)
+		ready := make(chan string, 1)
+		done = make(chan int, 1)
+		stderr = &safeBuffer{}
+		errs := stderr
+		go func() {
+			done <- run(ctx, []string{"-id", id, "-region", "a", "-data", t.TempDir(), "-http", "127.0.0.1:0", "-k", "1", "-m", "0", "-stripe", "1024"}, errs, func(a string, _ *noderuntime.Runtime) { ready <- a })
+		}()
+		select {
+		case addr = <-ready:
+		case code := <-done:
+			if attempt < 3 && strings.Contains(stderr.String(), "address already in use") {
+				continue
+			}
+			t.Fatalf("objnode exited %d: %s", code, stderr.String())
+		}
 	}
 	resp, err := http.Get("http://" + addr + "/_health")
 	if err != nil {
@@ -170,21 +182,30 @@ func TestServeAndShutdownOnCancel(t *testing.T) {
 // TestServeExitsNonZeroWhenTheNodeLoopPanics proves an injected panic on the
 // node loop logs the failure and terminates objnode with exit code 1.
 func TestServeExitsNonZeroWhenTheNodeLoopPanics(t *testing.T) {
-	var stderr safeBuffer
-	done := make(chan int, 1)
-	go func() {
-		done <- run(context.Background(), []string{"-id", freePort(t), "-region", "a", "-data", t.TempDir(), "-http", "127.0.0.1:0", "-k", "1", "-m", "0", "-stripe", "1024"}, &stderr,
-			func(_ string, rt *noderuntime.Runtime) {
-				go func() { _ = rt.Inspect(context.Background(), func(*node.Node) { panic("injected") }) }()
-			})
-	}()
-	select {
-	case code := <-done:
-		if code != 1 {
-			t.Fatalf("objnode exited %d after its node loop panicked, want 1: %s", code, stderr.String())
+	var stderr *safeBuffer
+	var code int
+	for attempt := 0; ; attempt++ {
+		stderr = &safeBuffer{}
+		errs := stderr
+		done := make(chan int, 1)
+		go func() {
+			done <- run(context.Background(), []string{"-id", freePort(t), "-region", "a", "-data", t.TempDir(), "-http", "127.0.0.1:0", "-k", "1", "-m", "0", "-stripe", "1024"}, errs,
+				func(_ string, rt *noderuntime.Runtime) {
+					go func() { _ = rt.Inspect(context.Background(), func(*node.Node) { panic("injected") }) }()
+				})
+		}()
+		select {
+		case code = <-done:
+		case <-time.After(30 * time.Second):
+			t.Fatalf("objnode kept running after its node loop panicked: %s", stderr.String())
 		}
-	case <-time.After(30 * time.Second):
-		t.Fatalf("objnode kept running after its node loop panicked: %s", stderr.String())
+		if code == 1 && attempt < 3 && strings.Contains(stderr.String(), "address already in use") {
+			continue
+		}
+		break
+	}
+	if code != 1 {
+		t.Fatalf("objnode exited %d after its node loop panicked, want 1: %s", code, stderr.String())
 	}
 	if !strings.Contains(stderr.String(), "panic") {
 		t.Fatalf("no panic in the log: %s", stderr.String())
@@ -206,4 +227,35 @@ func (s *safeBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.b.String()
+}
+
+func TestLeakReportCountsAGoroutineUntilItEnds(t *testing.T) {
+	release := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		<-release
+	}()
+	released := false
+	defer func() {
+		if !released {
+			close(release)
+		}
+		<-done
+	}()
+	var b strings.Builder
+	if n := leakReport(&b, 0); n < 1 || !strings.Contains(b.String(), "TestLeakReportCountsAGoroutineUntilItEnds") {
+		t.Fatalf("leakReport = %d and does not list the blocked goroutine: %q", n, b.String())
+	}
+	close(release)
+	released = true
+	<-done
+	b.Reset()
+	leakReport(&b, 2*time.Second)
+	if strings.Contains(b.String(), "TestLeakReportCountsAGoroutineUntilItEnds") {
+		t.Fatalf("leakReport still lists the goroutine after it ended: %q", b.String())
+	}
+	if !strings.Contains(b.String(), "goroutines left at exit: ") {
+		t.Fatalf("no summary line: %q", b.String())
+	}
 }

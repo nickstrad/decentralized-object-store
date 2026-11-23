@@ -1,0 +1,1 @@
+ok  	github.com/nickstrad/decentralized-object-store/check07/fixture	3.468s

@@ -1,0 +1,16 @@
+target	package	seconds	exit	execs	new_interesting	corpus_total	crasher
+FuzzOCCConditionalWrite	github.com/nickstrad/decentralized-object-store/internal/occ	900	0	795497	31	315	none
+FuzzMerkleDiff	github.com/nickstrad/decentralized-object-store/internal/merkle	900	0	1206992	65	360	none
+FuzzClusterNemesis	github.com/nickstrad/decentralized-object-store/test/e2e	900	0	234	148	222	none
+FuzzObjectAPI	github.com/nickstrad/decentralized-object-store/internal/storage/httpapi	300	0	1088426	14	156	none
+FuzzShardDecode	github.com/nickstrad/decentralized-object-store/internal/storage	300	0	2048357	0	18	none
+FuzzSimSchedule	github.com/nickstrad/decentralized-object-store/internal/sim	300	0	97121	7	493	none
+FuzzSagaLogRecover	github.com/nickstrad/decentralized-object-store/internal/saga	300	0	1732817	4	42	none
+FuzzErasureCoding	github.com/nickstrad/decentralized-object-store/internal/erasure	900	0	1638239	1	175	none
+FuzzOCCMergeLaws	github.com/nickstrad/decentralized-object-store/internal/occ	300	0	211166	19	325	none
+FuzzOCCDecode	github.com/nickstrad/decentralized-object-store/internal/occ	300	0	1684894	5	434	none
+FuzzFrame	github.com/nickstrad/decentralized-object-store/internal/noderuntime	300	0	1108768	0	14	none
+FuzzMerkleWire	github.com/nickstrad/decentralized-object-store/internal/merkle	300	0	1286188	1	108	none
+FuzzViewMergeLaws	github.com/nickstrad/decentralized-object-store/internal/gossip	300	0	1098174	1	135	none
+FuzzGossipWire	github.com/nickstrad/decentralized-object-store/internal/gossip	300	0	1215010	0	88	none
+FuzzGF256	github.com/nickstrad/decentralized-object-store/internal/erasure	300	0	1465627	0	35	none

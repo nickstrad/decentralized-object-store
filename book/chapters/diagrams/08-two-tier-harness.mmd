@@ -1,0 +1,7 @@
+graph TD
+  SCEN[Shared scenarios E1-E4, E6, E8] --> CLUS[Cluster interface + Ledger]
+  CLUS --> TIERS[Tier S: 21 sim nodes + apiNode]
+  CLUS --> TIERR[Tier R: 9 -race procs]
+  TIERS --> ORAC[Oracles: RequireDeterministic; fuzz s.Verify]
+  TIERR --> HTTP[HTTP API + e2efault]
+  NEM[E7 nemesis + Fuzz] --> TIERS

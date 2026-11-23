@@ -3,7 +3,6 @@ package noderuntime
 import (
 	"context"
 	"errors"
-	"net"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -92,21 +91,9 @@ func TestRequestCallsBackExactlyOnceOnEveryPath(t *testing.T) {
 // sockets invokes its callback once for oversized peer requests and
 // non-listening peers.
 func TestNetworkedRequestCallsBackExactlyOnce(t *testing.T) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := l.Addr().String()
-	if err := l.Close(); err != nil {
-		t.Fatal(err)
-	}
-	rt, err := NewRuntime(RuntimeConfig{ID: env.NodeID(addr), Region: "r0", Listen: addr, DataDir: t.TempDir(), Node: node.Config{Layout: soloLayout()}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := rt.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	rt := startLoopbackRuntime(t, func(addr, dir string) RuntimeConfig {
+		return RuntimeConfig{ID: env.NodeID(addr), Region: "r0", Listen: addr, DataDir: dir, Node: node.Config{Layout: soloLayout()}}
+	})
 	defer func() {
 		if err := rt.Close(); err != nil {
 			t.Error(err)

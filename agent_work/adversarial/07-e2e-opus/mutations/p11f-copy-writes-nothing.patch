@@ -1,0 +1,12 @@
+diff -ruN a/internal/node/migrate.go b/internal/node/migrate.go
+--- a/internal/node/migrate.go	2026-11-23 05:02:30.313834589 +0000
++++ b/internal/node/migrate.go	2026-11-23 05:02:30.314834674 +0000
+@@ -332,7 +332,7 @@
+ 				return
+ 			}
+ 			g.src.next = uint64(v)
+-			cp.Put(m.Bucket, o.key, res.Data, func(man *storage.Manifest, err error) {
++			func(_ string, _ string, _ []byte, f func(*storage.Manifest, error)) { f(o.rec.Manifest, nil) }(m.Bucket, o.key, res.Data, func(man *storage.Manifest, err error) {
+ 				if err != nil {
+ 					finish(fmt.Errorf("node: copy %s/%s: write: %w", m.Bucket, o.key, err))
+ 					return

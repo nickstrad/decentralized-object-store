@@ -46,3 +46,40 @@ func TestObjectErrorMessage(t *testing.T) {
 		t.Fatal("ObjectError does not unwrap")
 	}
 }
+
+func TestCodeTableJoinedUnavailablePrecedesShardCauses(t *testing.T) {
+	table, err := storage.Codes()
+	mustNil(t, err)
+	cases := []struct {
+		name     string
+		err      error
+		wantCode env.Code
+		wantErr  error
+	}{
+		{"unavailable with missing shard encodes as unavailable", errors.Join(storage.ErrUnavailable, storage.ErrNotFound), storage.CodeUnavailable, storage.ErrUnavailable},
+		{"unavailable with corrupt shard encodes as unavailable", errors.Join(storage.ErrUnavailable, storage.ErrCorrupt), storage.CodeUnavailable, storage.ErrUnavailable},
+		{"unavailable with env not found encodes as unavailable", errors.Join(storage.ErrUnavailable, env.ErrNotFound), storage.CodeUnavailable, storage.ErrUnavailable},
+		{"unavailable with env timeout encodes as unavailable", errors.Join(storage.ErrUnavailable, env.ErrTimeout), storage.CodeUnavailable, storage.ErrUnavailable},
+		{"unavailable with env unreachable encodes as unavailable", errors.Join(storage.ErrUnavailable, env.ErrUnreachable), storage.CodeUnavailable, storage.ErrUnavailable},
+		{"unavailable with busy shard encodes as unavailable", errors.Join(storage.ErrUnavailable, storage.ErrBusy), storage.CodeUnavailable, storage.ErrUnavailable},
+		{"unavailable with exists shard encodes as unavailable", errors.Join(storage.ErrUnavailable, storage.ErrExists), storage.CodeUnavailable, storage.ErrUnavailable},
+		{"unavailable with invalid shard encodes as unavailable", errors.Join(storage.ErrUnavailable, storage.ErrInvalid), storage.CodeUnavailable, storage.ErrUnavailable},
+		{"unavailable with all shard causes encodes as unavailable", errors.Join(storage.ErrUnavailable, storage.ErrNotFound, storage.ErrCorrupt, env.ErrNotFound, env.ErrTimeout, env.ErrUnreachable, storage.ErrBusy, storage.ErrExists, storage.ErrInvalid), storage.CodeUnavailable, storage.ErrUnavailable},
+		{"standalone missing shard encodes as not found", storage.ErrNotFound, storage.CodeNotFound, storage.ErrNotFound},
+		{"standalone corrupt shard encodes as corrupt", storage.ErrCorrupt, storage.CodeCorrupt, storage.ErrCorrupt},
+		{"standalone exists shard encodes as exists", storage.ErrExists, storage.CodeExists, storage.ErrExists},
+		{"standalone invalid shard encodes as invalid", storage.ErrInvalid, storage.CodeInvalid, storage.ErrInvalid},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			code, msg := table.Encode(tc.err)
+			if code != tc.wantCode {
+				t.Fatalf("Encode(%v) = code %d, want %d", tc.err, code, tc.wantCode)
+			}
+			back := table.Decode(code, msg)
+			if !errors.Is(back, tc.wantErr) {
+				t.Fatalf("Decode(%d) = %v, want %v", code, back, tc.wantErr)
+			}
+		})
+	}
+}

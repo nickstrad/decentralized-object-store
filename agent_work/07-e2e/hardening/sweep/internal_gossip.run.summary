@@ -1,0 +1,54 @@
+--- PASS: TestStateTransitions (0.01s)
+--- PASS: TestIncarnationRules (0.00s)
+--- PASS: TestViewAccessors (0.00s)
+--- PASS: TestViewApplyRemoveWithoutReadStaysBounded (0.00s)
+--- PASS: TestProbeTargetRotation (0.00s)
+--- PASS: TestProbeAndIndirectProbe (0.00s)
+--- PASS: TestPiggybackSelectionAndLimit (0.00s)
+--- PASS: TestJoin (0.00s)
+--- PASS: TestSyncRequests (0.00s)
+--- PASS: TestOperationsAfterLeave (0.00s)
+--- PASS: TestErrors (0.00s)
+--- PASS: TestEncodeStateIsCanonical (0.00s)
+--- PASS: TestPropViewMergeIsCommutative (0.00s)
+--- PASS: TestFuzzSeedsRunWithoutSkipping (0.00s)
+--- PASS: TestFuzzSeedsDrawNonEmptyViews (0.00s)
+--- PASS: TestPropIncarnationMonotonic (0.04s)
+--- PASS: TestDeadEntryLifetime (1.25s)
+--- PASS: TestJoinSeedsAreRemembered (0.00s)
+--- PASS: TestRelayBounds (0.02s)
+--- PASS: TestViewBounds (0.41s)
+--- PASS: TestCallbacksNeverRunInsideTheRegisteringCall (0.00s)
+--- PASS: TestRepairNits (0.00s)
+--- PASS: TestWireRoundTrip (0.00s)
+--- PASS: TestDecodeMalformed (0.00s)
+--- PASS: TestEncodeRejectsInvalidMessages (0.02s)
+--- PASS: TestJoinNoReachableSeedDST (4.57s)
+--- PASS: TestSWIMRefutationDST (63.64s)
+--- PASS: TestSWIMPartitionHealDST (81.50s)
+--- PASS: TestSWIMCrashDetectionDST (135.79s)
+--- PASS: TestDeadEntriesStayPurgedDST (0.00s)
+--- PASS: TestSWIMLongPartitionHealDST (0.00s)
+--- PASS: TestSWIMRestartSameIDDST (0.00s)
+--- PASS: TestSWIMAsymmetricLinkDST (261.28s)
+--- PASS: TestCanaryNoIndirectProbe (320.86s)
+--- PASS: TestSWIMConvergenceDST (0.00s)
+--- PASS: FuzzGossipWire (0.00s)
+--- PASS: FuzzViewMergeLaws (0.00s)
+ok  	github.com/nickstrad/decentralized-object-store/internal/gossip	1296.555s
+dst_test.go:647: MEASURE partition heal ms (N=12, bound 1m0s) runs=3736 min=3500 median=6500 p99=10500 max=13000 mean_milli=6668629
+dst_test.go:582: MEASURE crash detection ms (N=20, loss 50000 ppm, bound 40s) runs=3736 min=21500 median=23000 p99=26500 max=29500 mean_milli=23289213
+dst_test.go:1013: MEASURE long partition heal ms (members joined through Join and the seed is across the cut, N=5, retention 20s, bound 1m30s) runs=3736 min=2000 median=7000 p99=14500 max=18000 mean_milli=7251873
+dst_test.go:1013: MEASURE long partition heal ms (the only seed crashed, so only tombstones point across the cut, N=5, retention 20s, bound 1m30s) runs=3736 min=2000 median=12000 p99=30500 max=45000 mean_milli=12822938
+dst_test.go:450: MEASURE converge N=20 log2N=5 bound=40 periods: periods-to-converge runs=3736 min=0 median=8 p99=21 max=25 mean_milli=8709
+dst_test.go:451: MEASURE converge N=20 milli-datagrams per node per period runs=3736 min=2576 median=3240 p99=3943 max=4170 mean_milli=3258740
+dst_test.go:452: MEASURE converge N=20 false Died events (healthy nodes, any observer) runs=3736 min=0 median=0 p99=0 max=0 mean_milli=0
+dst_test.go:498: MEASURE asymmetric suspicions runs=3736 min=0 median=0 p99=0 max=0 mean_milli=0
+dst_test.go:519: MEASURE canary suspicions runs=3736 min=395 median=490 p99=532 max=555 mean_milli=489810
+dst_test.go:520: MEASURE canary evictions runs=3736 min=0 median=0 p99=0 max=0 mean_milli=0
+dst_test.go:450: MEASURE converge N=100 log2N=7 bound=56 periods: periods-to-converge runs=3736 min=7 median=26 p99=32 max=35 mean_milli=25378
+dst_test.go:451: MEASURE converge N=100 milli-datagrams per node per period runs=3736 min=2562 median=2899 p99=3273 max=3463 mean_milli=2902951
+dst_test.go:452: MEASURE converge N=100 false Died events (healthy nodes, any observer) runs=3736 min=0 median=0 p99=0 max=2 mean_milli=0
+dst_test.go:450: MEASURE converge N=50 log2N=6 bound=48 periods: periods-to-converge runs=3736 min=0 median=18 p99=27 max=30 mean_milli=16653
+dst_test.go:451: MEASURE converge N=50 milli-datagrams per node per period runs=3736 min=2541 median=3009 p99=3634 max=3868 mean_milli=3030606
+dst_test.go:452: MEASURE converge N=50 false Died events (healthy nodes, any observer) runs=3736 min=0 median=0 p99=0 max=1 mean_milli=0

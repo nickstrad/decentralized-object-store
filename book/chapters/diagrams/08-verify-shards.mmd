@@ -1,0 +1,11 @@
+sequenceDiagram
+  participant C as Coordinator
+  participant H as Dest Holder
+  C->>H: Put shard (Copy)
+  Note over C: Stalls > OrphanGrace
+  C->>H: opVerifyShards(rec, shards)
+  H->>H: Merge staged rec durably
+  H->>H: Verify blob checksum
+  H-->>C: Verified bitmap
+  Note over C: >= k+1 -> Flip/Retire
+  Note over C: < k -> Drop, abort/recopy

@@ -1,6 +1,6 @@
 # C4 Level 2 — Container, runtime and environment view
 
-**As built.** Every container and relationship exists and matches this diagram (checked against `cmd/objnode`, `internal/noderuntime`, `internal/node` and `internal/storage/httpapi` when Chunk 6 landed, 2026-11-22). The target design had one Node runtime in `internal/node`. As built it is two packages: the Node core (`internal/node`), which is the single-threaded node that the simulator also runs, and the Node runtime (`internal/noderuntime`), which holds the sockets, the file disk, the wall clock and the loop goroutine. The Object API is drawn here too, because `cmd/objnode` starts it and it calls the runtime.
+**As built.** Every container and relationship exists and matches this diagram (checked against `cmd/objnode`, `internal/noderuntime`, `internal/node` and `internal/storage/httpapi` when Chunk 6 landed, 2026-11-22; relationship 21 checked again against `test/e2e`, 2026-11-23). The target design had one Node runtime in `internal/node`. As built it is two packages: the Node core (`internal/node`), which is the single-threaded node that the simulator also runs, and the Node runtime (`internal/noderuntime`), which holds the sockets, the file disk, the wall clock and the loop goroutine. The Object API is drawn here too, because `cmd/objnode` starts it and it calls the runtime.
 
 Model: diagram `container-runtime` in [model.json](model.json). Source: PLAN.md sections 2.1, 2.5, 3, 7.1; code in `cmd/objnode/main.go`, `internal/noderuntime` (`runtime.go`, `service.go`, `realenv.go`, `frame.go`, `vfs.go`) and `internal/node` (`node.go`, `mux.go`).
 One protocol core, two environments: `internal/noderuntime` (real) and the DST harness
@@ -172,7 +172,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 10–14 | Node core | Gossip, Storage, Merkle, OCC, Saga | Builds each over the environment and dispatches inbound datagrams and requests to it by channel byte. What it calls on each is rows 6 to 10 of [02-container.md](02-container.md) |
 | 15–19 | Gossip, Storage, Merkle, OCC, Saga | Environment interfaces | Acts only through Clock, Rand, Transport, Disk |
 | 20 | DST harness | Environment interfaces | Implements Clock, Rand, Transport, Disk for every simulated node; its event loop calls the same protocol handlers |
-| 21 | DST harness | Node core | Runs the same `Node` as a simulated process (`node.NewFactory`). Test code: the full-node simulation tests of `internal/node` and the conformance test of `internal/noderuntime`, which runs the same scenarios on the simulator and on loopback sockets |
+| 21 | DST harness | Node core | Runs the same `Node` as a simulated process (`node.NewFactory`). Test code: the full-node simulation tests of `internal/node`, the conformance test of `internal/noderuntime`, which runs the same scenarios on the simulator and on loopback sockets, and the end-to-end suite (`test/e2e`), which runs its scenarios on the simulator and on real `objnode` processes over HTTP |
 
 Differences from the target design:
 

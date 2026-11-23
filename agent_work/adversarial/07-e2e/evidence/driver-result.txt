@@ -1,0 +1,9 @@
+HELD C7 C7/schedule=0/seed=751001: independent_test.go:118: cycles=8 applied=32 skipped=0 puts_ok=65 gets_ok=29 availability_gets=7 migrations=8 compensated=0.
+HELD C7 C7/schedule=0/seed=751003: independent_test.go:118: cycles=8 applied=32 skipped=0 puts_ok=46 gets_ok=32 availability_gets=7 migrations=8 compensated=0.
+HELD C7 C7/schedule=0/seed=751007: independent_test.go:118: cycles=8 applied=32 skipped=0 puts_ok=53 gets_ok=39 availability_gets=7 migrations=8 compensated=0.
+HELD C7 C7/schedule=1/seed=751001: independent_test.go:118: cycles=8 applied=30 skipped=2 puts_ok=70 gets_ok=93 availability_gets=65 migrations=0 compensated=0.
+HELD C7 C7/schedule=1/seed=751003: independent_test.go:118: cycles=8 applied=30 skipped=2 puts_ok=56 gets_ok=108 availability_gets=75 migrations=0 compensated=0.
+HELD C7 C7/schedule=1/seed=751007: independent_test.go:118: cycles=8 applied=28 skipped=4 puts_ok=59 gets_ok=116 availability_gets=72 migrations=0 compensated=0.
+HELD C7 C7/schedule=2/seed=751001: independent_test.go:118: cycles=8 applied=24 skipped=0 puts_ok=22 gets_ok=26 availability_gets=7 migrations=0 compensated=0.
+HELD C7 C7/schedule=2/seed=751003: independent_test.go:118: cycles=8 applied=24 skipped=0 puts_ok=25 gets_ok=25 availability_gets=7 migrations=0 compensated=0.
+HELD C7 C7/schedule=2/seed=751007: independent_test.go:118: cycles=8 applied=24 skipped=0 puts_ok=22 gets_ok=23 availability_gets=7 migrations=0 compensated=0.

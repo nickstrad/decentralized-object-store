@@ -24,24 +24,7 @@ import (
 // files are removed before Close restarts on the same directory, rebuilds its
 // missing shards from peers, and serves the object again.
 func TestShutdownDuringRepairAndRestartOnTheSameDisk(t *testing.T) {
-	cfg := realConfig()
-	var ids []env.NodeID
-	for range 3 {
-		ids = append(ids, env.NodeID(freeAddr(t)))
-	}
-	cfg.Seeds = ids
-	dirs := []string{t.TempDir(), t.TempDir(), t.TempDir()}
-	start := func(i int) *noderuntime.Runtime {
-		rt, err := noderuntime.NewRuntime(noderuntime.RuntimeConfig{ID: ids[i], Region: env.Region(fmt.Sprintf("r%d", i)), DataDir: dirs[i], Node: cfg})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := rt.Start(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-		return rt
-	}
-	c := &realCluster{rts: []*noderuntime.Runtime{start(0), start(1), start(2)}}
+	c := startReal(t, 3, realConfig())
 	bg := context.Background()
 	eventually(t, 20*time.Second, "joined", func() bool { return c.joined(3) })
 	if err := c.rts[0].CreateBucket(bg, storage.BucketSpec{Name: "b"}); err != nil {
@@ -52,7 +35,7 @@ func TestShutdownDuringRepairAndRestartOnTheSameDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	var shards []string
-	if err := filepath.WalkDir(filepath.Join(dirs[1], "shards"), func(p string, d os.DirEntry, err error) error {
+	if err := filepath.WalkDir(filepath.Join(c.dirs[1], "shards"), func(p string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
 			shards = append(shards, p)
 		}
@@ -68,14 +51,14 @@ func TestShutdownDuringRepairAndRestartOnTheSameDisk(t *testing.T) {
 	if err := c.rts[1].Close(); err != nil {
 		t.Fatal(err)
 	}
-	c.rts[1] = start(1)
-	t.Cleanup(func() {
-		for _, rt := range c.rts {
-			if err := rt.Close(); err != nil {
-				t.Error(err)
-			}
-		}
-	})
+	rt, err := noderuntime.NewRuntime(noderuntime.RuntimeConfig{ID: c.ids[1], Region: env.Region("r1"), DataDir: c.dirs[1], Node: c.cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.Start(bg); err != nil {
+		t.Fatal(err)
+	}
+	c.rts[1] = rt
 	eventually(t, 30*time.Second, "the restarted node rebuilds its shards", func() bool {
 		for _, p := range shards {
 			if _, err := os.Stat(p); err != nil {

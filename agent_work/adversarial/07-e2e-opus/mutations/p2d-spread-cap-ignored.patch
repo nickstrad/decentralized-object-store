@@ -1,0 +1,12 @@
+diff -ruN a/internal/storage/placement.go b/internal/storage/placement.go
+--- a/internal/storage/placement.go	2026-11-23 05:02:30.562855781 +0000
++++ b/internal/storage/placement.go	2026-11-23 05:02:30.563855866 +0000
+@@ -181,7 +181,7 @@
+ 			break
+ 		}
+ 		i := rc.find(c.Region)
+-		if rc.counts[i] >= capacity {
++		if false && rc.counts[i] >= capacity {
+ 			continue
+ 		}
+ 		rc.counts[i]++

@@ -341,15 +341,34 @@ func (g *migrator) Copy(c saga.Call, m saga.MigrationInput, done func([]byte, er
 					finish(permanent(fmt.Errorf("node: copy %q for %s: %w", m.Bucket, id, ErrFenced)))
 					return
 				}
-				obj, err := encodeObject(objectRecord{ContentType: o.rec.ContentType, Manifest: man})
-				if err == nil {
-					err = g.setScalar(sk, string(encodeStaged(stagedRecord{Saga: id, SrcETag: o.etag, Object: obj})))
-				}
+				rd, err := g.n.reader()
 				if err != nil {
 					finish(err)
 					return
 				}
-				step(i + 1)
+				// Verify destination holders still carry a write quorum of shards
+				// before writing the staged record (plain presence check: staged
+				// metadata does not exist yet).
+				g.verifyTargets(rd, m.Bucket, false, []verifyTarget{{object: o.key, man: man}}, func(verr error) {
+					if verr != nil {
+						g.n.markDead(m.Bucket, man.Version)
+						finish(verr)
+						return
+					}
+					if g.fenced[id] {
+						finish(permanent(fmt.Errorf("node: copy %q for %s: %w", m.Bucket, id, ErrFenced)))
+						return
+					}
+					obj, err := encodeObject(objectRecord{ContentType: o.rec.ContentType, Manifest: man})
+					if err == nil {
+						err = g.setScalar(sk, string(encodeStaged(stagedRecord{Saga: id, SrcETag: o.etag, Object: obj})))
+					}
+					if err != nil {
+						finish(err)
+						return
+					}
+					step(i + 1)
+				})
 			})
 		})
 	}
@@ -420,7 +439,8 @@ func (g *migrator) root(rd occ.Reader, m saga.MigrationInput, loc, id string) []
 
 // Root computes the Merkle root over (key, SHA-256(contentHash || size)) for
 // either m.From (live manifests) or m.To (this saga's staged records unioned
-// with live manifests already holding one of its copy intents).
+// with live manifests already holding one of its copy intents). For m.To it
+// first verifies and pins destination shards through verifyDest.
 func (g *migrator) Root(c saga.Call, bucket, loc string, done func([]byte, error)) {
 	g.n.later(func() {
 		m, err := saga.DecodeMigrationInput(c.Input)
@@ -428,13 +448,288 @@ func (g *migrator) Root(c saga.Call, bucket, loc string, done func([]byte, error
 			done(nil, permanent(fmt.Errorf("node: root of %q: input %+v: %w", bucket, m, ErrMalformed)))
 			return
 		}
+		id := string(c.Key.Saga)
 		rd, err := g.n.reader()
 		if err != nil {
 			done(nil, err)
 			return
 		}
-		done(g.root(rd, m, loc, string(c.Key.Saga)), nil)
+		if loc != m.To {
+			done(g.root(rd, m, loc, id), nil)
+			return
+		}
+		g.verifyDest(m, id, func(err error) {
+			if err != nil {
+				done(nil, err)
+				return
+			}
+			rd, err := g.n.reader()
+			if err != nil {
+				done(nil, err)
+				return
+			}
+			done(g.root(rd, m, loc, id), nil)
+		})
 	})
+}
+
+// migrationQuorum returns the minimum verified shards per stripe required
+// before a copied version may proceed to flip or manifest swap.
+func (n *Node) migrationQuorum(l storage.Layout) int {
+	if n.cfg.AckQuorum > 0 {
+		return n.cfg.AckQuorum
+	}
+	return min(l.K+1, l.K+l.M)
+}
+
+func encodeVerifyShardsReq(bucket string, requireExpected bool, metaDoc []byte, reqs []verifyShardReq) []byte {
+	var w wbuf
+	w.byte(opVerifyShards)
+	w.str(bucket)
+	if requireExpected {
+		w.byte(1)
+	} else {
+		w.byte(0)
+	}
+	w.bytes(metaDoc)
+	w.uvarint(uint64(len(reqs)))
+	for _, req := range reqs {
+		w.uvarint(uint64(req.version))
+		w.uvarint(uint64(req.stripe))
+		w.uvarint(uint64(req.index))
+		w.b = append(w.b, req.checksum[:]...)
+	}
+	return w.b
+}
+
+func decodeVerifyShardsReq(r *rbuf) (string, bool, []byte, []verifyShardReq, error) {
+	bucket := r.str()
+	reqExp := r.byte() != 0
+	docBytes := r.bytes()
+	cnt := r.uvarint()
+	if r.err == nil && cnt > uint64(len(r.b))/32 {
+		r.fail("verify shards count")
+	}
+	reqs := make([]verifyShardReq, 0, min(cnt, uint64(len(r.b))/32))
+	for i := uint64(0); i < cnt && r.err == nil; i++ {
+		var req verifyShardReq
+		req.version = storage.VersionID(r.uvarint())
+		req.stripe = uint32(r.uvarint())
+		req.index = uint16(r.uvarint())
+		if r.err == nil && len(r.b) < len(req.checksum) {
+			r.fail("verify shards checksum")
+			break
+		}
+		if r.err == nil {
+			copy(req.checksum[:], r.b[:len(req.checksum)])
+			r.b = r.b[len(req.checksum):]
+			reqs = append(reqs, req)
+		}
+	}
+	return bucket, reqExp, docBytes, reqs, r.end("verify shards")
+}
+
+func encodeVerifyShardsResp(res []byte) []byte {
+	var w wbuf
+	w.bytes(res)
+	return w.b
+}
+
+func decodeVerifyShardsResp(b []byte, want int) ([]byte, error) {
+	r := rbuf{b: b}
+	res := r.bytes()
+	if err := r.end("verify shards response"); err != nil {
+		return nil, err
+	}
+	if len(res) != want {
+		return nil, fmt.Errorf("node: verify shards response of %d entries, want %d: %w", len(res), want, ErrMalformed)
+	}
+	return res, nil
+}
+
+type verifyTarget struct {
+	object   string
+	stageKey string
+	metaKey  string
+	man      *storage.Manifest
+}
+
+// verifyDest collects every destination version belonging to saga id (live
+// swapped manifests and staged records) and confirms with their holders that
+// each stripe meets the write quorum while pinning those records on each holder.
+func (g *migrator) verifyDest(m saga.MigrationInput, id string, done func(error)) {
+	rd, err := g.n.reader()
+	if err != nil {
+		g.n.later(func() { done(err) })
+		return
+	}
+	mine := map[storage.VersionID]bool{}
+	for _, v := range g.intents(rd, m.Bucket, id) {
+		mine[v] = true
+	}
+	byKey := map[string]verifyTarget{}
+	liveByKey := map[string]bool{}
+	for _, o := range g.n.liveObjects(rd, m.Bucket) {
+		if mine[o.rec.Manifest.Version] {
+			liveByKey[o.key] = true
+			byKey[o.key] = verifyTarget{
+				object:  o.key,
+				metaKey: occ.ManifestKey(m.Bucket, o.key),
+				man:     o.rec.Manifest,
+			}
+		}
+	}
+	for _, s := range g.staged(rd, m.Bucket) {
+		if s.rec.Saga == id && !liveByKey[s.object] {
+			byKey[s.object] = verifyTarget{
+				object:   s.object,
+				stageKey: s.key,
+				metaKey:  s.key,
+				man:      s.obj.Manifest,
+			}
+		}
+	}
+	targets := make([]verifyTarget, 0, len(byKey))
+	for _, k := range sortedKeys(byKey) {
+		targets = append(targets, byKey[k])
+	}
+	g.verifyTargets(rd, m.Bucket, true, targets, done)
+}
+
+// verifyTargets batches shard-verification RPCs per holder (bounded by the
+// 16 MiB frame limit for whole-bucket messages). When requireExpected is true,
+// each holder first merges the pushed OCC records so checking and protecting
+// the shards happen in one act. A stripe below quorum fails with ErrUnsettled;
+// if verified plus unreachable holders fall below k, the staged version is
+// marked dead and deleted so pre-flip sagas compensate and post-flip catch-up
+// re-copies from the live source.
+func (g *migrator) verifyTargets(rd occ.Reader, bucket string, requireExpected bool, targets []verifyTarget, done func(error)) {
+	type shardSlot struct {
+		holder env.NodeID
+		slot   int
+	}
+	byHolder := map[env.NodeID][]verifyShardReq{}
+	metaKeys := map[env.NodeID]map[string]bool{}
+	slots := make([][][]shardSlot, len(targets))
+	for ti, t := range targets {
+		slots[ti] = make([][]shardSlot, len(t.man.Stripes))
+		for s, st := range t.man.Stripes {
+			slots[ti][s] = make([]shardSlot, len(st.Shards))
+			for i, ref := range st.Shards {
+				slot := len(byHolder[ref.Node])
+				byHolder[ref.Node] = append(byHolder[ref.Node], verifyShardReq{
+					version:  t.man.Version,
+					stripe:   uint32(s),
+					index:    uint16(i),
+					checksum: ref.Checksum,
+				})
+				if requireExpected && t.metaKey != "" {
+					if metaKeys[ref.Node] == nil {
+						metaKeys[ref.Node] = map[string]bool{}
+					}
+					metaKeys[ref.Node][t.metaKey] = true
+				}
+				slots[ti][s][i] = shardSlot{holder: ref.Node, slot: slot}
+			}
+		}
+	}
+	if len(byHolder) == 0 {
+		g.n.later(func() { done(nil) })
+		return
+	}
+	holders := sortedKeys(byHolder)
+	holderIdx := make(map[env.NodeID]int, len(holders))
+	for i, h := range holders {
+		holderIdx[h] = i
+	}
+	results := make([][]byte, len(holders))
+	rpcErrs := make([]error, len(holders))
+	finish := func() {
+		if g.n.stopped {
+			done(fmt.Errorf("node: verify %q: %w", bucket, ErrStopped))
+			return
+		}
+		var errs []error
+		for ti, t := range targets {
+			quorum := g.n.migrationQuorum(t.man.Layout)
+			k := t.man.Layout.K
+			unrecoverable := false
+			incomplete := false
+			var detail string
+			for s := range t.man.Stripes {
+				verified := 0
+				unreachable := 0
+				for _, sl := range slots[ti][s] {
+					hi := holderIdx[sl.holder]
+					if rpcErrs[hi] != nil {
+						unreachable++
+					} else if sl.slot < len(results[hi]) && results[hi][sl.slot] == 1 {
+						verified++
+					}
+				}
+				if verified < quorum {
+					incomplete = true
+					if verified+unreachable < k {
+						unrecoverable = true
+						detail = fmt.Sprintf("node: verify %s/%s version %s stripe %d: %d of %d shards verified (%d unreachable), fewer than k=%d", bucket, t.object, t.man.Version, s, verified, len(t.man.Stripes[s].Shards), unreachable, k)
+					} else if detail == "" {
+						detail = fmt.Sprintf("node: verify %s/%s version %s stripe %d: %d of %d shards verified (%d unreachable), need %d", bucket, t.object, t.man.Version, s, verified, len(t.man.Stripes[s].Shards), unreachable, quorum)
+					}
+				}
+			}
+			if !incomplete {
+				continue
+			}
+			if unrecoverable && t.stageKey != "" {
+				g.n.markDead(bucket, t.man.Version)
+				if derr := g.del(t.stageKey); derr != nil {
+					errs = append(errs, derr)
+				}
+				errs = append(errs, permanent(fmt.Errorf("%s: %w", detail, ErrUnsettled)))
+			} else {
+				errs = append(errs, fmt.Errorf("%s: %w", detail, ErrUnsettled))
+			}
+		}
+		done(errors.Join(errs...))
+	}
+	pending := 0
+	for hi, h := range holders {
+		reqs := byHolder[h]
+		if h == g.n.e.ID {
+			results[hi], rpcErrs[hi] = g.n.verifyShards(bucket, requireExpected, nil, reqs)
+			continue
+		}
+		var docBytes []byte
+		if requireExpected && len(metaKeys[h]) > 0 {
+			doc := occ.NewDoc()
+			for _, mk := range sortedKeys(metaKeys[h]) {
+				if v, ok := rd.Record(mk).Version(); ok {
+					doc.MergeVersion(mk, v)
+				}
+			}
+			docBytes = doc.Encode()
+		}
+		payload := encodeVerifyShardsReq(bucket, requireExpected, docBytes, reqs)
+		pending++
+		idx := hi
+		want := len(reqs)
+		peer := h
+		g.n.net.Request(peer, payload, g.n.cfg.RPCTimeout, func(resp []byte, err error) {
+			if err == nil {
+				results[idx], err = decodeVerifyShardsResp(resp, want)
+			}
+			if err != nil {
+				rpcErrs[idx] = fmt.Errorf("node: verify %q on %s: %w", bucket, peer, err)
+			}
+			pending--
+			if pending == 0 {
+				finish()
+			}
+		})
+	}
+	if pending == 0 {
+		g.n.later(finish)
+	}
 }
 
 // Discard fences the saga in memory, waits for any in-flight Copy step to
@@ -785,42 +1080,11 @@ func (g *migrator) Retire(c saga.Call, m saga.MigrationInput, done func(error)) 
 			done(nil)
 			return
 		}
-		for _, s := range g.staged(rd, m.Bucket) {
-			if s.rec.Saga != id {
-				continue
-			}
-			mk := occ.ManifestKey(m.Bucket, s.object)
-			cur := rd.Record(mk)
-			if cur.Live() && cur.ETag() == s.rec.SrcETag {
-				old, _, oerr := g.n.object(rd, mk)
-				if _, err := g.n.occ.Put(mk, s.rec.Object, occ.IfMatch(s.rec.SrcETag)); err != nil {
-					done(err)
-					return
-				}
-				g.n.RecordMeta(mk)
-				if oerr == nil {
-					g.n.markDead(m.Bucket, old.Manifest.Version)
-				}
-			}
-			if err := g.del(s.key); err != nil {
-				done(err)
-				return
-			}
-		}
-		rd, err = g.n.reader()
-		if err != nil {
-			done(err)
-			return
-		}
-		live := g.liveVersions(rd, m.Bucket)
-		for _, v := range g.intents(rd, m.Bucket, id) {
-			if !live[v] {
-				g.n.markDead(m.Bucket, v)
-			}
-		}
-		g.agree(m.Bucket, func(_ pointerView, err error) {
+		// Re-check destination shards immediately before swapping manifests in
+		// case a holder lost shards after the catch-up Root verification.
+		g.verifyDest(m, id, func(err error) {
 			if err != nil {
-				done(fmt.Errorf("node: retire %q: waiting for every peer to hold the swapped manifests: %w", m.Bucket, err))
+				done(err)
 				return
 			}
 			rd, err := g.n.reader()
@@ -828,17 +1092,40 @@ func (g *migrator) Retire(c saga.Call, m saga.MigrationInput, done func(error)) 
 				done(err)
 				return
 			}
-			g.purge(m.Bucket, g.n.deadVersions(rd, m.Bucket), func(err error) {
+			for _, s := range g.staged(rd, m.Bucket) {
+				if s.rec.Saga != id {
+					continue
+				}
+				mk := occ.ManifestKey(m.Bucket, s.object)
+				cur := rd.Record(mk)
+				if cur.Live() && cur.ETag() == s.rec.SrcETag {
+					old, _, oerr := g.n.object(rd, mk)
+					v, err := g.n.occ.Put(mk, s.rec.Object, occ.IfMatch(s.rec.SrcETag))
+					if err != nil {
+						done(err)
+						return
+					}
+					g.n.committed(mk, cur, v)
+					g.n.RecordMeta(mk)
+					if oerr == nil {
+						g.n.markDead(m.Bucket, old.Manifest.Version)
+					}
+				}
+			}
+			rd, err = g.n.reader()
+			if err != nil {
+				done(err)
+				return
+			}
+			live := g.liveVersions(rd, m.Bucket)
+			for _, v := range g.intents(rd, m.Bucket, id) {
+				if !live[v] {
+					g.n.markDead(m.Bucket, v)
+				}
+			}
+			g.agree(m.Bucket, func(_ pointerView, err error) {
 				if err != nil {
-					done(err)
-					return
-				}
-				if err := g.dropIntents(m.Bucket, id); err != nil {
-					done(err)
-					return
-				}
-				if err := g.setScalar(rk, id); err != nil {
-					done(err)
+					done(fmt.Errorf("node: retire %q: waiting for every peer to hold the swapped manifests: %w", m.Bucket, err))
 					return
 				}
 				rd, err := g.n.reader()
@@ -846,7 +1133,37 @@ func (g *migrator) Retire(c saga.Call, m saga.MigrationInput, done func(error)) 
 					done(err)
 					return
 				}
-				done(g.deregister(rd, m.Bucket, id))
+				// Delete staged records only after every live peer holds the
+				// swapped manifests so destination holders never treat a newly
+				// live shard as an orphan during propagation.
+				for _, s := range g.staged(rd, m.Bucket) {
+					if s.rec.Saga == id {
+						if err := g.del(s.key); err != nil {
+							done(err)
+							return
+						}
+					}
+				}
+				g.purge(m.Bucket, g.n.deadVersions(rd, m.Bucket), func(err error) {
+					if err != nil {
+						done(err)
+						return
+					}
+					if err := g.dropIntents(m.Bucket, id); err != nil {
+						done(err)
+						return
+					}
+					if err := g.setScalar(rk, id); err != nil {
+						done(err)
+						return
+					}
+					rd, err := g.n.reader()
+					if err != nil {
+						done(err)
+						return
+					}
+					done(g.deregister(rd, m.Bucket, id))
+				})
 			})
 		})
 	})

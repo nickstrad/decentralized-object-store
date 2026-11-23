@@ -1,0 +1,10 @@
+package	cal_seeds	cal_seconds	seeds	base	seconds	exit	failing
+internal/gossip	40	18	3733	9000001	1297	0	none
+internal/merkle	40	34	1976	9000001	982	0	none
+internal/node	40	152	442	9000001	1295	0	none
+internal/occ	40	37	1816	9000001	574	0	none
+internal/saga	40	4	5000	9000001	210	0	none
+internal/saga/sagasim	40	1	5000	9000001	0	0	none
+internal/sim	40	13	5000	9000001	942	0	none
+internal/storage	40	11	5000	9000001	1141	0	none
+test/e2e	40	202	332	9000001	996	0	none

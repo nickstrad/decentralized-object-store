@@ -18,6 +18,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -196,9 +197,52 @@ func run(ctx context.Context, args []string, stderr io.Writer, ready func(string
 	return 0
 }
 
+var ignoredAtExit = []string{"os/signal.signal_recv", "os/signal.loop", "runtime.ensureSigM"}
+
+func leftGoroutines() []string {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	var out []string
+	for i, block := range strings.Split(string(buf), "\n\n") {
+		if i == 0 || strings.TrimSpace(block) == "" {
+			continue
+		}
+		benign := false
+		for _, p := range ignoredAtExit {
+			benign = benign || strings.Contains(block, p)
+		}
+		if !benign {
+			out = append(out, block)
+		}
+	}
+	return out
+}
+
+func leakReport(w io.Writer, settle time.Duration) int {
+	deadline := time.Now().Add(settle)
+	left := leftGoroutines()
+	for len(left) > 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		left = leftGoroutines()
+	}
+	fmt.Fprintf(w, "objnode: goroutines left at exit: %d\n", len(left))
+	for _, g := range left {
+		fmt.Fprintf(w, "%s\n\n", g)
+	}
+	return len(left)
+}
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	code := run(ctx, os.Args[1:], os.Stderr, nil)
 	stop()
+	leakReport(os.Stderr, 2*time.Second)
 	os.Exit(code)
 }

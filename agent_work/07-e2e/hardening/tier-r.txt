@@ -1,0 +1,64 @@
+E2E_TIER_R=1 go test ./test/e2e -run 'R$|TierR|DefaultBuild|CanaryE9' -count=1 -v -timeout 40m (commit 16e4b5c, dev container, host otherwise idle)
+MEASURE r/startup 1.524634618s
+MEASURE e1r/objects 36
+MEASURE e1r/reads 288
+MEASURE e1r/stripes_spread_checked 189
+MEASURE e1r/put_max 2.22080438s
+MEASURE e1r/get_max 828.73654ms
+MEASURE e1r/put_latencies_small [48.679941ms 112.814916ms 136.90199ms 157.013922ms 148.828874ms 206.466042ms 269.244216ms 306.8109ms 185.366971ms 393.778153ms 606.34115ms 44.029669ms 99.056477ms 130.747789ms 159.93899ms 119.299557ms 148.508135ms 153.58065ms 195.274653ms 128.741429ms 238.032924ms 248.985343ms 35.913301ms 97.660375ms 99.398249ms 136.17189ms 83.616833ms 119.79228ms 153.992713ms 197.357285ms 446.490277ms 490.875013ms 651.445624ms]
+MEASURE e1r/put_latencies_3MiB [2.215394856s 1.964816575s 2.22080438s]
+MEASURE e1r/get_latency_p50_p90_max 15.255662ms 92.53639ms 828.73654ms
+--- PASS: TestE1MultiRegionPutGetR (19.88s)
+MEASURE e2r/detect 21.847370923s
+MEASURE e2r/converge 5.696651805s
+MEASURE e2r/puts_acked 5
+MEASURE e2r/puts_unavailable 10
+MEASURE e2r/contested {25 15 10 10}
+MEASURE e2r/discards_max_node 16
+MEASURE e2r/declared_lost 0
+--- PASS: TestE2PartitionAndHealR (44.57s)
+MEASURE e3r/repair_under_reads 1.418341859s
+MEASURE e3r/repair 1.371381401s
+MEASURE e3r/shards_rotted 23
+MEASURE e3r/damaged_bytes 148302
+MEASURE e3r/rebuilt_bytes 148302
+MEASURE e3r/bucket_bytes 4745784
+--- PASS: TestE3BitRotRepairR (9.75s)
+MEASURE e4r/migrate_under_traffic 10.536975461s
+MEASURE e4r/traffic 97
+MEASURE e4r/traffic_ok 63
+MEASURE e4r/traffic_busy_or_unavailable 34
+MEASURE e4r/objects_readable 13
+--- PASS: TestE4MigrationUnderTrafficR (25.94s)
+MEASURE e6r/acked 24
+MEASURE e6r/unavailable 0
+MEASURE e6r/incarnation_before_after 0->2
+MEASURE e6r/rejoin_and_metadata_catch_up 3.380919265s
+MEASURE e6r/refill 2.258436669s
+MEASURE e6r/wiped_shards 18
+--- PASS: TestE6CrashRestartWipeR (18.09s)
+MEASURE e8r/converge 4.476727803s
+MEASURE e8r/contested {22 15 7 1}
+MEASURE e8r/discards_max_node 11
+MEASURE e8r/stale_refused 6
+--- PASS: TestE8LocalFirstMetadataSyncR (35.82s)
+MEASURE e5r/kill_target/killed_at_step 1
+MEASURE e5r/kill_target/to_compensated 7.411720466s
+--- PASS: TestE5RollbackKillTargetMidCopyR (20.76s)
+MEASURE e5r/kill_coordinator/killed_at_step 1
+MEASURE e5r/kill_coordinator/to_compensated 5.21938819s
+--- PASS: TestE5RollbackKillCoordinatorMidSagaR (16.35s)
+MEASURE e9r/shutdown_under_load 1.281564116s
+MEASURE e9r/in_flight_at_sigterm_finished 8
+MEASURE e9r/in_flight_at_sigterm_failed_cleanly 0
+MEASURE e9r/requests_ok 64
+MEASURE e9r/requests_refused_cleanly 856
+MEASURE e9r/acked_read_after_restart 34
+MEASURE e9r/restart_to_converged 1.796966534s
+--- PASS: TestE9ShutdownUnderLoadR (7.97s)
+caught: 127.0.0.1:41875 exited -1 after killed under load: e2e: scenario check failed
+--- PASS: TestCanaryE9AKilledNodeFailsTheCleanShutdownChecks (4.73s)
+--- PASS: TestTierRHarnessLeavesNothingBehindWhenATestFails (1.52s)
+--- PASS: TestDefaultBuildCarriesNoFaultInjection (2.31s)
+ok  	github.com/nickstrad/decentralized-object-store/test/e2e	207.723s
+EXIT 0 wall=211s

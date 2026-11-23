@@ -1,0 +1,12 @@
+diff -ruN a/internal/node/node.go b/internal/node/node.go
+--- a/internal/node/node.go	2026-11-23 05:02:30.291832717 +0000
++++ b/internal/node/node.go	2026-11-23 05:02:30.293832887 +0000
+@@ -528,7 +528,7 @@
+ }
+ 
+ func (n *Node) scope(region string) *storage.Node {
+-	if region == "" {
++	if true || region == "" {
+ 		return n.store
+ 	}
+ 	r := env.Region(region)

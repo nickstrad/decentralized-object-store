@@ -37,10 +37,12 @@ func lateFlipRun(res *lateResult, isolate bool) func(seed int64) *sim.Sim {
 		var writer env.NodeID
 		coord := env.NodeID("")
 		body := []byte(nil)
+		seenLate := false
 		cfg.CommitSink = func(key string, _ occ.Record, _ occ.Version) {
-			if key != occ.ManifestKey(mtBucket, lateKey) || writer == "" {
+			if key != occ.ManifestKey(mtBucket, lateKey) || writer == "" || seenLate {
 				return
 			}
+			seenLate = true
 			rd, err := h.node(writer).OCC().Reader()
 			if err == nil {
 				r, _ := rd.Route(mtBucket)
@@ -152,7 +154,7 @@ func lateFlipRun(res *lateResult, isolate bool) func(seed int64) *sim.Sim {
 			s.Fail(err)
 			return s
 		}
-		if _, err := h.acks.check(rd, func(k string) bool { return k == occ.ManifestKey(mtBucket, lateKey) }); err != nil {
+		if _, err := h.acks.Check(rd, func(k string) bool { return k == occ.ManifestKey(mtBucket, lateKey) }); err != nil {
 			s.Fail(err)
 			return s
 		}

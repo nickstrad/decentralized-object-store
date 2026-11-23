@@ -1,0 +1,1 @@
+351 execs: warm-up objects acked 702 (2.0/exec); traffic puts to m 569 acked of 711; execs with a migrate op 55, with a completed migration 43, only compensated 7; migrations completed 45 compensated 7 ambiguous 0; pre-existing objects moved 113, shards moved 339 (7.5 per completed migration); execs completing a migration with 0 moved shards: 0

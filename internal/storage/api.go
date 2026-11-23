@@ -141,6 +141,8 @@ type Health struct {
 	Region         string
 	Ready          bool
 	LiveMembers    int
+	MetaDigest     string
+	MetaRoot       string
 	Discards       uint64
 	RecentDiscards []DiscardInfo
 	Counters       []Counter

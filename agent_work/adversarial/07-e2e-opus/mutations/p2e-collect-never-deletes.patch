@@ -1,0 +1,12 @@
+diff -ruN a/internal/node/inventory.go b/internal/node/inventory.go
+--- a/internal/node/inventory.go	2026-11-23 05:02:43.978997232 +0000
++++ b/internal/node/inventory.go	2026-11-23 05:02:43.978997232 +0000
+@@ -493,7 +493,7 @@
+ 	if err != nil {
+ 		return
+ 	}
+-	if err := n.store.Store().Delete(id); err != nil && !isNotFound(err) {
++	if err := error(nil); false && n.store.Store().Delete(id) != nil && !isNotFound(err) {
+ 		n.logf("collect %s: %v", name, err)
+ 		return
+ 	}

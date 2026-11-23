@@ -1,0 +1,12 @@
+diff -ruN a/internal/node/inventory.go b/internal/node/inventory.go
+--- a/internal/node/inventory.go	2026-11-23 05:02:30.573856717 +0000
++++ b/internal/node/inventory.go	2026-11-23 05:02:30.575856887 +0000
+@@ -423,7 +423,7 @@
+ 				c++
+ 			}
+ 		}
+-		if c > man.Layout.M {
++		if c > 0 {
+ 			return s, c, true
+ 		}
+ 	}

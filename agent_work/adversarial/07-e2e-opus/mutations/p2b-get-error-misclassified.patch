@@ -1,0 +1,12 @@
+diff -ruN a/internal/node/objects.go b/internal/node/objects.go
+--- a/internal/node/objects.go	2026-11-23 05:02:30.547854504 +0000
++++ b/internal/node/objects.go	2026-11-23 05:02:30.549854674 +0000
+@@ -312,7 +312,7 @@
+ 			if inv, ok := n.inv[bucket]; ok && isCorrupt(err) {
+ 				inv.full = true
+ 			}
+-			cb(oi, nil, err)
++			cb(oi, nil, fmt.Errorf("mutant: %v: %w", err, storage.ErrInvalid))
+ 			return
+ 		}
+ 		n.stats.Gets++

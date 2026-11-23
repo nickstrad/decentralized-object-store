@@ -1,0 +1,24 @@
+diff -ruN a/internal/node/migrate.go b/internal/node/migrate.go
+--- a/internal/node/migrate.go	2026-11-23 05:02:30.333836291 +0000
++++ b/internal/node/migrate.go	2026-11-23 05:02:30.334836376 +0000
+@@ -290,7 +290,7 @@
+ 			finish(permanent(fmt.Errorf("node: copy %q for %s: %w", m.Bucket, id, ErrFenced)))
+ 			return
+ 		}
+-		if i == len(objs) {
++		if i == len(objs) || (len(objs) > 1 && i == len(objs)-1) {
+ 			finish(nil)
+ 			return
+ 		}
+diff -ruN a/internal/saga/migration.go b/internal/saga/migration.go
+--- a/internal/saga/migration.go	2026-11-23 05:02:30.333836291 +0000
++++ b/internal/saga/migration.go	2026-11-23 05:02:30.334836376 +0000
+@@ -280,7 +280,7 @@
+ 						if fail(err) {
+ 							return
+ 						}
+-						if !bytes.Equal(src, dst) {
++						if false && !bytes.Equal(src, dst) {
+ 							fail(fmt.Errorf("saga: catch-up %s: %s and %s: %w", m.Bucket, m.From, m.To, ErrRootMismatch))
+ 							return
+ 						}

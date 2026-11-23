@@ -1,0 +1,12 @@
+diff -ruN a/test/e2e/nemesis_test.go b/test/e2e/nemesis_test.go
+--- a/test/e2e/nemesis_test.go	2026-11-23 05:02:30.358838419 +0000
++++ b/test/e2e/nemesis_test.go	2026-11-23 05:02:30.359838504 +0000
+@@ -689,6 +689,8 @@
+ 	migID := ""
+ 	if start.Err != nil {
+ 		switch {
++		case errors.Is(start.Err, env.ErrUnreachable):
++			return nil
+ 		case errors.Is(start.Err, env.ErrTimeout) || errors.Is(start.Err, env.ErrUnreachable):
+ 			if n.forgetAmbiguousMig {
+ 				return nil

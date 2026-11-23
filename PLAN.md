@@ -405,11 +405,12 @@ script has a canary proving it fails on a planted violation.
 | # | Gate | Command / check |
 |---|---|---|
 | G0 | Hygiene | `gofmt -l` empty; `go vet ./...`; `go build ./...`; `detlint` (banned calls and constructs in sim-reachable packages); panic allowlist; **dependency check** — root `go.mod` requires exactly one module, `pgregory.net/rapid`; `go list -deps ./...` (non-test) is standard library plus this module; rapid is imported only from `_test.go` files |
-| G1 | Unit | `go test ./...` (fixed DST seeds); per-package coverage report against the floor |
+| G1 | Unit | `go test ./...` (fixed DST seeds); per-package coverage report against the floor. The CI fast lane runs this gate with `-short` (the end-to-end package then trims its migration failure matrix to a smoke); a short run never counts for landing |
 | G2 | Property | rapid properties at 2,000 checks, seed from the commit SHA, run per rapid-importing package (`-run 'Laws|Prop' -rapid.checks=2000 -rapid.seed=<n>`); committed fail files replay first |
 | G3 | Fuzz, short | 30 s per target the chunk touches; committed corpus replays |
 | G4 | Race | `go test -race ./...`; `-count=3` on node, storage, e2e |
-| G5 | DST seeds | pinned seeds + 500 seeds based on the commit SHA per scenario; replay meta-tests; planted-bug canaries fail as required |
+| G5 | DST seeds | pinned seeds + a 500-seed sweep based on the commit SHA; replay meta-tests; planted-bug canaries fail as required. Every protocol and full-node scenario runs all 500. The end-to-end scenarios (Chunk 7) each run a stated share of the 500 so the sweep fits the gate (E7 3/5, E8 1/2, E2, E3, E6 and the E5 matrix 1/4, E1 1/5, E4 1/10, E1 multi-megabyte 1/25; pinned seeds always; `E2E_FULL_SEEDS=1` gives every scenario the full count on demand) — the builder's choice, accepted in review; flagged for the owner |
+| G5R | Real processes | the end-to-end scenarios on real `objnode` processes (tier R, `E2E_TIER_R=1`). They are bound by real one-second timeouts, so the step runs first among the test gates, on a settled machine, and never beside another heavy run; a skipped test is a red gate |
 | G6 | Docker environment | the gate ran inside the `dev` image built from the repo's `Dockerfile` at this commit (image build is part of the gate; the result file records the image ID and Go version). There is no native macOS gate or CI job |
 | G7 | Adversarial | Astra's harnesses run by the orchestrator; `RESULTS.md` records held/broken per claim; every broken claim is repaired (and re-run) or narrowed in writing |
 | G8 | Review | Neon verdict PASS, or NITS with each nit closed |

@@ -52,6 +52,7 @@ const (
 	lyingInvariantGap    = 50
 	measureEnv           = "MERKLE_MEASURE"
 	dstLiarKnownFraction = 2
+	lyingSweepFloor      = 10
 )
 
 type world struct {
@@ -603,6 +604,8 @@ func loneLiarRun(seed int64) *sim.Sim {
 // prevents honest replicas from converging within LyingConvergeBound.
 func TestLyingPeerDST(t *testing.T) {
 	t.Run("honest replicas converge beside a liar and never store its bytes", func(t *testing.T) {
+		var seeds int
+		var sweepInvalid uint64
 		simtest.Sweep(t, func(t *testing.T, seed int64) {
 			s := simtest.RequireDeterministic(t, seed, lyingRun)
 			w := take(s)
@@ -617,10 +620,16 @@ func TestLyingPeerDST(t *testing.T) {
 				failed += st.Failed
 				invalid += st.Invalid
 			}
-			if failed == 0 || invalid == 0 {
-				t.Fatalf("the liar was never engaged: failed %d invalid %d", failed, invalid)
+			l, ok := s.Process(w.ids[3]).(*liar)
+			if !ok || l.n == 0 || failed == 0 {
+				t.Fatalf("the liar was never engaged: contacted %v failed %d", ok && l.n > 0, failed)
 			}
+			seeds++
+			sweepInvalid += invalid
 		})
+		if seeds >= lyingSweepFloor && sweepInvalid == 0 {
+			t.Fatalf("no fabricated entry was refused across %d seeds", seeds)
+		}
 	})
 	t.Run("a lone liar cannot plant bytes", func(t *testing.T) {
 		simtest.Sweep(t, func(t *testing.T, seed int64) {

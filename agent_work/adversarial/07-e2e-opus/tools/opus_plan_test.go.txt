@@ -1,0 +1,97 @@
+package e2e
+
+// Adversarial edge inputs for planFromBytes / FuzzClusterNemesis (07-e2e-opus).
+
+import (
+	"bytes"
+	"fmt"
+	"math/rand/v2"
+	"runtime"
+	"testing"
+	"time"
+)
+
+func opusEdgeInputs() map[string][]byte {
+	rnd := rand.New(rand.NewPCG(7, 7))
+	big := make([]byte, 64<<10)
+	for i := range big {
+		big[i] = byte(rnd.Uint32())
+	}
+	in := map[string][]byte{
+		"empty":                {},
+		"one-byte-ff":          {0xff},
+		"three-cycles-no-ops":  {2},
+		"zero-length-cycles":   {2, 0xff, 0, 0, 0, 0xff, 0, 0, 0, 0xff, 0, 0, 0},
+		"truncated-op":         {1, byte(opCrashNode), 1, 2},
+		"all-ff-64KiB":         bytes.Repeat([]byte{0xff}, 64<<10),
+		"all-zero-64KiB":       make([]byte, 64<<10),
+		"random-64KiB":         big,
+		"max-time-ops":         {2, byte(opCrashNode), 1, 0, 255, byte(opPauseNode), 2, 0, 255, byte(opMigrate), 3, 1, 255},
+	}
+	for k := range opKinds {
+		b := []byte{2}
+		for c := 0; c < 3; c++ {
+			for i := 0; i < 8; i++ {
+				b = append(b, byte(k), byte(i*7+c), byte(i*5+1), byte(i*31))
+			}
+		}
+		in["all-"+k.String()] = b
+	}
+	// the op kind byte wraps modulo opKinds: kinds >= 12 alias to the real ones
+	in["kind-bytes-above-range"] = []byte{0, 12 + byte(opMigrate), 0, 1, 10, 255 - 3, 1, 1, 20}
+	return in
+}
+
+func TestOpusPlanFromBytesEdges(t *testing.T) {
+	for name, data := range opusEdgeInputs() {
+		p := planFromBytes(data, 3, 8, 4*time.Second)
+		if len(p.cycles) < 1 || len(p.cycles) > 3 {
+			t.Errorf("OPUS-PLAN %s: %d cycles", name, len(p.cycles))
+		}
+		for _, cy := range p.cycles {
+			if len(cy.ops) > 8 {
+				t.Errorf("OPUS-PLAN %s: %d ops in a cycle", name, len(cy.ops))
+			}
+			for _, op := range cy.ops {
+				if op.kind >= opKinds || op.at < 0 || op.at >= 4*time.Second {
+					t.Errorf("OPUS-PLAN %s: bad op %+v", name, op)
+				}
+			}
+		}
+	}
+}
+
+func TestOpusFuzzEdgeInputs(t *testing.T) {
+	for name, data := range opusEdgeInputs() {
+		t.Run(name, func(t *testing.T) {
+			var before, after runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			start := time.Now()
+			s, st := runFuzzInput(fuzzOptions(), fuzzWarmM, data)
+			wall := time.Since(start)
+			runtime.ReadMemStats(&after)
+			t.Logf("OPUS-EDGE %s len=%d wall_ms=%d alloc_mb=%d heap_mb=%d sys_mb=%d applied=%d skipped=%d migrated=%d compensated=%d moved_shards=%d", name, len(data), wall.Milliseconds(),
+				(after.TotalAlloc-before.TotalAlloc)>>20, after.HeapInuse>>20, after.Sys>>20, st.applied, st.skipped, st.migrated, st.compensated, st.movedShards)
+			if err := s.Verify(); err != nil {
+				t.Fatalf("OPUS-EDGE-FAIL %s seed %d: %v", name, fuzzSeed(data), err)
+			}
+		})
+	}
+}
+
+func TestOpusFuzzSameInputTwice(t *testing.T) {
+	data := []byte{2, byte(opMigrate), 0, 1, 0, byte(opCrashNode), 2, 0, 60, byte(opRotShard), 3, 4, 100, 0xff, 0, 0, 0, byte(opCutRegion), 1, 0, 30}
+	var outs []string
+	for range 2 {
+		s, st := runFuzzInput(fuzzOptions(), fuzzWarmM, data)
+		if err := s.Verify(); err != nil {
+			t.Fatal(err)
+		}
+		outs = append(outs, fmt.Sprintf("steps=%d now=%d st=%+v", s.Steps(), s.Now(), st))
+	}
+	if outs[0] != outs[1] {
+		t.Fatalf("OPUS-NONDET same fuzz input gave two traces:\n%s\n%s", outs[0], outs[1])
+	}
+	t.Logf("OPUS-DET %s", outs[0][:min(len(outs[0]), 120)])
+}

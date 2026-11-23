@@ -1,0 +1,32 @@
+diff -ruN a/internal/node/objects.go b/internal/node/objects.go
+--- a/internal/node/objects.go	2026-11-23 05:02:30.455846674 +0000
++++ b/internal/node/objects.go	2026-11-23 05:02:30.457846844 +0000
+@@ -204,6 +204,9 @@
+ 	if err == nil && !bs.writable() {
+ 		err = fmt.Errorf("node: bucket %q is moving: %w", req.Bucket, storage.ErrBusy)
+ 	}
++	if err == nil && (n.mutRegions() < 3) {
++		err = fmt.Errorf("mutant: put while split: %w", storage.ErrUnavailable)
++	}
+ 	key := occ.ManifestKey(req.Bucket, req.Key)
+ 	var pre occ.Precondition
+ 	if err == nil {
+@@ -296,6 +299,18 @@
+ // GetObject reads the object's live manifest and reconstructs its full payload
+ // from any k verified shards, invoking cb asynchronously. If a shard fails
+ // verification, it flags the bucket's inventory for a full scrub.
++func (n *Node) mutRegions() int {
++	seen := map[env.Region]bool{}
++	for _, m := range n.view.Members() {
++		seen[m.Region] = true
++	}
++	return len(seen)
++}
++
++var mutPostSplit = map[string]bool{}
++
++var mutStale = map[string]objectRecord{}
++
+ func (n *Node) GetObject(bucket, key string, cb func(storage.ObjectInfo, []byte, error)) {
+ 	fail := func(err error) {
+ 		n.stats.GetFailures++

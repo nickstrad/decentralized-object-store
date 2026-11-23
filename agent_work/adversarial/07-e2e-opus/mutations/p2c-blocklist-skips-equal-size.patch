@@ -1,0 +1,13 @@
+diff -ruN a/internal/noderuntime/e2efault.go b/internal/noderuntime/e2efault.go
+--- a/internal/noderuntime/e2efault.go	2026-11-23 05:02:30.554855100 +0000
++++ b/internal/noderuntime/e2efault.go	2026-11-23 05:02:30.555855185 +0000
+@@ -70,6 +70,9 @@
+ 			peers[env.NodeID(line)] = true
+ 		}
+ 	}
++	if b.peers != nil && len(b.peers) == len(peers) && len(peers) > 0 {
++		return nil
++	}
+ 	b.peers = peers
+ 	return nil
+ }

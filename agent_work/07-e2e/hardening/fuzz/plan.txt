@@ -1,0 +1,15 @@
+900 github.com/nickstrad/decentralized-object-store/test/e2e FuzzClusterNemesis
+900 github.com/nickstrad/decentralized-object-store/internal/occ FuzzOCCConditionalWrite
+900 github.com/nickstrad/decentralized-object-store/internal/merkle FuzzMerkleDiff
+900 github.com/nickstrad/decentralized-object-store/internal/erasure FuzzErasureCoding
+300 github.com/nickstrad/decentralized-object-store/internal/storage/httpapi FuzzObjectAPI
+300 github.com/nickstrad/decentralized-object-store/internal/storage FuzzShardDecode
+300 github.com/nickstrad/decentralized-object-store/internal/sim FuzzSimSchedule
+300 github.com/nickstrad/decentralized-object-store/internal/saga FuzzSagaLogRecover
+300 github.com/nickstrad/decentralized-object-store/internal/occ FuzzOCCMergeLaws
+300 github.com/nickstrad/decentralized-object-store/internal/occ FuzzOCCDecode
+300 github.com/nickstrad/decentralized-object-store/internal/noderuntime FuzzFrame
+300 github.com/nickstrad/decentralized-object-store/internal/merkle FuzzMerkleWire
+300 github.com/nickstrad/decentralized-object-store/internal/gossip FuzzViewMergeLaws
+300 github.com/nickstrad/decentralized-object-store/internal/gossip FuzzGossipWire
+300 github.com/nickstrad/decentralized-object-store/internal/erasure FuzzGF256

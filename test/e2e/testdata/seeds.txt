@@ -1,0 +1,2 @@
+166963932986536 TestE7NemesisHealingCyclesS: wipe destroyed the only copy of an acknowledged tag write; the budget now forbids it
+1 TestE7NemesisHealingCyclesS: stricter C7 settle caught ErrUnavailable+ErrNotFound misencoded as CodeNotFound (96) on GET w/k15 via n017

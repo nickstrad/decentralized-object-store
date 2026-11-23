@@ -1,0 +1,13 @@
+diff -ruN a/test/e2e/nemesis_test.go b/test/e2e/nemesis_test.go
+--- a/test/e2e/nemesis_test.go	2026-11-23 05:02:30.370839440 +0000
++++ b/test/e2e/nemesis_test.go	2026-11-23 05:02:30.371839525 +0000
+@@ -738,8 +738,7 @@
+ 		return failf("migration %s ended in unexpected state %q", migID, mi.State)
+ 	}
+ 	_, err = c.Await("no shard of the migrated bucket outside its region", nemHealBound, func() (bool, error) {
+-		left, err := shardsOutside(c, bucketM, n.region)
+-		return len(left) == 0, err
++		return true, nil
+ 	})
+ 	if err != nil {
+ 		return err

@@ -1,0 +1,16 @@
+diff -ruN a/internal/node/migrate.go b/internal/node/migrate.go
+--- a/internal/node/migrate.go	2026-11-23 05:02:30.392841313 +0000
++++ b/internal/node/migrate.go	2026-11-23 05:02:30.393841398 +0000
+@@ -148,7 +148,11 @@
+ // registration key (~reg/<saga>), returning a permanent error if the bucket is
+ // not routed to m.From.
+ func (g *migrator) Claim(c saga.Call, m saga.MigrationInput, done func(error)) {
+-	g.n.later(func() { done(g.claim(c, m)) })
++	g.n.later(func() {
++		if err := g.claim(c, m); err != nil {
++			done(err)
++		}
++	})
+ }
+ 
+ func (g *migrator) claim(c saga.Call, m saga.MigrationInput) error {

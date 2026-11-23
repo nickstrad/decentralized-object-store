@@ -51,10 +51,10 @@ const (
 // callers can merge them into a shared env.CodeTable.
 func CodeEntries() []env.CodeEntry {
 	return []env.CodeEntry{
+		{Code: CodeUnavailable, Err: ErrUnavailable},
 		{Code: CodeNotFound, Err: ErrNotFound},
 		{Code: CodeCorrupt, Err: ErrCorrupt},
 		{Code: CodeExists, Err: ErrExists},
-		{Code: CodeUnavailable, Err: ErrUnavailable},
 		{Code: CodeInvalid, Err: ErrInvalid},
 	}
 }

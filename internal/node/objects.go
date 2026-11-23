@@ -725,10 +725,15 @@ func kindName(k occ.Kind) string {
 	return fmt.Sprintf("kind%d", k)
 }
 
-// Health reports node readiness, live membership count, persisted LWW discard
-// count, the recent discard tail, lost-object count, and diagnostic counters.
+// Health reports node readiness, live membership count, metadata digest and
+// Merkle root (when ready), persisted LWW discard count, the recent discard
+// tail, lost-object count, and diagnostic counters.
 func (n *Node) Health() storage.Health {
 	h := storage.Health{Node: string(n.e.ID), Region: string(n.e.Region), Ready: n.Ready(), LiveMembers: n.gossip.LiveCount()}
+	if n.Ready() {
+		d, r := n.occ.Digest(), n.meta.Tree().Root()
+		h.MetaDigest, h.MetaRoot = hex.EncodeToString(d[:]), hex.EncodeToString(r[:])
+	}
 	h.Discards = n.occ.LWWDiscards()
 	for _, d := range n.occ.DiscardTail() {
 		h.RecentDiscards = append(h.RecentDiscards, storage.DiscardInfo{Key: readableKey(d.Key), Winner: d.Winner.ID().String(), Loser: d.Loser.ID().String()})
@@ -752,7 +757,7 @@ func (n *Node) Health() storage.Health {
 		{Name: "recounts", Value: s.Recounts}, {Name: "recount_writes", Value: s.RecountWrites},
 		{Name: "puts", Value: s.Puts}, {Name: "put_failures", Value: s.PutFailures}, {Name: "gets", Value: s.Gets},
 		{Name: "get_failures", Value: s.GetFailures}, {Name: "deletes", Value: s.Deletes},
-		{Name: "rebuilds", Value: s.Rebuilds}, {Name: "rebuild_failures", Value: s.RebuildFailures},
+		{Name: "rebuilds", Value: s.Rebuilds}, {Name: "rebuild_failures", Value: s.RebuildFailures}, {Name: "rebuilt_bytes", Value: s.RebuiltBytes},
 		{Name: "collected_shards", Value: s.Collected}, {Name: "collected_loser_shards", Value: s.CollectedLoser},
 		{Name: "meta_rounds", Value: ms.Rounds}, {Name: "meta_repaired", Value: ms.Repaired},
 		{Name: "malformed", Value: s.Malformed}, {Name: "member_deaths", Value: s.MemberDeaths},

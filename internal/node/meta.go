@@ -93,14 +93,15 @@ func (m *metaRepairer) Put(key string, data []byte) error {
 }
 
 const (
-	opMetaFetch byte = 1
-	opPointer   byte = 2
-	opPurge     byte = 3
+	opMetaFetch    byte = 1
+	opPointer      byte = 2
+	opPurge        byte = 3
+	opVerifyShards byte = 4
 )
 
 // serveNode dispatches node-level RPCs on chNode: metadata record fetches for
-// Merkle repair, migration pointer-view queries, and explicit dead-version
-// shard purges.
+// Merkle repair, migration pointer-view queries, explicit dead-version shard
+// purges, and migration shard verification checks.
 func (n *Node) serveNode(from env.NodeID, req []byte, reply env.Reply) {
 	r := rbuf{b: req}
 	op := r.byte()
@@ -145,6 +146,18 @@ func (n *Node) serveNode(from env.NodeID, req []byte, reply env.Reply) {
 			return
 		}
 		reply(encodeCount(c), nil)
+	case opVerifyShards:
+		bucket, reqExp, docBytes, reqs, err := decodeVerifyShardsReq(&r)
+		if err != nil {
+			reply(nil, err)
+			return
+		}
+		res, err := n.verifyShards(bucket, reqExp, docBytes, reqs)
+		if err != nil {
+			reply(nil, err)
+			return
+		}
+		reply(encodeVerifyShardsResp(res), nil)
 	default:
 		n.stats.Malformed++
 		reply(nil, fmt.Errorf("node %s: op %d from %s: %w", n.e.ID, op, from, ErrMalformed))

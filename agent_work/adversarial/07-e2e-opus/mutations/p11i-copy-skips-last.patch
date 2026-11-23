@@ -1,0 +1,12 @@
+diff -ruN a/internal/node/migrate.go b/internal/node/migrate.go
+--- a/internal/node/migrate.go	2026-11-23 05:02:30.339836802 +0000
++++ b/internal/node/migrate.go	2026-11-23 05:02:30.340836887 +0000
+@@ -290,7 +290,7 @@
+ 			finish(permanent(fmt.Errorf("node: copy %q for %s: %w", m.Bucket, id, ErrFenced)))
+ 			return
+ 		}
+-		if i == len(objs) {
++		if i == len(objs) || (len(objs) > 1 && i == len(objs)-1) {
+ 			finish(nil)
+ 			return
+ 		}

@@ -1,0 +1,45 @@
+HELD C1 C1/seed=731991: independent_test.go:43: objects=21 reads=420 spread_stripes=120
+HELD C1 C1/seed=731993: independent_test.go:43: objects=21 reads=420 spread_stripes=120
+HELD C1 C1/seed=732001: independent_test.go:43: objects=21 reads=420 spread_stripes=120
+HELD C2 C2/seed=731991: independent_test.go:47: acked=6 refused=4 discarded=9 convergence=9.18s
+HELD C2 C2/seed=731993: independent_test.go:47: acked=6 refused=4 discarded=9 convergence=7.86s
+HELD C2 C2/seed=732001: independent_test.go:47: acked=6 refused=4 discarded=9 convergence=7.8s
+HELD C3 C3/seed=731991: independent_test.go:51: rotted=18 damage=99114 rebuilt=99114 moved=431256
+HELD C3 C3/seed=731993: independent_test.go:51: rotted=18 damage=99114 rebuilt=99114 moved=431114
+HELD C3 C3/seed=732001: independent_test.go:51: rotted=21 damage=115562 rebuilt=115562 moved=497228
+HELD C4 C4/seed=731991: independent_test.go:55: traffic=177 readable=17 migration=17.926868037s
+HELD C4 C4/seed=731993: independent_test.go:55: traffic=230 readable=18 migration=23.330729043s
+HELD C4 C4/seed=732001: independent_test.go:55: traffic=235 readable=18 migration=23.82821468s
+HELD C6 C6/seed=731991: independent_test.go:59: acked=15 incarnation=0->1 wiped=8
+HELD C6 C6/seed=731993: independent_test.go:59: acked=15 incarnation=0->1 wiped=9
+HELD C6 C6/seed=732001: independent_test.go:59: acked=15 incarnation=0->1 wiped=7
+HELD C8 C8/seed=731991: independent_test.go:63: conditional=19 discarded=6 stale_refused=4
+HELD C8 C8/seed=731993: independent_test.go:63: conditional=19 discarded=6 stale_refused=4
+HELD C8 C8/seed=732001: independent_test.go:63: conditional=19 discarded=6 stale_refused=4
+HELD C7 C7/schedule=0/seed=751001: independent_test.go:118: cycles=8 applied=32 skipped=0 puts_ok=65 gets_ok=29 availability_gets=7 migrations=8 compensated=0.
+HELD C7 C7/schedule=0/seed=751003: independent_test.go:118: cycles=8 applied=32 skipped=0 puts_ok=46 gets_ok=32 availability_gets=7 migrations=8 compensated=0.
+HELD C7 C7/schedule=0/seed=751007: independent_test.go:118: cycles=8 applied=32 skipped=0 puts_ok=53 gets_ok=39 availability_gets=7 migrations=8 compensated=0.
+HELD C7 C7/schedule=1/seed=751001: independent_test.go:118: cycles=8 applied=30 skipped=2 puts_ok=70 gets_ok=93 availability_gets=65 migrations=0 compensated=0.
+HELD C7 C7/schedule=1/seed=751003: independent_test.go:118: cycles=8 applied=30 skipped=2 puts_ok=56 gets_ok=108 availability_gets=75 migrations=0 compensated=0.
+HELD C7 C7/schedule=1/seed=751007: independent_test.go:118: cycles=8 applied=28 skipped=4 puts_ok=59 gets_ok=116 availability_gets=72 migrations=0 compensated=0.
+HELD C7 C7/schedule=2/seed=751001: independent_test.go:118: cycles=8 applied=24 skipped=0 puts_ok=22 gets_ok=26 availability_gets=7 migrations=0 compensated=0.
+HELD C7 C7/schedule=2/seed=751003: independent_test.go:118: cycles=8 applied=24 skipped=0 puts_ok=25 gets_ok=25 availability_gets=7 migrations=0 compensated=0.
+HELD C7 C7/schedule=2/seed=751007: independent_test.go:118: cycles=8 applied=24 skipped=0 puts_ok=22 gets_ok=23 availability_gets=7 migrations=0 compensated=0.
+HELD C12 C12/fixed-key-churn/seed=771001: independent_test.go:232: 30 waves and at least 900 virtual seconds completed; retained metadata measured, not assumed reclaimable.
+BROKEN C1 C1/sizes/seed=781001: independent_test.go:255: get e1/r0-00-0 via 127.0.0.1:42043: e2e: GET /e1/r0-00-0: Get "http://127.0.0.1:45293/e1/r0-00-0": read tcp 127.0.0.1:58818->127.0.0.1:45293: read: connection reset by peer: unreachable: e2e: scenario check failed.
+HELD C2 C2/partition/seed=781002: independent_test.go:240: acked=1 discarded=7 converge=5.464256598s.
+HELD C3 C3/rot/seed=781003: independent_test.go:262: rotted=20 rebuilt=132010 damaged=132010.
+BROKEN C4 C4/migration/seed=781004: independent_test.go:245: put e4/m03 via 127.0.0.1:34117: http 503: storage: put e4/m03: stripe 0: 2 of 3 shards durable, need 3: storage: unavailable.
+HELD C5 C5/rollback-coordinator=false/seed=781005: independent_test.go:275: state=compensated killed_step=1.
+HELD C5 C5/rollback-coordinator=true/seed=781005: independent_test.go:275: state=compensated killed_step=1.
+HELD C6 C6/kill-restart-wipe/seed=781006: independent_test.go:268: acked=15 incarnation=0->1.
+HELD C8 C8/conditional-sync/seed=781008: independent_test.go:250: conditional=19 discarded=5 stale_refused=4.
+HELD C9 C9/signal=15/seed=781009: independent_test.go:283: shutdown=1.298163533s read_after_restart=28.
+HELD C9 C9/signal=2/seed=781009: independent_test.go:283: shutdown=1.311430465s read_after_restart=28.
+HELD C13 C13/enospc-recovery/seed=791001: independent_test.go:331: filled=66961408 rejected=http 503: storage: put full/during: stripe 0: 0 of 6 shards durable, need 5: storage: unavailable.
+HELD C11 C11/http-rejections/seed=791011: independent_test.go:373: malformed length=4096 status=400.
+BROKEN C11 C11/seed=761001: independent_test.go:127: reserved tag "~lost/x" returned remote error (code 130): node: object valid/key: occ: get "\x05\x05valid\x03key": occ: not found.
+BROKEN C11 C11/seed=761003: independent_test.go:127: reserved tag "~lost/x" returned remote error (code 130): node: object valid/key: occ: get "\x05\x05valid\x03key": occ: not found.
+HELD C10 C10/default-build/seed=0: completed all assertions.
+HELD C10 C10/failed-test-cleanup/seed=99: completed all assertions.
+SUMMARY held=40 broken=4 setup_errors=1 seconds=972

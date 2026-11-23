@@ -1,0 +1,14 @@
+diff -ruN a/test/e2e/nemesis_test.go b/test/e2e/nemesis_test.go
+--- a/test/e2e/nemesis_test.go	2026-11-23 05:02:30.363838844 +0000
++++ b/test/e2e/nemesis_test.go	2026-11-23 05:02:30.364838930 +0000
+@@ -720,8 +720,8 @@
+ 	if _, err := c.Await("convergence after migration", nemHealBound, c.Converged); err != nil {
+ 		return err
+ 	}
+-	if err := n.refreshRegion(); err != nil {
+-		return err
++	if mi.State == "completed" {
++		n.region = wantTo
+ 	}
+ 	switch mi.State {
+ 	case "completed":

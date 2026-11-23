@@ -711,3 +711,130 @@ func (n *Node) deadVersions(rd occ.Reader, bucket string) []storage.VersionID {
 	}
 	return out
 }
+
+type verifyShardReq struct {
+	version  storage.VersionID
+	stripe   uint32
+	index    uint16
+	checksum [32]byte
+}
+
+// expectedBucket returns every shard of bucket that live manifests and staged
+// migration records in rd assign to this node.
+func (n *Node) expectedBucket(rd occ.Reader, bucket string) map[string]expectedShard {
+	out := map[string]expectedShard{}
+	add := func(m *storage.Manifest) {
+		if m.Bucket != bucket {
+			return
+		}
+		for s := range m.Stripes {
+			for i, ref := range m.Stripes[s].Shards {
+				if ref.Node != n.e.ID {
+					continue
+				}
+				out[m.ShardID(s, i).BlobName()] = expectedShard{man: m, stripe: s, idx: i}
+			}
+		}
+	}
+	for _, k := range prefixKeys(rd.Keys(), occ.BucketPrefix(occ.KindManifest, bucket)) {
+		rec, _, err := n.object(rd, k)
+		if err != nil {
+			continue
+		}
+		add(rec.Manifest)
+	}
+	for _, k := range prefixKeys(rd.Keys(), occ.BucketPrefix(occ.KindTag, bucket)) {
+		_, parts, err := occ.ParseKey(k)
+		if err != nil || !strings.HasPrefix(parts[2], tagStage) {
+			continue
+		}
+		val, _, err := rd.Get(k)
+		if err != nil {
+			continue
+		}
+		st, err := decodeStaged(val)
+		if err != nil {
+			continue
+		}
+		rec, err := decodeObject(st.Object)
+		if err != nil {
+			continue
+		}
+		add(rec.Manifest)
+	}
+	return out
+}
+
+// verifyShards handles opVerifyShards on a shard holder. When metaDoc is
+// present, it merges the pushed bucket records durably before checking disk so
+// the holder's inventory expects those shards and will not orphan-collect them
+// after answering. Each output byte is 1 iff the shard is verified on disk.
+func (n *Node) verifyShards(bucket string, requireExpected bool, metaDoc []byte, reqs []verifyShardReq) ([]byte, error) {
+	if _, err := n.reader(); err != nil {
+		return nil, err
+	}
+	if len(metaDoc) > 0 {
+		doc, err := occ.Decode(metaDoc)
+		if err != nil {
+			return nil, fmt.Errorf("node: verify shards %q: %w", bucket, err)
+		}
+		// Reject keys outside bucket so a peer cannot inject unrelated records.
+		keys := doc.Keys()
+		for _, k := range keys {
+			_, parts, err := occ.ParseKey(k)
+			if err != nil || len(parts) == 0 || parts[0] != bucket {
+				return nil, fmt.Errorf("node: verify shards %q: key %q outside bucket: %w", bucket, k, ErrMalformed)
+			}
+		}
+		if _, err := n.occ.Merge(doc); err != nil {
+			return nil, fmt.Errorf("node: verify shards %q: merge: %w", bucket, err)
+		}
+		for _, k := range keys {
+			n.RecordMeta(k)
+		}
+	}
+	rd, err := n.reader()
+	if err != nil {
+		return nil, err
+	}
+	var exp map[string]expectedShard
+	if requireExpected {
+		exp = n.expectedBucket(rd, bucket)
+	}
+	out := make([]byte, len(reqs))
+	for i, req := range reqs {
+		id := storage.ShardID{Bucket: bucket, Version: req.version, Stripe: req.stripe, Index: req.index}
+		name := id.BlobName()
+		if requireExpected {
+			es, ok := exp[name]
+			if !ok || es.man.Stripes[es.stripe].Shards[es.idx].Checksum != req.checksum {
+				continue
+			}
+		}
+		if n.purged[id.Version] || n.dead(rd, name) || n.statedAbsent(rd, id) {
+			continue
+		}
+		b, err := n.store.Store().GetBlob(id)
+		if err != nil {
+			if isNotFound(err) || isCorrupt(err) {
+				continue
+			}
+			return nil, fmt.Errorf("node: verify shard %s: %w", name, err)
+		}
+		if _, _, derr := storage.DecodeShard(b); derr != nil || storage.BlobChecksum(b) != req.checksum {
+			continue
+		}
+		out[i] = 1
+		// Clear any pending orphan timer and refresh the actual inventory hash
+		// now that the shard is both expected and verified on disk.
+		if requireExpected {
+			if inv, ok := n.inv[bucket]; ok {
+				delete(inv.orphans, name)
+				if serr := inv.actual.Set(name, merkle.Hash(req.checksum)); serr != nil {
+					n.logf("verify %s: %v", name, serr)
+				}
+			}
+		}
+	}
+	return out, nil
+}
