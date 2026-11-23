@@ -1,1 +1,2 @@
 66014753249261	two rot events 310 ms apart flipped the same bit back on n001; bytes valid but the damage mark stays (oracle now checks content)
+214339956433005	all 23 liar rounds hit a garbage or ErrDepth reply before a diff completed: invalid 0 on a correct product (sweep-level guard now)
