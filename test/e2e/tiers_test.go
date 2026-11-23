@@ -152,12 +152,12 @@ func TestE4MigrationUnderTrafficS(t *testing.T) {
 	t.Parallel()
 	var m measure
 	t.Cleanup(func() { m.report(t) })
-	sweep(t, seedsFor(t, 1, 8), func(t *testing.T, seed int64) {
+	sweep(t, seedsFor(t, 1, 10), func(t *testing.T, seed int64) {
 		var res e4Result
 		var oc outcome
 		runSim(t, seed, defaultSimOptions(), func(c *simCluster) error {
 			var err error
-			res, err = scenarioE4(c, simBounds, e4Params{objects: 4, size: 1024, multiStripeSize: 2*simStripe + 5, trafficSize: 512})
+			res, err = scenarioE4(c, simBounds, e4Params{objects: 4, size: 1024, multiStripeSize: simStripe + 5, trafficSize: 512})
 			if err != nil {
 				return err
 			}
