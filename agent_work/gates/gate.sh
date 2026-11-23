@@ -318,11 +318,15 @@ g5_dst() {
 g5r_tierr() {
   [ -d test/e2e ] || { echo "NOTE: no end-to-end suite yet"; return 0; }
   local rc=0 passed skipped waited=0 limit load
-  # Let the machine settle first. Straight after the hour-long sweep the same tests failed
-  # on one-second shard request timeouts (two PUTs answered 503) and then passed twice on
-  # the idle machine: the timeouts are real time and the nodes are race builds. Flush dirty
-  # pages, then wait for the one-minute load to fall under three quarters of the cores, for
-  # at most five minutes. This is a wait, not a retry: the tests still run exactly once.
+  # These tests are bound by real one-second request timeouts and the nodes are race
+  # builds. Run straight after the hour-long sweep they failed twice (two PUTs answered
+  # 503 on a shard request timeout; the second time with the load already low), and they
+  # passed every time they ran alone or after ten minutes of heavy tests. The cause after
+  # sustained load is not established (the hypervisor taking CPU is suspected, not
+  # measured). So the step runs first among the test gates, and before it the gate flushes
+  # dirty pages and waits, for at most five minutes, for the one-minute load to fall under
+  # three quarters of the cores. This is scheduling and a wait, not a retry: the tests
+  # still run exactly once, and a failure is still a red gate.
   sync
   limit=$(( $(nproc) * 75 ))
   while :; do
@@ -360,12 +364,13 @@ if want G0; then
   check G0 comments g0_comments
   check G0 selfcontained g0_selfcontained
 fi
+# G5R runs before the long test gates, not after them: see g5r_tierr.
+want G5R && check G5R tierR g5r_tierr
 want G1 && check G1 unit g1_unit
 want G2 && check G2 property g2_property
 want G3 && check G3 fuzz g3_fuzz
 want G4 && check G4 race g4_race
 want G5 && check G5 dst g5_dst
-want G5R && check G5R tierR g5r_tierr
 want G6 && check G6 docker g6_docker
 
 partial=false; [ -z "${GATE_ONLY:-}" ] || partial=true
