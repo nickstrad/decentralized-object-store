@@ -980,3 +980,31 @@ end-to-end sweep and `GATE_ONLY=G0`.
 
 Open after the review (round 3, NITS): two tests are missing (the shard threshold; the
 re-check in `Retire`).
+
+## 16. After the fix round: gate runs, one more failing seed, the real-process step (orchestrator)
+
+- **Full build-stage gate on `c21e374`:** G0–G5, G6 and G7 green (unit 412 s, 2,000-check
+  properties 345 s, 15 fuzz targets 497 s, race 2,936 s, 500-seed sweep 3,968 s). G5R red.
+- **A failing sweep seed in a landed package, not a product defect.** A second sweep, with
+  the seed base of commit `c2f0e8f`, failed `internal/merkle`
+  `TestLyingPeerDST/.../seed=214339956433005`: "the liar was never engaged: failed 23
+  invalid 0". Every safety claim held on that seed; a per-seed guard demanded something
+  only probable (that a liar round got three tree replies in a row). Fixed in `e130ca7`
+  (the standing builder for that package): per seed, the liar was contacted and a round
+  failed; across a sweep of ten seeds or more, at least one fabricated entry was refused;
+  seed pinned. Measured: 1 of 1,503 seeds has `invalid == 0`. Both mutations (honest nodes
+  never contact the liar; the liar never fabricates a tree) are caught. The replay and the
+  package were re-run by the orchestrator: ok.
+- **The real-process step (G5R) after sustained load.** It failed in both runs in which it
+  followed the hour-long sweep in the same gate (E1 and E4, then one test: PUTs answered 503
+  after a one-second shard request timeout) and passed in every other run: alone (five
+  times), and after a ten-minute heavy preload at a load of 4. A wait for the load to drop
+  did not help (the load was already low the second time). The cause after sustained load
+  is NOT established; the hypervisor taking CPU from the VM is suspected, not measured.
+  The gate now runs the step first among the test gates and still exactly once
+  (`agent_work/gates/gate.sh`, `g5r_tierr`). The product-side remedy remains request 5 of
+  section 9: a configurable shard request timeout.
+- **Pitfall recorded:** `GATE_OUT` must be a path inside the repository; a path under
+  `/tmp` is written inside the container and lost with it (two diagnostic logs were lost
+  this way). And two packages swept in one `go test` without `-timeout` hit the default
+  ten-minute limit.
