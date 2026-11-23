@@ -324,11 +324,11 @@ func TestNemesisSettleValidatesTerminalErrorsForEveryOp(t *testing.T) {
 			}
 		})
 	}
-	t.Run("availability get fails only when cycle has no netFault and node stayed untouched", func(t *testing.T) {
+	t.Run("availability get voids only reads not yet complete when fault or node touch occurs", func(t *testing.T) {
 		n := newNemesis(c)
 		n.dirty = map[string]bool{}
 		n.touched = map[env.NodeID]bool{}
-		n.pending = []*Call{{Op: "get", At: at, Bucket: bucketW, Key: "k00", Size: -1, Err: storage.ErrUnavailable, done: true}}
+		n.pending = []*Call{{Op: "get", At: at, Bucket: bucketW, Key: "k00", Size: -1, Ended: time.Second, Err: storage.ErrUnavailable, done: true}}
 		if err := n.settle(); err == nil || !strings.Contains(err.Error(), "availability within the fault budget") {
 			t.Fatalf("untouched availability get without netFault: settle() = %v, want availability failure", err)
 		}
@@ -336,16 +336,61 @@ func TestNemesisSettleValidatesTerminalErrorsForEveryOp(t *testing.T) {
 		n.dirty = map[string]bool{}
 		n.touched = map[env.NodeID]bool{}
 		n.netFault = true
-		n.pending = []*Call{{Op: "get", At: at, Bucket: bucketW, Key: "k00", Size: -1, Err: storage.ErrUnavailable, done: true}}
+		n.netFaultAt = 2 * time.Second
+		n.pending = []*Call{{Op: "get", At: at, Bucket: bucketW, Key: "k00", Size: -1, Ended: 2 * time.Second, Err: storage.ErrUnavailable, done: true}}
 		if err := n.settle(); err != nil {
-			t.Fatalf("availability get when cycle later had netFault: settle() = %v, want nil", err)
+			t.Fatalf("availability get ending at netFaultAt: settle() = %v, want nil", err)
+		}
+		if n.st.availabilityGets != 0 {
+			t.Fatalf("voided availability get was counted: availabilityGets = %d, want 0", n.st.availabilityGets)
+		}
+		n = newNemesis(c)
+		n.dirty = map[string]bool{}
+		n.touched = map[env.NodeID]bool{}
+		n.netFault = true
+		n.netFaultAt = 2 * time.Second
+		n.pending = []*Call{{Op: "get", At: at, Bucket: bucketW, Key: "k00", Size: -1, Ended: time.Second, Err: storage.ErrUnavailable, done: true}}
+		if err := n.settle(); err == nil || !strings.Contains(err.Error(), "availability within the fault budget") {
+			t.Fatalf("availability get finished before netFaultAt must still fail: settle() = %v", err)
+		}
+		n = newNemesis(c)
+		n.dirty = map[string]bool{}
+		n.touched = map[env.NodeID]bool{}
+		n.netFault = true
+		n.netFaultAt = 2 * time.Second
+		n.pending = []*Call{{Op: "get", At: at, Bucket: bucketW, Key: "k00", Size: -1, Ended: time.Second, Err: nil, done: true}}
+		if err := n.settle(); err != nil {
+			t.Fatalf("clean availability get finished before netFaultAt: settle() = %v", err)
+		}
+		if n.st.availabilityGets != 1 {
+			t.Fatalf("clean availability get before netFaultAt was voided: availabilityGets = %d, want 1", n.st.availabilityGets)
 		}
 		n = newNemesis(c)
 		n.dirty = map[string]bool{}
 		n.touched = map[env.NodeID]bool{env.NodeID(at.ID): true}
-		n.pending = []*Call{{Op: "get", At: at, Bucket: bucketW, Key: "k00", Size: -1, Err: env.ErrTimeout, done: true}}
+		n.touchedAt = map[env.NodeID]time.Duration{env.NodeID(at.ID): 2 * time.Second}
+		n.pending = []*Call{{Op: "get", At: at, Bucket: bucketW, Key: "k00", Size: -1, Ended: 2500 * time.Millisecond, Err: env.ErrTimeout, done: true}}
 		if err := n.settle(); err != nil {
-			t.Fatalf("availability get when target node was later touched: settle() = %v, want nil", err)
+			t.Fatalf("availability get still in flight when node touched: settle() = %v, want nil", err)
+		}
+		if n.st.availabilityGets != 0 {
+			t.Fatalf("voided touched-node get was counted: availabilityGets = %d, want 0", n.st.availabilityGets)
+		}
+		n = newNemesis(c)
+		n.dirty = map[string]bool{}
+		n.touched = map[env.NodeID]bool{env.NodeID(at.ID): true}
+		n.touchedAt = map[env.NodeID]time.Duration{env.NodeID(at.ID): 2 * time.Second}
+		n.pending = []*Call{{Op: "get", At: at, Bucket: bucketW, Key: "k00", Size: -1, Ended: time.Second, Err: storage.ErrUnavailable, done: true}}
+		if err := n.settle(); err == nil || !strings.Contains(err.Error(), "availability within the fault budget") {
+			t.Fatalf("availability get finished before node was touched must still fail: settle() = %v", err)
+		}
+		n = newNemesis(c)
+		n.dirty = map[string]bool{"k00": true}
+		n.dirtyAt = map[string]time.Duration{"k00": 2 * time.Second}
+		n.touched = map[env.NodeID]bool{}
+		n.pending = []*Call{{Op: "get", At: at, Bucket: bucketW, Key: "k00", Size: -1, Ended: time.Second, Err: storage.ErrUnavailable, done: true}}
+		if err := n.settle(); err == nil || !strings.Contains(err.Error(), "availability within the fault budget") {
+			t.Fatalf("availability get finished before key became dirty must still fail: settle() = %v", err)
 		}
 	})
 }

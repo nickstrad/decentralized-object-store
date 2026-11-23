@@ -15,10 +15,19 @@ import (
 )
 
 const (
-	e7Cycles  = 4
-	e7Chaos   = 4 * time.Second
-	fuzzWarmM = 2
+	e7Cycles             = 4
+	e7Chaos              = 4 * time.Second
+	fuzzWarmM            = 2
+	e7AvailFloorMinSeeds = 10
+	e7AvailFloorPerSeed  = 10
 )
+
+func checkE7AvailabilityFloor(seedsRun, totAvailGets int) error {
+	if seedsRun >= e7AvailFloorMinSeeds && totAvailGets < seedsRun*e7AvailFloorPerSeed {
+		return failf("E7 checked only %d availability gets across %d seeds (floor %d, %d/seed)", totAvailGets, seedsRun, seedsRun*e7AvailFloorPerSeed, e7AvailFloorPerSeed)
+	}
+	return nil
+}
 
 func e7Options() simOptions {
 	o := defaultSimOptions()
@@ -52,7 +61,7 @@ func TestE7NemesisHealingCyclesS(t *testing.T) {
 	t.Parallel()
 	var m measure
 	var mu sync.Mutex
-	var seedsRun, totPutsM, totPutsMOK, totMovedObjs int
+	var seedsRun, totPutsM, totPutsMOK, totMovedObjs, totAvailGets int
 	t.Cleanup(func() {
 		m.report(t)
 		if t.Failed() {
@@ -63,6 +72,9 @@ func TestE7NemesisHealingCyclesS(t *testing.T) {
 		}
 		if seedsRun >= 20 && totMovedObjs == 0 {
 			t.Fatalf("E7 migrated 0 pre-existing objects of bucket %s across %d seeds", bucketM, seedsRun)
+		}
+		if err := checkE7AvailabilityFloor(seedsRun, totAvailGets); err != nil {
+			t.Fatal(err)
 		}
 	})
 	sweep(t, seedsFor(t, 3, 5), func(t *testing.T, seed int64) {
@@ -82,6 +94,7 @@ func TestE7NemesisHealingCyclesS(t *testing.T) {
 		totPutsM += st.putsM
 		totPutsMOK += st.putsMOK
 		totMovedObjs += st.movedObjects
+		totAvailGets += st.availabilityGets
 		mu.Unlock()
 		m.add("e7/cycles", int64(st.cycles))
 		m.add("e7/faults_applied", int64(st.applied))
@@ -211,7 +224,7 @@ func ambiguousMigrationRun(seed int64, cycles int, forget bool, st *nemesisStats
 			for _, r := range n.c.regions {
 				clients = append(clients, env.NodeID("client-"+r))
 			}
-			n.netFault = true
+			n.markNetFault()
 			return n.c.apply(sim.Fault{Kind: sim.FaultPartitionOneWay, Side: n.c.ids, Other: clients})
 		}
 		var plan nemesisPlan
@@ -311,7 +324,7 @@ func slowAmbiguousMigrationRun(seed int64, forget bool, st *nemesisStats) func(i
 				for _, r := range n.c.regions {
 					clients = append(clients, env.NodeID("client-"+r))
 				}
-				n.netFault = true
+				n.markNetFault()
 				n.c.s.At(n.c.s.Now().Add(time.Second), "record-mig-coord", func() {
 					coordID = env.NodeID(n.migCoord.ID)
 				})
@@ -390,7 +403,7 @@ func TestNemesisAmbiguousMigrationStartIsTracked(t *testing.T) {
 				for _, r := range n.c.regions {
 					clients = append(clients, env.NodeID("client-"+r))
 				}
-				n.netFault = true
+				n.markNetFault()
 				return n.c.apply(sim.Fault{Kind: sim.FaultPartitionOneWay, Side: clients, Other: n.c.ids})
 			}
 			return nemesisPlan{cycles: []cycle{
@@ -415,6 +428,33 @@ func TestNemesisAmbiguousMigrationStartIsTracked(t *testing.T) {
 			t.Fatalf("expected migration and cycle-1 coordinator wipe to both apply, got applied=%d", st.applied)
 		}
 	})
+}
+
+func TestE7AvailabilityFloorSafeForSingleSeed(t *testing.T) {
+	cases := []struct {
+		name         string
+		seedsRun     int
+		totAvailGets int
+		wantErr      bool
+	}{
+		{"single seed with zero availability gets passes", 1, 0, false},
+		{"below min seeds with zero passes", e7AvailFloorMinSeeds - 1, 0, false},
+		{"sweep with zero availability gets fails", e7AvailFloorMinSeeds, 0, true},
+		{"sweep below per-seed floor fails", e7AvailFloorMinSeeds, e7AvailFloorMinSeeds*e7AvailFloorPerSeed - 1, true},
+		{"sweep at per-seed floor passes", e7AvailFloorMinSeeds, e7AvailFloorMinSeeds * e7AvailFloorPerSeed, false},
+		{"301-seed sweep with normal count passes", 301, 6000, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkE7AvailabilityFloor(tc.seedsRun, tc.totAvailGets)
+			if tc.wantErr && err == nil {
+				t.Fatalf("checkE7AvailabilityFloor(%d, %d) = nil, want error", tc.seedsRun, tc.totAvailGets)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("checkE7AvailabilityFloor(%d, %d) = %v, want nil", tc.seedsRun, tc.totAvailGets, err)
+			}
+		})
+	}
 }
 
 func FuzzClusterNemesis(f *testing.F) {

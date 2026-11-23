@@ -96,10 +96,13 @@ type nemesis struct {
 	last               map[string]*Call
 	deleted            map[string]bool
 	dirty              map[string]bool
+	dirtyAt            map[string]time.Duration
 	touched            map[env.NodeID]bool
+	touchedAt          map[env.NodeID]time.Duration
 	down               map[env.NodeID]bool
 	paused             map[env.NodeID]bool
 	netFault           bool
+	netFaultAt         time.Duration
 	stable             []*Call
 	mig                *Call
 	migCoord           Node
@@ -122,6 +125,51 @@ func newNemesis(c *simCluster) *nemesis {
 		n.keys = append(n.keys, fmt.Sprintf("k%02d", i))
 	}
 	return n
+}
+
+func (n *nemesis) markNetFault() {
+	if !n.netFault {
+		n.netFault = true
+		n.netFaultAt = n.c.Now()
+	}
+}
+
+func (n *nemesis) markTouched(id env.NodeID) {
+	if !n.touched[id] {
+		n.touched[id] = true
+		if n.touchedAt == nil {
+			n.touchedAt = map[env.NodeID]time.Duration{}
+		}
+		n.touchedAt[id] = n.c.Now()
+	}
+}
+
+func (n *nemesis) markDirty(key string) {
+	if !n.dirty[key] {
+		n.dirty[key] = true
+		if n.dirtyAt == nil {
+			n.dirtyAt = map[string]time.Duration{}
+		}
+		n.dirtyAt[key] = n.c.Now()
+	}
+}
+
+func (n *nemesis) availabilityReadClean(k *Call) bool {
+	if k.Size != -1 {
+		return false
+	}
+	if n.netFault && k.Ended >= n.netFaultAt {
+		return false
+	}
+	id := env.NodeID(k.At.ID)
+	if n.touched[id] && k.Ended >= n.touchedAt[id] {
+		return false
+	}
+	return true
+}
+
+func (n *nemesis) keyDirtyFor(k *Call) bool {
+	return n.dirty[k.Key] && k.Ended >= n.dirtyAt[k.Key]
 }
 
 func (n *nemesis) entry(avoid bool) Node {
@@ -147,17 +195,17 @@ func (n *nemesis) traffic() {
 		case x < 8:
 			n.seq++
 			k := c.Put(n.entry(false), bucketW, key, randomBytes(n.r, 1+n.r.IntN(simStripe)), storage.Condition{})
-			n.dirty[key] = true
+			n.markDirty(key)
 			n.pending = append(n.pending, k)
 		case x < 9:
 			n.seq++
 			k := c.Put(n.entry(false), bucketM, fmt.Sprintf("m%03d", n.seq), randomBytes(n.r, 1+n.r.IntN(simStripe/4)), storage.Condition{})
 			n.pending = append(n.pending, k)
 		case x < 11:
-			n.dirty[key] = true
+			n.markDirty(key)
 			n.pending = append(n.pending, c.PutTag(n.entry(false), bucketW, key, "t", fmt.Sprintf("v%d", n.seq), storage.Condition{}))
 		case x < 12:
-			n.dirty[key] = true
+			n.markDirty(key)
 			n.pending = append(n.pending, c.Delete(n.entry(false), bucketW, key, storage.Condition{}))
 		default:
 			n.pending = append(n.pending, c.Get(n.entry(false), bucketW, key))
@@ -256,10 +304,10 @@ func (n *nemesis) settle() error {
 			} else if !allowedNemesisError(k) {
 				return failf("get %s/%s via %s: disallowed error: %v", k.Bucket, k.Key, k.At.ID, k.Err)
 			}
-			if k.Size == -1 && !n.netFault && !n.touched[env.NodeID(k.At.ID)] {
+			if n.availabilityReadClean(k) {
 				n.st.availabilityGets++
-				if k.Err != nil && !n.dirty[k.Key] && !errors.Is(k.Err, occ.ErrNotFound) {
-					return failf("availability within the fault budget: get %s via untouched %s failed with no network fault in the cycle: %v", k.Key, k.At.ID, k.Err)
+				if k.Err != nil && !n.keyDirtyFor(k) && !errors.Is(k.Err, occ.ErrNotFound) {
+					return failf("availability within the fault budget: get %s via untouched %s failed before any network fault: %v", k.Key, k.At.ID, k.Err)
 				}
 			}
 		default:
@@ -389,7 +437,7 @@ func (n *nemesis) apply(op chaosOp) error {
 			return skip()
 		}
 		f = sim.Fault{Kind: map[opKind]sim.FaultKind{opCrashNode: sim.FaultCrash, opPauseNode: sim.FaultPause, opWipeNode: sim.FaultWipeRejoin}[op.kind], Node: id}
-		n.touched[id] = true
+		n.markTouched(id)
 		switch op.kind {
 		case opCrashNode:
 			n.down[id] = true
@@ -442,7 +490,7 @@ func (n *nemesis) apply(op chaosOp) error {
 		if !n.allows(id, blob) {
 			return skip()
 		}
-		n.touched[id] = true
+		n.markTouched(id)
 		f = sim.Fault{Kind: sim.FaultBitRot, Node: id, Blob: blob}
 		if op.kind == opReadErrors {
 			f = sim.Fault{Kind: sim.FaultReadError, Node: id, Blob: blob, Count: 1 + op.b%4}
@@ -468,7 +516,7 @@ func (n *nemesis) apply(op chaosOp) error {
 		return skip()
 	}
 	if op.kind.network() {
-		n.netFault = true
+		n.markNetFault()
 	}
 	if err := c.s.Apply(f); err != nil {
 		return skip()
@@ -751,7 +799,10 @@ func (n *nemesis) run(plan nemesisPlan) error {
 	}
 	for ci, cy := range plan.cycles {
 		n.st.cycles++
-		n.touched, n.down, n.paused, n.dirty, n.netFault = map[env.NodeID]bool{}, map[env.NodeID]bool{}, map[env.NodeID]bool{}, map[string]bool{}, false
+		n.touched, n.touchedAt = map[env.NodeID]bool{}, map[env.NodeID]time.Duration{}
+		n.down, n.paused = map[env.NodeID]bool{}, map[env.NodeID]bool{}
+		n.dirty, n.dirtyAt = map[string]bool{}, map[string]time.Duration{}
+		n.netFault, n.netFaultAt = false, 0
 		if n.beforeCycle != nil {
 			if err := n.beforeCycle(n, ci); err != nil {
 				return err
