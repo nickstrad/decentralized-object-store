@@ -896,6 +896,33 @@ All Go commands ran one at a time inside `docker compose run --rm -T dev ...`; `
 - Full gate `agent_work/gates/gate.sh 07-e2e` is left to the orchestrator per brief.
 - Zero findings disputed; all six findings and Note B are closed.
 
+## 14. Short mode for the fast lane (Neon)
+
+Seat: Gemini 4 Neon (builder), branch `chunk/07-e2e`, code commit `a6a009b`. Only `test/e2e/e5sim_test.go` changed (zero Go comments added; no product code, seed shares, or other tests touched).
+
+- **What changed (`test/e2e/e5sim_test.go`):**
+  - Added pure selector `e5CellSeeds(cell, cells int, short, race, explicitSeed, fullSeeds bool, seeds, pinned []int64) []int64` (`e5TrimStride = 8`):
+    - Without `-short`: returns the exact same cells, seeds, and order as before (`e5Seeds` for kept cells, `nil` when `race && cell%8 != 0`).
+    - With `-short` (and neither explicit `-seed`/`DST_SEED` nor `E2E_FULL_SEEDS=1`): keeps every eighth cell (`cell%8 == 0`, 10 of 78 cells) on one seed only (the first seed `e5Seeds` would assign that cell).
+    - With `-short` plus explicit `-seed`/`DST_SEED` or `E2E_FULL_SEEDS=1`: overrides `-short` and returns the exact non-short path.
+  - Added unit test `TestE5CellSeeds` first (verified failing on stub before implementation, passing after) covering all 78 cell indexes across five seed sets (`default`, `many`, `unpinned`, `single-pinned`, `single-unpinned`), non-short parity, `-short` trimming to 10/78 cells with 1 seed, explicit-seed / full-seeds override parity, and the non-empty kept-cell invariant.
+  - Wired `TestE5MigrationEveryFailurePointS` through `e5CellSeeds` and added one `t.Logf` line on the parent test when `-short` trims the run: `e5 short smoke: 10/78 cells, 10/234 seed runs (1 seed per kept cell)`.
+
+### Commands run and results (Docker `dev` container, one run at a time)
+
+| Command | Result | Go test time | Wall time |
+|---|---|---|---|
+| `docker compose run --rm -T dev gofmt -l .` | empty | — | — |
+| `docker compose run --rm -T dev go vet ./...` | clean | — | — |
+| `docker compose run --rm -T dev go test -count=1 -v ./test/e2e -run '^TestE5CellSeeds$'` (red, pre-impl) | FAIL (expected: `cell=0: got [166963932986536 1 2], want [166963932986536]`) | 0.018 s | — |
+| `docker compose run --rm -T dev go test -count=1 -v ./test/e2e -run '^TestE5CellSeeds$'` (green) | PASS (3 subtests) | 0.016 s | — |
+| `docker compose run --rm -T dev go test -count=1 -v ./test/e2e -run 'TestE5'` | PASS — 78 cells, **234** `seed=` subtests (78 × 3 seeds), 0 smoke log lines | 229.420 s | 232.19 s (3m52.19s) |
+| `docker compose run --rm -T dev go test -short -count=1 -v ./test/e2e -run 'TestE5'` | PASS — **10/78 cells**, **10/234** `seed=` runs (logged `e5 short smoke: 10/78 cells, 10/234 seed runs (1 seed per kept cell)`) | 11.121 s | 13.81 s |
+| `docker compose run --rm -T dev go test -short -count=1 ./test/e2e` | PASS | 80.730 s | 83.30 s (1m23.30s) |
+| `docker compose run --rm -T dev go test -short -count=1 -v ./test/e2e -run 'TestE5MigrationEveryFailurePointS' -seed=1` | PASS — **78/78 cells**, **78** `seed=1` runs, 0 smoke log lines | 79.455 s | 82.13 s (1m22.13s) |
+| `GATE_ONLY=G0 agent_work/gates/gate.sh 07-e2e` (then `git checkout -- agent_work/07-e2e/gates`) | `overall=pass` (`tools`, `gofmt`, `vet`, `build`, `detlint`, `panics`, `deps`, `comments`, `selfcontained` all pass) | — | 15.98 s |
+
+
 
 
 
