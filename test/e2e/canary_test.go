@@ -11,6 +11,7 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/saga"
 	"github.com/nickstrad/decentralized-object-store/internal/saga/sagasim"
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
+	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
 const (
@@ -291,4 +292,32 @@ func TestCanaryE7WipingTheOnlyCopyOfAnAcknowledgedWriteIsCaught(t *testing.T) {
 		return randomPlan(n.r, e7Cycles, e7Chaos)
 	}, &st)(seed)
 	expectCanaryFailure(t, s, "on no discard record")
+}
+
+func TestCanaryFuzzRoutedBucketCannotPlaceShards(t *testing.T) {
+	old := fuzzOptions()
+	old.nodes = 9
+	old.cfg.Layout = storage.Layout{K: 4, M: 2, StripeSize: simStripe}
+	t.Run("warm-up fails immediately on unplaceable routed bucket", func(t *testing.T) {
+		_, err := checkFuzzCorpus(old, fuzzWarmM)
+		if err == nil {
+			t.Fatal("checkFuzzCorpus passed with 9-node 4+2 layout")
+		}
+		want := "fault-free warm-up put to routed bucket m"
+		if !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "unavailable") {
+			t.Fatalf("failed for another reason than unplaceable routed bucket: %v", err)
+		}
+		t.Logf("caught: %v", err)
+	})
+	t.Run("corpus check catches zero acknowledged puts to routed bucket without warm-up", func(t *testing.T) {
+		_, err := checkFuzzCorpus(old, 0)
+		if err == nil {
+			t.Fatal("checkFuzzCorpus(warmM=0) passed with 9-node 4+2 layout")
+		}
+		want := "acknowledged 0 traffic puts to routed bucket m"
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("failed for another reason: %v", err)
+		}
+		t.Logf("caught: %v", err)
+	})
 }

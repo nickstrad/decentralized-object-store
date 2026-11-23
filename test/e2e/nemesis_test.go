@@ -69,14 +69,16 @@ const (
 )
 
 type nemesisStats struct {
-	applied, skipped, cycles     int
-	puts, putsOK, gets, getsOK   int
-	availabilityGets             int
-	discards, declared, migrated int
-	compensated                  int
-	converge                     []time.Duration
-	repair                       []time.Duration
-	tally                        map[string]int
+	applied, skipped, cycles        int
+	puts, putsOK, gets, getsOK      int
+	warmM, warmMOK, putsM, putsMOK  int
+	availabilityGets                int
+	discards, declared, migrated    int
+	migratedObjects, migratedShards int
+	compensated                     int
+	converge                        []time.Duration
+	repair                          []time.Duration
+	tally                           map[string]int
 }
 
 type nemesis struct {
@@ -97,6 +99,7 @@ type nemesis struct {
 	migCoord Node
 	region   string
 	seq      int
+	warmM    int
 	noGrace  bool
 	loneWipe bool
 }
@@ -168,8 +171,14 @@ func (n *nemesis) settle() error {
 		switch k.Op {
 		case "put":
 			n.st.puts++
+			if k.Bucket == bucketM {
+				n.st.putsM++
+			}
 			if k.Err == nil {
 				n.st.putsOK++
+				if k.Bucket == bucketM {
+					n.st.putsMOK++
+				}
 				if k.Bucket == bucketW {
 					n.last[k.Key] = k
 					delete(n.deleted, k.Key)
@@ -417,6 +426,47 @@ func (n *nemesis) fullyRepaired() (bool, error) {
 	return true, nil
 }
 
+func bucketShardsIn(c *simCluster, bucket, region string) (int, int, error) {
+	ns := c.upNodes()
+	if len(ns) == 0 {
+		return 0, 0, failf("no node is up")
+	}
+	rd, err := ns[0].OCC().Reader()
+	if err != nil {
+		return 0, 0, err
+	}
+	objs, shards := 0, 0
+	for _, k := range rd.Keys() {
+		if len(k) == 0 || occ.Kind(k[0]) != occ.KindManifest || !rd.Record(k).Live() {
+			continue
+		}
+		v, ok := rd.Record(k).Version()
+		if !ok {
+			continue
+		}
+		man := manifestOf(k, v)
+		if man == nil || man.Bucket != bucket {
+			continue
+		}
+		objs++
+		for s, st := range man.Stripes {
+			for i, ref := range st.Shards {
+				if string(c.s.Region(ref.Node)) != region {
+					continue
+				}
+				d := c.s.Disk(ref.Node)
+				if d == nil {
+					continue
+				}
+				if b, ok := d.Peek(man.ShardID(s, i).BlobName()); ok && storage.BlobChecksum(b) == ref.Checksum {
+					shards++
+				}
+			}
+		}
+	}
+	return objs, shards, nil
+}
+
 func (n *nemesis) finishMigration() error {
 	c := n.c
 	if n.mig == nil {
@@ -448,7 +498,24 @@ func (n *nemesis) finishMigration() error {
 		left, err := shardsOutside(c, bucketM, n.region)
 		return len(left) == 0, err
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if mi.State == "completed" {
+		if _, err := c.Await("convergence after migration", nemHealBound, c.Converged); err != nil {
+			return err
+		}
+		objs, shards, err := bucketShardsIn(c, bucketM, n.region)
+		if err != nil {
+			return err
+		}
+		n.st.migratedObjects += objs
+		n.st.migratedShards += shards
+		if n.warmM > 0 && shards == 0 {
+			return failf("completed migration of bucket %s moved 0 shards", bucketM)
+		}
+	}
+	return nil
 }
 
 func (n *nemesis) run(plan nemesisPlan) error {
@@ -458,6 +525,26 @@ func (n *nemesis) run(plan nemesisPlan) error {
 	}
 	if err := createBucket(c, simBounds, storage.BucketSpec{Name: bucketM, Region: n.region}); err != nil {
 		return err
+	}
+	if n.warmM > 0 {
+		wr := sim.NewStream(c.s.Seed(), "e2e/nemesis-warm")
+		var warm []*Call
+		for i := range n.warmM {
+			n.st.warmM++
+			warm = append(warm, c.Put(c.nodes[i%len(c.nodes)], bucketM, fmt.Sprintf("warm%02d", i), randomBytes(wr, 4096), storage.Condition{}))
+		}
+		if err := c.Wait(warm...); err != nil {
+			return err
+		}
+		for _, k := range warm {
+			if k.Err != nil {
+				return failf("fault-free warm-up put to routed bucket %s via %s failed: %v", bucketM, k.At.ID, k.Err)
+			}
+			n.st.warmMOK++
+		}
+		if _, err := c.Await("warm-up objects in "+bucketM+" replicated", nemHealBound, c.Converged); err != nil {
+			return err
+		}
 	}
 	for _, cy := range plan.cycles {
 		n.st.cycles++
