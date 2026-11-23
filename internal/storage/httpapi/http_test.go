@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/occ"
 	"github.com/nickstrad/decentralized-object-store/internal/saga"
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
@@ -447,6 +448,30 @@ func TestStatusTableRowByRowThroughHTTP(t *testing.T) {
 	extra := storage.StatusRow{Err: errors.New("extra"), Status: 418}
 	if got := httpapi.StatusOf(httpapi.StatusTable(extra), fmt.Errorf("x: %w", extra.Err)); got != 418 {
 		t.Fatalf("an extra row maps to %d", got)
+	}
+}
+
+func TestStatusTableJoinedUnavailablePrecedesShardCauses(t *testing.T) {
+	table := httpapi.StatusTable()
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"unavailable with missing shard maps to 503", errors.Join(storage.ErrUnavailable, storage.ErrNotFound), http.StatusServiceUnavailable},
+		{"unavailable with env not found maps to 503", errors.Join(storage.ErrUnavailable, env.ErrNotFound), http.StatusServiceUnavailable},
+		{"unavailable with corrupt shard maps to 503", errors.Join(storage.ErrUnavailable, storage.ErrCorrupt), http.StatusServiceUnavailable},
+		{"standalone missing shard maps to 404", storage.ErrNotFound, http.StatusNotFound},
+		{"standalone missing object maps to 404", occ.ErrNotFound, http.StatusNotFound},
+		{"standalone missing bucket maps to 404", storage.ErrNoSuchBucket, http.StatusNotFound},
+		{"standalone corrupt object maps to 500", storage.ErrCorrupt, http.StatusInternalServerError},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := httpapi.StatusOf(table, tc.err); got != tc.want {
+				t.Fatalf("StatusOf(%v) = %d, want %d", tc.err, got, tc.want)
+			}
+		})
 	}
 }
 

@@ -46,3 +46,32 @@ func TestObjectErrorMessage(t *testing.T) {
 		t.Fatal("ObjectError does not unwrap")
 	}
 }
+
+func TestCodeTableJoinedUnavailablePrecedesShardCauses(t *testing.T) {
+	table, err := storage.Codes()
+	mustNil(t, err)
+	cases := []struct {
+		name     string
+		err      error
+		wantCode env.Code
+		wantErr  error
+	}{
+		{"unavailable with missing shard encodes as unavailable", errors.Join(storage.ErrUnavailable, storage.ErrNotFound), storage.CodeUnavailable, storage.ErrUnavailable},
+		{"unavailable with corrupt shard encodes as unavailable", errors.Join(storage.ErrUnavailable, storage.ErrCorrupt), storage.CodeUnavailable, storage.ErrUnavailable},
+		{"unavailable with mixed shard causes encodes as unavailable", errors.Join(storage.ErrUnavailable, storage.ErrNotFound, storage.ErrCorrupt, env.ErrNotFound), storage.CodeUnavailable, storage.ErrUnavailable},
+		{"standalone missing shard encodes as not found", storage.ErrNotFound, storage.CodeNotFound, storage.ErrNotFound},
+		{"standalone corrupt shard encodes as corrupt", storage.ErrCorrupt, storage.CodeCorrupt, storage.ErrCorrupt},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			code, msg := table.Encode(tc.err)
+			if code != tc.wantCode {
+				t.Fatalf("Encode(%v) = code %d, want %d", tc.err, code, tc.wantCode)
+			}
+			back := table.Decode(code, msg)
+			if !errors.Is(back, tc.wantErr) {
+				t.Fatalf("Decode(%d) = %v, want %v", code, back, tc.wantErr)
+			}
+		})
+	}
+}
