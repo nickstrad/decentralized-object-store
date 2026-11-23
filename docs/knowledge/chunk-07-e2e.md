@@ -149,15 +149,20 @@ would not guess.
   key overwritten during the split passes.
 - E7's budget never rots metadata blobs or saga logs. Faults beyond the budget are not
   explored. The stalled-coordinator defect was not reproduced on tier R.
-- **OPEN AT THE TIME OF WRITING** (delete this item when closed): two tests of the new
-  migration rule are missing after review round 3.
-  - R3-1: no test holds the shard threshold. Changing `verified < quorum` to `verified < 1`
-    survives. Needed: a staged version keeping fewer than k verified shards must compensate
-    before the flip; one keeping at least k but fewer than the quorum must wait, be rebuilt,
-    then complete.
-  - R3-2: no test holds the re-check in `Retire`. Removing it survives. Needed: destination
-    holders wiped after the verify step and before `Retire`; or remove the check and say why
-    the catch-up's verification makes it unnecessary.
+- The migration rule's two edges are held by tests (added after review round 3; both
+  mutants now die): `TestMigrationVerifyBelowKCompensates` and
+  `TestMigrationVerifyBelowQuorumWaitsForRebuild` hold the shard threshold;
+  `TestMigrationRetireBelowQuorumWaitsForRebuild` and
+  `TestMigrationRetireBelowKRecopiesAndNeverGoesLive` hold the re-check in `Retire`, which
+  is reachable: a holder can lose shards after answering the catch-up's verification and
+  before the swap.
+- Tests that bind real ports reserve them and release them before the node binds; another
+  process can take a port in between (the full gate's race step lost UDP 40303 that way,
+  with packages running in parallel). Every such helper now retries the WHOLE cluster on
+  fresh ports, only for address-in-use, a bounded number of times, and closes what it
+  started on every failure path (`internal/noderuntime/export_test.go`,
+  `test/e2e/realcluster_test.go`, `cmd/objnode/main_test.go`). Reuse the helper; do not
+  write another reserve-and-release picker.
 
 ## Seeds and replay
 
