@@ -2,7 +2,7 @@
 
 Distributed systems fail in the gaps between events. A packet arrives two milliseconds after a timeout fires, a node crashes between writing a file and calling `fsync`, and a network partition heals just as a retry lands. Run that test on real sockets and OS threads and the bug vanishes as soon as you add a print statement or rerun the binary.
 
-Deterministic simulation testing removes the OS scheduler, wall clock, and real I/O from the loop. An entire cluster runs inside a single thread. One `int64` **seed** drives every random decision: network delays, packet drops, bit flips, clock drift, and the fault injector (a **nemesis** that schedules crashes, partitions, and disk damage during a run). Virtual time advances only when the simulator pops the next event from its queue.
+Deterministic simulation testing removes the OS scheduler, wall clock, and real I/O from the loop. An entire cluster runs inside a single thread. One `int64` **seed** drives every random decision: network delays, packet drops, bit flips, clock drift, and the fault injector (a **nemesis** that schedules crashes, partitions, and disk damage during a run). Virtual time advances when the simulator pops the next event or reaches an explicit run deadline.
 
 Because nothing depends on real time or thread interleaving, any seed lets you **replay** the exact same event sequence byte for byte. Tests run a **sweep** across many seeds to explore rare interleavings. When a 100-node chaos run breaks an **invariant** (a safety condition checked continuously) after 15,000 events, you rerun one seed and step straight to the failure.
 
@@ -108,7 +108,7 @@ graph TD
 
 ### Test plumbing and CLI
 
-`internal/sim/simtest` drives the simulator inside `go test`. `Seeds` picks `-seed`, else `DST_SEED`, else pinned seeds in `testdata/seeds.txt` followed by `DST_SEEDS` (default 3) sequential seeds from `DST_SEED_BASE` (default 1). `Sweep` opens one `seed=<n>` subtest per seed. `RequireDeterministic` runs a scenario twice from one seed, compares both digests (`ErrNondeterministic` on mismatch), calls `s.Verify()`, and logs diagnostics on failure (writing a full log when `DST_ARTIFACTS` is set).
+`internal/sim/simtest` drives the simulator inside `go test`. `Seeds` picks `-seed`, else `DST_SEED`, else pinned seeds in `testdata/seeds.txt` followed by `DST_SEEDS` (default 3) sequential seeds from `DST_SEED_BASE` (default 1). `Sweep` opens one `seed=<n>` subtest per seed. `RequireDeterministic` runs a scenario twice from one seed, compares both digests (`ErrNondeterministic` on mismatch), calls `s.Verify()`, and logs diagnostics on failure (writing the retained event log, with a truncation header if evicted, when `DST_ARTIFACTS` is set).
 
 `objsim` (`cmd/objsim`) runs named scenarios (`toy-chaos-5`, `toy-chaos-20`, `toy-chaos-50`, and `toy-chaos-100`, built on the max-register toy in `internal/sim/simtoy`), printing both digests and — on failure — the log tail, panic stack, and `REPLAY:` line.
 

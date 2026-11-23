@@ -1,6 +1,6 @@
 # End-to-End Tests and Hardening
 
-[The Object Store and Sync Engine](07-object-store-and-sync-engine.md) wired gossip, erasure coding, Merkle anti-entropy, optimistic concurrency control, and sagas behind the object API, sockets, and disk. Per-layer tests miss cross-layer bugs; even a green end-to-end suite stays blind if an unplaceable layout, loose error check, or short fault window lets data loss pass.
+[The Object Store and Sync Engine](07-object-store-and-sync-engine.md) wired gossip, erasure coding, Merkle anti-entropy, optimistic concurrency control, and sagas behind the object API, sockets, and disk. Per-layer tests miss cross-layer bugs; even an end-to-end suite stays blind when an unplaceable layout, loose error check, or short fault window hides data loss.
 
 End-to-end hardening closes both gaps. Shared scenarios run under deterministic simulation testing (Tier S) with continuous oracles and exact replay, and on real `objnode` processes (Tier R) over HTTP with `-race`, signals, and `fsync`. Fuzzing, sweeps, canaries, and adversarial suites attack the harness itself, fixing checks that pass when their guarantee breaks.
 
@@ -64,11 +64,11 @@ Scenarios E1–E4, E6, and E8 run against `Cluster` ([`cluster_test.go`](../../t
 - **Tier S ([`simcluster_test.go`](../../test/e2e/simcluster_test.go)).** 21 `*node.Node` instances across three regions (`4+2`, 64 KiB stripes) on the simulator ([Deterministic Simulation Testing](01-deterministic-simulation.md)). Clients call `apiNode` on channel `0xA0`, subjecting traffic to latency, splits, and lost replies without mocks. Scenarios use `simtest.RequireDeterministic`; fuzz runs end with `s.Verify()`.
 - **Tier R ([`realcluster_test.go`](../../test/e2e/realcluster_test.go)).** Builds `cmd/objnode -race -tags e2efault` once and runs 9 processes (3/region, `4+2`; E4/E5 use `2+1` so routed buckets fit in one region). Port collisions retry the cluster; startup fails closed with logs if any node exits; `Pdeathsig: SIGKILL` and `TestTierRHarnessLeavesNothingBehindWhenATestFails` prevent leaks.
 
-Four hooks aid testing without altering defaults: `ManifestOfRecord`/`ManifestOfStaged` ([`records.go`](../../internal/node/records.go)); `Health.MetaDigest`, `MetaRoot`, `rebuilt_bytes` ([`api.go`](../../internal/storage/api.go), [`objects.go`](../../internal/node/objects.go)); `//go:build e2efault` blocklist ([`e2efault.go`](../../internal/noderuntime/e2efault.go)) behind `outboundFilter` ([`runtime.go`](../../internal/noderuntime/runtime.go), checked absent by `TestDefaultBuildCarriesNoFaultInjection`); and `leakReport` ([`main.go`](../../cmd/objnode/main.go)).
+Four test hooks preserve defaults: `ManifestOfRecord`/`ManifestOfStaged` ([`records.go`](../../internal/node/records.go)); `Health.MetaDigest`, `MetaRoot`, `rebuilt_bytes` ([`api.go`](../../internal/storage/api.go), [`objects.go`](../../internal/node/objects.go)); `//go:build e2efault` blocklist ([`e2efault.go`](../../internal/noderuntime/e2efault.go)) behind `outboundFilter` ([`runtime.go`](../../internal/noderuntime/runtime.go), checked absent by `TestDefaultBuildCarriesNoFaultInjection`); and `leakReport` ([`main.go`](../../cmd/objnode/main.go)).
 
 ### Two product defects found by adversarial testing
 
-The initial suite found no product defects; stricter checks and adversarial testing uncovered two:
+The initial suite found no defects; stricter checks and adversarial testing uncovered two:
 
 1. **Live reads short of `k` shards returned 404 instead of 503.** Per-op allowlists in `(*nemesis).settle` failed E7 seed `1` (`get w/k15 via n017`). `storage.Node.Get` joins `storage.ErrUnavailable` with shard causes (`ErrNotFound`, `ErrCorrupt`); first-match tables listed shard causes first, returning wire code 96 (404) or 97 (500) instead of 99 (503). Moving `ErrUnavailable` first in [`internal/storage/errors.go`](../../internal/storage/errors.go) and [`internal/storage/httpapi/http.go`](../../internal/storage/httpapi/http.go) fixed it without changing codes (pinned by seed `1` and 8-cause tests).
 2. **A coordinator paused past `OrphanGrace` completed and lost acknowledged objects.** E7 and fuzz faults lasted 4 s before `FaultHealAll`. Pausing a coordinator 70 s starting 100 ms into migration (vs 60 s `OrphanGrace`) lost objects on 6/12 seeds (5/6 with no lost reply; 0/12 at 15 s or 30 s): `Copy` wrote shards before staging manifests, destination inventory orphan-collected them, verify checked manifest-only roots, and `Retire` swapped live manifests onto deleted versions.
@@ -134,7 +134,7 @@ Verification runs after copy, in verify and catch-up (`Root`), and in `Retire` b
 
 ### Coverage holes, replay, and canaries
 
-Auditing and mutating the suite exposed three holes, each pinned by a canary:
+Auditing and mutation exposed three suite holes, each pinned by a canary:
 
 1. **Fuzzed migrations moved nothing.** `fuzzOptions` ran 9 nodes (3/region) at `4+2`, so routed bucket `m` could not place 6-shard stripes; all 234 initial fuzz runs migrated an empty bucket. Switching to 12 nodes (4/region) at `2+1`, writing two warm-up objects before cycle 1, requiring `>= k` destination shards per pre-existing key, and keeping `TestCanaryFuzzRoutedBucketCannotPlaceShards` closed it.
 2. **Timed-out starts treated as "nothing started."** `finishMigration` returned `nil` on `env.ErrTimeout`, leaving a started saga untracked; it now checks `coord.Engine().IDs()` after heal, awaits started sagas, and refreshes `n.region` (`TestNemesisAmbiguousMigrationStartIsTracked`, `TestCanaryNemesisForgottenAmbiguousMigrationFails`).
@@ -142,7 +142,7 @@ Auditing and mutating the suite exposed three holes, each pinned by a canary:
 
 Every repaired check keeps a canary (15 Tier S canaries in [`canary_test.go`](../../test/e2e/canary_test.go), Tier R's E9 canary, `checkCanaryFailure`, [`oracle_self_test.go`](../../test/e2e/oracle_self_test.go)). Anti-vacuity guards stay exact per event or start at a seed floor: a sweep heuristic false-failed E7 `-seed=102` (replaced by per-migration checks plus 10/20-seed totals), `checkE7AvailabilityFloor` starts at 10 seeds, and `internal/merkle`'s `TestLyingPeerDST` (seed `214339956433005`, 1/1,503 seeds) switched to exact per-seed checks plus a 10-seed floor.
 
-Every Tier S failure prints a replay line:
+Every failed individual `RequireDeterministic` Tier S scenario prints a replay line (aggregate sweep checks require rerunning the sweep):
 
 ```text
 REPLAY: go test ./test/e2e -run '^TestE7NemesisHealingCyclesS$/^shard=1$/^seed=1$' -seed=1 -count=1
@@ -214,7 +214,7 @@ func e5CellSeeds(cell, cells int, short, race, explicitSeed, fullSeeds bool, see
 
 ## What the tests show, and what they do not
 
-Measurements ran in the Docker `dev` container (Tier S virtual time; Tier R wall time, `-race` `objnode`).
+Measured in the Docker `dev` container (Tier S virtual time; Tier R wall time, `-race` `objnode`).
 
 | Scenario | Verified (Tier S / Tier R) | Not shown here |
 |---|---|---|

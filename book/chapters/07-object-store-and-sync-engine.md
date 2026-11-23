@@ -6,7 +6,7 @@ One deterministic, single-threaded `*node.Node` over `internal/env` owns all sto
 
 ## How the integrated node maps to this repository
 
-Four layers form a node: [`internal/node`](../../internal/node/node.go) is the deterministic core (passing determinism lint) plus an 8-line `Node.Merge` in [`internal/occ/node_merge.go`](../../internal/occ/node_merge.go); [`internal/noderuntime`](../../internal/noderuntime/runtime.go) bridges real I/O; [`internal/storage/api.go`](../../internal/storage/api.go) and [`internal/storage/httpapi`](../../internal/storage/httpapi/http.go) serve the object API; [`cmd/objnode/main.go`](../../cmd/objnode/main.go) runs `objnode` and [`compose.yaml`](../../compose.yaml) defines the three-node Docker cluster (`cluster` profile).
+Four layers form a node: [`internal/node`](../../internal/node/node.go) is the deterministic core (passing determinism lint) plus a small `Node.Merge` wrapper in [`internal/occ/node_merge.go`](../../internal/occ/node_merge.go); [`internal/noderuntime`](../../internal/noderuntime/runtime.go) bridges real I/O; [`internal/storage/api.go`](../../internal/storage/api.go) and [`internal/storage/httpapi`](../../internal/storage/httpapi/http.go) serve the object API; [`cmd/objnode/main.go`](../../cmd/objnode/main.go) runs `objnode` and [`compose.yaml`](../../compose.yaml) defines the three-node Docker cluster (`cluster` profile).
 
 ```mermaid
 graph TD

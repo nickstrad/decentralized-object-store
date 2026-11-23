@@ -2,13 +2,13 @@
 
 Even with erasure-coded shards placed across nodes in [Reed-Solomon Erasure Coding](03-reed-solomon-erasure-coding.md), replicas drift. Partitions hide writes, packet loss drops replicas, and silent bit-rot flips durable bits without I/O errors. Shipping full inventories wastes bandwidth whenever replicas already agree.
 
-Merkle-tree anti-entropy summarizes each replica's key-to-hash inventory as a hash tree: leaves digest sorted keys and value hashes per bucket; inner nodes digest their children. Two peers compare 32-byte roots first. Equal roots stop in one message; unequal roots descend only mismatched branches to differing leaves and pull missing or damaged values.
+Merkle-tree anti-entropy summarizes each replica's key-to-hash inventory as a hash tree: leaves digest sorted keys and value hashes per bucket; inner nodes digest their children. Two peers compare 32-byte roots first. Equal roots stop in one round trip; unequal roots descend only mismatched branches to differing leaves and pull missing or damaged values.
 
-A tree alone misses silent bit-rot if leaves cache write-time hashes. Anti-entropy therefore pairs tree diffs with a **scrubber** that re-reads stored bytes, recomputes hashes, and updates the tree so damaged blobs diverge from healthy peers.
+A tree alone misses silent bit-rot when leaves cache write-time hashes, so a **scrubber** re-reads stored bytes, recomputes hashes, and updates the tree so damaged blobs diverge from healthy peers.
 
 ## How Merkle anti-entropy maps to this repository
 
-`internal/merkle` implements the tree, wire format, diff engine, and repair worker using only the standard library and `internal/env`, running unchanged on [Deterministic Simulation Testing](01-deterministic-simulation.md).
+`internal/merkle` implements the tree, wire format, diff engine, and repair worker on the standard library and `internal/env`, running unchanged under [Deterministic Simulation Testing](01-deterministic-simulation.md).
 
 ### Persistent fanout-16 trie
 
@@ -23,7 +23,7 @@ Differing depths return `ErrDepth`. Nodes are immutable: `Set` and `Delete` copy
 
 ### Level-by-level diff protocol and wire format
 
-In `diff.go`, `wire.go`, and `errors.go`, `Session` (`Tree.Diff(Limits)`) drives the initiator, `Tree.Answer([]byte)` is stateless so vanished peers leak nothing, and `Compare` runs both in memory.
+In `diff.go`, `wire.go`, and `errors.go`, `Session` (`Tree.Diff(Limits)`) drives the initiator, stateless `Tree.Answer([]byte)` leaks nothing on vanished peers, and `Compare` runs both in memory.
 
 ```mermaid
 sequenceDiagram
@@ -132,7 +132,7 @@ Each jittered tick (`[Period/2, 3·Period/2)` from `env.Rand`, default `Period =
 
 ### Testing on the simulator
 
-Deterministic simulation testing uses a content-addressed `chunkStore` (`store_test.go`, `chunk/<hex(SHA-256(bytes))>`, `Valid` checks `key == hash.String()`) multiplexing Merkle (`'M'`), fetch (`'G'`), and write (`'P'`) RPCs via `env.WithNet`. Four 3-node suites (48 chunks of 64–1,024 B, depth 2, 500 ms period, 250 ms timeout, scrub batch 16) run under `simtest.RequireDeterministic`: `TestBitRotRepairDST` (three 4 s bit-rot phases, `MaxDamagedPerGroup = 2`, plus `cleanRun`; pinned seed `66014753249261` flipped one bit twice 310 ms apart on `n001`, keeping bytes valid while `Disk.Damaged()` stayed set until `Sync`), `TestMissedWriteRepairDST` (5 s isolation), `TestRepairUnderLossDST` (20% loss, `LossPPM = 200,000`, checking `Rounds == Completed + Failed + InFlight`), and `TestLyingPeerDST` (garbage, `ErrDepth`, fabricated trees, bad chunks, plus a lone liar verifying `ErrRejected` and an empty disk). `TestScrubRefillsAWipedDiskDST` tests wipes and read errors; `TestCanarySkippedBranch` toggles `SetSkipBranch` (skipping child 15) to verify `sim.ErrDeadline` stalls on seeds 1–3.
+Deterministic simulation testing uses a content-addressed `chunkStore` (`store_test.go`, `chunk/<hex(SHA-256(bytes))>`, `Valid` checks `key == hash.String()`) multiplexing Merkle (`'M'`), fetch (`'G'`), and write (`'P'`) RPCs via `env.WithNet`. Four suites (48 chunks of 64–1,024 B, depth 2, 500 ms period, 250 ms timeout, scrub batch 16) run under `simtest.RequireDeterministic` — three 3-node suites (`TestBitRotRepairDST`: three 4 s bit-rot phases, `MaxDamagedPerGroup = 2`, `cleanRun`, pinned seed `66014753249261` flipping one bit twice 310 ms apart on `n001` so bytes stayed valid while `Disk.Damaged()` stayed set until `Sync`; `TestMissedWriteRepairDST`: 5 s isolation; `TestRepairUnderLossDST`: 20% loss, `LossPPM = 200,000`, checking `Rounds == Completed + Failed + InFlight`) plus `TestLyingPeerDST` (three honest nodes and a liar sending garbage, `ErrDepth`, fabricated trees, and bad chunks, and a 2-node lone-liar check for `ErrRejected` and an empty disk). `TestScrubRefillsAWipedDiskDST` tests wipes and read errors; `TestCanarySkippedBranch` toggles `SetSkipBranch` (skipping child 15) to verify `sim.ErrDeadline` stalls on seeds 1–3.
 
 ## Key pieces in code
 
@@ -230,7 +230,7 @@ func diffLeaf(local, remote []Entry, out []Difference) []Difference {
 
 ## What the tests show, and what they do not
 
-Measurements come from the 4-core Docker container:
+Measured in the 4-core Docker container:
 
 - **Diff cost (`MERKLE_MEASURE=1`, `TestMeasureDiffCost`).** In-sync rounds take 1 round trip, 1 hash, and 36 bytes. Divergent runs (`object-%07d`, `d` updates, deletes, and inserts) stay well under the exact bound:
 
@@ -265,7 +265,7 @@ Everything runs on `internal/sim` against an add-only, content-addressed `chunkS
 - **Implementation (`internal/merkle/`):** [`tree.go`](../../internal/merkle/tree.go), [`wire.go`](../../internal/merkle/wire.go), [`diff.go`](../../internal/merkle/diff.go), [`worker.go`](../../internal/merkle/worker.go), [`errors.go`](../../internal/merkle/errors.go).
 - **Tests and fuzz targets:** [`tree_test.go`](../../internal/merkle/tree_test.go), [`wire_test.go`](../../internal/merkle/wire_test.go) (`FuzzMerkleWire`), [`replysize_test.go`](../../internal/merkle/replysize_test.go), [`diff_test.go`](../../internal/merkle/diff_test.go), [`bounds_test.go`](../../internal/merkle/bounds_test.go), [`prop_test.go`](../../internal/merkle/prop_test.go) (`FuzzMerkleDiff`), [`worker_test.go`](../../internal/merkle/worker_test.go), [`lifecycle_test.go`](../../internal/merkle/lifecycle_test.go), [`dst_test.go`](../../internal/merkle/dst_test.go), [`canary_test.go`](../../internal/merkle/canary_test.go), [`store_test.go`](../../internal/merkle/store_test.go).
 
-Replay the pinned double-flip bit-rot seed or print the diff-cost table:
+Replay the pinned bit-rot seed or print diff costs:
 
 ```sh
 docker compose run --rm dev go test ./internal/merkle -run '^TestBitRotRepairDST$' -seed=66014753249261 -v -count=1

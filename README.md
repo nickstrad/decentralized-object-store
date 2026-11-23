@@ -4,7 +4,7 @@ A leaderless, multi-region object store written in Go on the standard library al
 
 ## Read the book
 
-Read the book online at [nickstrad.github.io/decentralized-object-store](https://nickstrad.github.io/decentralized-object-store/) or directly in this repository. It is the main way to learn the project: each chapter explains one distributed-systems mechanism, maps it to packages and code excerpts, and states what the tests prove and do not prove.
+Read the book at [nickstrad.github.io/decentralized-object-store](https://nickstrad.github.io/decentralized-object-store/) or in this repository: each chapter explains one mechanism, maps it to packages and code excerpts, and states what the tests prove and do not.
 
 - [Preface](book/front/preface.md) — scope, reading order, and stated limits
 - [Topic Map](book/front/topic-map.md) — topics, packages, and main test targets
@@ -35,7 +35,7 @@ Read the book online at [nickstrad.github.io/decentralized-object-store](https:/
 
 ## Run the tests through Docker
 
-Docker is the only prerequisite; nothing needs Go installed on the host. Build the image and run the whole test suite (about 7 minutes on a 4-core machine):
+Host prerequisites are Docker with Compose v2, `git`, `curl`, and a POSIX shell; Go runs inside the container. Build the image and run the whole test suite (about 7 minutes on a 4-core machine):
 
 ```sh
 docker compose build dev
@@ -48,27 +48,27 @@ Run the fast lane (G0 hygiene, G1 `go test -short` with coverage floors, and G6 
 agent_work/gates/ci-fast.sh
 ```
 
-Run the full landing gate on demand (G0–G7 including real processes; about 2.5 hours on a 4-core machine; `demo` labels the output directory):
+Run the full landing gate on demand (G0–G7 including real processes; also needs `jq` and `sha256sum` on the host; about 2.5 hours on a 4-core machine; `demo` labels the output directory):
 
 ```text
 GATE_STAGE=final agent_work/gates/gate.sh demo
 ```
 
-The full gate runs these checks in order:
+Checks run in order:
 
 - **G0 (hygiene):** gate tools, `gofmt`, `go vet`, `go build`, determinism lint, panic allowlist, stdlib-only dependency check, comment check (skipped in `final`), self-containment, and site lint.
-- **G5R (real-process end-to-end):** runs first among test gates; runs the end-to-end scenarios on real `-race` `objnode` processes (`E2E_TIER_R=1`).
+- **G5R (real-process end-to-end):** runs first; runs end-to-end scenarios on real `-race` `objnode` processes (`E2E_TIER_R=1`).
 - **G1 (unit):** `go test -count=1 -cover ./...` with an 85% statement coverage floor on core packages.
 - **G2 (property):** `pgregory.net/rapid` property tests at 2,000 checks per property, seeded from the commit.
-- **G3 (fuzz):** 30-second fuzz run for each of the 15 fuzz targets.
+- **G3 (fuzz):** 30-second run for each of the 15 fuzz targets.
 - **G4 (race):** `go test -race ./...` plus `-race -count=3` on `internal/node`, `internal/noderuntime`, `internal/storage/...`, `cmd/objnode`, and `test/e2e`.
-- **G5 (simulation):** 500-seed sweep from the commit seed across the module, with replay meta-tests and canaries.
-- **G6 (environment):** proof that the run happened inside the project `dev` image.
-- **G7 (cluster smoke):** host-side check starting the three-node Docker cluster, putting and getting a 1.5 MB object across nodes, verifying conditional-write 412s, and tearing it down.
+- **G5 (simulation):** 500-seed sweep from the commit seed, with replay meta-tests and canaries.
+- **G6 (environment):** verifies execution inside the project `dev` image.
+- **G7 (cluster smoke):** host-side check: starts the three-node cluster, puts/gets a 1.5 MB object across nodes, verifies 412s, and tears it down.
 
 ## Replay a seed
 
-Every failing simulator test prints a `REPLAY:` line with the exact test filter and seed so the failure reproduces byte for byte. Replay a pinned single-seed end-to-end nemesis run or the 100-node chaos CLI (which always prints the same two SHA-256 digests for a given seed):
+Every failing single-seed simulator test prints a `REPLAY:` line with the exact test filter and seed so the failure reproduces byte for byte (aggregate sweep checks rerun the sweep). Replay a pinned single-seed nemesis run or the 100-node chaos CLI (same two SHA-256 digests per seed):
 
 ```sh
 docker compose run --rm dev go test ./test/e2e -run '^TestE7NemesisHealingCyclesS$/^shard=1$/^seed=1$' -seed=1 -count=1
@@ -77,18 +77,22 @@ docker compose run --rm dev go run ./cmd/objsim -scenario toy-chaos-100 -seed 3
 
 ## Run a local cluster
 
-`compose.yaml` defines a three-node `cluster` profile (`node-a1`, `node-b1`, `node-c1` across regions `a`, `b`, and `c` with `2+1` erasure coding on ephemeral loopback ports). Start it, PUT an object through `node-a1`, GET it back from `node-c1`, and stop it:
+`compose.yaml` defines a three-node `cluster` profile (`node-a1`, `node-b1`, `node-c1` across regions `a`, `b`, and `c` with `2+1` erasure coding on ephemeral loopback ports). `compose.yaml` fixes the project name, so a second checkout on the same machine shares containers with the first; if you keep two checkouts, set `COMPOSE_PROJECT_NAME` to a different value in one of them. Start it, PUT an object through `node-a1`, GET it back from `node-c1`, and stop it:
 
 ```sh
 docker compose --profile cluster up -d node-a1 node-b1 node-c1
 A=$(docker compose --profile cluster port node-a1 8080)
 C=$(docker compose --profile cluster port node-c1 8080)
-until curl -sf "http://$A/_health" | grep '"Ready":true,"LiveMembers":3' >/dev/null; do sleep 1; done
+i=0; until curl -sf "http://$A/_health" | grep -q '"Ready":true,"LiveMembers":3'; do
+  i=$((i+1)); [ "$i" -lt 60 ] || { curl -s "http://$A/_health" || true; docker compose --profile cluster logs --tail 20; exit 1; }; sleep 1
+done
 curl -sf -X PUT "http://$A/demo"
 echo
 curl -sf -X PUT --data-binary "hello from region a" "http://$A/demo/hello.txt"
 echo
-until curl -sf "http://$C/demo/hello.txt"; do sleep 1; done
+i=0; until curl -sf "http://$C/demo/hello.txt"; do
+  i=$((i+1)); [ "$i" -lt 60 ] || { docker compose --profile cluster logs --tail 20 node-c1; exit 1; }; sleep 1
+done
 echo
 docker compose --profile cluster down
 ```
