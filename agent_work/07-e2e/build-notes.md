@@ -926,3 +926,57 @@ Seat: Gemini 4 Neon (builder), branch `chunk/07-e2e`, code commit `a6a009b`. Onl
 
 
 
+
+## 15. Adversarial fix round (Neon): ATTACKS findings F1–F5
+
+Written by the orchestrator from the builder's commits and run log: the builder's run was
+cut off by its provider's spending cap after the code was committed and before it wrote
+this section. The design description was checked against the code in the round-3 review
+(`FABLE-REVIEW.md`).
+
+- **F1 (`7654e7a` failing tests, `eaa0556` fix).** New node-channel request
+  `opVerifyShards` (op 4): the coordinator sends each holder named by a copied version's
+  manifest the staged record (or live manifest record) together with the shard list; the
+  holder merges the record durably, so its inventory expects the shard from then on,
+  checks the blob against the checksum and answers per shard. Used (a) after each object's
+  copy, as a plain presence check before the staged record is written; (b) in the verify
+  step and the post-flip catch-up, through `Root` of the destination; (c) in `Retire`
+  before the manifest swap. Threshold per stripe: the write acknowledgement quorum
+  (`AckQuorum`, k+1 by default). Below it the step fails and is retried; when verified plus
+  unreachable holders are fewer than k, the staged version is marked dead and its staged
+  record deleted, so the saga compensates before the flip and re-copies from the live
+  source after it. `Retire` deletes staged records only after every live peer holds the
+  swapped manifests. No new wire error code.
+  **The guarantee, in one sentence:** a migration never routes a bucket to, or swaps a
+  manifest onto, a copied version unless the destination holders have confirmed, and from
+  then on keep, at least the write quorum of every stripe's shards — however long any
+  node, the coordinator included, was stalled.
+  **Still a stated limit:** a coordinator that never returns leaves its saga unfinished
+  (OQ-13). And a bucket's migration sends whole-bucket messages, bounded by the 16 MiB
+  frame.
+  Tests: `internal/node/dst_migstall_test.go` (36 subtests: stall right after the copy on
+  12 seeds; stalls at each later phase; a stalled destination holder; the check-then-act
+  interleaving; staged-then-collected compensates; post-flip catch-up re-copies);
+  `test/e2e/migstall_test.go` (`TestE4MigrationCoordinatorStalledPastOrphanGraceS`, at
+  default seeds, about 0.6 s); canary `TestCanaryMigrationUnverifiedStallLosesObject`.
+- **F2 (`aec000c`).** `sweep` puts a seed in shard `seed mod 4` (was its index mod 4), so a
+  single-seed replay lands in the shard its printed command names; a `-seed` run matching
+  no seed subtest fails; `TestReplayCommandsReproduceEverySeed` plants a failure on every
+  seed under `DST_SEEDS=8` and re-executes each printed REPLAY line, E5 cells included.
+- **F3 (`eaa0556`, `79fb2f6`).** `Retire` reports swaps to the commit sink;
+  `TestOracleSeesMigratedManifestSwap`.
+- **F4 (`23e1341`).** E4 on the simulator asserts no shard of the pre-migration versions is
+  left outside the destination the moment the saga completes.
+- **F5 (`ab86c7b`).** `scenarioAbsenceShortOfLoss` in E3: one holder records an absence
+  while k others verify; no loss declared, bytes identical, shard rebuilt.
+
+Builder's verification before the cut-off (from `objstore-p2-07-e2e-advfix.log`):
+`go test -count=1 -cover ./internal/node` ok, 86.8%; `go test -short -count=1 ./test/e2e`
+ok, 73 s; node, saga, storage and end-to-end packages ok (end-to-end 351 s); the Opus
+driver `a02-ambiguous-start.sh` exit 0, F1 lines HELD; 120 s fuzz ok; tier R E4 and E5 ok;
+race ok (node 427 s; end-to-end 460 s with `-timeout 20m` — the default 10-minute timeout
+is too short for it now); `DST_SEEDS=500 ./internal/node` ok, 1502 s. Not run: the 500-seed
+end-to-end sweep and `GATE_ONLY=G0`.
+
+Open after the review (round 3, NITS): two tests are missing (the shard threshold; the
+re-check in `Retire`).

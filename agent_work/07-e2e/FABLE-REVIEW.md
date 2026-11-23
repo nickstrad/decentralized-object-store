@@ -183,3 +183,110 @@ builder: `00e269e`, `96db03e`, `3911ed0`, `78edab5`, `bf05175`, `4de93e2`, `2d62
 Not run by me in this round: the 500-seed sweep, the race run, the fuzz run and tier R (the
 builder's results above are taken as reported; the full gate re-runs all of them), and the
 Opus adversarial pass, which follows.
+
+---
+
+# Round 3 — review of the fix round for the Opus adversarial findings
+
+VERDICT: NITS (F1–F5 closed, the product fix is accepted; two minors, both missing tests of the new rule; three notes)
+
+Reviewed range: `f82ea4b..ab86c7b` on `chunk/07-e2e` (Gemini 4 Neon, builder: `7654e7a`,
+`eaa0556`, `79fb2f6`, `aec000c`, `23e1341`, `ab86c7b`), against
+`agent_work/adversarial/07-e2e-opus/ATTACKS.md`. This range changes product code
+(`internal/node/migrate.go`, `inventory.go`, `meta.go`). The builder's run was cut off by
+its provider's spending cap after the code commits and most of its verification, before
+the 500-seed end-to-end sweep, the static gate and its notes; nothing in this verdict
+rests on a run that did not happen.
+
+| Finding | Status | Basis |
+|---|---|---|
+| F1 (major, product) a migration whose coordinator stalls past the orphan grace mid-copy completes and loses acknowledged objects | CLOSED | See "The product fix" below. The adversarial seat's own F1 lines now read HELD (driver `a02`, run by the builder: seeds 31337, 3, 4 keep every acknowledged object). My mutation removing the new verification everywhere is KILLED by three tests in two packages; removing it from the verify step alone is KILLED |
+| F2 (major, suite) REPLAY does not replay outside shard 0 | CLOSED | A seed's shard is now `seed mod 4`, the same in a sweep and in a replay; a `-seed` run that matches no seed subtest fails; `TestReplayCommandsReproduceEverySeed` re-executes every printed line. Read; the adversarial driver `a05` re-run is in RESULTS.md |
+| F3 (minor) swaps invisible to the oracle | CLOSED | `Retire` reports each swap to the commit sink; with verification off, the canary is now caught by the commit-after-delete oracle itself (seen in my mutation run: `committed ... after its shard ... was deleted`) |
+| F4 (minor) do-nothing purge passes tier S | CLOSED | E4 checks the source region the moment the saga completes; builder reports the patch killed on tier S; re-checked by driver `a01` |
+| F5 (minor) loss oracle never exercised | CLOSED | E3 now produces a real absence record short of a loss on every seed; builder reports the patch killed; re-checked by driver `a04` |
+
+## The product fix (read in full; accepted)
+
+Before a migration makes a copied version matter, the coordinator asks every holder named
+in that version's manifest to confirm its shard (`opVerifyShards`, node channel op 4). The
+request carries the staged record itself; the holder merges it durably first, so from that
+moment its own inventory expects the shard and will not collect it as an orphan, then
+checks the blob against the checksum and answers. Check and protection are the same act,
+which closes the gap between checking and acting. This runs at three points: after each
+object is copied (plain presence, before the staged record is written), in the verify step
+and the post-flip catch-up (through `Root` of the destination), and again in `Retire` before
+manifests are swapped. A stripe passes with the write acknowledgement quorum (k+1 by
+default) verified; with fewer, the step fails and is retried while the shards could still
+be there or be rebuilt, and when fewer than k can exist the staged version is dropped —
+before the flip the saga compensates, after it the catch-up copies the object again from
+the still-live source. Staged records are now deleted only after every live peer holds the
+swapped manifests (they used to go first, which left the same window open at the end).
+
+Checked by reading: holders are visited in sorted order and results are joined by index, so
+nothing depends on map order; the callback fires once on every path, including zero
+holders and a stopped node; the request decoder bounds its count by the bytes present; a
+record for another bucket is refused; no new wire error code (the failure reuses the
+"replicas disagree" error); no clock, goroutine or new panic.
+
+## Findings
+
+### R3-1. [MINOR] The shard threshold of the new rule is not held by any test
+My mutation `if verified < quorum` → `if verified < 1` (a stripe passes with one verified
+shard) SURVIVES `go test ./internal/node -run TestMigration` and the migration tests of
+`test/e2e`. Every stall test loses all of a version's destination shards at once, so
+"none" is the only failing case exercised. The code is right as read; the test is
+missing. **Required:** a test in which a staged version keeps some but fewer than k
+verified shards (must not go live; saga compensates before the flip), and one in which it
+keeps at least k but fewer than the quorum (must wait, be rebuilt, then complete), each
+failing under that mutation.
+
+### R3-2. [MINOR] The re-check in `Retire` is not held by any test
+My mutation removing the verification from `Retire` only SURVIVES the same runs. After the
+verify step has pinned the shards, a stall can no longer remove them, so the stall tests
+never reach this check; it matters when destination holders lose shards (a wipe, bit rot)
+between the verify step and the swap. **Required:** a test that wipes destination holders
+of a staged version after the verify step and before `Retire` (enough to fall under the
+quorum, and separately under k), failing under that mutation; or remove the check and say
+why the catch-up's own verification makes it unnecessary.
+
+## Notes
+
+- **F.** Two further mutants survive and are judged equivalent: dropping the holder's
+  "my inventory expects this shard" test (the merge just before it already makes the shard
+  expected whenever the staged record is current), and dropping the removal of the orphan
+  timer (an expected shard never reaches the orphan branch, and the timer map is rebuilt on
+  every pass).
+- **G.** One verification request per holder carries every staged record of the bucket
+  that names that holder, so a bucket's migration is bounded by the 16 MiB frame (roughly
+  tens of thousands of objects). The purge and the pointer agreement already send
+  whole-bucket messages, so this is the existing design limit, not a new one; it should be
+  stated with the other limits in the notes and the chapter.
+- **H.** `go test -race ./test/e2e` now takes about 460 s (was about 170 s), so gate G4's
+  three repetitions cost about 23 minutes; and the package no longer fits `go test`'s
+  default 10-minute timeout under the race detector (the builder's first run died on that;
+  the gate passes `-timeout 45m`).
+
+## What I ran in round 3 (scratch copies of `ab86c7b`, through Docker)
+
+`go test ./internal/node -run 'TestMigration' -count=1` and
+`go test ./test/e2e -run 'StalledPastOrphanGrace|TestCanaryMigration|TestOracleSeesMigrated|TestE4|CorpusMovesShards' -count=1`
+on each mutant:
+
+| Mutant | Result |
+|---|---|
+| none | ok |
+| verification removed from `Root` and `Retire` | KILLED (`TestMigrationStalledAfterStageWithoutSyncCompensates`, `TestMigrationCheckThenActGapClosed`, `TestCanaryMigrationUnverifiedStallLosesObject`) |
+| removed from `Root` only | KILLED (the first two) |
+| removed from `Retire` only | SURVIVED (R3-2) |
+| the per-object check after each copy removed | KILLED (`TestMigrationCoordinatorStalledPastOrphanGraceMidCopy`, invariant "no shard of a possible winner deleted") |
+| holder does not merge the pushed record | KILLED (migrations can no longer complete: five tests) |
+| threshold lowered to one verified shard | SURVIVED (R3-1) |
+| holder confirms without the expectation test | survived, equivalent (note F) |
+| orphan timer not cleared on confirm | survived, equivalent (note F) |
+
+Builder's runs taken as reported (from its log; the full gate repeats them): unit tests of
+the node, saga, storage and end-to-end packages ok; `-short` end-to-end 73 s; 120 s fuzz of
+`FuzzClusterNemesis` ok; tier R E4 and E5 ok; race ok (node 427 s, end-to-end 460 s);
+`DST_SEEDS=500 ./internal/node` ok (1502 s); node coverage 86.8%. Not run by anyone yet on
+this tip: the 500-seed end-to-end sweep and the static gate — both are in the full gate.
