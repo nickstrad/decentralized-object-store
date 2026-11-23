@@ -49,6 +49,13 @@
       "title": "The Object Store and Sync Engine",
       "file": "chapters/07-object-store-and-sync-engine.md",
       "status": "published"
+    },
+    {
+      "n": 8,
+      "slug": "end-to-end-and-hardening",
+      "title": "End-to-End Tests and Hardening",
+      "file": "chapters/08-end-to-end-and-hardening.md",
+      "status": "published"
     }
   ],
   "front_matter": []
