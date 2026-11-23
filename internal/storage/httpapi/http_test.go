@@ -453,26 +453,50 @@ func TestStatusTableRowByRowThroughHTTP(t *testing.T) {
 
 func TestStatusTableJoinedUnavailablePrecedesShardCauses(t *testing.T) {
 	table := httpapi.StatusTable()
-	cases := []struct {
-		name string
-		err  error
-		want int
+	causes := []struct {
+		name           string
+		err            error
+		wantStandalone int
 	}{
-		{"unavailable with missing shard maps to 503", errors.Join(storage.ErrUnavailable, storage.ErrNotFound), http.StatusServiceUnavailable},
-		{"unavailable with env not found maps to 503", errors.Join(storage.ErrUnavailable, env.ErrNotFound), http.StatusServiceUnavailable},
-		{"unavailable with corrupt shard maps to 503", errors.Join(storage.ErrUnavailable, storage.ErrCorrupt), http.StatusServiceUnavailable},
-		{"standalone missing shard maps to 404", storage.ErrNotFound, http.StatusNotFound},
-		{"standalone missing object maps to 404", occ.ErrNotFound, http.StatusNotFound},
-		{"standalone missing bucket maps to 404", storage.ErrNoSuchBucket, http.StatusNotFound},
-		{"standalone corrupt object maps to 500", storage.ErrCorrupt, http.StatusInternalServerError},
+		{"storage.ErrNotFound", storage.ErrNotFound, http.StatusNotFound},
+		{"storage.ErrCorrupt", storage.ErrCorrupt, http.StatusInternalServerError},
+		{"env.ErrNotFound", env.ErrNotFound, http.StatusNotFound},
+		{"env.ErrTimeout", env.ErrTimeout, http.StatusGatewayTimeout},
+		{"env.ErrUnreachable", env.ErrUnreachable, http.StatusServiceUnavailable},
+		{"storage.ErrBusy", storage.ErrBusy, http.StatusServiceUnavailable},
+		{"storage.ErrExists", storage.ErrExists, http.StatusConflict},
+		{"storage.ErrInvalid", storage.ErrInvalid, http.StatusBadRequest},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := httpapi.StatusOf(table, tc.err); got != tc.want {
-				t.Fatalf("StatusOf(%v) = %d, want %d", tc.err, got, tc.want)
+	all := []error{storage.ErrUnavailable}
+	for _, c := range causes {
+		all = append(all, c.err)
+		t.Run("unavailable_with_"+c.name, func(t *testing.T) {
+			if got := httpapi.StatusOf(table, errors.Join(storage.ErrUnavailable, c.err)); got != http.StatusServiceUnavailable {
+				t.Fatalf("StatusOf(Join(ErrUnavailable, %s)) = %d, want 503", c.name, got)
+			}
+			if got := httpapi.StatusOf(table, errors.Join(c.err, storage.ErrUnavailable)); got != http.StatusServiceUnavailable {
+				t.Fatalf("StatusOf(Join(%s, ErrUnavailable)) = %d, want 503", c.name, got)
+			}
+		})
+		t.Run("standalone_"+c.name, func(t *testing.T) {
+			if got := httpapi.StatusOf(table, c.err); got != c.wantStandalone {
+				t.Fatalf("StatusOf(%s) = %d, want %d", c.name, got, c.wantStandalone)
 			}
 		})
 	}
+	t.Run("unavailable_with_all_shard_causes", func(t *testing.T) {
+		if got := httpapi.StatusOf(table, errors.Join(all...)); got != http.StatusServiceUnavailable {
+			t.Fatalf("StatusOf(all) = %d, want 503", got)
+		}
+	})
+	t.Run("standalone_missing_object_and_bucket", func(t *testing.T) {
+		if got := httpapi.StatusOf(table, occ.ErrNotFound); got != http.StatusNotFound {
+			t.Fatalf("StatusOf(occ.ErrNotFound) = %d, want 404", got)
+		}
+		if got := httpapi.StatusOf(table, storage.ErrNoSuchBucket); got != http.StatusNotFound {
+			t.Fatalf("StatusOf(storage.ErrNoSuchBucket) = %d, want 404", got)
+		}
+	})
 }
 
 type errService struct{ err error }
