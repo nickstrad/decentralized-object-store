@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -209,6 +210,135 @@ func e5Seeds(seeds, pinned []int64, cell, cells int) []int64 {
 	return out
 }
 
+const e5TrimStride = 8
+
+func e5CellSeeds(cell, cells int, short, race, explicitSeed, fullSeeds bool, seeds, pinned []int64) []int64 {
+	trimShort := short && !explicitSeed && !fullSeeds
+	if (race || trimShort) && cell%e5TrimStride != 0 {
+		return nil
+	}
+	mine := e5Seeds(seeds, pinned, cell, cells)
+	if trimShort && len(mine) > 1 {
+		return mine[:1:1]
+	}
+	return mine
+}
+
+func TestE5CellSeeds(t *testing.T) {
+	const cells = 78
+	pinned := []int64{166963932986536, 1}
+	defaultSeeds := []int64{166963932986536, 1, 2}
+	manySeeds := make([]int64, 0, 127)
+	manySeeds = append(manySeeds, pinned...)
+	for s := int64(2); s < 127; s++ {
+		manySeeds = append(manySeeds, s)
+	}
+	unpinnedSeeds := []int64{10, 11, 12, 13, 14}
+	singlePinned := []int64{1}
+	singleUnpinned := []int64{42}
+
+	seedSets := []struct {
+		name   string
+		seeds  []int64
+		pinned []int64
+	}{
+		{"default", defaultSeeds, pinned},
+		{"many", manySeeds, pinned},
+		{"unpinned", unpinnedSeeds, nil},
+		{"single-pinned", singlePinned, pinned},
+		{"single-unpinned", singleUnpinned, pinned},
+	}
+
+	t.Run("non-short matches e5Seeds and race filter", func(t *testing.T) {
+		for _, ss := range seedSets {
+			for _, race := range []bool{false, true} {
+				for _, explicit := range []bool{false, true} {
+					for _, full := range []bool{false, true} {
+						for i := range cells {
+							got := e5CellSeeds(i, cells, false, race, explicit, full, ss.seeds, ss.pinned)
+							if race && i%e5TrimStride != 0 {
+								if len(got) != 0 {
+									t.Fatalf("%s race=%v cell=%d: got %v, want empty", ss.name, race, i, got)
+								}
+								continue
+							}
+							want := e5Seeds(ss.seeds, ss.pinned, i, cells)
+							if !slices.Equal(got, want) {
+								t.Fatalf("%s race=%v explicit=%v full=%v cell=%d: got %v, want %v", ss.name, race, explicit, full, i, got, want)
+							}
+							if len(got) == 0 {
+								t.Fatalf("%s race=%v cell=%d: kept cell got 0 seeds", ss.name, race, i)
+							}
+						}
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("short trims to every eighth cell with first seed", func(t *testing.T) {
+		for _, ss := range seedSets {
+			for _, race := range []bool{false, true} {
+				kept := 0
+				for i := range cells {
+					got := e5CellSeeds(i, cells, true, race, false, false, ss.seeds, ss.pinned)
+					if i%e5TrimStride != 0 {
+						if len(got) != 0 {
+							t.Fatalf("%s race=%v cell=%d: got %v, want empty", ss.name, race, i, got)
+						}
+						continue
+					}
+					kept++
+					full := e5Seeds(ss.seeds, ss.pinned, i, cells)
+					if len(got) != 1 || got[0] != full[0] {
+						t.Fatalf("%s race=%v cell=%d: got %v, want [%d]", ss.name, race, i, got, full[0])
+					}
+				}
+				if kept != 10 {
+					t.Fatalf("%s race=%v: kept %d cells, want 10", ss.name, race, kept)
+				}
+			}
+		}
+	})
+
+	t.Run("short overridden by explicit or full matches non-short", func(t *testing.T) {
+		for _, ss := range seedSets {
+			for _, race := range []bool{false, true} {
+				for _, override := range []struct {
+					name     string
+					explicit bool
+					full     bool
+				}{
+					{"explicit", true, false},
+					{"full", false, true},
+					{"both", true, true},
+				} {
+					kept := 0
+					for i := range cells {
+						got := e5CellSeeds(i, cells, true, race, override.explicit, override.full, ss.seeds, ss.pinned)
+						want := e5CellSeeds(i, cells, false, race, override.explicit, override.full, ss.seeds, ss.pinned)
+						if !slices.Equal(got, want) {
+							t.Fatalf("%s %s race=%v cell=%d: got %v, want %v", ss.name, override.name, race, i, got, want)
+						}
+						if len(got) > 0 {
+							kept++
+						} else if !race || i%e5TrimStride == 0 {
+							t.Fatalf("%s %s race=%v cell=%d: kept cell got 0 seeds", ss.name, override.name, race, i)
+						}
+					}
+					wantKept := cells
+					if race {
+						wantKept = 10
+					}
+					if kept != wantKept {
+						t.Fatalf("%s %s race=%v: kept %d cells, want %d", ss.name, override.name, race, kept, wantKept)
+					}
+				}
+			}
+		}
+	})
+}
+
 func TestE5MigrationEveryFailurePointS(t *testing.T) {
 	t.Parallel()
 	cells := sagasim.Cells()
@@ -218,17 +348,45 @@ func TestE5MigrationEveryFailurePointS(t *testing.T) {
 	var m measure
 	t.Cleanup(func() { m.report(t) })
 	seeds := seedsFor(t, 1, 4)
+	if len(seeds) == 0 {
+		t.Fatal("seedsFor returned 0 seeds")
+	}
 	pinned, err := simtest.PinnedSeeds("testdata")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, cell := range cells {
-		if raceEnabled && i%8 != 0 {
+	_, explicitSeed, err := simtest.Seed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fullSeeds := os.Getenv(fullSeedsEnv) == "1"
+	short := testing.Short()
+	trimShort := short && !explicitSeed && !fullSeeds
+	plan := make([][]int64, len(cells))
+	ranCells, ranRuns, totalRuns := 0, 0, 0
+	for i := range cells {
+		totalRuns += len(e5Seeds(seeds, pinned, i, len(cells)))
+		mine := e5CellSeeds(i, len(cells), short, raceEnabled, explicitSeed, fullSeeds, seeds, pinned)
+		if len(mine) == 0 {
 			continue
 		}
-		mine := e5Seeds(seeds, pinned, i, len(cells))
+		plan[i] = mine
+		ranCells++
+		ranRuns += len(mine)
+	}
+	if ranCells == 0 {
+		t.Fatal("e5 matrix selected 0 cells")
+	}
+	if !trimShort && !raceEnabled && ranCells != len(cells) {
+		t.Fatalf("e5 matrix selected %d/%d cells", ranCells, len(cells))
+	}
+	if trimShort {
+		t.Logf("e5 short smoke: %d/%d cells, %d/%d seed runs (1 seed per kept cell)", ranCells, len(cells), ranRuns, totalRuns)
+	}
+	for i, cell := range cells {
+		mine := plan[i]
 		if len(mine) == 0 {
-			t.Fatalf("cell %s received 0 seeds", cell.Name())
+			continue
 		}
 		t.Run(cell.Name(), func(t *testing.T) {
 			t.Parallel()
