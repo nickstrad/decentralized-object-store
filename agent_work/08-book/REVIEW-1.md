@@ -9,7 +9,7 @@ What was checked, on the branch tip gated for landing:
 
 1. Chapter edit (two Neon editors, reports EDIT-REPORT-a.md and -b.md). Every number in
    each chapter was compared before and after: none changed; the few removed were cut
-   detail (byte offsets in the shard header, one size). All chapters 2,571–2,598 words, one
+   detail (byte offsets in the shard header, one size). All chapters 2,577–2,598 words after the fix round, one
    section order. The editors' excerpt checks were confirmed independently by Astra's pass
    (30 of 30 exact).
 2. Front matter, README and site front page (FRONT-REPORT.md). The README command check
