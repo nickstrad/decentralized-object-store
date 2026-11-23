@@ -24,6 +24,12 @@ func hasLiveManifest(c *simCluster, id env.NodeID, bucket, key string) bool {
 	return rd.Record(occ.ManifestKey(bucket, key)).Live()
 }
 
+// scenarioAbsenceShortOfLoss exercises the absence-recording path without
+// crossing into unrecoverable loss: it clogs one shard holder, shields two
+// holders from metadata updates so a rotted holder writes an ~absent/ record
+// while k good shards still exist, then heals and verifies the record
+// replicates (<= m), zero loss is declared, bytes read back intact, and the
+// non-absent rotted shard is rebuilt.
 func scenarioAbsenceShortOfLoss(c *simCluster) (int, error) {
 	const bucket = "e3abs"
 	if err := createBucket(c, simBounds, storage.BucketSpec{Name: bucket}); err != nil {

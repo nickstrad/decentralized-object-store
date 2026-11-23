@@ -40,6 +40,8 @@ type discardSummary struct {
 	total  uint64
 }
 
+// discardLog collects every up node's Health.RecentDiscards and checks that
+// each node's tail length matches min(Health.Discards, occ.DiscardTailLen).
 func discardLog(c Cluster) (discardSummary, error) {
 	ds := discardSummary{losers: map[string]bool{}}
 	ups := upNodes(c)
@@ -78,6 +80,8 @@ func lostObjects(c Cluster) (uint64, error) {
 
 func liveState(s string) bool { return s == "alive" || s == "suspect" }
 
+// splitViews reports whether every up node on each partition side considers
+// only members of its own side alive or suspect.
 func splitViews(c Cluster, sides ...[]Node) func() (bool, error) {
 	return func() (bool, error) {
 		for _, side := range sides {
@@ -104,6 +108,9 @@ func splitViews(c Cluster, sides ...[]Node) func() (bool, error) {
 	}
 }
 
+// checkContests verifies that every acknowledged contested write is either the
+// converged current version or named as a loser in some node's discard log,
+// failing distinctly if a node's 64-entry discard tail overflowed.
 func checkContests(c Cluster, cs []contest) (contestResult, error) {
 	var res contestResult
 	if len(cs) == 0 {
@@ -188,10 +195,14 @@ func allowedReadDuringPartition(k *Call) bool {
 	return allowedDuringPartition(k) || errors.Is(k.Err, occ.ErrNotFound) || errors.Is(k.Err, storage.ErrNotFound)
 }
 
+// sideCanPut reports whether a partition side has enough nodes to place a full
+// k+m stripe once views settle.
 func sideCanPut(side []Node, l storage.Layout) bool {
 	return len(side) >= l.K+l.M
 }
 
+// sideHasKShards reports whether every stripe of a pre-cut version keeps at
+// least k distinct shard indices on nodes belonging to side.
 func sideHasKShards(all map[string]map[uint32]map[uint16][]Node, version string, side []Node, k int) bool {
 	stripes, ok := all[version]
 	if !ok || len(stripes) == 0 {
@@ -235,6 +246,13 @@ type e2Result struct {
 	converge, detect                                      time.Duration
 }
 
+// scenarioE2 partitions region r0 from the rest of the cluster, runs metadata
+// and object reads/writes before and after views split, and verifies after
+// healing that membership, metadata bytes, and Merkle roots converge with every
+// discarded write counted and logged and zero objects declared lost.
+// Reads on sides holding >= k shards (both early and post-split) and post-split
+// PUTs on sides with >= k+m nodes must succeed; operations a side cannot serve
+// must return storage.ErrUnavailable, never wrong bytes.
 func scenarioE2(c Cluster, b bounds, p e2Params) (e2Result, error) {
 	var res e2Result
 	var err error
@@ -524,6 +542,11 @@ type e8Result struct {
 	staleRefused         int
 }
 
+// scenarioE8 edits tags, ACL entries, object metadata, and bucket quotas from
+// both sides of a region partition using If-Match preconditions, then checks
+// post-heal convergence to one version per key, discard logging and counters,
+// quota convergence to one side's write (QuotaInfo carries no ETag to match
+// against discard records), and PreconditionFailed on every losing tag ETag.
 func scenarioE8(c Cluster, b bounds, p e8Params) (e8Result, error) {
 	var res e8Result
 	const bucket = "e8"

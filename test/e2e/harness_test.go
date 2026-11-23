@@ -22,6 +22,8 @@ var simBounds = bounds{
 	readBatch: 20,
 }
 
+// runSim executes a tier S scenario under simtest.RequireDeterministic, booting
+// the cluster to convergence before running body.
 func runSim(t *testing.T, seed int64, opts simOptions, body func(c *simCluster) error) *sim.Sim {
 	t.Helper()
 	return simtest.RequireDeterministic(t, seed, func(seed int64) *sim.Sim {
@@ -42,10 +44,15 @@ func runSim(t *testing.T, seed int64, opts simOptions, body func(c *simCluster) 
 
 const sweepShards = 4
 
+// shardOf maps a seed deterministically to its parallel shard by value rather
+// than slice position so a single-seed replay lands in the exact shard named by
+// its printed REPLAY command.
 func shardOf(seed int64) int {
 	return int(uint64(seed) % sweepShards)
 }
 
+// sweep runs fn across seeds in up to sweepShards parallel shards and fails if
+// an explicit -seed/DST_SEED filter matched zero seed subtests.
 func sweep(t *testing.T, seeds []int64, fn func(t *testing.T, seed int64)) {
 	t.Helper()
 	var ran atomic.Int64
@@ -78,6 +85,10 @@ func sweep(t *testing.T, seeds []int64, fn func(t *testing.T, seed int64)) {
 
 const fullSeedsEnv = "E2E_FULL_SEEDS"
 
+// seedsFor returns all pinned seeds plus a num/den share of the unpinned sweep
+// seeds so multi-hundred-seed sweeps fit within gate budgets. Explicit -seed
+// replays and E2E_FULL_SEEDS=1 bypass sharing; -race builds run one unpinned
+// seed because tier S is single-threaded.
 func seedsFor(t *testing.T, num, den int) []int64 {
 	t.Helper()
 	all := simtest.Seeds(t)
@@ -103,6 +114,8 @@ func seedsFor(t *testing.T, num, den int) []int64 {
 	return append(out, rest[:min(n, len(rest))]...)
 }
 
+// measure collects per-seed metrics safely across parallel shards and prints
+// sorted min/p50/p99/max MEASURE summaries.
 type measure struct {
 	mu   sync.Mutex
 	vals map[string][]int64

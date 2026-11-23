@@ -23,6 +23,8 @@ const (
 	simBoot        = 6 * time.Second
 )
 
+// simOptions configures a tier S simulated cluster, including static per-node
+// clock skew and drift and optional test-only environment or config hooks.
 type simOptions struct {
 	nodes  int
 	cfg    node.Config
@@ -52,6 +54,9 @@ func defaultSimOptions() simOptions {
 	return simOptions{nodes: 21, cfg: simConfig(), net: sim.DefaultNetConfig()}
 }
 
+// simCluster implements Cluster over internal/sim with regional client
+// processes, per-node disk deletion and storage-traffic wrappers, and
+// event-driven safety oracles.
 type simCluster struct {
 	s            *sim.Sim
 	ids          []env.NodeID
@@ -70,6 +75,9 @@ type simCluster struct {
 	onHeal       func()
 }
 
+// newSimCluster builds the simulated storage nodes (distributed round-robin
+// across 3 regions) plus one client process per region, registering the ledger
+// and oracle invariants to run after every event.
 func newSimCluster(seed int64, opts simOptions) *simCluster {
 	table, err := node.CodeTable()
 	c := &simCluster{cli: map[string]env.Env{}, disks: map[env.NodeID]env.Disk{}, ledger: newLedger(), moved: map[byte]uint64{}, opts: opts}
@@ -139,6 +147,8 @@ func (c *simCluster) factory(e env.Env) env.Process {
 	return &apiNode{p: p, n: n, onPut: c.o.notePut, intercept: c.apiIntercept}
 }
 
+// countNet totals request and reply payload bytes per protocol channel so E3
+// can bound storage-channel repair traffic against damaged bytes.
 type countNet struct {
 	env.Transport
 	moved map[byte]uint64
@@ -320,6 +330,8 @@ func (c *simCluster) Sleep(d time.Duration) error {
 	return c.s.Err()
 }
 
+// Await advances virtual time in simAwaitStep slices until cond returns true,
+// failing the simulation with what if bound elapses or cond errors.
 func (c *simCluster) Await(what string, bound time.Duration, cond func() (bool, error)) (time.Duration, error) {
 	start := c.s.Now()
 	deadline := start.Add(bound)
@@ -427,6 +439,9 @@ func (c *simCluster) Members(n Node) ([]storage.MemberInfo, error) {
 	return nd.Members(), nil
 }
 
+// Converged reports whether every up node is ready, agrees on the live
+// membership set of all up nodes, and holds identical OCC digests and metadata
+// Merkle roots.
 func (c *simCluster) Converged() (bool, error) {
 	ns := c.upNodes()
 	if len(ns) == 0 {
@@ -481,8 +496,11 @@ func (c *simCluster) boot() error {
 	return err
 }
 
+// storageBytesMoved returns total bytes sent and received on channel 2 (storage).
 func (c *simCluster) storageBytesMoved() uint64 { return c.moved[2] }
 
+// expectedShards returns the shard blob names that live manifests in converged
+// metadata assign to node n.
 func (c *simCluster) expectedShards(n Node) ([]string, error) {
 	ns := c.upNodes()
 	if len(ns) == 0 {

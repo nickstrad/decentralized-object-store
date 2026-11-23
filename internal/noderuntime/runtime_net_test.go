@@ -238,6 +238,10 @@ func TestRealRuntimeLeavesNoGoroutineBehind(t *testing.T) {
 	}
 }
 
+// TestStartRealRetriesLostPortWithoutLeaking proves startRealWith retries a
+// cluster onto fresh ports on UDP address-in-use without leaking goroutines,
+// fails immediately on non-address-in-use errors, and stops after five
+// attempts when a port remains blocked.
 func TestStartRealRetriesLostPortWithoutLeaking(t *testing.T) {
 	t.Run("retries on UDP address already in use without leaking", func(t *testing.T) {
 		before := leakcheck.Take()

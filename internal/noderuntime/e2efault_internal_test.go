@@ -13,6 +13,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 )
 
+// TestBlocklistReloadSeesEqualSizeRewrite proves reload observes consecutive
+// equal-length peer rewrites even when the file's mtime does not advance.
 func TestBlocklistReloadSeesEqualSizeRewrite(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "node")
 	path := BlocklistPath(dir)
@@ -49,6 +51,9 @@ func TestBlocklistReloadSeesEqualSizeRewrite(t *testing.T) {
 	}
 }
 
+// TestBlocklistReloadMissingClearsAndReadErrorKeepsLastGood proves a missing
+// blocklist clears blocked peers without logging while a non-ENOENT read error
+// keeps the last good peer set and reports the error through blocklistLogf.
 func TestBlocklistReloadMissingClearsAndReadErrorKeepsLastGood(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "node")
 	path := BlocklistPath(dir)

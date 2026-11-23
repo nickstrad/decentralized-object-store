@@ -100,8 +100,8 @@ const (
 )
 
 // serveNode dispatches node-level RPCs on chNode: metadata record fetches for
-// Merkle repair, migration pointer-view queries, and explicit dead-version
-// shard purges.
+// Merkle repair, migration pointer-view queries, explicit dead-version shard
+// purges, and migration shard verification checks.
 func (n *Node) serveNode(from env.NodeID, req []byte, reply env.Reply) {
 	r := rbuf{b: req}
 	op := r.byte()

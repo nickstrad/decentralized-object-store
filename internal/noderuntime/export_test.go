@@ -22,6 +22,9 @@ func isAddrInUse(err error) bool {
 	return errors.Is(err, syscall.EADDRINUSE) || strings.Contains(err.Error(), "address already in use")
 }
 
+// FreeLoopbackAddrs reserves n distinct 127.0.0.1 ports that are free on both
+// TCP and UDP, holding all sockets open until every port is chosen so two
+// nodes in one cluster cannot receive the same port.
 func FreeLoopbackAddrs(n int) ([]string, error) {
 	if n <= 0 {
 		return nil, nil
@@ -64,6 +67,10 @@ func FreeLoopbackAddrs(n int) ([]string, error) {
 	return addrs, nil
 }
 
+// startLoopbackClusterWith starts n loopback runtimes and retries the whole
+// cluster on fresh addresses up to maxLoopbackStartAttempts times if a port is
+// taken between reservation release and bind. Already-started runtimes are
+// closed on every retry or failure path so no goroutines leak.
 func startLoopbackClusterWith(t testing.TB, n int, pick func(int) ([]string, error), makeCfg func(i int, ids []env.NodeID, dir string) RuntimeConfig) ([]*Runtime, []string, error) {
 	t.Helper()
 	if pick == nil {
@@ -130,6 +137,9 @@ func startLoopbackRuntime(t *testing.T, makeCfg func(addr, dir string) RuntimeCo
 	return rts[0]
 }
 
+// StartLoopbackCluster starts n loopback runtimes with bounded retry on
+// address-in-use bind races, closing any started runtimes before retrying or
+// returning an error. A nil pick uses FreeLoopbackAddrs.
 func StartLoopbackCluster(t testing.TB, n int, pick func(int) ([]string, error), makeCfg func(i int, ids []env.NodeID, dir string) RuntimeConfig) ([]*Runtime, []string, error) {
 	t.Helper()
 	return startLoopbackClusterWith(t, n, pick, makeCfg)

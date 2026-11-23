@@ -13,11 +13,14 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// Node identifies one cluster member and its placement region across both tiers.
 type Node struct {
 	ID     string
 	Region string
 }
 
+// Call holds the inputs, virtual- or wall-clock timing, and terminal result of
+// one asynchronous client API operation issued through a Cluster.
 type Call struct {
 	Op     string
 	At     Node
@@ -40,13 +43,19 @@ type Call struct {
 	wait   chan struct{}
 }
 
+// Done reports whether the call has reached a terminal result.
 func (c *Call) Done() bool { return c.done }
 
+// ShardFile pairs a shard's relative blob name with its raw bytes on disk.
 type ShardFile struct {
 	Name string
 	Blob []byte
 }
 
+// Cluster is the common driver interface implemented by the simulated cluster
+// (tier S) and the real-process cluster (tier R) so scenarios share one
+// definition. Object API methods return a *Call that completes when Wait
+// returns; random choices must come from Rand so tier S stays deterministic.
 type Cluster interface {
 	Tier() string
 	Nodes() []Node
@@ -156,6 +165,8 @@ type attempt struct {
 	size        int
 }
 
+// Ledger records every client PUT attempt's SHA-256 and checks every successful
+// GET against what clients wrote, independently of cluster metadata.
 type Ledger struct {
 	mu       sync.Mutex
 	attempts map[string][]attempt
@@ -172,6 +183,8 @@ func newLedger() *Ledger {
 
 func objID(bucket, key string) string { return bucket + "/" + key }
 
+// attempt records a PUT's digest before transmission so a write whose reply is
+// lost in transit is still recognized if a later GET reads it back.
 func (l *Ledger) attempt(k *Call, data []byte) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -181,6 +194,7 @@ func (l *Ledger) attempt(k *Call, data []byte) {
 	l.attempts[id] = append(l.attempts[id], attempt{bucket: k.Bucket, key: k.Key, sum: k.Sum, size: k.Size})
 }
 
+// settle records a completed call and verifies every successful GET immediately.
 func (l *Ledger) settle(k *Call) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -204,6 +218,9 @@ func (l *Ledger) settle(k *Call) {
 	}
 }
 
+// checkRead requires a GET's bytes to match its reported size, content hash,
+// exact acknowledged ETag payload if known, or at least one PUT attempt on that
+// key when the winning PUT's reply was lost.
 func (l *Ledger) checkRead(k *Call) error {
 	sum := sha256.Sum256(k.Data)
 	if k.Info.Size != int64(len(k.Data)) {
@@ -224,6 +241,8 @@ func (l *Ledger) checkRead(k *Call) error {
 	return nil
 }
 
+// Wrong returns nil if every GET matched a valid client write, or an error
+// reporting the count and first mismatch.
 func (l *Ledger) Wrong() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -233,18 +252,22 @@ func (l *Ledger) Wrong() error {
 	return failf("%d reads returned wrong bytes; first: %s", len(l.wrong), l.wrong[0])
 }
 
+// Acked returns a copy of all acknowledged PUT calls recorded so far.
 func (l *Ledger) Acked() []*Call {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return slices.Clone(l.acked)
 }
 
+// Meta returns a copy of all acknowledged metadata-mutating calls (delete, tag,
+// ACL, quota-set) recorded so far.
 func (l *Ledger) Meta() []*Call {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return slices.Clone(l.meta)
 }
 
+// Reads returns the number of successful GET calls checked by the ledger.
 func (l *Ledger) Reads() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()

@@ -10,6 +10,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/noderuntime"
 )
 
+// TestBlocklistPathSitsBesideTheDataDirectory proves BlocklistPath strips any
+// trailing slash so the file sits beside dataDir rather than inside it.
 func TestBlocklistPathSitsBesideTheDataDirectory(t *testing.T) {
 	for _, dir := range []string{"/x/data", "/x/data/"} {
 		if got := noderuntime.BlocklistPath(dir); got != "/x/data"+noderuntime.BlocklistSuffix {
@@ -18,6 +20,9 @@ func TestBlocklistPathSitsBesideTheDataDirectory(t *testing.T) {
 	}
 }
 
+// TestBlocklistSplitsTwoNodesUntilCleared proves mutual blocklist files split
+// two loopback runtimes into single-node views and removing the files lets them
+// rejoin.
 func TestBlocklistSplitsTwoNodesUntilCleared(t *testing.T) {
 	c := startReal(t, 2, realConfig())
 	eventually(t, 10*time.Second, "two nodes join", func() bool { return c.joined(2) })

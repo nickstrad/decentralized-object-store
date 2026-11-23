@@ -527,6 +527,8 @@ func (rt *Runtime) serve(c net.Conn) {
 
 type realNet struct{ rt *Runtime }
 
+// outboundFilter is nil in default builds; e2efault builds set it to drop
+// datagrams and suppress dials to peers listed in a node's blocklist file.
 var outboundFilter func(dataDir string, to env.NodeID) bool
 
 func (t *realNet) Send(to env.NodeID, msg []byte) error {
@@ -656,6 +658,7 @@ func (t *realNet) Request(to env.NodeID, req []byte, timeout time.Duration, cb f
 		rt.afterFunc(0, func() { complete(nil, fmt.Errorf("node: request to %s: no network: %w", to, env.ErrUnreachable)) })
 		return
 	}
+	// Blocked requests do not dial; the request's own timer fires ErrTimeout.
 	if outboundFilter != nil && outboundFilter(rt.cfg.DataDir, to) {
 		return
 	}

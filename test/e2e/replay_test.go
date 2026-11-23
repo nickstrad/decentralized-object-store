@@ -55,6 +55,9 @@ func runSelf(t *testing.T, extraEnv []string, args ...string) (string, error) {
 	return string(out), err
 }
 
+// TestReplayCommandsReproduceEverySeed plants failures across all four sweep
+// shards and E5 failure-matrix cells, re-executes every printed REPLAY command,
+// and proves explicit -seed runs that match zero seed subtests fail closed.
 func TestReplayCommandsReproduceEverySeed(t *testing.T) {
 	t.Run("sweep replays every seed across all four shards", func(t *testing.T) {
 		const planted = "planted-replay-e8"

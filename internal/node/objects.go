@@ -725,8 +725,9 @@ func kindName(k occ.Kind) string {
 	return fmt.Sprintf("kind%d", k)
 }
 
-// Health reports node readiness, live membership count, persisted LWW discard
-// count, the recent discard tail, lost-object count, and diagnostic counters.
+// Health reports node readiness, live membership count, metadata digest and
+// Merkle root (when ready), persisted LWW discard count, the recent discard
+// tail, lost-object count, and diagnostic counters.
 func (n *Node) Health() storage.Health {
 	h := storage.Health{Node: string(n.e.ID), Region: string(n.e.Region), Ready: n.Ready(), LiveMembers: n.gossip.LiveCount()}
 	if n.Ready() {

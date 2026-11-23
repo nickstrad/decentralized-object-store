@@ -64,6 +64,9 @@ func TestNodeAndAPICodesStayInTheirBlock(t *testing.T) {
 	}
 }
 
+// TestJoinedUnavailablePrecedesEveryShardCause proves the merged node code
+// table encodes storage.ErrUnavailable ahead of every per-shard cause in both
+// errors.Join orders while leaving standalone causes unchanged.
 func TestJoinedUnavailablePrecedesEveryShardCause(t *testing.T) {
 	table, err := node.CodeTable()
 	if err != nil {

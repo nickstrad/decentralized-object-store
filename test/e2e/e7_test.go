@@ -22,6 +22,9 @@ const (
 	e7AvailFloorPerSeed  = 10
 )
 
+// checkE7AvailabilityFloor fails a multi-seed E7 sweep (>= 10 seeds) if average
+// checked availability reads fall below e7AvailFloorPerSeed while allowing
+// single-seed runs that legitimately draw network faults on every cycle.
 func checkE7AvailabilityFloor(seedsRun, totAvailGets int) error {
 	if seedsRun >= e7AvailFloorMinSeeds && totAvailGets < seedsRun*e7AvailFloorPerSeed {
 		return failf("E7 checked only %d availability gets across %d seeds (floor %d, %d/seed)", totAvailGets, seedsRun, seedsRun*e7AvailFloorPerSeed, e7AvailFloorPerSeed)
@@ -29,6 +32,9 @@ func checkE7AvailabilityFloor(seedsRun, totAvailGets int) error {
 	return nil
 }
 
+// e7Options configures the 21-node 4+2 cluster for E7 with static clock skew
+// (±3 s), drift (±1000 ppm), 0.5% datagram loss, and shortened grace periods
+// that remain longer than any chaos cut E7 applies.
 func e7Options() simOptions {
 	o := defaultSimOptions()
 	o.skew, o.driftP = 3*time.Second, 1000
@@ -57,6 +63,10 @@ func runNemesis(seed int64, opts simOptions, plan func(n *nemesis) nemesisPlan, 
 	}
 }
 
+// TestE7NemesisHealingCyclesS runs alternating chaos and heal cycles across a
+// 3/5 share of sweep seeds, proving continuous safety invariants, availability
+// within the fault budget, post-heal convergence and repair, per-migration
+// shard movement, zero declared losses, and post-grace orphan cleanup.
 func TestE7NemesisHealingCyclesS(t *testing.T) {
 	t.Parallel()
 	var m measure
@@ -124,6 +134,9 @@ func TestE7NemesisHealingCyclesS(t *testing.T) {
 	})
 }
 
+// fuzzOptions uses 12 nodes (4 per region) with a 2+1 layout so routed bucket m
+// keeps >= k+m=3 nodes in its region even under a single-node fault while
+// keeping per-execution fuzz cost low.
 func fuzzOptions() simOptions {
 	o := defaultSimOptions()
 	o.nodes = 12
@@ -202,6 +215,9 @@ func checkFuzzCorpus(opts simOptions, warmM int) (nemesisStats, error) {
 	return tot, nil
 }
 
+// TestFuzzClusterNemesisCorpusMovesShards proves the fuzz seed corpus exercises
+// non-empty routed bucket writes and completed migrations moving real shards
+// with every simulator invariant verified.
 func TestFuzzClusterNemesisCorpusMovesShards(t *testing.T) {
 	st, err := checkFuzzCorpus(fuzzOptions(), fuzzWarmM)
 	if err != nil {
@@ -373,6 +389,10 @@ func slowAmbiguousMigrationRun(seed int64, forget bool, st *nemesisStats) func(i
 	}
 }
 
+// TestNemesisAmbiguousMigrationStartIsTracked proves that when StartMigration
+// times out after a one-way network cut, finishMigration recovers and awaits
+// any saga started on the coordinator before clearing n.mig or allowing a
+// subsequent coordinator wipe, and handles dropped requests cleanly.
 func TestNemesisAmbiguousMigrationStartIsTracked(t *testing.T) {
 	const seed = 702
 	for _, cycles := range []int{1, 2} {
@@ -437,6 +457,8 @@ func TestNemesisAmbiguousMigrationStartIsTracked(t *testing.T) {
 	})
 }
 
+// TestE7AvailabilityFloorSafeForSingleSeed proves the sweep-level availability
+// floor never false-fails single-seed runs and catches under-floor sweeps.
 func TestE7AvailabilityFloorSafeForSingleSeed(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -464,6 +486,9 @@ func TestE7AvailabilityFloorSafeForSingleSeed(t *testing.T) {
 	}
 }
 
+// FuzzClusterNemesis decodes fuzz inputs into whole-cluster nemesis schedules
+// on a 12-node 2+1 cluster and verifies all safety invariants and post-heal
+// convergence via Sim.Verify.
 func FuzzClusterNemesis(f *testing.F) {
 	for _, b := range fuzzCorpus() {
 		f.Add(b)

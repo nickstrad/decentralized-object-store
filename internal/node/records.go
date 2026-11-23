@@ -229,6 +229,8 @@ func stageKey(bucket, object, saga string) string {
 
 func systemName(name string) bool { return strings.HasPrefix(name, sysPrefix) }
 
+// ManifestOfRecord decodes a serialized object record and returns its manifest,
+// or ErrMalformed if the record is invalid.
 func ManifestOfRecord(b []byte) (*storage.Manifest, error) {
 	r, err := decodeObject(b)
 	if err != nil {
@@ -237,6 +239,8 @@ func ManifestOfRecord(b []byte) (*storage.Manifest, error) {
 	return r.Manifest, nil
 }
 
+// ManifestOfStaged decodes a serialized migration staged record and returns
+// the destination manifest embedded in its object payload, or ErrMalformed.
 func ManifestOfStaged(b []byte) (*storage.Manifest, error) {
 	st, err := decodeStaged(b)
 	if err != nil {

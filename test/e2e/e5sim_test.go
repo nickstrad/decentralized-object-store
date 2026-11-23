@@ -26,6 +26,9 @@ const (
 	e5Objects = 6
 )
 
+// e5Harness adapts the tier S e2e cluster (regional clients over the simulated
+// network plus 60 rounds of background traffic) to sagasim.Harness so
+// sagasim.Run can drive every cell of the 78-cell migration failure matrix.
 type e5Harness struct{}
 
 type e5Cluster struct {
@@ -100,6 +103,9 @@ func e5Check(f string, a ...any) error {
 	return fmt.Errorf("%s: %w", fmt.Sprintf(f, a...), sagasim.ErrCheck)
 }
 
+// check verifies every up node routes sagasim.Bucket to loc, holds no live
+// staged entries, decodes every source object byte-for-byte from durable shards
+// in loc, leaves zero shards of the bucket in gone, and saw no wrong reads.
 func (e *e5Cluster) check(loc, gone string) error {
 	c := e.c
 	ns := c.upNodes()
@@ -192,6 +198,9 @@ func (e *e5Cluster) read(man *storage.Manifest, loc string) ([]byte, error) {
 func (e *e5Cluster) CheckMoved() error       { return e.check(e5To, e5From) }
 func (e *e5Cluster) CheckCompensated() error { return e.check(e5From, e5To) }
 
+// e5Seeds assigns all pinned seeds, the first unpinned seed, and a strided
+// share of remaining unpinned seeds to cell so every cell runs at least once
+// without multiplying sweep cost by all 78 cells.
 func e5Seeds(seeds, pinned []int64, cell, cells int) []int64 {
 	var out, rest []int64
 	for _, s := range seeds {
@@ -213,6 +222,9 @@ func e5Seeds(seeds, pinned []int64, cell, cells int) []int64 {
 
 const e5TrimStride = 8
 
+// e5CellSeeds selects the seeds for one failure-matrix cell, trimming -short
+// (unless overridden by -seed/DST_SEED or E2E_FULL_SEEDS=1) to every eighth
+// cell on its first seed and -race to every eighth cell.
 func e5CellSeeds(cell, cells int, short, race, explicitSeed, fullSeeds bool, seeds, pinned []int64) []int64 {
 	trimShort := short && !explicitSeed && !fullSeeds
 	if (race || trimShort) && cell%e5TrimStride != 0 {
@@ -225,6 +237,9 @@ func e5CellSeeds(cell, cells int, short, race, explicitSeed, fullSeeds bool, see
 	return mine
 }
 
+// TestE5CellSeeds proves e5CellSeeds preserves full cell/seed coverage outside
+// -short, trims -short to 10/78 cells on one seed each, and lets explicit -seed
+// or E2E_FULL_SEEDS=1 override -short.
 func TestE5CellSeeds(t *testing.T) {
 	const cells = 78
 	pinned := []int64{166963932986536, 1}
@@ -340,6 +355,10 @@ func TestE5CellSeeds(t *testing.T) {
 	})
 }
 
+// TestE5MigrationEveryFailurePointS runs the 78-cell saga failure matrix
+// against a full 21-node tier S cluster with background client traffic, proving
+// every crash, torn-log, and step-failure cell ends Completed or Compensated as
+// expected with zero orphan shards and intact data.
 func TestE5MigrationEveryFailurePointS(t *testing.T) {
 	t.Parallel()
 	cells := sagasim.Cells()

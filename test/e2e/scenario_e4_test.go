@@ -16,6 +16,8 @@ func allowedDuringMigration(k *Call) bool {
 
 func terminal(state string) bool { return state == "completed" || state == "compensated" }
 
+// awaitMigration polls coord for saga id every 250 ms until it reaches
+// completed or compensated, optionally issuing live traffic on each poll.
 func awaitMigration(c Cluster, b bounds, coord Node, id string, during func() []*Call) (storage.MigrationInfo, []*Call, time.Duration, error) {
 	start := c.Now()
 	var traffic []*Call
@@ -67,6 +69,8 @@ func shardsOfVersionsOutside(c Cluster, bucket, region string, versions map[stri
 	return out, nil
 }
 
+// routedTo proves every up node routes bucket to region by writing a probe
+// through each node and confirming every resulting shard lands in region.
 func routedTo(c Cluster, b bounds, bucket, region string) error {
 	var probes []*Call
 	for _, n := range upNodes(c) {
@@ -114,6 +118,11 @@ type e4Result struct {
 	purge               time.Duration
 }
 
+// scenarioE4 migrates a routed bucket from r0 to r1 under live puts and reads,
+// checking that pre-migration shards leave r0 immediately on completion, live
+// traffic sees only success/busy/unavailable, metadata converges, zero shards
+// remain outside r1, every acknowledged object reads back intact, and every
+// node routes new writes to r1.
 func scenarioE4(c Cluster, b bounds, p e4Params) (e4Result, error) {
 	var res e4Result
 	const bucket = "e4"

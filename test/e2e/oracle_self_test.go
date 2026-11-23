@@ -11,6 +11,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// TestLedgerFlagsBytesNoClientWroteUnderThatVersion proves Ledger accepts exact
+// acknowledged writes and unknown-ETag matching attempts while rejecting wrong
+// bytes, wrong sizes, wrong hashes, and bytes mismatched to a known ETag.
 func TestLedgerFlagsBytesNoClientWroteUnderThatVersion(t *testing.T) {
 	l := newLedger()
 	put := &Call{Op: "put", Bucket: "b", Key: "k"}
@@ -93,6 +96,8 @@ func mustVersion(t *testing.T, rd occ.Reader, bucket, key string) occ.Version {
 	return v
 }
 
+// TestLossOracleFlagsADeclarationWhileEveryStripeHasKShards plants a ~lost/
+// record for a healthy object and proves checkLossDeclaration rejects it.
 func TestLossOracleFlagsADeclarationWhileEveryStripeHasKShards(t *testing.T) {
 	c := bootSelfTest(t, 11)
 	putOne(t, c, "x", 3*simStripe)
@@ -109,6 +114,8 @@ func TestLossOracleFlagsADeclarationWhileEveryStripeHasKShards(t *testing.T) {
 	}
 }
 
+// TestDeletionOracleFlagsAShardOfTheCurrentWinner plants a shard deletion on a
+// live winner and proves watchDisk catches it immediately.
 func TestDeletionOracleFlagsAShardOfTheCurrentWinner(t *testing.T) {
 	c := bootSelfTest(t, 12)
 	putOne(t, c, "x", 100)
@@ -123,6 +130,8 @@ func TestDeletionOracleFlagsAShardOfTheCurrentWinner(t *testing.T) {
 	}
 }
 
+// TestOrphanCheckFlagsAShardNoManifestExpects plants a stray shard on a
+// non-holder node and proves checkOrphans flags it.
 func TestOrphanCheckFlagsAShardNoManifestExpects(t *testing.T) {
 	c := bootSelfTest(t, 13)
 	k := putOne(t, c, "x", 100)
@@ -153,6 +162,9 @@ func TestOrphanCheckFlagsAShardNoManifestExpects(t *testing.T) {
 	}
 }
 
+// TestLiveReadableOrLostFlagsAnUnreadableLiveKeyWithNoLossRecord deletes m+1
+// shards of a live object without a loss record and proves
+// checkLiveReadableOrLost fails.
 func TestLiveReadableOrLostFlagsAnUnreadableLiveKeyWithNoLossRecord(t *testing.T) {
 	c := bootSelfTest(t, 14)
 	putOne(t, c, "x", 100)
@@ -170,6 +182,8 @@ func TestLiveReadableOrLostFlagsAnUnreadableLiveKeyWithNoLossRecord(t *testing.T
 	}
 }
 
+// TestSpreadOracleFlagsMoreThanMShardsInOneRegion feeds checkSpread a manifest
+// placing m+1 shards in r0 and proves the spread oracle rejects it.
 func TestSpreadOracleFlagsMoreThanMShardsInOneRegion(t *testing.T) {
 	c := bootSelfTest(t, 15)
 	putOne(t, c, "x", 100)
@@ -188,6 +202,9 @@ func TestSpreadOracleFlagsMoreThanMShardsInOneRegion(t *testing.T) {
 	}
 }
 
+// TestAckOracleFlagsALostWriteMissingFromEveryDiscardLog proves checkAcks
+// passes when a partition-time discard is recorded and fails once the lineage
+// oracle's discard records are cleared.
 func TestAckOracleFlagsALostWriteMissingFromEveryDiscardLog(t *testing.T) {
 	c := bootSelfTest(t, 16)
 	putOne(t, c, "x", 10)
@@ -225,6 +242,9 @@ func TestAckOracleFlagsALostWriteMissingFromEveryDiscardLog(t *testing.T) {
 	}
 }
 
+// TestHealthReportsTheMetadataDigestAndRoot proves every converged node reports
+// identical non-empty MetaDigest and MetaRoot values that advance on metadata
+// writes.
 func TestHealthReportsTheMetadataDigestAndRoot(t *testing.T) {
 	c := bootSelfTest(t, 17)
 	putOne(t, c, "x", 10)
@@ -255,6 +275,9 @@ func TestHealthReportsTheMetadataDigestAndRoot(t *testing.T) {
 	}
 }
 
+// TestNemesisSettleValidatesTerminalErrorsForEveryOp proves nemesis.settle
+// enforces per-operation allowed terminal errors, rejects unknown ops, and
+// voids availability reads only at or after fault or node-touch timestamps.
 func TestNemesisSettleValidatesTerminalErrorsForEveryOp(t *testing.T) {
 	c := newSimCluster(801001, defaultSimOptions())
 	if err := c.boot(); err != nil {
@@ -395,6 +418,9 @@ func TestNemesisSettleValidatesTerminalErrorsForEveryOp(t *testing.T) {
 	})
 }
 
+// TestOracleSeesMigratedManifestSwap proves Retire reports swapped destination
+// manifests to CommitSink so simOracle tracks them and rejects spurious loss
+// declarations on migrated versions.
 func TestOracleSeesMigratedManifestSwap(t *testing.T) {
 	c := newSimCluster(18, fuzzOptions())
 	if err := c.boot(); err != nil {

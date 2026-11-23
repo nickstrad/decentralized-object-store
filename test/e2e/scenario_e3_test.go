@@ -9,10 +9,14 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// movedCounter is implemented by simCluster to report storage-channel bytes
+// moved during repair (tier R has no transport-level byte counter).
 type movedCounter interface {
 	storageBytesMoved() uint64
 }
 
+// expectedShards is implemented by simCluster so E6 can check catch-up and
+// refill against the exact shards live manifests place on a node.
 type expectedShards interface {
 	expectedShards(n Node) ([]string, error)
 }
@@ -68,6 +72,8 @@ type e3Result struct {
 	reads                                   int
 }
 
+// pickRot chooses 1..m shards from every stripe of each object in puts so
+// corruption stays within Reed-Solomon recovery capacity.
 func pickRot(c Cluster, bucket string, all map[string]map[uint32]map[uint16][]Node, puts []*Call) ([]shardAt, error) {
 	m := c.Layout().M
 	var rotted []shardAt
@@ -137,6 +143,10 @@ func rotAndAwait(c Cluster, b bounds, rotted []shardAt) (time.Duration, int, err
 	return c.Now() - start, damaged, err
 }
 
+// scenarioE3 corrupts 1..m shards per stripe in two phases: first under live
+// reads (every GET must still return the written version and bytes), then idle
+// to verify anti-entropy restores every shard within bound while rebuilding
+// bytes proportional to the damage rather than the bucket.
 func scenarioE3(c Cluster, b bounds, p e3Params) (e3Result, error) {
 	var res e3Result
 	const bucket = "e3"

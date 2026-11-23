@@ -59,6 +59,10 @@ type e6Result struct {
 	wipedShards         int
 }
 
+// scenarioE6 crashes a node during active writes, verifies acknowledged writes
+// survive and the restarted node rejoins with a higher incarnation, catches up
+// metadata and shards (against live manifests on tier S, pre-wipe shard list on
+// tier R), serves all acknowledged reads, and refills another node after a wipe.
 func scenarioE6(c Cluster, b bounds, p e6Params) (e6Result, error) {
 	var res e6Result
 	const bucket = "e6"

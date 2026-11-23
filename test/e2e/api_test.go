@@ -11,6 +11,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// chAPI is the simulated-network channel byte reserved for client-to-node API
+// calls, chosen outside the node's own protocol channel numbers so apiNode can
+// intercept client requests and pass every peer channel straight through.
 const chAPI byte = 0xA0
 
 const (
@@ -56,6 +59,8 @@ type apiResult struct {
 	Mig   storage.MigrationInfo `json:",omitempty"`
 }
 
+// frame prefixes a JSON header with its uvarint length followed by raw payload
+// bytes so object data crosses the simulated transport without base64 bloat.
 func frame(head []byte, data []byte) []byte {
 	out := make([]byte, 0, len(head)+len(data)+12)
 	out = binary.AppendUvarint(out, uint64(len(head)))
@@ -99,6 +104,9 @@ func decodeResult(b []byte) (apiResult, []byte, error) {
 	return r, data, nil
 }
 
+// apiNode wraps a simulated node process to dispatch chAPI client requests
+// against the node's real methods while forwarding all other channels unchanged.
+// Errors cross the wire via node.CodeTable so callers can use errors.Is.
 type apiNode struct {
 	p         env.Process
 	n         *node.Node
@@ -196,6 +204,9 @@ func (a *apiNode) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	}
 }
 
+// clientProc is the inert simulated process placed in each region to send chAPI
+// requests over the simulated network so client calls experience partitions,
+// latency, and lost responses just like peer traffic.
 type clientProc struct{ e env.Env }
 
 func (c *clientProc) Start()                        {}

@@ -71,6 +71,11 @@ const (
 	bucketM       = "m"
 )
 
+// nemesisStats summarizes one nemesis or fuzz run. destObjects/destShards count
+// all live objects and verified shards of bucketM present in the destination
+// region after a completed migration (including post-flip writes), whereas
+// movedObjects/movedShards count strictly the pre-existing objects snapshotted
+// on the coordinator before StartMigration.
 type nemesisStats struct {
 	applied, skipped, cycles       int
 	puts, putsOK, gets, getsOK     int
@@ -87,6 +92,9 @@ type nemesisStats struct {
 	tally                          map[string]int
 }
 
+// nemesis drives alternating chaos and heal cycles against a tier S cluster
+// while enforcing a fault budget, per-operation terminal error checks,
+// availability reads, migration tracking, and post-heal convergence and repair.
 type nemesis struct {
 	c                  *simCluster
 	r                  *rand.Rand
@@ -154,6 +162,9 @@ func (n *nemesis) markDirty(key string) {
 	}
 }
 
+// availabilityReadClean reports whether an availability GET (Size == -1)
+// finished strictly before any network fault in the cycle and strictly before
+// its entry node was touched by a fault.
 func (n *nemesis) availabilityReadClean(k *Call) bool {
 	if k.Size != -1 {
 		return false
@@ -168,6 +179,7 @@ func (n *nemesis) availabilityReadClean(k *Call) bool {
 	return true
 }
 
+// keyDirtyFor reports whether a mutation on k.Key began at or before k finished.
 func (n *nemesis) keyDirtyFor(k *Call) bool {
 	return n.dirty[k.Key] && k.Ended >= n.dirtyAt[k.Key]
 }
@@ -232,6 +244,9 @@ func allowedNemesisTransportError(err error) bool {
 		errors.Is(err, storage.ErrNoSuchBucket)
 }
 
+// allowedNemesisError enforces the per-operation terminal error contract during
+// chaos: storage.ErrCorrupt is always forbidden, storage.ErrBusy is permitted
+// only on the migrating bucket m, and unknown ops are always rejected.
 func allowedNemesisError(k *Call) bool {
 	if k.Err == nil {
 		return true
@@ -347,6 +362,9 @@ func (n *nemesis) liveManifests() []*storage.Manifest {
 	return out
 }
 
+// allows enforces the stripe fault budget: a node or shard fault is permitted
+// only if every stripe of every live manifest still retains at least k
+// verifiable shards on up, unpaused, untouched holders.
 func (n *nemesis) allows(node env.NodeID, blob string) bool {
 	c := n.c
 	l := c.cfg.Layout
@@ -379,6 +397,12 @@ func (n *nemesis) allows(node env.NodeID, blob string) bool {
 	return true
 }
 
+// metadataElsewhere reports whether every metadata version currently held on id
+// is also held, with the same version ID, by at least one other up node.
+// Because local-first metadata writes acknowledge after a single local fsync,
+// wiping the sole holder before anti-entropy copies a write permanently loses
+// it without a discard record; the budget therefore skips lone-holder wipes
+// unless the canary switch loneWipe is enabled.
 func (n *nemesis) metadataElsewhere(id env.NodeID) bool {
 	self := n.c.node(id)
 	if self == nil {
@@ -430,6 +454,9 @@ func (n *nemesis) apply(op chaosOp) error {
 		if c.node(id) == nil || len(n.down)+len(n.paused) >= nemMaxDown || !n.allows(id, "") {
 			return skip()
 		}
+		// Never wipe the active migration coordinator (permanent coordinator
+		// loss is a stated limit); n.mig remains set until finishMigration
+		// awaits every started or timeout-recovered saga to terminal state.
 		if op.kind == opWipeNode && n.mig != nil && n.migCoord.ID == string(id) {
 			return skip()
 		}
@@ -668,6 +695,12 @@ func (n *nemesis) refreshRegion() error {
 	return nil
 }
 
+// finishMigration resolves any migration started during the cycle after a heal.
+// Because ErrTimeout or ErrUnreachable means outcome unknown, it inspects the
+// coordinator's saga engine for any new saga ID, awaits it to completion or
+// compensation, refreshes n.region from converged metadata, checks zero shards
+// remain outside n.region, and verifies every pre-existing key in bucketM
+// (all single-stripe <= 16 KiB objects) holds at least k verified shards there.
 func (n *nemesis) finishMigration() error {
 	c := n.c
 	if n.mig == nil {
@@ -895,6 +928,8 @@ func compareStr(a, b string) int {
 	return 0
 }
 
+// randomPlan generates cycles of 2..5 random chaos ops (with matching restarts
+// for half of node crashes and pauses) for E7 sweeps.
 func randomPlan(r *rand.Rand, cycles int, chaos time.Duration) nemesisPlan {
 	var p nemesisPlan
 	for range cycles {
@@ -912,6 +947,8 @@ func randomPlan(r *rand.Rand, cycles int, chaos time.Duration) nemesisPlan {
 	return p
 }
 
+// planFromBytes decodes arbitrary fuzzer bytes into a bounded multi-cycle
+// nemesis schedule (0xff terminates a cycle early).
 func planFromBytes(data []byte, maxCycles, maxOps int, chaos time.Duration) nemesisPlan {
 	var p nemesisPlan
 	if len(data) == 0 {

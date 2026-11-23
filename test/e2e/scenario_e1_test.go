@@ -7,6 +7,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// bounds holds tier-specific convergence, repair, and migration timeouts plus
+// optional batch limits (writeBatch=1 on tier R avoids exceeding the fixed 1 s
+// shard request timeout under concurrent race-built fsync load).
 type bounds struct {
 	converge   time.Duration
 	repair     time.Duration
@@ -37,6 +40,8 @@ func createBucket(c Cluster, b bounds, spec storage.BucketSpec) error {
 	return err
 }
 
+// collectShards scans shard files on every cluster node for bucket and indexes
+// holders by version -> stripe -> shard index.
 func collectShards(c Cluster, bucket string) (map[string]map[uint32]map[uint16][]Node, error) {
 	out := map[string]map[uint32]map[uint16][]Node{}
 	for _, n := range c.Nodes() {
@@ -62,6 +67,8 @@ func collectShards(c Cluster, bucket string) (map[string]map[uint32]map[uint16][
 	return out, nil
 }
 
+// checkSpread verifies that every listed non-empty version has shards on disk
+// and that no stripe places more than m shards in any single region.
 func checkSpread(c Cluster, bucket string, versions []string) (int, error) {
 	all, err := collectShards(c, bucket)
 	if err != nil {
@@ -105,6 +112,9 @@ type e1Result struct {
 	getLatencies            []time.Duration
 }
 
+// scenarioE1 writes each configured payload size through a node in each region,
+// reads every object back through every other node (checking ETag, length, and
+// ledger hashes), and checks cross-region shard spread on all non-empty objects.
 func scenarioE1(c Cluster, b bounds, p e1Params) (e1Result, error) {
 	var res e1Result
 	const bucket = "e1"

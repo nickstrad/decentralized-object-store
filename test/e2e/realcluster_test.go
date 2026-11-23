@@ -28,6 +28,9 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// Tier R limits and defaults. realPutSlots caps in-flight PUTs at 1 outside E9
+// so race-built objnode processes do not exceed the fixed 1 s shard
+// RequestTimeout under concurrent fsync load.
 const (
 	tierREnv        = "E2E_TIER_R"
 	blocklistSuffix = ".e2e-blocklist"
@@ -77,6 +80,8 @@ func moduleRoot() (string, error) {
 	}
 }
 
+// buildObjnode compiles ./cmd/objnode once per (race, tags) combination for the
+// lifetime of the test binary; TestMain deletes all temporary binary dirs.
 func buildObjnode(t testing.TB, race bool, tags string) string {
 	t.Helper()
 	key := fmt.Sprintf("%v|%s", race, tags)
@@ -126,6 +131,9 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// allocDistinctPorts reserves n distinct loopback ports free on both TCP and
+// UDP, keeping every probe socket open until all n are chosen so two nodes in
+// one cluster can never receive the same port.
 func allocDistinctPorts(n int) ([]int, error) {
 	if n <= 0 {
 		return nil, nil
@@ -183,6 +191,9 @@ type realProc struct {
 	ports    []int
 }
 
+// realCluster implements Cluster over real objnode OS processes on loopback,
+// communicating through HTTP and injecting partitions via e2efault blocklists,
+// crashes via SIGKILL, and bit-rot by mutating shard files on disk.
 type realCluster struct {
 	t       testing.TB
 	bin     string
@@ -227,6 +238,9 @@ func logTail(path string, maxLines int) string {
 	return strings.Join(lines[max(0, len(lines)-maxLines):], "\n")
 }
 
+// allStartedAndConverged requires every intended process to remain alive, report
+// Ready with its own node ID on /_health, agree on metadata digest and Merkle
+// root, and see all N peers alive in /_cluster/members.
 func (c *realCluster) allStartedAndConverged() (bool, error) {
 	want := map[string]bool{}
 	for _, p := range c.procs {
@@ -299,6 +313,9 @@ func (c *realCluster) awaitStartup(bound time.Duration) (time.Duration, error) {
 
 const realStartAttempts = 5
 
+// startRealCluster launches a tier R cluster and retries up to
+// realStartAttempts times on ephemeral port bind races ("address already in
+// use"). When o.ports is pinned, bind errors fail immediately without retry.
 func startRealCluster(t testing.TB, seed int64, o realOptions) (*realCluster, error) {
 	t.Helper()
 	if len(o.ports) > 0 {
@@ -411,6 +428,7 @@ func (c *realCluster) start(p *realProc) error {
 	}
 	cmd := exec.Command(c.bin, p.args...)
 	cmd.Stdout, cmd.Stderr = logf, logf
+	// Pdeathsig ensures child objnode processes cannot outlive a crashed test runner.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	if err := cmd.Start(); err != nil {
 		return errors.Join(err, logf.Close())
@@ -515,6 +533,8 @@ type httpError struct {
 func (e *httpError) Error() string   { return fmt.Sprintf("http %d: %s", e.status, e.msg) }
 func (e *httpError) Unwrap() []error { return e.is }
 
+// statusError maps HTTP error responses back to the repository's sentinel
+// errors so shared scenarios can use errors.Is identically on both tiers.
 func statusError(status int, body []byte) error {
 	var eb struct {
 		Error string `json:"error"`
@@ -765,6 +785,8 @@ func (c *realCluster) Await(what string, bound time.Duration, cond func() (bool,
 	}
 }
 
+// writeBlocklists atomically updates or removes each node's .e2e-blocklist file
+// so e2efault-built objnode processes apply the current partition topology.
 func (c *realCluster) writeBlocklists() error {
 	for i, p := range c.procs {
 		var peers []string
@@ -895,6 +917,8 @@ func (c *realCluster) Shards(n Node) ([]ShardFile, error) {
 	return out, err
 }
 
+// Rot flips a byte inside the shard file's payload and atomically replaces the
+// file on disk to simulate silent bit-rot on tier R.
 func (c *realCluster) Rot(n Node, name string) error {
 	p := c.proc(n)
 	if p == nil {

@@ -13,6 +13,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// onWriteDisk notifies onWrite after every successful Write so migration stall
+// tests can pause the coordinator the moment destination shards land on disk.
 type onWriteDisk struct {
 	env.Disk
 	id      env.NodeID
@@ -32,6 +34,10 @@ type migStallResult struct {
 	elapsed time.Duration
 }
 
+// runMigrationLongStall pauses the migration coordinator for pauseDur (longer
+// than OrphanGrace) right after the first stripe's destination shards are
+// written, then verifies the saga reaches a clean terminal state with zero loss
+// declarations, no stray shards, intact readback, and passing final oracles.
 func runMigrationLongStall(opts simOptions, pauseDur time.Duration, res *migStallResult) func(int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
 		const (
@@ -185,6 +191,9 @@ func runMigrationLongStall(opts simOptions, pauseDur time.Duration, res *migStal
 	}
 }
 
+// TestE4MigrationCoordinatorStalledPastOrphanGraceS proves on tier S that a
+// coordinator stalled past OrphanGrace mid-copy never completes onto
+// orphan-collected destination shards or loses acknowledged objects.
 func TestE4MigrationCoordinatorStalledPastOrphanGraceS(t *testing.T) {
 	t.Parallel()
 	var m measure

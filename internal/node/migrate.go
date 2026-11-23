@@ -346,6 +346,9 @@ func (g *migrator) Copy(c saga.Call, m saga.MigrationInput, done func([]byte, er
 					finish(err)
 					return
 				}
+				// Verify destination holders still carry a write quorum of shards
+				// before writing the staged record (plain presence check: staged
+				// metadata does not exist yet).
 				g.verifyTargets(rd, m.Bucket, false, []verifyTarget{{object: o.key, man: man}}, func(verr error) {
 					if verr != nil {
 						g.n.markDead(m.Bucket, man.Version)
@@ -436,7 +439,8 @@ func (g *migrator) root(rd occ.Reader, m saga.MigrationInput, loc, id string) []
 
 // Root computes the Merkle root over (key, SHA-256(contentHash || size)) for
 // either m.From (live manifests) or m.To (this saga's staged records unioned
-// with live manifests already holding one of its copy intents).
+// with live manifests already holding one of its copy intents). For m.To it
+// first verifies and pins destination shards through verifyDest.
 func (g *migrator) Root(c saga.Call, bucket, loc string, done func([]byte, error)) {
 	g.n.later(func() {
 		m, err := saga.DecodeMigrationInput(c.Input)
@@ -469,6 +473,8 @@ func (g *migrator) Root(c saga.Call, bucket, loc string, done func([]byte, error
 	})
 }
 
+// migrationQuorum returns the minimum verified shards per stripe required
+// before a copied version may proceed to flip or manifest swap.
 func (n *Node) migrationQuorum(l storage.Layout) int {
 	if n.cfg.AckQuorum > 0 {
 		return n.cfg.AckQuorum
@@ -548,6 +554,9 @@ type verifyTarget struct {
 	man      *storage.Manifest
 }
 
+// verifyDest collects every destination version belonging to saga id (live
+// swapped manifests and staged records) and confirms with their holders that
+// each stripe meets the write quorum while pinning those records on each holder.
 func (g *migrator) verifyDest(m saga.MigrationInput, id string, done func(error)) {
 	rd, err := g.n.reader()
 	if err != nil {
@@ -587,6 +596,13 @@ func (g *migrator) verifyDest(m saga.MigrationInput, id string, done func(error)
 	g.verifyTargets(rd, m.Bucket, true, targets, done)
 }
 
+// verifyTargets batches shard-verification RPCs per holder (bounded by the
+// 16 MiB frame limit for whole-bucket messages). When requireExpected is true,
+// each holder first merges the pushed OCC records so checking and protecting
+// the shards happen in one act. A stripe below quorum fails with ErrUnsettled;
+// if verified plus unreachable holders fall below k, the staged version is
+// marked dead and deleted so pre-flip sagas compensate and post-flip catch-up
+// re-copies from the live source.
 func (g *migrator) verifyTargets(rd occ.Reader, bucket string, requireExpected bool, targets []verifyTarget, done func(error)) {
 	type shardSlot struct {
 		holder env.NodeID
@@ -1064,6 +1080,8 @@ func (g *migrator) Retire(c saga.Call, m saga.MigrationInput, done func(error)) 
 			done(nil)
 			return
 		}
+		// Re-check destination shards immediately before swapping manifests in
+		// case a holder lost shards after the catch-up Root verification.
 		g.verifyDest(m, id, func(err error) {
 			if err != nil {
 				done(err)
@@ -1115,6 +1133,9 @@ func (g *migrator) Retire(c saga.Call, m saga.MigrationInput, done func(error)) 
 					done(err)
 					return
 				}
+				// Delete staged records only after every live peer holds the
+				// swapped manifests so destination holders never treat a newly
+				// live shard as an orphan during propagation.
 				for _, s := range g.staged(rd, m.Bucket) {
 					if s.rec.Saga == id {
 						if err := g.del(s.key); err != nil {

@@ -22,6 +22,8 @@ const (
 	chMetaByte byte = 4
 )
 
+// deafNet drops outbound OCC and metadata-Merkle traffic (channels 3 and 4)
+// while deaf returns true for anti-entropy canary tests.
 type deafNet struct {
 	env.Transport
 	clock env.Clock
@@ -47,6 +49,7 @@ func (d deafNet) Request(to env.NodeID, req []byte, timeout time.Duration, cb fu
 	d.Transport.Request(to, req, timeout, cb)
 }
 
+// deafProc drops inbound OCC and metadata-Merkle traffic while deaf returns true.
 type deafProc struct {
 	env.Process
 	deaf func() bool
@@ -67,6 +70,7 @@ func (p deafProc) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 	p.Process.OnRequest(from, req, reply)
 }
 
+// ignoreShardDeletes silently swallows shard Delete calls to test orphan checks.
 type ignoreShardDeletes struct{ env.Disk }
 
 func (d ignoreShardDeletes) Delete(name string) error {
@@ -76,6 +80,7 @@ func (d ignoreShardDeletes) Delete(name string) error {
 	return d.Disk.Delete(name)
 }
 
+// skipStep replaces a saga step's Do or Compensate with a no-op success.
 type skipStep struct {
 	saga.Step
 	do   bool
@@ -110,6 +115,8 @@ func plant(d saga.Definition, name string, do, comp bool) saga.Definition {
 	return d
 }
 
+// checkCanaryFailure requires a non-empty match string and fails unless err is
+// non-nil and contains want, ensuring canaries fail only for their planted bug.
 func checkCanaryFailure(err error, want string) error {
 	if strings.TrimSpace(want) == "" {
 		return fmt.Errorf("canary helper called with empty error match string")
@@ -132,6 +139,8 @@ func expectCanaryFailure(t *testing.T, s *sim.Sim, want string) {
 	t.Logf("caught: %v", err)
 }
 
+// TestExpectCanaryFailureRejectsEmptyMatch proves checkCanaryFailure rejects
+// empty/blank match strings, nil errors, and unrelated errors.
 func TestExpectCanaryFailureRejectsEmptyMatch(t *testing.T) {
 	if err := checkCanaryFailure(fmt.Errorf("anything"), ""); err == nil {
 		t.Fatal("checkCanaryFailure accepted an empty match string")
@@ -165,6 +174,8 @@ func runCanary(seed int64, opts simOptions, body func(c *simCluster) error) *sim
 	return c.s
 }
 
+// TestCanaryE1NodesThatMisreportTheirRegionFailTheSpreadCheck plants every node
+// reporting region r0 and proves E1's spread check catches > m shards in r0.
 func TestCanaryE1NodesThatMisreportTheirRegionFailTheSpreadCheck(t *testing.T) {
 	opts := defaultSimOptions()
 	opts.wrap = func(_ env.NodeID, e env.Env) env.Env {
@@ -178,6 +189,8 @@ func TestCanaryE1NodesThatMisreportTheirRegionFailTheSpreadCheck(t *testing.T) {
 	expectCanaryFailure(t, s, "more than m=")
 }
 
+// TestCanaryE2ANodeDeafToAntiEntropyNeverConverges plants n004 dropping OCC and
+// metadata-Merkle traffic after the heal and proves E2 misses convergence.
 func TestCanaryE2ANodeDeafToAntiEntropyNeverConverges(t *testing.T) {
 	opts := defaultSimOptions()
 	var deafID env.NodeID = "n004"
@@ -206,6 +219,8 @@ func TestCanaryE2ANodeDeafToAntiEntropyNeverConverges(t *testing.T) {
 	expectCanaryFailure(t, c.s, "after the heal: not within")
 }
 
+// TestCanaryE3RepairThatNeverRunsMissesTheBound plants MaintainPeriod=1h (no
+// scrub or rebuild) and proves E3 catches un-repaired rotted shards.
 func TestCanaryE3RepairThatNeverRunsMissesTheBound(t *testing.T) {
 	opts := defaultSimOptions()
 	opts.tweak = func(cfg *node.Config) { cfg.MaintainPeriod = time.Hour }
@@ -216,6 +231,8 @@ func TestCanaryE3RepairThatNeverRunsMissesTheBound(t *testing.T) {
 	expectCanaryFailure(t, s, "rebuilt: not within")
 }
 
+// TestCanaryE4AMigrationThatSkipsDeletingTheSourceFails plants a no-op
+// StepDeleteSource and proves E4 catches source shards remaining in r0.
 func TestCanaryE4AMigrationThatSkipsDeletingTheSourceFails(t *testing.T) {
 	opts := defaultSimOptions()
 	opts.tweak = func(cfg *node.Config) {
@@ -228,6 +245,8 @@ func TestCanaryE4AMigrationThatSkipsDeletingTheSourceFails(t *testing.T) {
 	expectCanaryFailure(t, s, "no shard of the bucket left in r0")
 }
 
+// TestCanaryE5ACopyThatIsNeverCompensatedLeavesOrphans plants a no-op StepCopy
+// compensation and proves E5's CheckCompensated catches the leftover staged entry.
 func TestCanaryE5ACopyThatIsNeverCompensatedLeavesOrphans(t *testing.T) {
 	var cell sagasim.Cell
 	found := false
@@ -253,6 +272,8 @@ func (plantedE5) Build(seed int64, o sagasim.BuildOptions) (*sim.Sim, sagasim.Cl
 	return e5Harness{}.Build(seed, o)
 }
 
+// TestCanaryE6ARestartedNodeDeafToAntiEntropyNeverCatchesUp plants n004
+// dropping metadata sync on restart and proves E6 catches failed catch-up.
 func TestCanaryE6ARestartedNodeDeafToAntiEntropyNeverCatchesUp(t *testing.T) {
 	opts := defaultSimOptions()
 	starts := map[env.NodeID]int{}
@@ -279,6 +300,8 @@ func TestCanaryE6ARestartedNodeDeafToAntiEntropyNeverCatchesUp(t *testing.T) {
 	expectCanaryFailure(t, c.s, "rejoined with a higher incarnation and caught up its metadata: not within")
 }
 
+// TestCanaryE7ShardsThatAreNeverCollectedFailTheOrphanCheck plants disks that
+// ignore shard deletes and proves E7's post-grace orphan check catches them.
 func TestCanaryE7ShardsThatAreNeverCollectedFailTheOrphanCheck(t *testing.T) {
 	opts := e7Options()
 	opts.wrap = func(_ env.NodeID, e env.Env) env.Env { return e.WithDisk(ignoreShardDeletes{Disk: e.Disk}) }
@@ -287,6 +310,8 @@ func TestCanaryE7ShardsThatAreNeverCollectedFailTheOrphanCheck(t *testing.T) {
 	expectCanaryFailure(t, s, "grace periods")
 }
 
+// TestCanaryE8ADeafSideNeverReachesOneVersionPerKey plants n003 dropping
+// metadata sync after heal and proves E8 misses single-version convergence.
 func TestCanaryE8ADeafSideNeverReachesOneVersionPerKey(t *testing.T) {
 	opts := defaultSimOptions()
 	healed := false
@@ -315,6 +340,9 @@ func TestCanaryE8ADeafSideNeverReachesOneVersionPerKey(t *testing.T) {
 	expectCanaryFailure(t, c.s, "one version of every key on every replica after the heal: not within")
 }
 
+// TestCanaryE7WipingTheOnlyCopyOfAnAcknowledgedWriteIsCaught replays pinned
+// seed 166963932986536 with the lone-holder wipe guard disabled and proves the
+// lineage oracle flags the unrecorded loss of a write wiped with its sole disk.
 func TestCanaryE7WipingTheOnlyCopyOfAnAcknowledgedWriteIsCaught(t *testing.T) {
 	const seed = 166963932986536
 	var st nemesisStats
@@ -356,6 +384,10 @@ func (s dropBucketOnCopyStep) Do(call saga.Call, done func([]byte, error)) {
 	s.Step.Do(call, done)
 }
 
+// TestCanaryE7CompletedMigrationMissingPreExistingShardsFails tombstones
+// bucket m's objects inside StepCopy so metadata and orphan checks stay clean,
+// proving E7's per-key destination shard check catches missing pre-existing
+// objects.
 func TestCanaryE7CompletedMigrationMissingPreExistingShardsFails(t *testing.T) {
 	const seed = 2
 	var cl *simCluster
@@ -385,6 +417,9 @@ func TestCanaryE7CompletedMigrationMissingPreExistingShardsFails(t *testing.T) {
 	expectCanaryFailure(t, c.s, "left pre-existing object")
 }
 
+// TestCanaryFuzzRoutedBucketCannotPlaceShards restores the unplaceable 9-node
+// 4+2 fuzz layout (3 nodes per region for 6 shards) and proves both the warm-up
+// put and the corpus check reject an empty routed migrating bucket.
 func TestCanaryFuzzRoutedBucketCannotPlaceShards(t *testing.T) {
 	old := fuzzOptions()
 	old.nodes = 9
@@ -413,6 +448,10 @@ func TestCanaryFuzzRoutedBucketCannotPlaceShards(t *testing.T) {
 	})
 }
 
+// TestCanaryNemesisForgottenAmbiguousMigrationFails enables forgetAmbiguousMig
+// and proves a timed-out StartMigration that actually started a saga is caught
+// by tracking assertions, a stale next-cycle region, and non-terminal saga
+// checks.
 func TestCanaryNemesisForgottenAmbiguousMigrationFails(t *testing.T) {
 	const seed = 702
 	t.Run("2-cycle run fails with no migration when timed-out start is forgotten", func(t *testing.T) {
@@ -443,6 +482,9 @@ func TestCanaryNemesisForgottenAmbiguousMigrationFails(t *testing.T) {
 	})
 }
 
+// TestCanaryE2ObjectOpsUnavailableDuringSplitFails intercepts PUT, GET, or both
+// with ErrUnavailable whenever a node's view shrinks, proving E2 requires
+// surviving-side object operations to succeed during a partition.
 func TestCanaryE2ObjectOpsUnavailableDuringSplitFails(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -493,6 +535,9 @@ func (f faultyDiscardHealthCluster) Health(n Node) (storage.Health, error) {
 	return h, err
 }
 
+// TestCanaryE2AndE8UnrecordedDiscardCounterFails mutates Health.Discards to 0
+// or undercounts RecentDiscards, proving E2 and E8 catch broken discard
+// counters even when discards still appear in RecentDiscards.
 func TestCanaryE2AndE8UnrecordedDiscardCounterFails(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -766,6 +811,10 @@ func runStallCanarySchedule(seed int64, bypassVerify bool) *sim.Sim {
 	return c.s
 }
 
+// TestCanaryMigrationUnverifiedStallLosesObject proves the real product
+// survives a coordinator stall past OrphanGrace without losing objects, while
+// bypassing destination shard verification in StepVerify and StepDeleteSource
+// is caught by the commit-after-delete oracle.
 func TestCanaryMigrationUnverifiedStallLosesObject(t *testing.T) {
 	t.Run("real product survives stall without losing object", func(t *testing.T) {
 		s := runStallCanarySchedule(31337, false)

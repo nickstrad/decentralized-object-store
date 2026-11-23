@@ -719,6 +719,8 @@ type verifyShardReq struct {
 	checksum [32]byte
 }
 
+// expectedBucket returns every shard of bucket that live manifests and staged
+// migration records in rd assign to this node.
 func (n *Node) expectedBucket(rd occ.Reader, bucket string) map[string]expectedShard {
 	out := map[string]expectedShard{}
 	add := func(m *storage.Manifest) {
@@ -763,6 +765,10 @@ func (n *Node) expectedBucket(rd occ.Reader, bucket string) map[string]expectedS
 	return out
 }
 
+// verifyShards handles opVerifyShards on a shard holder. When metaDoc is
+// present, it merges the pushed bucket records durably before checking disk so
+// the holder's inventory expects those shards and will not orphan-collect them
+// after answering. Each output byte is 1 iff the shard is verified on disk.
 func (n *Node) verifyShards(bucket string, requireExpected bool, metaDoc []byte, reqs []verifyShardReq) ([]byte, error) {
 	if _, err := n.reader(); err != nil {
 		return nil, err
@@ -772,6 +778,7 @@ func (n *Node) verifyShards(bucket string, requireExpected bool, metaDoc []byte,
 		if err != nil {
 			return nil, fmt.Errorf("node: verify shards %q: %w", bucket, err)
 		}
+		// Reject keys outside bucket so a peer cannot inject unrelated records.
 		keys := doc.Keys()
 		for _, k := range keys {
 			_, parts, err := occ.ParseKey(k)
@@ -818,6 +825,8 @@ func (n *Node) verifyShards(bucket string, requireExpected bool, metaDoc []byte,
 			continue
 		}
 		out[i] = 1
+		// Clear any pending orphan timer and refresh the actual inventory hash
+		// now that the shard is both expected and verified on disk.
 		if requireExpected {
 			if inv, ok := n.inv[bucket]; ok {
 				delete(inv.orphans, name)

@@ -17,6 +17,8 @@ import (
 	"github.com/nickstrad/decentralized-object-store/internal/storage"
 )
 
+// migStallPhase selects where a migration stall or destination-holder pause is
+// injected past the orphan grace period.
 type migStallPhase int
 
 const (
@@ -62,6 +64,10 @@ func (s hookStep) Do(c saga.Call, done func([]byte, error)) {
 	})
 }
 
+// migStallRun stalls the coordinator or a destination holder for longer than
+// OrphanGrace at phase and proves the migration still reaches a clean terminal
+// state with zero declared losses, no stray shards outside the final region,
+// intact byte-for-byte readback, and passing lineage and GC oracles.
 func migStallRun(phase migStallPhase, nodes int, layout storage.Layout) func(int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
 		const (
@@ -297,6 +303,9 @@ func migStallRun(phase migStallPhase, nodes int, layout storage.Layout) func(int
 	}
 }
 
+// TestMigrationCoordinatorStalledPastOrphanGraceMidCopy proves a coordinator
+// paused past OrphanGrace right after copying shards into the destination
+// cannot complete onto orphan-collected destination shards or lose objects.
 func TestMigrationCoordinatorStalledPastOrphanGraceMidCopy(t *testing.T) {
 	t.Parallel()
 	seeds := []int64{31337, 3, 4, 1, 2, 5, 6, 7, 8, 9, 10, 11}
@@ -309,6 +318,10 @@ func TestMigrationCoordinatorStalledPastOrphanGraceMidCopy(t *testing.T) {
 	}
 }
 
+// TestMigrationStalledPastOrphanGraceAllPhases proves stalls past OrphanGrace
+// before verify, before flip, before retire, or on a destination holder (at
+// both 2+1 and 4+2 layouts) still end cleanly with all acknowledged objects
+// readable and zero losses declared.
 func TestMigrationStalledPastOrphanGraceAllPhases(t *testing.T) {
 	t.Parallel()
 	phases := []migStallPhase{
@@ -340,6 +353,8 @@ func TestMigrationStalledPastOrphanGraceAllPhases(t *testing.T) {
 	})
 }
 
+// blockMetaNet drops OCC and metadata-Merkle channels (3 and 4) for matching
+// peer pairs so staged records cannot replicate through background anti-entropy.
 type blockMetaNet struct {
 	env.Transport
 	self  env.NodeID
@@ -404,6 +419,10 @@ func newWrappedHarness(seed int64, n int, cfg node.Config, wrapEnv func(env.Env)
 	return h, nil
 }
 
+// TestMigrationCheckThenActGapClosed proves opVerifyShards pins staged records
+// on destination holders during StepVerify so even when background metadata
+// sync is blocked and the coordinator stalls past OrphanGrace before StepFlip,
+// destination holders record zero orphans and the migration completes cleanly.
 func TestMigrationCheckThenActGapClosed(t *testing.T) {
 	t.Parallel()
 	seeds := []int64{31337, 3, 4}
@@ -574,6 +593,10 @@ func (d delayOnceStep) Do(c saga.Call, done func([]byte, error)) {
 	})
 }
 
+// TestMigrationStalledAfterStageWithoutSyncCompensates proves that when staged
+// metadata cannot sync and the coordinator stalls past OrphanGrace before
+// StepVerify, destination shards are orphan-collected and StepVerify forces
+// compensation rather than flipping onto missing shards.
 func TestMigrationStalledAfterStageWithoutSyncCompensates(t *testing.T) {
 	t.Parallel()
 	seeds := []int64{31337, 3, 4}
@@ -726,6 +749,10 @@ func TestMigrationStalledAfterStageWithoutSyncCompensates(t *testing.T) {
 	}
 }
 
+// TestMigrationPostPivotCatchupStallRecopies proves a coordinator stalled past
+// OrphanGrace while copying a late pre-flip write during post-pivot catch-up
+// detects the missing staged shards, re-copies from the live source, and
+// completes with both base and late objects intact.
 func TestMigrationPostPivotCatchupStallRecopies(t *testing.T) {
 	t.Parallel()
 	seeds := []int64{31337, 3, 4}
@@ -921,6 +948,10 @@ func stagedManifests(nd *node.Node, bucket, sagaID string) ([]*storage.Manifest,
 	return out, nil
 }
 
+// migThresholdRun corrupts destination shards before StepVerify so every stripe
+// holds exactly keep verified shards, then checks that StepVerify rejects the
+// under-quorum stripe, StepFlip never runs below quorum, and the saga ends in
+// wantState with intact readback and passing oracles.
 func migThresholdRun(keep int, wantState saga.State) func(int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
 		const (
@@ -1228,6 +1259,9 @@ func migThresholdRun(keep int, wantState saga.State) func(int64) *sim.Sim {
 	}
 }
 
+// TestMigrationVerifyBelowKCompensates proves that leaving 3 verified shards
+// (< k=4) on a staged 4+2 object before StepVerify prevents StepFlip from
+// running and compensates the saga with the source object intact.
 func TestMigrationVerifyBelowKCompensates(t *testing.T) {
 	t.Parallel()
 	seeds := []int64{31337, 3, 4}
@@ -1239,6 +1273,9 @@ func TestMigrationVerifyBelowKCompensates(t *testing.T) {
 	}
 }
 
+// TestMigrationVerifyBelowQuorumWaitsForRebuild proves that leaving 4 verified
+// shards (k=4 <= 4 < quorum=5) before StepVerify blocks StepFlip until
+// destination holders rebuild to quorum and then completes cleanly.
 func TestMigrationVerifyBelowQuorumWaitsForRebuild(t *testing.T) {
 	t.Parallel()
 	seeds := []int64{31337, 3, 4}
@@ -1250,6 +1287,9 @@ func TestMigrationVerifyBelowQuorumWaitsForRebuild(t *testing.T) {
 	}
 }
 
+// verifyWaveNet fires onWave right after the coordinator's opVerifyShards
+// (channel 5, op 4) wave finishes so tests can wipe destination holders in the
+// window between catch-up Root verification and Retire's manifest swap.
 type verifyWaveNet struct {
 	env.Transport
 	self     env.NodeID
@@ -1274,6 +1314,10 @@ func (v verifyWaveNet) Request(to env.NodeID, req []byte, timeout time.Duration,
 	v.Transport.Request(to, req, timeout, cb)
 }
 
+// migRetireRecheckRun wipes wipeCount destination holders of stripe 0 right
+// after catch-up Root verification completes and before Retire swaps manifests,
+// checking via CommitSink that Retire never swaps onto an under-quorum or
+// damaged version.
 func migRetireRecheckRun(wipeCount int, expectRecopy bool) func(int64) *sim.Sim {
 	return func(seed int64) *sim.Sim {
 		const (
@@ -1590,6 +1634,9 @@ func migRetireRecheckRun(wipeCount int, expectRecopy bool) func(int64) *sim.Sim 
 	}
 }
 
+// TestMigrationRetireBelowQuorumWaitsForRebuild proves Retire refuses to swap
+// manifests when a pre-retire wipe leaves 4 verified shards (< quorum=5) and
+// swaps only after destination holders rebuild to quorum.
 func TestMigrationRetireBelowQuorumWaitsForRebuild(t *testing.T) {
 	t.Parallel()
 	seeds := []int64{31337, 3, 4}
@@ -1601,6 +1648,10 @@ func TestMigrationRetireBelowQuorumWaitsForRebuild(t *testing.T) {
 	}
 }
 
+// TestMigrationRetireBelowKRecopiesAndNeverGoesLive proves Retire rejects a
+// staged version reduced to 3 verified shards (< k=4) after catch-up Root,
+// deletes the damaged staged record, and lets post-pivot retry re-copy from
+// the live source before completing.
 func TestMigrationRetireBelowKRecopiesAndNeverGoesLive(t *testing.T) {
 	t.Parallel()
 	seeds := []int64{31337, 3, 4}

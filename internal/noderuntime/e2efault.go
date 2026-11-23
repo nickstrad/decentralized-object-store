@@ -15,6 +15,8 @@ import (
 )
 
 const (
+	// BlocklistSuffix is appended to a node's data directory path to locate the
+	// peer blocklist file used by real-process partition tests.
 	BlocklistSuffix = ".e2e-blocklist"
 	blocklistReload = 50 * time.Millisecond
 )
@@ -30,10 +32,15 @@ var (
 	blocklistLogf = log.Printf
 )
 
+// Install the outbound peer filter only in e2efault builds; default binaries
+// leave outboundFilter nil and omit this file completely.
 func init() { outboundFilter = blockedPeer }
 
+// BlocklistPath returns the blocklist file path sitting alongside dataDir.
 func BlocklistPath(dataDir string) string { return strings.TrimRight(dataDir, "/") + BlocklistSuffix }
 
+// blockedPeer reports whether outbound traffic from dataDir to peer to is
+// blocked, reloading the file at most once per blocklistReload.
 func blockedPeer(dataDir string, to env.NodeID) bool {
 	blocklistMu.Lock()
 	defer blocklistMu.Unlock()
@@ -52,6 +59,10 @@ func blockedPeer(dataDir string, to env.NodeID) bool {
 	return b.peers[to]
 }
 
+// reload reads the blocklist directly on every throttled check rather than
+// caching stat mtime and size, so rapid equal-length rewrites within one
+// filesystem mtime tick are never missed. A missing file clears the set; any
+// other read error preserves the last good peer set and returns the error.
 func (b *blocklist) reload(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {

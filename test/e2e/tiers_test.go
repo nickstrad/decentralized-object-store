@@ -30,10 +30,17 @@ func runE1S(t *testing.T, name string, sizes []int, num, den int) {
 	})
 }
 
+// TestE1MultiRegionPutGetS proves objects from 0 B through multi-stripe sizes
+// written in each region read back byte-identical through all other nodes on
+// tier S with at most m shards per stripe in any region.
 func TestE1MultiRegionPutGetS(t *testing.T) { runE1S(t, "e1", e1SizesS, 1, 5) }
 
+// TestE1MultiRegionMultiMBPutGetS extends E1 on tier S to multi-megabyte
+// payloads (2 MiB + 29 B) at a smaller seed share.
 func TestE1MultiRegionMultiMBPutGetS(t *testing.T) { runE1S(t, "e1mb", e1SizesSMB, 1, 25) }
 
+// TestE2PartitionAndHealS runs E2 on tier S plus full post-grace lineage,
+// readability, and orphan checks.
 func TestE2PartitionAndHealS(t *testing.T) {
 	t.Parallel()
 	var m measure
@@ -70,6 +77,8 @@ func TestE2PartitionAndHealS(t *testing.T) {
 	})
 }
 
+// TestE3BitRotRepairS proves tier S bit-rot reads, proportional anti-entropy
+// repair (rebuilt and moved bytes), and absence recording short of loss.
 func TestE3BitRotRepairS(t *testing.T) {
 	t.Parallel()
 	var m measure
@@ -99,6 +108,8 @@ func TestE3BitRotRepairS(t *testing.T) {
 	})
 }
 
+// TestE6CrashRestartWipeS proves crash survival, higher-incarnation rejoin,
+// shard catch-up, wipe refill, and post-grace orphan cleanup on tier S.
 func TestE6CrashRestartWipeS(t *testing.T) {
 	t.Parallel()
 	var m measure
@@ -128,6 +139,9 @@ func TestE6CrashRestartWipeS(t *testing.T) {
 	})
 }
 
+// TestE8LocalFirstMetadataSyncS proves disconnected conditional writes across
+// skewed clocks (±2 s, ±500 ppm) converge to one version per key with every
+// discard counted and logged and stale ETags refused.
 func TestE8LocalFirstMetadataSyncS(t *testing.T) {
 	t.Parallel()
 	var m measure
@@ -159,6 +173,8 @@ func TestE8LocalFirstMetadataSyncS(t *testing.T) {
 	})
 }
 
+// TestE4MigrationUnderTrafficS proves live cross-region bucket migration on
+// tier S with immediate source-shard cleanup, convergence, and routing checks.
 func TestE4MigrationUnderTrafficS(t *testing.T) {
 	t.Parallel()
 	var m measure

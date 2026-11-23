@@ -24,12 +24,16 @@ import (
 
 var e1SizesR = []int{0, 1, 2, 3, 7, 13, 4093, realStripe - 1, realStripe, realStripe + 1, 3*realStripe + 7, 3<<20 + 29}
 
+// routedRealOptions uses a 2+1 layout across 9 nodes (3 per region) because a
+// routed bucket places all k+m shards of each stripe inside its own region.
 func routedRealOptions() realOptions {
 	return realOptions{nodes: 9, layout: storage.Layout{K: 2, M: 1, StripeSize: realStripe}}
 }
 
 func logMeasure(t *testing.T, name string, v any) { t.Logf("MEASURE %s %v", name, v) }
 
+// TestE1MultiRegionPutGetR proves E1 on 9 real objnode processes for sizes from
+// 0 B through 3 MiB + 29 B, checking byte-identical readback and region spread.
 func TestE1MultiRegionPutGetR(t *testing.T) {
 	requireTierR(t)
 	c := newRealCluster(t, 1, defaultRealOptions())
@@ -58,6 +62,9 @@ func TestE1MultiRegionPutGetR(t *testing.T) {
 	logMeasure(t, "e1r/get_latency_p50_p90_max", fmt.Sprintf("%v %v %v", res.getLatencies[n/2], res.getLatencies[n*9/10], res.getLatencies[n-1]))
 }
 
+// TestE2PartitionAndHealR proves E2 across a real-process region blocklist
+// partition and heal, checking surviving-side reads/writes, convergence, and
+// discard counts/logs.
 func TestE2PartitionAndHealR(t *testing.T) {
 	requireTierR(t)
 	c := newRealCluster(t, 2, defaultRealOptions())
@@ -78,6 +85,9 @@ func TestE2PartitionAndHealR(t *testing.T) {
 	logMeasure(t, "e2r/declared_lost", res.lost)
 }
 
+// TestE3BitRotRepairR proves E3 against real shard files corrupted on disk:
+// reads stay byte-identical and anti-entropy rebuilds bytes proportional to
+// damage.
 func TestE3BitRotRepairR(t *testing.T) {
 	requireTierR(t)
 	c := newRealCluster(t, 3, defaultRealOptions())
@@ -93,6 +103,8 @@ func TestE3BitRotRepairR(t *testing.T) {
 	logMeasure(t, "e3r/bucket_bytes", res.bucketBytes)
 }
 
+// TestE4MigrationUnderTrafficR proves E4 live cross-region bucket migration on
+// 9 real 2+1 processes with zero source shards left and routing probes on r1.
 func TestE4MigrationUnderTrafficR(t *testing.T) {
 	requireTierR(t)
 	c := newRealCluster(t, 4, routedRealOptions())
@@ -107,6 +119,8 @@ func TestE4MigrationUnderTrafficR(t *testing.T) {
 	logMeasure(t, "e4r/objects_readable", res.objects)
 }
 
+// TestE6CrashRestartWipeR proves E6 on real processes using SIGKILL during
+// writes, higher-incarnation rejoin, and data-directory wipe refill.
 func TestE6CrashRestartWipeR(t *testing.T) {
 	requireTierR(t)
 	c := newRealCluster(t, 6, defaultRealOptions())
@@ -122,6 +136,9 @@ func TestE6CrashRestartWipeR(t *testing.T) {
 	logMeasure(t, "e6r/wiped_shards", res.wipedShards)
 }
 
+// TestE8LocalFirstMetadataSyncR proves E8 disconnected conditional metadata
+// edits converge to one version per key on real processes with discards logged
+// and stale losing ETags refused.
 func TestE8LocalFirstMetadataSyncR(t *testing.T) {
 	requireTierR(t)
 	c := newRealCluster(t, 8, defaultRealOptions())
@@ -141,6 +158,11 @@ type e5RResult struct {
 	killedAt int
 }
 
+// scenarioE5R forces rollback mid-copy by one-way blocking the coordinator from
+// target region nodes while SIGKILLing either a target node or the coordinator
+// (restarting the coordinator so it resumes from its saga log), then checks the
+// saga compensates with zero orphan shards in r1, intact source objects, and
+// routing still on r0.
 func scenarioE5R(c *realCluster, killCoordinator bool) (e5RResult, error) {
 	var res e5RResult
 	b := realBounds
@@ -266,6 +288,9 @@ func scenarioE5R(c *realCluster, killCoordinator bool) (e5RResult, error) {
 	return res, c.Ledger().Wrong()
 }
 
+// TestE5RollbackKillTargetMidCopyR proves killing a target node while the
+// coordinator cannot finish copying drives migration compensation cleanly on
+// tier R.
 func TestE5RollbackKillTargetMidCopyR(t *testing.T) {
 	requireTierR(t)
 	c := newRealCluster(t, 51, routedRealOptions())
@@ -277,6 +302,9 @@ func TestE5RollbackKillTargetMidCopyR(t *testing.T) {
 	logMeasure(t, "e5r/kill_target/to_compensated", res.terminal)
 }
 
+// TestE5RollbackKillCoordinatorMidSagaR proves a SIGKILLed and restarted
+// coordinator resumes from its durable saga log and compensates cleanly when
+// the target region is unreachable.
 func TestE5RollbackKillCoordinatorMidSagaR(t *testing.T) {
 	requireTierR(t)
 	c := newRealCluster(t, 52, routedRealOptions())
@@ -319,6 +347,9 @@ func checkE9Traffic(sig syscall.Signal, res e9Result) error {
 	return nil
 }
 
+// TestCheckE9TrafficRequiresLoadAndInflight proves checkE9Traffic rejects zero
+// completed requests or zero in-flight requests at SIGTERM so E9 cannot pass
+// vacuously.
 func TestCheckE9TrafficRequiresLoadAndInflight(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -349,6 +380,10 @@ func TestCheckE9TrafficRequiresLoadAndInflight(t *testing.T) {
 	}
 }
 
+// scenarioE9 drives 8 concurrent client workers against one node, sends sig
+// once traffic is established and in flight, verifies exit status 0 and zero
+// leaked goroutines, checks every request finished or failed cleanly, and
+// confirms all acknowledged writes read back after restart.
 func scenarioE9(c *realCluster, sig syscall.Signal) (e9Result, error) {
 	var res e9Result
 	if err := createBucket(c, realBounds, storage.BucketSpec{Name: "e9"}); err != nil {
@@ -488,6 +523,9 @@ func scenarioE9(c *realCluster, sig syscall.Signal) (e9Result, error) {
 	return res, c.ledger.Wrong()
 }
 
+// TestE9ShutdownUnderLoadR proves SIGTERM under active client load drains or
+// cleanly refuses requests, exits 0 with zero goroutines left, and restarts
+// cleanly with every acknowledged object readable.
 func TestE9ShutdownUnderLoadR(t *testing.T) {
 	requireTierR(t)
 	o := defaultRealOptions()
@@ -506,6 +544,8 @@ func TestE9ShutdownUnderLoadR(t *testing.T) {
 	logMeasure(t, "e9r/restart_to_converged", res.restart)
 }
 
+// TestCanaryE9AKilledNodeFailsTheCleanShutdownChecks plants SIGKILL instead of
+// SIGTERM and proves scenarioE9 catches the non-zero exit status.
 func TestCanaryE9AKilledNodeFailsTheCleanShutdownChecks(t *testing.T) {
 	requireTierR(t)
 	o := defaultRealOptions()
@@ -524,6 +564,9 @@ type hygieneRecord struct {
 	Dirs  []string
 }
 
+// TestTierRHarnessLeavesNothingBehindWhenATestFails re-executes the test binary
+// with a planted failure on a running 3-node cluster and verifies every child
+// process exited, every TCP port is free, and all temporary dirs were removed.
 func TestTierRHarnessLeavesNothingBehindWhenATestFails(t *testing.T) {
 	requireTierR(t)
 	if out := os.Getenv("E2E_CHILD_OUT"); out != "" {
@@ -588,6 +631,8 @@ func TestTierRHarnessLeavesNothingBehindWhenATestFails(t *testing.T) {
 	}
 }
 
+// TestDefaultBuildCarriesNoFaultInjection proves e2efault blocklist symbols
+// appear in the tagged objnode binary and are absent from the default binary.
 func TestDefaultBuildCarriesNoFaultInjection(t *testing.T) {
 	requireTierR(t)
 	plain, err := os.ReadFile(buildObjnode(t, false, ""))
@@ -608,6 +653,8 @@ func TestDefaultBuildCarriesNoFaultInjection(t *testing.T) {
 	}
 }
 
+// TestAllocDistinctPortsNeverCollides proves allocDistinctPorts returns 40
+// unique valid ports in one reservation batch.
 func TestAllocDistinctPortsNeverCollides(t *testing.T) {
 	ports, err := allocDistinctPorts(40)
 	if err != nil {
@@ -628,6 +675,9 @@ func TestAllocDistinctPortsNeverCollides(t *testing.T) {
 	}
 }
 
+// TestTierRStartupFailsOnPlantedLaunchFailure proves startRealCluster fails
+// closed with node identity and log tail—and cleans up all processes and
+// directories—when one node exits during launch or hits an occupied pinned port.
 func TestTierRStartupFailsOnPlantedLaunchFailure(t *testing.T) {
 	requireTierR(t)
 	realBin := buildObjnode(t, true, "e2efault")

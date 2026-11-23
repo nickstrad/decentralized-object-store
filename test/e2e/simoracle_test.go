@@ -19,6 +19,10 @@ type discardEntry struct {
 	winner, loser occ.Version
 }
 
+// simOracle runs event-driven safety checks on tier S: acknowledged-write
+// lineage, deletion safety against any possible winner across all nodes,
+// region-spread bounds on PUT, loss-declaration soundness, and post-grace
+// orphan checks.
 type simOracle struct {
 	c        *simCluster
 	failed   []string
@@ -67,6 +71,9 @@ func manifestOf(key string, v occ.Version) *storage.Manifest {
 	return man
 }
 
+// commit records every OCC commit into the lineage oracle, fails if a committed
+// manifest or staged version already had a shard deleted, checks placement
+// spread for new client PUTs, and validates any ~lost/ declaration.
 func (o *simOracle) commit(id env.NodeID, key string, held occ.Record, v occ.Version) {
 	o.lineage.Commit(id, key, held, v)
 	if sv, ok := o.ref(key, v); ok && len(o.deleted[sv]) > 0 && !o.residual[key] {
@@ -86,6 +93,9 @@ func (o *simOracle) discard(id env.NodeID, key string, w, l occ.Version) {
 
 func (o *simOracle) settled(k *Call) {}
 
+// notePut snapshots whether the writer's live view at PUT start had enough
+// cross-region capacity (sum of min(members, m) >= k+m on an unrouted bucket)
+// for checkSpread to enforce at most m shards per region.
 func (o *simOracle) notePut(n *node.Node, bucket, key string) {
 	o.spreadOK[string(n.ID())+"|"+bucket+"/"+key] = o.regionsAllow(n, bucket)
 }
@@ -132,6 +142,9 @@ func (o *simOracle) checkSpread(id env.NodeID, man *storage.Manifest) {
 	}
 }
 
+// checkLossDeclaration verifies that whenever a node commits a ~lost/<ver>
+// record, some stripe of that version genuinely holds fewer than k verifiable
+// shards across its holders' disks.
 func (o *simOracle) checkLossDeclaration(id env.NodeID, key string, v occ.Version) {
 	if v.Tombstone() || len(key) == 0 || occ.Kind(key[0]) != occ.KindTag {
 		return
@@ -187,6 +200,8 @@ func (o *simOracle) unrecoverableStripe(man *storage.Manifest) (int, bool) {
 	return 0, false
 }
 
+// watchDisk intercepts every simulated disk Delete to catch premature removal
+// of any shard belonging to a version that can still win on some node.
 type watchDisk struct {
 	env.Disk
 	id env.NodeID
@@ -237,6 +252,8 @@ func (o *simOracle) readers() []occ.Reader {
 	return out
 }
 
+// protector reports whether any node (up, down, or paused) still holds an
+// unbeaten manifest or staged record referencing shard version v.
 func (o *simOracle) protector(v storage.VersionID) (string, bool) {
 	rds := o.readers()
 	for _, rd := range rds {
@@ -292,6 +309,8 @@ func (o *simOracle) lostOnRecord(man *storage.Manifest) bool {
 	return false
 }
 
+// checkOrphans verifies that every shard blob remaining on any up node's disk
+// is expected by a live manifest in converged metadata.
 func (o *simOracle) checkOrphans() error {
 	ref := o.c.upNodes()
 	if len(ref) == 0 {
@@ -342,6 +361,10 @@ type outcome struct {
 	readable, lost int
 }
 
+// checkLiveReadableOrLost reads every live manifest through a random node after
+// a heal and enforces the three-outcome rule: readable with valid bytes,
+// declared lost on record (with an unrecoverable stripe), never silently
+// unreadable.
 func (c *simCluster) checkLiveReadableOrLost() (outcome, error) {
 	var out outcome
 	ns := c.upNodes()
@@ -399,6 +422,9 @@ func (c *simCluster) checkLiveReadableOrLost() (outcome, error) {
 	return out, nil
 }
 
+// finalChecks awaits convergence, verifies acknowledged-write lineage and live
+// object readability, optionally waits out OrphanGrace+GCGrace to check for
+// stray shards, and confirms the client ledger saw zero wrong bytes.
 func (c *simCluster) finalChecks(grace bool) (map[string]int, outcome, error) {
 	if _, err := c.Await("convergence after the heal", 60*time.Second, c.Converged); err != nil {
 		return nil, outcome{}, err
