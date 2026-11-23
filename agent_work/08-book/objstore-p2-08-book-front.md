@@ -94,3 +94,17 @@ until the orchestrator lists them. `git status --short` must show only your four
 Write `agent_work/08-book/FRONT-REPORT.md` (the one extra file you create): every README
 command with the result and time of your own run; every test name in the topic map with
 the file it is in; anything you could not verify.
+
+## Addendum (2026-11-23, after the chapter edit)
+
+The chapter editors have finished: the eight chapters are final and committed. No test
+gate is running now, but keep `COMPOSE_PROJECT_NAME=objstore-front` set all the same.
+The end-to-end work has landed on main and this branch is rebased on it.
+
+One extra edit is yours, and only this one, in `book/chapters/01-deterministic-simulation.md`:
+the sentence that says `detlint` checks "... and future protocol packages — 15 files in 3
+packages today" is stale now that every package is built. Run the lint as the gate script
+runs it (see `agent_work/gates/gate.sh`, step `detlint`), read the file and package counts
+it prints, and rewrite that one sentence with today's counts and no "future" or "today".
+Keep the chapter within 2,600 words. `git status --short` will then show five files plus
+your report. Record the lint output line in FRONT-REPORT.md.
