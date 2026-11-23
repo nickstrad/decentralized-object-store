@@ -722,6 +722,7 @@ func (n *nemesis) run(plan nemesisPlan) error {
 		if n.st.tally, err = c.o.checkAcks(rd); err != nil {
 			return err
 		}
+		n.st.declared = len(c.o.declared)
 		if len(c.o.declared) > 0 {
 			return failf("version %s declared lost inside the fault budget", c.o.declared[0])
 		}
@@ -742,6 +743,7 @@ func (n *nemesis) run(plan nemesisPlan) error {
 		losers[d.loser.ID()] = true
 	}
 	n.st.discards = len(losers)
+	n.st.declared = len(c.o.declared)
 	n.st.finalRegion = n.region
 	if n.st.puts+n.st.gets == 0 {
 		return failf("nemesis ran 0 client puts and gets")

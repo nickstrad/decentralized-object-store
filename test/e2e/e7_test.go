@@ -153,7 +153,7 @@ func checkFuzzCorpus(opts simOptions, warmM int) (nemesisStats, error) {
 	var tot nemesisStats
 	for i, data := range fuzzCorpus() {
 		s, st := runFuzzInput(opts, warmM, data)
-		if err := s.Err(); err != nil {
+		if err := s.Verify(); err != nil {
 			return tot, failf("corpus[%d] (seed %d): %v", i, fuzzSeed(data), err)
 		}
 		tot.warmM += st.warmM
@@ -224,7 +224,7 @@ func ambiguousMigrationRun(seed int64, cycles int, forget bool, st *nemesisStats
 func verifyAmbiguousMigrationTracked(seed int64, cycles int, forget bool) (*sim.Sim, nemesisStats, error) {
 	var st nemesisStats
 	s := ambiguousMigrationRun(seed, cycles, forget, &st)(seed)
-	if err := s.Err(); err != nil {
+	if err := s.Verify(); err != nil {
 		return s, st, err
 	}
 	if st.ambiguousRecovered != 1 {
@@ -348,7 +348,7 @@ func FuzzClusterNemesis(f *testing.F) {
 			t.Skip("input over 64 KiB")
 		}
 		s, _ := runFuzzInput(fuzzOptions(), fuzzWarmM, data)
-		if err := s.Err(); err != nil {
+		if err := s.Verify(); err != nil {
 			simtest.Report(t, s)
 			t.Fatalf("seed %d: %v", fuzzSeed(data), err)
 		}
