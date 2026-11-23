@@ -1,0 +1,37 @@
+step	source	line	exit	seconds	command
+1	README.md	41	0	2	docker compose build dev
+2	README.md	42	0	376	docker compose run --rm dev go test ./...
+3	README.md	48	0	177	agent_work/gates/ci-fast.sh
+4	README.md	74	0	11	docker compose run --rm dev go test ./test/e2e -run '^TestE7NemesisHealingCyclesS$/^shard=1$/^seed=1$' -seed=1 -count=1
+5	README.md	75	0	1	docker compose run --rm dev go run ./cmd/objsim -scenario toy-chaos-100 -seed 3
+6	README.md	83	0	2	docker compose --profile cluster up -d node-a1 node-b1 node-c1
+7	README.md	84	0	0	A=$(docker compose --profile cluster port node-a1 8080)
+8	README.md	85	0	0	C=$(docker compose --profile cluster port node-c1 8080)
+9	README.md	86	0	1	until curl -sf "http://$A/_health" | grep '"Ready":true,"LiveMembers":3' >/dev/null; do sleep 1; done
+10	README.md	87	0	0	curl -sf -X PUT "http://$A/demo"
+11	README.md	88	0	0	echo
+12	README.md	89	0	0	curl -sf -X PUT --data-binary "hello from region a" "http://$A/demo/hello.txt"
+13	README.md	90	0	0	echo
+14	README.md	91	0	0	until curl -sf "http://$C/demo/hello.txt"; do sleep 1; done
+15	README.md	92	0	0	echo
+16	README.md	93	0	2	docker compose --profile cluster down
+17	docs/index.md	34	0	3	docker compose build dev
+18	docs/index.md	40	0	3	docker compose run --rm dev go test ./...
+19	docs/index.md	46	0	2	docker compose run --rm dev go run ./cmd/objsim -scenario toy-chaos-100 -seed 3
+20	book/chapters/01-deterministic-simulation.md	236	0	3	docker compose run --rm dev go test ./internal/sim -run '^TestReplaySameProcess$' -seed=3 -count=1
+21	book/chapters/01-deterministic-simulation.md	237	0	2	docker compose run --rm dev go run ./cmd/objsim -scenario toy-chaos-100 -seed 3
+22	book/chapters/02-swim-gossip.md	266	0	3	docker compose run --rm dev go test ./internal/gossip -run '^TestSWIMConvergenceDST$/^N=20$/^shard=1$/^seed=33$' -seed=33 -count=1
+23	book/chapters/02-swim-gossip.md	267	0	2	docker compose run --rm dev go test ./internal/gossip -run '^TestSWIMAsymmetricLinkDST$|^TestCanaryNoIndirectProbe$' -seed=33 -v -count=1
+24	book/chapters/03-reed-solomon-erasure-coding.md	260	0	3	docker compose run --rm dev go test ./internal/storage -run '^TestStripedPutGetDST$' -seed=987691 -v -count=1
+25	book/chapters/03-reed-solomon-erasure-coding.md	261	0	6	docker compose run --rm dev go test ./internal/erasure -run '^$' -bench . -benchmem
+26	book/chapters/04-merkle-anti-entropy.md	271	0	2	docker compose run --rm dev go test ./internal/merkle -run '^TestBitRotRepairDST$' -seed=66014753249261 -v -count=1
+27	book/chapters/04-merkle-anti-entropy.md	272	0	3	docker compose run --rm -e MERKLE_MEASURE=1 dev go test ./internal/merkle -run '^TestMeasureDiffCost$' -v -count=1
+28	book/chapters/05-optimistic-concurrency-control.md	244	0	2	docker compose run --rm dev go test ./internal/occ -run '^TestMultiRegionConvergenceDST$' -seed=1 -v -count=1
+29	book/chapters/05-optimistic-concurrency-control.md	245	0	6	docker compose run --rm dev go test ./internal/occ -run '^$' -bench BenchmarkMergeDoc -benchmem -benchtime 20x
+30	book/chapters/06-sagas.md	267	0	3	docker compose run --rm dev go test ./internal/saga -run '^TestMigrationFailurePointsDST$' -seed=1 -count=1
+31	book/chapters/06-sagas.md	268	0	3	docker compose run --rm dev go test ./internal/saga -run '^TestMigrationUnderNemesisDST$' -seed=13 -count=1
+32	book/chapters/07-object-store-and-sync-engine.md	247	0	3	docker compose run --rm dev go test ./internal/noderuntime -run '^TestConformance' -v -count=1
+33	book/chapters/07-object-store-and-sync-engine.md	248	0	4	docker compose run --rm dev go test ./internal/node -run '^TestClusterPartitionHealDST$' -seed=1 -v -count=1
+34	book/chapters/08-end-to-end-and-hardening.md	252	0	94	docker compose run --rm dev go test -short -count=1 ./test/e2e
+35	book/chapters/08-end-to-end-and-hardening.md	253	0	249	docker compose run --rm -e E2E_TIER_R=1 dev go test ./test/e2e -run 'R$|TierR|DefaultBuild|CanaryE9' -count=1 -v -timeout 40m
+36	book/chapters/08-end-to-end-and-hardening.md	254	0	125	docker compose run --rm dev go test ./test/e2e -run '^$' -fuzz '^FuzzClusterNemesis$' -fuzztime 120s -fuzzminimizetime 5s

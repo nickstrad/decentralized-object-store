@@ -58,5 +58,18 @@
       "status": "published"
     }
   ],
-  "front_matter": []
+  "front_matter": [
+    {
+      "slug": "preface",
+      "title": "Preface",
+      "file": "front/preface.md",
+      "status": "published"
+    },
+    {
+      "slug": "topic-map",
+      "title": "Topic Map",
+      "file": "front/topic-map.md",
+      "status": "published"
+    }
+  ]
 }

@@ -1,0 +1,132 @@
+[
+  {
+    "id": "B01",
+    "severity": "MINOR",
+    "source": "book/chapters/01-deterministic-simulation.md",
+    "line": 5,
+    "sentence": "Virtual time advances only when the simulator pops the next event from its queue.",
+    "kind": "contradicted",
+    "evidence": "internal/sim/sim.go:603 advances now to the requested deadline even with an empty queue (line 611).",
+    "fix": "Virtual time advances to the next event or an explicitly requested run deadline."
+  },
+  {
+    "id": "B02",
+    "severity": "MINOR",
+    "source": "book/chapters/01-deterministic-simulation.md",
+    "line": 111,
+    "sentence": "writing a full log when `DST_ARTIFACTS` is set",
+    "kind": "stronger than evidence",
+    "evidence": "internal/sim/log.go:106 writes retained ring entries and a truncation header; LogCap defaults to 2^20.",
+    "fix": "writing the retained event log, with a truncation marker if necessary, when DST_ARTIFACTS is set"
+  },
+  {
+    "id": "B03",
+    "severity": "MINOR",
+    "source": "book/chapters/02-swim-gossip.md",
+    "line": 140,
+    "sentence": "across four memory-bounded shards",
+    "kind": "contradicted",
+    "evidence": "internal/gossip/dst_test.go:417 is called only by TestSWIMConvergenceDST at line 454; the other suites call Sweep directly.",
+    "fix": "The convergence suite uses four memory-bounded shards; the other scenarios sweep seeds sequentially within each scenario."
+  },
+  {
+    "id": "B04",
+    "severity": "MINOR",
+    "source": "book/chapters/02-swim-gossip.md",
+    "line": 241,
+    "sentence": "`FuzzGossipWire` (30 s, 64,508 execs)",
+    "kind": "unsupported",
+    "evidence": "agent_work/01-gossip/build-notes.md:377 records 30-second runs but no execution count; agent_work/01-gossip/gates/result.json records only aggregate duration/target count. Exact count absent from tracked evidence (searched repository excluding book).",
+    "fix": "FuzzGossipWire ran for 30 s with no crashers (or supply the missing execution-count log)."
+  },
+  {
+    "id": "B05",
+    "severity": "MINOR",
+    "source": "book/chapters/02-swim-gossip.md",
+    "line": 241,
+    "sentence": "`FuzzViewMergeLaws` (30 s, 25,371 execs",
+    "kind": "unsupported",
+    "evidence": "agent_work/01-gossip/build-notes.md:377 and agent_work/01-gossip/gates/result.json support the run, not 25,371 executions. The only matching digit sequences elsewhere are unrelated timestamps/metrics.",
+    "fix": "FuzzViewMergeLaws ran for 30 s with no crashers (or supply the missing execution-count log)."
+  },
+  {
+    "id": "B06",
+    "severity": "BLOCKER",
+    "source": "book/chapters/03-reed-solomon-erasure-coding.md",
+    "line": 7,
+    "sentence": "keeps every square submatrix invertible for `k + m <= 256`",
+    "kind": "contradicted",
+    "evidence": "internal/erasure/matrix.go:170 guarantees k-by-k submatrices only. The identity block has singular 1-by-1 off-diagonal submatrices; claims_test.go reproduces this.",
+    "fix": "keeps every k-by-k submatrix of G invertible for k + m <= 256"
+  },
+  {
+    "id": "B07",
+    "severity": "MINOR",
+    "source": "book/chapters/03-reed-solomon-erasure-coding.md",
+    "line": 82,
+    "sentence": "`AckQuorum` (default `k + 1`, within `[k, k + m]`)",
+    "kind": "contradicted",
+    "evidence": "internal/storage/node.go:63 uses min(K+1,K+M). The chapter explicitly allows m=0; its stated default would then be outside its own valid range.",
+    "fix": "AckQuorum (default min(k + 1, k + m), within [k, k + m])"
+  },
+  {
+    "id": "B08",
+    "severity": "BLOCKER",
+    "source": "book/chapters/03-reed-solomon-erasure-coding.md",
+    "line": 245,
+    "sentence": "permanent damage (bit-rot, wipe) never makes a GET unavailable",
+    "kind": "stronger than evidence",
+    "evidence": "internal/storage/node.go:297 acknowledges at quorum, not all n shards. internal/storage/dst_test.go:25 starts faults at 10 s after fault-free PUTs at 1 s. The separate claims_test.go counterexample has five durable shards after a successful 4+2 PUT, heals the network, then rots two shards; Budget.Check passes but GET is unavailable without ErrIO. Chapter 7 explicitly recognizes unwritten shards can drop a stripe below k.",
+    "fix": "In this suite, after fault-free writes have settled, permanent damage within MaxDamagedPerGroup=m never made a GET unavailable. A quorum-only PUT does not yet guarantee m further losses can be tolerated."
+  },
+  {
+    "id": "B09",
+    "severity": "MINOR",
+    "source": "book/chapters/04-merkle-anti-entropy.md",
+    "line": 5,
+    "sentence": "Equal roots stop in one message",
+    "kind": "contradicted",
+    "evidence": "internal/merkle/diff.go:178 implements a request/reply exchange; the chapter later correctly states 35-byte request plus 1-byte reply (one round trip, 36 bytes).",
+    "fix": "Equal roots stop in one round trip."
+  },
+  {
+    "id": "B10",
+    "severity": "MINOR",
+    "source": "book/chapters/04-merkle-anti-entropy.md",
+    "line": 135,
+    "sentence": "Four 3-node suites",
+    "kind": "contradicted",
+    "evidence": "internal/merkle/dst_test.go:538 creates four nodes (three honest plus one liar); loneLiarRun creates two.",
+    "fix": "The first three suites use three nodes; TestLyingPeerDST uses three honest nodes plus a liar, and a separate two-node lone-liar case."
+  },
+  {
+    "id": "B11",
+    "severity": "MINOR",
+    "source": "book/chapters/07-object-store-and-sync-engine.md",
+    "line": 9,
+    "sentence": "plus an 8-line `Node.Merge`",
+    "kind": "stale",
+    "evidence": "internal/occ/node_merge.go:7 is six lines including declaration and closing brace (lines 7\u201312).",
+    "fix": "plus a small Node.Merge wrapper"
+  },
+  {
+    "id": "B12",
+    "severity": "MAJOR",
+    "source": "book/chapters/08-end-to-end-and-hardening.md",
+    "line": 145,
+    "sentence": "Every Tier S failure prints a replay line:",
+    "kind": "stronger than evidence",
+    "evidence": "test/e2e/e7_test.go:75 has parent-level aggregate sweep failures after child cleanup, without Report; internal/sim/simtest/determinism.go:41 registers reports on the individual seed test. Single-seed replay also cannot reproduce a sweep floor requiring >=10/20 seeds. README:71 repeats the broader guarantee.",
+    "fix": "Failures in individual RequireDeterministic scenarios print a single-seed replay line; aggregate sweep checks require rerunning the original sweep."
+  },
+  {
+    "id": "B13",
+    "severity": "MAJOR",
+    "source": "book/chapters/03-reed-solomon-erasure-coding.md",
+    "line": 239,
+    "sentence": "`FuzzErasureCoding`: 18,227 up to `k = 256`, 3 MiB",
+    "kind": "contradicted",
+    "evidence": "internal/erasure/codec_test.go:493 calls drawPayload(t,k,true); internal/erasure/codec_test.go:300 clamps small payloads to 64 KiB. Build-notes line 521 repeats the error, but code and the fuzz target comment agree on 64 KiB. Multi-MB coverage is in TestPropRoundTrip/TestRoundTripMultiMB, not this fuzzer.",
+    "fix": "FuzzErasureCoding: 18,227 executions with k up to 256 and payloads up to 64 KiB; separate round-trip tests cover multi-MB payloads."
+  }
+]

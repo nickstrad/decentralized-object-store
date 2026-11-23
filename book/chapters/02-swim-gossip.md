@@ -1,27 +1,27 @@
 # SWIM Gossip Membership
 
-A decentralized cluster needs every node to agree on who is alive, who left, and who crashed. All-to-all heartbeats fail at scale: traffic grows as *O*(*N*²), and one flaky or one-way link triggers false failure verdicts.
+With the deterministic simulation testing framework from [Deterministic Simulation Testing](01-deterministic-simulation.md) in place, the cluster's first protocol tracks membership so every node agrees on who is alive, who left, and who crashed. All-to-all heartbeats fail at scale: traffic grows as *O*(*N*²), and one flaky or one-way link triggers false failure verdicts.
 
-SWIM (Scalable Weakly-consistent Infection-style Process Group Membership) separates failure detection from dissemination and keeps per-node load constant:
+SWIM (Scalable Weakly-consistent Infection-style Process Group Membership) separates failure detection from dissemination at constant load per node:
 
-- **Direct and indirect probing.** Every period *T*, each node sends a `Ping` to one peer. If no `Ack` arrives within the probe timeout, it asks *k* other live peers (`PingReq`) to probe the target and relay any `Ack` back. Indirect checks route around one-way links and localized loss while holding per-node load at *O*(1).
-- **Suspicion, incarnations, and epidemic gossip.** A failed probe marks the target `suspect`, not `dead`. Updates piggyback on protocol datagrams — each transmitted λ⌈log₂ *N*⌉ times — spreading in expected *O*(log *N*) periods. A suspected target refutes by incrementing its incarnation and gossiping `alive(inc+1)`. Only an unrefuted timeout declares `dead`. Periodic push-pull syncs repair missed gossip and heal partitions.
+- **Direct and indirect probing.** Every period *T*, a node sends `Ping` to one peer. If no `Ack` arrives before timeout, it asks *k* live peers (`PingReq`) to probe the target and relay any `Ack` back, routing around one-way links and local loss at *O*(1) load.
+- **Suspicion, incarnations, and epidemic gossip.** A failed probe marks the target `suspect`, not `dead`. Updates piggyback on datagrams — each sent λ⌈log₂ *N*⌉ times — spreading in expected *O*(log *N*) periods. Each node owns a monotonic **incarnation** counter; a suspected node refutes by bumping its incarnation and gossiping `alive(inc+1)`. Only an unrefuted timeout declares `dead`. Periodic push-pull syncs repair missed gossip and heal partitions.
 
 ## How SWIM maps to this repository
 
-One package, `internal/gossip`, implements the protocol in five files: [`config.go`](../../internal/gossip/config.go), [`errors.go`](../../internal/gossip/errors.go), [`member.go`](../../internal/gossip/member.go), [`wire.go`](../../internal/gossip/wire.go), and [`node.go`](../../internal/gossip/node.go).
+Package `internal/gossip` implements SWIM in [`config.go`](../../internal/gossip/config.go), [`errors.go`](../../internal/gossip/errors.go), [`member.go`](../../internal/gossip/member.go), [`wire.go`](../../internal/gossip/wire.go), and [`node.go`](../../internal/gossip/node.go).
 
-`*gossip.Node` sits on the `internal/env` boundary from [Deterministic Simulation Testing](01-deterministic-simulation.md). It implements `env.Process` (`Start`, `OnDatagram`, `OnRequest`, `EncodeState`) using only `Clock`, `Rand`, and `Transport` — never `Disk`, goroutines, or locks. Callers read membership through the value-based `Membership` interface (`Members`, `Lookup`, `Subscribe`) plus `All`, `Tombstones`, `Join`, `Leave`, `Self`, `Stats`, `LastError`, and `Closed`. `Subscribe` delivers synchronous `Event{Kind, Member, At}` callbacks (`EventJoined`, `EventSuspected`, `EventRecovered`, `EventDied`, `EventLeft`). Wire errors register at `CodeAppMin+16..+20` (`80..84` via `Codes()`/`CodeTable()`) so remote `ErrMalformed`, `ErrNotMember`, `ErrClosed`, `ErrJoinFailed`, and `ErrViewFull` cross the transport intact. Every scenario runs on `internal/sim` via `simtest.Sweep` and `simtest.RequireDeterministic`.
+`*gossip.Node` runs on `internal/env` from [Deterministic Simulation Testing](01-deterministic-simulation.md), implementing `env.Process` (`Start`, `OnDatagram`, `OnRequest`, `EncodeState`) with only `Clock`, `Rand`, and `Transport` — no `Disk`, goroutines, or locks. Callers read `Membership` (`Members`, `Lookup`, `Subscribe`) plus `All`, `Tombstones`, `Join`, `Leave`, `Self`, `Stats`, `LastError`, and `Closed`. `Subscribe` emits synchronous `Event{Kind, Member, At}` callbacks (`EventJoined`, `EventSuspected`, `EventRecovered`, `EventDied`, `EventLeft`). Wire errors register at `CodeAppMin+16..+20` (`80..84` via `Codes()`/`CodeTable()`) for `ErrMalformed`, `ErrNotMember`, `ErrClosed`, `ErrJoinFailed`, and `ErrViewFull`.
 
-### Merge lattice and self-refutation (`member.go`, `node.go`)
+### Merge lattice and self-refutation
 
-Each entry is `Member{ID, Region, Incarnation, State}` ordered `StateAlive < StateSuspect < StateDead < StateLeft`. `View` applies updates via `Supersedes(a, b)`, comparing `(Incarnation, State, Region)` lexicographically. That strict total order makes `View` a commutative, idempotent max-lattice: any update order or partial-view merge produces the same table.
+In `member.go`, each entry is `Member{ID, Region, Incarnation, State}` ordered `StateAlive < StateSuspect < StateDead < StateLeft`. `View` merges updates via `Supersedes(a, b)` on `(Incarnation, State, Region)` — a commutative, idempotent max-lattice where any arrival order yields the same table.
 
-Updates about self bypass the lattice. Any claim at `inc >= own` other than `alive` at the node's own incarnation and region triggers refutation to `claim + 1`, updating the view and queuing `alive`. A node never declares itself suspect or dead, and its incarnation never decreases; at `math.MaxUint32`, refutation saturates without wrapping (`Stats.RefuteOverflows`).
+In `node.go`, updates about self bypass the lattice. Any claim at `inc >= own` other than `alive` at the node's incarnation and region triggers refutation to `claim + 1`, queuing `alive`. A node never marks itself suspect or dead, and its incarnation never decreases; at `math.MaxUint32`, refutation saturates (`Stats.RefuteOverflows`).
 
-### Probing and indirect relays (`node.go`)
+### Probing and indirect relays
 
-Live peers (excluding self) are probed in shuffled round-robin order; new joiners enter a random remaining slot in *O*(1) time, and dead or left entries are skipped. Each `ProbeInterval` (1 s), an unacked previous probe marks its target `suspect`; the node then sends `KindPing` to the next target and arms `ProbeTimeout` (400 ms). On timeout, it sends `KindPingReq` to `IndirectProbes` (*k* = 3) distinct random live helpers.
+In `node.go`, live peers (excluding self) are probed in shuffled round-robin order; new joiners take a random remaining slot in *O*(1) time, skipping dead or left entries. Every `ProbeInterval` (1 s), an unacked probe marks its target `suspect`; the node then pings the next peer (`KindPing`) and arms `ProbeTimeout` (400 ms). On timeout, it sends `KindPingReq` to `IndirectProbes` (*k* = 3) distinct random live helpers.
 
 ```mermaid
 sequenceDiagram
@@ -63,15 +63,15 @@ sequenceDiagram
            │                │                │
 ```
 
-A helper probes `Target` under its own sequence number, stores the pending relay in `map[uint32]relay` with an expiry FIFO, and forwards the first matching `KindAck` using the requester's sequence number. Relays expire after one `ProbeInterval`, prune on arrival and ticks, and cap at `MaxRelays` (1,024; `Stats.RelaysDropped`). Failed `KindPing` sends allocate no slot.
+A helper probes `Target` under its own sequence number, stores the relay in `map[uint32]relay` with an expiry FIFO, and forwards the first matching `KindAck` under the requester's sequence number. Relays expire after one `ProbeInterval`, prune on arrival and ticks, and cap at `MaxRelays` (1,024; `Stats.RelaysDropped`). Failed `KindPing` sends allocate no slot.
 
-### Suspicion, piggybacking, and burial (`config.go`, `node.go`)
+### Suspicion, piggybacking, and burial
 
-Entering `StateSuspect` starts a timer for `SuspicionMult × ⌈log₂ N⌉ × ProbeInterval` (default multiplier 4, *N* = live count including self, ⌈log₂ *N*⌉ ≥ 1); leaving cancels it, expiry promotes to `StateDead`.
+In `config.go` and `node.go`, entering `StateSuspect` starts a timer for `SuspicionMult × ⌈log₂ N⌉ × ProbeInterval` (multiplier 4, *N* = live count including self, ⌈log₂ *N*⌉ ≥ 1); leaving cancels it, expiry promotes to `StateDead`.
 
-The gossip queue keeps one entry per member. Each outgoing datagram packs updates within `MaxPacket` (default 1,400 B; `MinPacket` = 781 B) in priority order: explicit leads (leave notices), the destination's own non-alive entry (so a suspected or dead peer hears about itself on the first packet even after the queue drains), and queued updates sorted by fewest transmissions, newest first. Entries drop after `RetransmitMult × ⌈log₂ N⌉` transmits (multiplier 4).
+The gossip queue holds one entry per member. Outgoing datagrams pack updates within `MaxPacket` (1,400 B; `MinPacket` = 781 B) by priority: leave notices, the destination's non-alive entry (so a suspected or dead peer hears about itself immediately even after the queue drains), and queued updates sorted by fewest transmits, newest first. Entries drop after `RetransmitMult × ⌈log₂ N⌉` transmits (multiplier 4).
 
-Deleting dead entries outright fails twice: peers purging at different times re-infect each other via sync in endless gossip loops, and stale `alive(0)` replays resurrect dead nodes.
+Deleting dead entries outright fails twice: peers purging at different times re-infect each other via sync, and stale `alive(0)` replays resurrect dead nodes.
 
 ```mermaid
 graph TD
@@ -112,32 +112,36 @@ graph TD
 └────────────────┘          └──────────────────┘
 ```
 
-`internal/gossip` uses a bounded tombstone floor:
+`internal/gossip` keeps a bounded **tombstone** (buried-verdict) floor:
 
-1. **Retention.** `dead`/`left` verdicts stay in the view for `DeadRetention` (5 min). Stranger verdicts learned via sync are stored without enqueuing for gossip.
-2. **Burial.** On expiry, the entry leaves the view and becomes a tombstone (`MaxTombstones` = 4,096, oldest-buried evicted first).
-3. **Old news.** Non-superseding `dead`/`left` updates for a tombstoned ID are dropped, preventing cross-peer resurrection. Stale `alive`/`suspect` claims reinstate the verdict for one more `DeadRetention` (`Stats.Reinstated`, no event, not queued) so sync replies and destination-led packets force a wiped node to refute to `verdict + 1`. A higher incarnation removes the tombstone and rejoins.
+1. **Retention.** `dead`/`left` verdicts stay in the view for `DeadRetention` (5 min); stranger verdicts from sync are not gossiped.
+2. **Burial.** On expiry, the entry moves to a tombstone (`MaxTombstones` = 4,096, oldest evicted first).
+3. **Old news.** Non-superseding `dead`/`left` updates for a tombstoned ID are dropped. Stale `alive`/`suspect` claims reinstate the verdict for one `DeadRetention` (`Stats.Reinstated`, no event, not queued) so sync replies and destination-led packets force a wiped node to refute to `verdict + 1`. A higher incarnation removes the tombstone and rejoins.
 
-### Join, sync, leave, and wire format (`wire.go`, `node.go`)
+### Join, sync, leave, and wire format
 
-`Join` and periodic sync share one push-pull RPC (`KindSyncReq` / `KindSyncResp` carrying the full view). `Join` contacts all seeds concurrently, succeeds on the first valid reply, or joins every error with `ErrJoinFailed`. Seeds from `Config.Seeds` and `Join` are remembered (self and duplicates stripped, cap `MaxSeeds` = 256). Every `SyncInterval` (15 s, jittered) a node syncs with one random live peer and one heal candidate from `{dead view entries} ∪ {dead tombstones} ∪ {remembered non-live seeds}` — never `StateLeft`. A lonely node with seeds retries `Join` once per `ProbeInterval` (`Stats.Rejoins`), one join at a time.
+In `node.go`, `Join` and periodic sync share one push-pull RPC (`KindSyncReq`/`KindSyncResp` carrying the full view). `Join` dials all seeds concurrently, succeeds on the first valid reply, or joins errors with `ErrJoinFailed`. Seeds from `Config.Seeds` and `Join` are remembered (`MaxSeeds` = 256). Every `SyncInterval` (15 s, jittered) a node syncs with one random live peer and one heal candidate from `{dead view entries} ∪ {dead tombstones} ∪ {remembered non-live seeds}` — never `StateLeft`. A lonely node retries `Join` once per `ProbeInterval` (`Stats.Rejoins`).
 
-`Leave` marks self `StateLeft`, replaces any queued `StateAlive` self entry, gossips `StateLeft` to every live peer, stops all timers, and closes the node (`ErrClosed` on further calls/syncs; datagrams counted in `Stats.DroppedClosed`).
+`Leave` marks self `StateLeft`, replaces any queued `StateAlive` self entry, gossips `StateLeft` to every live peer, stops timers, and closes (`ErrClosed` on further calls; datagrams in `Stats.DroppedClosed`).
 
-The big-endian `Version` 1 wire format frames `version | kind | seq | [target for ping-req] | count | updates...`, separating datagram kinds (`KindPing`, `KindAck`, `KindPingReq`, `KindGossip`) from sync kinds (`KindSyncReq`, `KindSyncResp`). Canonical decoding checks minimum bytes before allocating and rejects trailing bytes with `ErrMalformed`, ensuring `Encode(Decode(b)) == b`.
+In `wire.go`, big-endian `Version` 1 frames `version | kind | seq | [target for ping-req] | count | updates...`, separating datagrams (`KindPing`, `KindAck`, `KindPingReq`, `KindGossip`) from syncs (`KindSyncReq`, `KindSyncResp`). Canonical decoding checks minimum bytes before allocating and rejects trailing bytes (`ErrMalformed`), so `Encode(Decode(b)) == b`.
 
 ### Design choices and what each costs
 
-- **No authentication.** Plain SWIM trusts datagram senders. *Cost:* a forged `dead(id, MaxUint32)` saturates refutation and evicts that ID permanently.
-- **Volatile incarnations.** Nothing is written to `env.Disk`. *Cost:* a wiped node restarts at 0 and relies on hearing its prior entry or tombstone during join or sync.
-- **Fixed logarithmic suspicion timeout (no Lifeguard).** *Cost:* no local health multiplier or confirmation shortening; a stalled node does not widen its own timeouts.
-- **Count-bounded full-view sync (`MaxMembers`).** Defaults to and caps at `MaxUpdates` (65,535) for the `uint16` count. *Cost:* sync payloads grow linearly with *N*, and long IDs can exceed the 16 MiB request cap (`env.ErrTooLarge`).
-- **Bounded tombstones (`4,096`) and relays (`1,024`).** Keeps state bounded and `onAck` *O*(1). *Cost:* evicting an old tombstone forgets its floor, and duplicate `PingReq`s consume extra relay slots until expiry.
-- **Uniform `MaxPacket`.** Oversized inbound datagrams are dropped as malformed. *Cost:* mismatched packet budgets drop packets silently.
+- **No authentication.** Trusts datagram senders; a forged `dead(id, MaxUint32)` saturates refutation and evicts that ID permanently.
+- **Volatile incarnations.** Nothing writes to `env.Disk`; a wiped node restarts at 0 and learns its prior entry or tombstone via join or sync.
+- **Fixed logarithmic suspicion timeout (no Lifeguard).** No local health multiplier or confirmation shortening; a stalled node does not widen its timeouts.
+- **Count-bounded full-view sync (`MaxMembers`).** Caps at `MaxUpdates` (65,535) for the `uint16` count; payloads grow linearly with *N*, and long IDs can hit the 16 MiB request cap (`env.ErrTooLarge`).
+- **Bounded tombstones (`4,096`) and relays (`1,024`).** Keeps state bounded and `onAck` *O*(1); evicting an old tombstone forgets its floor, and duplicate `PingReq`s hold extra relay slots until expiry.
+- **Uniform `MaxPacket`.** Oversized inbound datagrams drop silently as malformed.
+
+### Testing on the simulator
+
+`internal/gossip/dst_test.go` runs every scenario on `internal/sim` via `simtest.RequireDeterministic` — four memory-bounded shards for 3-region convergence (5–10% link loss, *N*/10 late joiners, *N*/20 crashes, *N*/20 leaves over 30 s) and `simtest.Sweep` for crash detection, 300 s one-way links with an indirect-probe canary, short and post-retention partition heals, purge stability, and wiped restarts.
 
 ## Key pieces in code
 
-The merge lattice takes nine lines in [`internal/gossip/member.go`](../../internal/gossip/member.go):
+Merge lattice in [`internal/gossip/member.go`](../../internal/gossip/member.go):
 
 ```go
 func Supersedes(a, b Member) bool {
@@ -151,7 +155,7 @@ func Supersedes(a, b Member) bool {
 }
 ```
 
-Ack handling in [`internal/gossip/node.go`](../../internal/gossip/node.go) closes the active probe or forwards a relayed `KindAck` in *O*(1) time under the requester's original sequence number:
+Ack handling in [`internal/gossip/node.go`](../../internal/gossip/node.go) closes the active probe or relays `KindAck` in *O*(1) time:
 
 ```go
 func (n *Node) onAck(seq uint32) {
@@ -173,7 +177,7 @@ func (n *Node) onAck(seq uint32) {
 }
 ```
 
-Suspicion timers in [`internal/gossip/node.go`](../../internal/gossip/node.go) scale with ⌈log₂ *N*⌉ and re-check state and incarnation when they fire:
+Suspicion timers in [`internal/gossip/node.go`](../../internal/gossip/node.go) scale with ⌈log₂ *N*⌉ and re-check state and incarnation:
 
 ```go
 func (n *Node) startSuspicion(l *memberLocal, u Member) {
@@ -195,7 +199,7 @@ func (n *Node) startSuspicion(l *memberLocal, u Member) {
 }
 ```
 
-Burial in [`internal/gossip/node.go`](../../internal/gossip/node.go) enforces the `MaxTombstones` (4,096) FIFO cap and compacts stale queue references past twice the cap:
+Burial in [`internal/gossip/node.go`](../../internal/gossip/node.go) enforces the `MaxTombstones` (4,096) FIFO cap:
 
 ```go
 func (n *Node) bury(m Member) {
@@ -221,9 +225,9 @@ func (n *Node) bury(m Member) {
 
 ## What the tests show, and what they do not
 
-All measurements come from the 4-core Docker development container on the current tree, with every DST seed double-run via `simtest.RequireDeterministic`.
+Measurements come from the 4-core Docker container, with every seed double-run via `simtest.RequireDeterministic`:
 
-- **Convergence and message cost.** `TestSWIMConvergenceDST` ran 500 seeds plus 3 pinned seeds across three sizes (3 regions, 5–10% link loss, *N*/10 late joiners, *N*/20 crashes, *N*/20 leaves over 30 s, measured from `HealNet` to identical live views):
+- **Convergence and message cost.** `TestSWIMConvergenceDST` (500 + 3 pinned seeds, `HealNet` to identical live views):
 
   | *N* | ⌈log₂ *N*⌉ | Periods (min / med / p99 / max) | max ÷ ⌈log₂ *N*⌉ | Datagrams / node / period (med / max) |
   |---|---|---|---|---|
@@ -231,11 +235,11 @@ All measurements come from the 4-core Docker development container on the curren
   | 50 | 6 | 1 / 18 / 26 / 29 | 4.8 (cap 48) | 3.027 / 3.778 (cap 5.000) |
   | 100 | 7 | 10 / 26 / 32 / 34 | 4.9 (cap 56) | 2.905 / 3.554 (cap 5.000) |
 
-  Sync RPCs (up to two per node per `SyncInterval`) are excluded from datagram counts. False deaths were 0 across all 1,500+ convergence runs and 500+ crash-detection runs. Controlled scaling in the adversarial harness (8 seeds at *N* = 20, 50, 100, and 200, crash at heal) gave maxima of 25.25 s, 28.50 s, 34.50 s, and 38.75 s (max ÷ ⌈log₂ *N*⌉ in 4.75–5.05).
-- **Detection, asymmetric links, and canary.** `TestSWIMCrashDetectionDST` (*N* = 20, 5% loss, 500 seeds) detected crashes at every live node in 21.5 / 23.0 / 27.0 / 28.0 s (bound 40 s). `TestSWIMAsymmetricLinkDST` (*N* = 12, 300 s one-way link, 500 seeds) saw 0 suspicions and 0 deaths. `TestCanaryNoIndirectProbe` (indirect probes off) produced 416–543 suspicions per seed (median 492) and 0 evictions because targets refuted in time — showing why asserting zero suspicions is necessary.
-- **Partition heal, purge, and restart.** `TestSWIMPartitionHealDST` (*N* = 12, within retention, 500 seeds) re-merged in 4.0 / 6.5 / 10.5 / 11.5 s (bound 60 s). `TestSWIMLongPartitionHealDST` (past `DeadRetention` = 20 s) re-merged in 2.5 / 7.0 / 14.5 / 16.0 s with a seed across the cut and 2.5 / 12.0 / 29.0 / 35.0 s with tombstones only (bound 90 s). `TestDeadEntriesStayPurgedDST` (5 nodes, crash and leave, watched 3 × `DeadRetention` past purge) purged each victim once per survivor with zero reinstatements. `TestSWIMRestartSameIDDST` (500 seeds) converged wiped restarts within 30 s on both retained and tombstoned paths.
-- **Properties, fuzzing, race, and coverage.** Statement coverage in `internal/gossip` is 97.4% (remaining branches are defensive). `TestPropViewMergeIsCommutative` and `TestPropIncarnationMonotonic` (including `propRecordMonotonicAcrossPurge`) passed 2,000 `rapid` checks. `FuzzGossipWire` (30 s, 64,508 execs) and `FuzzViewMergeLaws` (30 s, 25,371 execs; non-empty seeds checked by `TestFuzzSeedsDrawNonEmptyViews`) found no crashers. `go test -race` passed (75 s repo-wide; 52.5 s in `internal/gossip`). The 500-seed DST sweep finished in 484.1 s across four convergence shards (peak memory ~82–132 MB vs. 5.1 GB OOM if all 500 seeds ran concurrently).
-- **Adversarial testing.** A 73-check harness (`core`, `scenarios`, `scaling`, `canary`) broke 4 checks on run 1 (`retention-monotonicity`, `stale-replay-after-purge`, `partition-heal-retained-false`, `default-retention-long-partition`). With code audits (cross-peer resurrection, unbounded `relays`, views past `MaxUpdates`, synchronous encode-error callbacks, region-mismatch refutation, duplicate self entries on `Leave`), those drove tombstones, remembered `Join` seeds, and hard caps. On run 2, 72 held and 1 remained broken: `relay-once-original-sequence` relays to an unregistered `"target"` (`Send` fails with `env.ErrUnreachable`) yet expects a synthetic `Ack` to forward. Dropping unsent relays is intentional; valid relaying is verified by `TestProbeAndIndirectProbe`, `TestRelayBounds`, and `TestSWIMAsymmetricLinkDST`.
+  Sync RPCs (up to two per node per `SyncInterval`) are excluded. False deaths were 0 across 1,500+ convergence and 500+ crash-detection runs. Adversarial scaling (8 seeds at *N* = 20, 50, 100, 200, crash at heal) gave maxima of 25.25 s, 28.50 s, 34.50 s, and 38.75 s (max ÷ ⌈log₂ *N*⌉ in 4.75–5.05).
+- **Detection, asymmetric links, and canary.** `TestSWIMCrashDetectionDST` (*N* = 20, 5% loss, 500 seeds): 21.5 / 23.0 / 27.0 / 28.0 s (bound 40 s). `TestSWIMAsymmetricLinkDST` (*N* = 12, 300 s one-way link, 500 seeds): 0 suspicions, 0 deaths. `TestCanaryNoIndirectProbe` (indirect probes off): 416–543 suspicions/seed (median 492), 0 evictions because targets refuted in time — showing why asserting zero suspicions matters.
+- **Partition heal, purge, and restart.** `TestSWIMPartitionHealDST` (*N* = 12, 500 seeds): 4.0 / 6.5 / 10.5 / 11.5 s (bound 60 s). `TestSWIMLongPartitionHealDST` (`DeadRetention` = 20 s): 2.5 / 7.0 / 14.5 / 16.0 s with a cross-cut seed and 2.5 / 12.0 / 29.0 / 35.0 s with tombstones only (bound 90 s). `TestDeadEntriesStayPurgedDST` (5 nodes, watched 3 × `DeadRetention` past purge): each victim purged once per survivor, zero reinstatements. `TestSWIMRestartSameIDDST` (500 seeds): wiped restarts converged within 30 s on both retained and tombstoned paths.
+- **Properties, fuzzing, race, and coverage.** Coverage in `internal/gossip` is 97.4% (remaining branches are defensive). `TestPropViewMergeIsCommutative` and `TestPropIncarnationMonotonic` (`propRecordMonotonicAcrossPurge`) passed 2,000 `rapid` checks. `FuzzGossipWire` (30 s) and `FuzzViewMergeLaws` (30 s; checked by `TestFuzzSeedsDrawNonEmptyViews`) found no crashers. `go test -race` passed (75 s repo-wide; 52.5 s in `internal/gossip`). The 500-seed sweep took 484.1 s across four shards (~82–132 MB peak vs. 5.1 GB OOM if all 500 ran concurrently).
+- **Adversarial testing.** A 73-check harness broke 4 checks on run 1 (`retention-monotonicity`, `stale-replay-after-purge`, `partition-heal-retained-false`, `default-retention-long-partition`). With code audits (cross-peer resurrection, unbounded `relays`, views past `MaxUpdates`, synchronous encode-error callbacks, region-mismatch refutation, duplicate self entries on `Leave`), those drove tombstones, remembered `Join` seeds, and hard caps. Run 2 held 72/73; `relay-once-original-sequence` relays to an unregistered `"target"` (`env.ErrUnreachable`) yet expects a synthetic `Ack` to forward. Dropping unsent relays is intentional, verified by `TestProbeAndIndirectProbe`, `TestRelayBounds`, and `TestSWIMAsymmetricLinkDST`.
 
 ### Narrowed claims
 
@@ -246,16 +250,17 @@ All measurements come from the 4-core Docker development container on the curren
 
 ### What the tests do not prove
 
-Everything above is proven only on the single-threaded simulator (`internal/sim`). Real UDP/TCP sockets, kernel buffers, MTU fragmentation across mismatched `MaxPacket` values, DNS, OS timers, GC pauses, and concurrent adapters wait for the real-runtime adapter and integrated node in coming chapters. Peer authentication, persistent incarnations, Lifeguard local-health adaptation, and clusters beyond *N* = 200 are outside scope; storage layers consuming `Membership` (erasure coding, anti-entropy, metadata OCC, migration sagas) arrive in coming chapters.
+Everything above runs only on the single-threaded simulator (`internal/sim`). Real UDP/TCP sockets, kernel buffers, MTU fragmentation across mismatched `MaxPacket` values, DNS, OS timers, GC pauses, and concurrent adapters are tested only when the real runtime wraps the core in [The Object Store and Sync Engine](07-object-store-and-sync-engine.md) and [End-to-End Tests and Hardening](08-end-to-end-and-hardening.md). Peer authentication, persistent incarnations, Lifeguard local-health adaptation, and clusters beyond *N* = 200 are out of scope.
+
+Next, [Reed-Solomon Erasure Coding](03-reed-solomon-erasure-coding.md) builds durable shard placement and storage over `Membership`, followed by [Merkle-Tree Anti-Entropy](04-merkle-anti-entropy.md), [Optimistic Concurrency Control](05-optimistic-concurrency-control.md), and [Sagas](06-sagas.md).
 
 ## Go deeper in the repo
 
-- **Protocol code:** [`config.go`](../../internal/gossip/config.go), [`errors.go`](../../internal/gossip/errors.go), [`member.go`](../../internal/gossip/member.go), [`wire.go`](../../internal/gossip/wire.go), and [`node.go`](../../internal/gossip/node.go) under `internal/gossip/`.
-- **Unit and regression tests:** [`member_test.go`](../../internal/gossip/member_test.go) (`TestStateTransitions`, `TestIncarnationRules`, `TestViewAccessors`, `TestViewApplyRemoveWithoutReadStaysBounded`); [`wire_test.go`](../../internal/gossip/wire_test.go) (`TestWireRoundTrip`, `TestDecodeMalformed`, `TestEncodeRejectsInvalidMessages`, [`testdata/wire-golden.txt`](../../internal/gossip/testdata/wire-golden.txt)); [`node_test.go`](../../internal/gossip/node_test.go) (`TestProbeTargetRotation`, `TestProbeAndIndirectProbe`, `TestPiggybackSelectionAndLimit`, `TestJoin`, `TestSyncRequests`, `TestOperationsAfterLeave`, `TestErrors`, `TestEncodeStateIsCanonical`); [`repair_test.go`](../../internal/gossip/repair_test.go) (`TestDeadEntryLifetime`, `TestJoinSeedsAreRemembered`, `TestRelayBounds`, `TestViewBounds`, `TestCallbacksNeverRunInsideTheRegisteringCall`, `TestRepairNits`).
-- **Property, fuzz, and DST suites:** [`prop_test.go`](../../internal/gossip/prop_test.go) (`TestPropViewMergeIsCommutative`, `TestPropIncarnationMonotonic`, `FuzzViewMergeLaws`, `TestFuzzSeedsRunWithoutSkipping`, `TestFuzzSeedsDrawNonEmptyViews`, [`testdata/merge-seeds.txt`](../../internal/gossip/testdata/merge-seeds.txt)); [`fuzz_test.go`](../../internal/gossip/fuzz_test.go) (`FuzzGossipWire`); [`dst_test.go`](../../internal/gossip/dst_test.go) (`TestSWIMConvergenceDST`, `TestSWIMAsymmetricLinkDST`, `TestCanaryNoIndirectProbe`, `TestSWIMCrashDetectionDST`, `TestSWIMPartitionHealDST`, `TestSWIMRefutationDST`, `TestSWIMRestartSameIDDST`, `TestJoinNoReachableSeedDST`, `TestDeadEntriesStayPurgedDST`, `TestSWIMLongPartitionHealDST`, [`testdata/seeds.txt`](../../internal/gossip/testdata/seeds.txt)).
-- **Adversarial harness and results:** `agent_work/adversarial/01-gossip/` (`RESULTS.md`, `run-all.sh`, `main.go`, `extra.go`).
+- **Protocol:** [`config.go`](../../internal/gossip/config.go), [`errors.go`](../../internal/gossip/errors.go), [`member.go`](../../internal/gossip/member.go), [`wire.go`](../../internal/gossip/wire.go), [`node.go`](../../internal/gossip/node.go) under `internal/gossip/`.
+- **Unit and regression tests:** [`member_test.go`](../../internal/gossip/member_test.go), [`wire_test.go`](../../internal/gossip/wire_test.go) ([`testdata/wire-golden.txt`](../../internal/gossip/testdata/wire-golden.txt)), [`node_test.go`](../../internal/gossip/node_test.go), [`repair_test.go`](../../internal/gossip/repair_test.go) (`TestDeadEntryLifetime`, `TestJoinSeedsAreRemembered`, `TestRelayBounds`, `TestViewBounds`).
+- **Properties, fuzz, and simulation:** [`prop_test.go`](../../internal/gossip/prop_test.go) (`TestPropViewMergeIsCommutative`, `TestPropIncarnationMonotonic`, `FuzzViewMergeLaws`, [`testdata/merge-seeds.txt`](../../internal/gossip/testdata/merge-seeds.txt)); [`fuzz_test.go`](../../internal/gossip/fuzz_test.go) (`FuzzGossipWire`); [`dst_test.go`](../../internal/gossip/dst_test.go) (`TestSWIMConvergenceDST`, `TestSWIMAsymmetricLinkDST`, `TestCanaryNoIndirectProbe`, `TestSWIMCrashDetectionDST`, `TestSWIMPartitionHealDST`, `TestSWIMRefutationDST`, `TestSWIMRestartSameIDDST`, `TestJoinNoReachableSeedDST`, `TestDeadEntriesStayPurgedDST`, `TestSWIMLongPartitionHealDST`, [`testdata/seeds.txt`](../../internal/gossip/testdata/seeds.txt)).
 
-Replay a pinned 20-node convergence seed or run the asymmetric-link test with its indirect-probe canary:
+Replay a pinned 20-node convergence seed or run the asymmetric-link test with its canary:
 
 ```sh
 docker compose run --rm dev go test ./internal/gossip -run '^TestSWIMConvergenceDST$/^N=20$/^shard=1$/^seed=33$' -seed=33 -count=1
@@ -264,7 +269,7 @@ docker compose run --rm dev go test ./internal/gossip -run '^TestSWIMAsymmetricL
 
 ## Sources and further reading
 
-- **Abhinandan Das, Indranil Gupta, and Ashish Motivala, "SWIM: Scalable Weakly-consistent Infection-style Process Group Membership Protocol" (DSN, 2002).** Randomized direct and indirect probing for *O*(1) per-node detection load, suspicion with incarnation refutation, and piggybacked epidemic dissemination.
-- **Armon Dadgar, James Phillips, and Jon Currey, "Lifeguard: Local Health Awareness for More Accurate Failure Detection" (DSN, 2018).** The extension this project does *not* build — adds a local health multiplier, buddy refutation, and confirmation-shortened suspicion for overloaded nodes.
-- **Robbert van Renesse, Yaron Minsky, and Mark Hayden, "A Gossip-Style Failure Detection Service" (Middleware, 1998).** Earlier heartbeat-gossip failure detection whose per-node bandwidth grows with group size, motivating SWIM's randomized probing.
-- **Alan Demers, Dan Greene, Carl Hauser, Wes Irish, John Larson, Scott Shenker, Howard Sturgis, Dan Swinehart, and Doug Terry, "Epidemic Algorithms for Replicated Database Maintenance" (PODC, 1987).** The rumor-mongering and anti-entropy push-pull dissemination primitives combined by SWIM.
+- **Abhinandan Das, Indranil Gupta, and Ashish Motivala, "SWIM: Scalable Weakly-consistent Infection-style Process Group Membership Protocol" (DSN, 2002).** Direct/indirect probing, suspicion with refutation, and piggybacked dissemination.
+- **Armon Dadgar, James Phillips, and Jon Currey, "Lifeguard: Local Health Awareness for More Accurate Failure Detection" (DSN, 2018).** Local health multiplier, buddy refutation, and confirmation-shortened suspicion (not built here).
+- **Robbert van Renesse, Yaron Minsky, and Mark Hayden, "A Gossip-Style Failure Detection Service" (Middleware, 1998).** Earlier heartbeat gossip whose per-node load scales with group size.
+- **Alan Demers et al., "Epidemic Algorithms for Replicated Database Maintenance" (PODC, 1987).** Rumor-mongering and anti-entropy push-pull primitives combined by SWIM.
