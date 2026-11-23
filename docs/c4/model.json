@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "objstore",
-  "title": "Decentralized Object Store & Sync Engine \u2014 architecture as built",
+  "title": "Object Store \u2014 architecture as built",
   "revision": "as-built-final-2026-11-23",
   "defaultDiagramId": "context",
   "model": {
@@ -48,7 +48,7 @@
       {
         "id": "store",
         "kind": "softwareSystem",
-        "name": "Decentralized Object Store & Sync Engine",
+        "name": "Object Store",
         "description": "Leaderless, multi-region object store with node-level metadata sync. A cluster of objnode peers; every node accepts reads and writes.",
         "status": "existing",
         "technology": "Go, standard library only",
@@ -4236,7 +4236,7 @@
     {
       "id": "plan",
       "title": "PLAN.md \u2014 testing-first plan, Phase 1",
-      "url": "https://github.com/nickstrad/decentralized-object-store/blob/main/PLAN.md",
+      "url": "https://github.com/nickstrad/object-store/blob/main/PLAN.md",
       "notes": "Sections 1, 2.1, 3, 4.2 and 7 define the design that the build started from."
     }
   ]

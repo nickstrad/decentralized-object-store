@@ -9,7 +9,7 @@ flowchart TB
   CLIENT(["Object API client<br/>S3-style consumer"])
   OPER(["Operator"])
   DEV(["Developer or reader"])
-  STORE["Decentralized Object Store and Sync Engine<br/>leaderless cluster of objnode peers"]
+  STORE["Object Store<br/>leaderless cluster of objnode peers"]
   PEERS["Peer objnode nodes<br/>same and other regions"]
   DST["DST harness, test system<br/>internal/sim, cmd/objsim"]
   CLIENT -->|1| STORE
@@ -25,16 +25,16 @@ flowchart TB
 
 <!-- draw-visual: diagrams/01-system-context.mmd -->
 ```text
-┌───────────────────┐    ┌────────────────────────────┐    ┌──────────────────┐
-│ Object API client ├─1─►│Object store and sync engine├─3─►│Peer objnode nodes│
-└───────────────────┘    └────────────────────────────┘    └──────────────────┘
-                                        ▲
-┌───────────────────┐                   │
-│      Operator     ├─────────2─────────┤
-└───────────────────┘                   │
-                                        │
-┌───────────────────┐                   │
-│    DST harness    ├─────────5─────────┘
+┌───────────────────┐    ┌────────────┐    ┌──────────────────┐
+│ Object API client ├─1─►│Object Store├─3─►│Peer objnode nodes│
+└───────────────────┘    └────────────┘    └──────────────────┘
+                                ▲
+┌───────────────────┐           │
+│      Operator     ├─────2─────┤
+└───────────────────┘           │
+                                │
+┌───────────────────┐           │
+│    DST harness    ├─────5─────┘
 └───────────────────┘
           ▲
           4
@@ -49,7 +49,7 @@ flowchart TB
 | `api-client` | Object API client | client |
 | `operator` | Operator | person |
 | `developer` | Developer or reader | person |
-| `store` | Decentralized Object Store & Sync Engine | system in focus |
+| `store` | Object Store | system in focus |
 | `peers` | Peer objnode nodes, same and other regions | external (other instances of the same system) |
 | `dst` | DST harness (`internal/sim`, `internal/sim/simtest`, `cmd/objsim`) | external, test system |
 

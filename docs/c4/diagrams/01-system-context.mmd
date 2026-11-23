@@ -1,6 +1,6 @@
 %% draw-visual: -x 4 -y 1 -p 0
 graph LR
-  CLIENT[Object API client] -->|1| STORE[Object store and sync engine]
+  CLIENT[Object API client] -->|1| STORE[Object Store]
   OPER[Operator] -->|2| STORE
   DST[DST harness] -->|5| STORE
   STORE -->|3| PEERS[Peer objnode nodes]
