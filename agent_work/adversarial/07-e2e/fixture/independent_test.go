@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/saga/sagasim"
+	"github.com/nickstrad/object-store/internal/saga/sagasim"
 
-	"github.com/nickstrad/decentralized-object-store/internal/sim/simtest"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/sim/simtest"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 func mustCheck(t *testing.T, err error) {

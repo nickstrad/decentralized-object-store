@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/noderuntime"
+	"github.com/nickstrad/object-store/internal/noderuntime"
 )
 
 // TestBlocklistPathSitsBesideTheDataDirectory proves BlocklistPath strips any

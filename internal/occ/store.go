@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // Bounds on per-store persisted discard records:

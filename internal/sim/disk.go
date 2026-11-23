@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // blob stores one named entry's written (data/exists) and durable (dur/dExists)

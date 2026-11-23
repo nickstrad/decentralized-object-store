@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // Actor identifies a single durable writer incarnation: a node ID paired with

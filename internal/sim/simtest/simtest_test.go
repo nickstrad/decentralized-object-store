@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
-	"github.com/nickstrad/decentralized-object-store/internal/sim/simtoy"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/sim"
+	"github.com/nickstrad/object-store/internal/sim/simtoy"
 )
 
 func withSeedFlag(t *testing.T, v seedValue) {

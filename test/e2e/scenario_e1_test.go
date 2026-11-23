@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 // bounds holds tier-specific convergence, repair, and migration timeouts plus

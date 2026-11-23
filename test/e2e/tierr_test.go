@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 var e1SizesR = []int{0, 1, 2, 3, 7, 13, 4093, realStripe - 1, realStripe, realStripe + 1, 3*realStripe + 7, 3<<20 + 29}

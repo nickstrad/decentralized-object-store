@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 const (

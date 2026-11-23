@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/merkle"
-	"github.com/nickstrad/decentralized-object-store/internal/occ"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/merkle"
+	"github.com/nickstrad/object-store/internal/occ"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 // InventoryDepth is the Merkle trie depth used for local per-bucket shard

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // Protocol defaults and validation bounds:

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // recordSize is the fixed canonical wire size of one big-endian log entry:

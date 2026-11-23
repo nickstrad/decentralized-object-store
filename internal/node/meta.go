@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/merkle"
-	"github.com/nickstrad/decentralized-object-store/internal/occ"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/merkle"
+	"github.com/nickstrad/object-store/internal/occ"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 var (

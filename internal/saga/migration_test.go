@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/saga"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/saga"
 )
 
 type fakeOps struct {

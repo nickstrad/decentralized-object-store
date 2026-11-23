@@ -1,7 +1,7 @@
 package sim
 
 import (
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // Named PRNG stream labels forked from Config.Seed so draws in one subsystem

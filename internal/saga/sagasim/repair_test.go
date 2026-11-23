@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/saga"
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
-	"github.com/nickstrad/decentralized-object-store/internal/sim/simtest"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/saga"
+	"github.com/nickstrad/object-store/internal/sim"
+	"github.com/nickstrad/object-store/internal/sim/simtest"
 )
 
 const (

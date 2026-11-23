@@ -3,7 +3,7 @@ package storage
 import (
 	"errors"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // Sentinel errors returned by chunk-store, manifest, placement, and node operations:

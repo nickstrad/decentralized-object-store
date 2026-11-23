@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	s "github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/env"
+	s "github.com/nickstrad/object-store/internal/storage"
 	"math/rand"
 	"reflect"
 	"slices"

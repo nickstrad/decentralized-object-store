@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/sim"
 )
 
 func sendN(t *testing.T, h *harness, from, to env.NodeID, n int) {

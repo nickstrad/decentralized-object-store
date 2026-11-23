@@ -83,7 +83,7 @@ func benign(stack string, self uint64) bool {
 	if strings.HasPrefix(stack, "goroutine "+strconv.FormatUint(self, 10)+" ") {
 		return true
 	}
-	if !strings.Contains(stack, "github.com/nickstrad/decentralized-object-store/") && !strings.Contains(stack, "net/http.") {
+	if !strings.Contains(stack, "github.com/nickstrad/object-store/") && !strings.Contains(stack, "net/http.") {
 		for _, p := range ignored {
 			if strings.Contains(stack, p) {
 				return true

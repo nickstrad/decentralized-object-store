@@ -7,9 +7,9 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/node"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/node"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 func soloLayout() storage.Layout { return storage.Layout{K: 1, M: 0, StripeSize: 1024} }

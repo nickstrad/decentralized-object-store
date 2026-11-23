@@ -8,7 +8,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // Membership supplies the peer list used by Node for anti-entropy sync and

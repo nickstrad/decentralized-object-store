@@ -1,4 +1,4 @@
-module github.com/nickstrad/decentralized-object-store
+module github.com/nickstrad/object-store
 
 go 1.26.0
 

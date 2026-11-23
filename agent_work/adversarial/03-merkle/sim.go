@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	e "github.com/nickstrad/decentralized-object-store/internal/env"
-	m "github.com/nickstrad/decentralized-object-store/internal/merkle"
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
+	e "github.com/nickstrad/object-store/internal/env"
+	m "github.com/nickstrad/object-store/internal/merkle"
+	"github.com/nickstrad/object-store/internal/sim"
 	"time"
 )
 

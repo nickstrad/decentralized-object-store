@@ -12,7 +12,7 @@ trap '\''rm -rf "$tmp"'\'' EXIT
 if ! go test -c -o "$tmp/occ.test" ./internal/occ; then exit 2; fi
 cp -R /src/internal/occ/testdata "$tmp/testdata"
 cd "$tmp"
-timeout 480 go tool test2json -p github.com/nickstrad/decentralized-object-store/internal/occ "$tmp/occ.test" -test.v=test2json -test.run="^Test" -test.count=1 -rapid.checks=200 -rapid.seed=4701
+timeout 480 go tool test2json -p github.com/nickstrad/object-store/internal/occ "$tmp/occ.test" -test.v=test2json -test.run="^Test" -test.count=1 -rapid.checks=200 -rapid.seed=4701
 ' >"$base/evidence/builder.jsonl" 2>"$base/evidence/builder.stderr"
 rc=$?
 if ((rc>1)); then cat "$base/evidence/builder.stderr" >&2; exit 2; fi

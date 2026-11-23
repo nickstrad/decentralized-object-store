@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
-	"github.com/nickstrad/decentralized-object-store/internal/sim/simtoy"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/sim"
+	"github.com/nickstrad/object-store/internal/sim/simtoy"
 )
 
 func toySim(t *testing.T, seed int64, n int) (*sim.Sim, []env.NodeID) {

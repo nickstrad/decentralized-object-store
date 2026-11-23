@@ -3,7 +3,7 @@ package sim
 import (
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // SetIncarnation sets node id's incarnation counter directly for boundary tests

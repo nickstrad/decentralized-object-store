@@ -8,7 +8,7 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // RecordKind identifies the type of an entry in a saga's append-only log.

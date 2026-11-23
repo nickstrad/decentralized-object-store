@@ -3,12 +3,12 @@ package e2e
 import (
 	"errors"
 	"fmt"
-	"github.com/nickstrad/decentralized-object-store/internal/occ"
+	"github.com/nickstrad/object-store/internal/occ"
 	"testing"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 func TestIndependentTerminalErrors(t *testing.T) {

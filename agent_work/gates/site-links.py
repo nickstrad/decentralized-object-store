@@ -4,7 +4,7 @@ built tree before a push, this checks what Pages actually serves after one).
 
 Usage:
   site-links.py [<base-url>] [--external]
-      default base: https://nickstrad.github.io/decentralized-object-store/
+      default base: https://nickstrad.github.io/object-store/
   site-links.py --selftest
       serves two fixture sites from a temporary directory on loopback and checks that a
       clean one passes and that a dead link, a dead anchor and a missing image are found
@@ -31,7 +31,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urldefrag, urljoin, urlsplit
 
-DEFAULT_BASE = "https://nickstrad.github.io/decentralized-object-store/"
+DEFAULT_BASE = "https://nickstrad.github.io/object-store/"
 AGENT = "site-link-check/1"
 TIMEOUT = 30
 MAX_PAGES = 2000

@@ -6,7 +6,7 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // Kind identifies the typed metadata namespace encoded in the first byte of a key.

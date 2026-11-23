@@ -3,10 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/saga"
-	"github.com/nickstrad/decentralized-object-store/internal/saga/sagasim"
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/saga"
+	"github.com/nickstrad/object-store/internal/saga/sagasim"
+	"github.com/nickstrad/object-store/internal/sim"
 	"time"
 )
 

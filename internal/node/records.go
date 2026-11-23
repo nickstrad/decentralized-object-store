@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickstrad/decentralized-object-store/internal/occ"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/occ"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 // Reserved metadata tag names (prefixed with "~", rejected on user tags).

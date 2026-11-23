@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/testutil/leakcheck"
+	"github.com/nickstrad/object-store/internal/testutil/leakcheck"
 )
 
 func TestLeakedReportsAGoroutineStartedAfterTheSnapshot(t *testing.T) {

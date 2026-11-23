@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 // BenchmarkStripedPutGet8MiB and BenchmarkStripedPutGet32MiB measure simulated

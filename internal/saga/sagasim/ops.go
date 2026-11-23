@@ -8,8 +8,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/saga"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/saga"
 )
 
 // Per-RPC request timeouts used by Ops. CopyTimeout is longer because opCopy

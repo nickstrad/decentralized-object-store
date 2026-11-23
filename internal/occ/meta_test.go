@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/occ"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/occ"
 )
 
 // TestTypedMetadataDocument proves typed reads, writes, validation, and

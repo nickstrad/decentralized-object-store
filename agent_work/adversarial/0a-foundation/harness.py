@@ -202,7 +202,7 @@ with tempfile.TemporaryDirectory(prefix='objstore-adversarial-') as tmp:
           'g0-reflect-mapkeys': 'import "reflect"\nfunc X()[]reflect.Value{return reflect.ValueOf(map[int]int{1:1,2:2}).MapKeys()}',
           'g0-context-afterfunc':'import "context"\nfunc X(c context.Context){context.AfterFunc(c,func(){})}',
           'g0-pointer-value':'import "fmt"\nfunc X(p *int)string{return fmt.Sprintf("%v",p)}',
-          'g0-clock-helper':'import "github.com/nickstrad/decentralized-object-store/internal/hiddenhelper"\nfunc X()int64{return hiddenhelper.Now()}',
+          'g0-clock-helper':'import "github.com/nickstrad/object-store/internal/hiddenhelper"\nfunc X()int64{return hiddenhelper.Now()}',
           'g0-assembly-clock':'func X() uint64',
           'g0-comment-stage-typo':'// prose written during build\nvar X=1',
           'g0-linkname':'import _ "unsafe"\n//go:linkname X runtime.nanotime\nfunc X() int64',
@@ -297,7 +297,7 @@ with tempfile.TemporaryDirectory(prefix='objstore-adversarial-') as tmp:
         if direct!=1:raise RuntimeError('Fuzz control did not fail: '+dlog)
         rc,log,res,out=gate(q,'unicode-fuzz','G3');log+='\nDIRECT CONTROL\n'+dlog;record('C5','unicode-fuzz',res['overall']!='pass','go test discovers FuzzÉ but ASCII scan runs zero targets; G3 '+res['overall']+'.',listing+log)
         q=tree('indirect-dst',True)
-        put(q,'internal/sim/x.go','package sim\nfunc X(){}\n');put(q,'internal/bridge/x.go','package bridge\nimport "github.com/nickstrad/decentralized-object-store/internal/sim"\nfunc X(){sim.X()}\n');put(q,'internal/consumer/x_test.go','package consumer\nimport("os";"testing";"github.com/nickstrad/decentralized-object-store/internal/bridge")\nfunc TestScenario(t *testing.T){bridge.X();if os.Getenv("DST_SEEDS")=="500"{t.Fatal("must run")}}\n')
+        put(q,'internal/sim/x.go','package sim\nfunc X(){}\n');put(q,'internal/bridge/x.go','package bridge\nimport "github.com/nickstrad/object-store/internal/sim"\nfunc X(){sim.X()}\n');put(q,'internal/consumer/x_test.go','package consumer\nimport("os";"testing";"github.com/nickstrad/object-store/internal/bridge")\nfunc TestScenario(t *testing.T){bridge.X();if os.Getenv("DST_SEEDS")=="500"{t.Fatal("must run")}}\n')
         direct,dlog=run(['go','test','./internal/consumer'],q,{'DST_SEEDS':'500'})
         if direct!=1:raise RuntimeError('DST control did not fail: '+dlog)
         rc,log,res,out=gate(q,'indirect-dst','G5');log+='\nDIRECT CONTROL\n'+dlog;record('C5','indirect-dst',res['overall']!='pass','Scenario imports bridge which imports sim; direct-import package scan skips consumer; G5 '+res['overall']+'.',log)

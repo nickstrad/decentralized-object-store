@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // MaxClockLead is the maximum distance ahead of a node's local clock that

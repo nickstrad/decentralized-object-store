@@ -115,14 +115,14 @@ plant_gowork()   { printf 'go 1.26.0\n\nuse .\n' > go.work; }
 plant_panic()    { mkdir -p internal/buildcheck; printf 'package buildcheck\n\nfunc zzBoom() {\n\tpanic("unlisted")\n}\n' > internal/buildcheck/zz_canary.go; }
 plant_stale()    { printf 'internal/buildcheck/nowhere.go\tGone\tan entry that matches no panic\n' >> agent_work/gates/panic-allowlist.txt; }
 plant_comment()  { mkdir -p internal/buildcheck; printf 'package buildcheck\n\n// zzNote is a comment written before the prose stage.\nconst zzNote = 1\n' > internal/buildcheck/zz_canary.go; }
-plant_docpath()  { printf '\nSee /root/Software/decentralized-object-store for the checkout.\n' >> README.md; }
+plant_docpath()  { printf '\nSee /root/Software/object-store for the checkout.\n' >> README.md; }
 plant_gopath()   { mkdir -p internal/buildcheck; printf 'package buildcheck\n\nconst zzWhere = "/root/briefs/objstore-p2-x.md"\n' > internal/buildcheck/zz_canary.go; }
 plant_import()   { mkdir -p internal/sim; printf 'package sim\n\nimport "sync"\n\nvar zzMu sync.Mutex\n' > internal/sim/zz_canary.go; }
 plant_reflect()  { mkdir -p internal/sim; printf 'package sim\n\nimport "reflect"\n\nfunc zzKeys(m map[string]int) []reflect.Value {\n\treturn reflect.ValueOf(m).MapKeys()\n}\n' > internal/sim/zz_canary.go; }
 plant_helper() {
   mkdir -p internal/sim internal/zzhelper
   printf 'package zzhelper\n\nimport "time"\n\nfunc Now() int64 {\n\treturn time.Now().UnixNano()\n}\n' > internal/zzhelper/zz.go
-  printf 'package sim\n\nimport "github.com/nickstrad/decentralized-object-store/internal/zzhelper"\n\nfunc zzNow() int64 {\n\treturn zzhelper.Now()\n}\n' > internal/sim/zz_canary.go
+  printf 'package sim\n\nimport "github.com/nickstrad/object-store/internal/zzhelper"\n\nfunc zzNow() int64 {\n\treturn zzhelper.Now()\n}\n' > internal/sim/zz_canary.go
 }
 plant_tagclock() { mkdir -p internal/sim; printf 'package sim\n' > internal/sim/zz_base.go; printf '//go:build missingtag\n\npackage sim\n\nimport "time"\n\nvar zzAttack = time.Now()\n' > internal/sim/zz_canary.go; }
 plant_tagonly()  { mkdir -p internal/sim; find internal/sim -maxdepth 1 -type f -name '*.go' -delete; printf '//go:build missingtag\n\npackage sim\n\nimport "time"\n\nvar zzAttack = time.Now()\n' > internal/sim/zz_canary.go; }
@@ -179,7 +179,7 @@ EOT
 plant_indirect() {
   base_pkg
   mkdir -p internal/zzbridge internal/zzscenario
-  printf 'package zzbridge\n\nimport "github.com/nickstrad/decentralized-object-store/internal/sim"\n\nfunc Twice(x int) int {\n\treturn sim.Double(x)\n}\n' > internal/zzbridge/zz.go
+  printf 'package zzbridge\n\nimport "github.com/nickstrad/object-store/internal/sim"\n\nfunc Twice(x int) int {\n\treturn sim.Double(x)\n}\n' > internal/zzbridge/zz.go
   printf 'package zzscenario\n' > internal/zzscenario/zz.go
   cat > internal/zzscenario/zz_test.go <<'EOT'
 package zzscenario
@@ -188,7 +188,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/zzbridge"
+	"github.com/nickstrad/object-store/internal/zzbridge"
 )
 
 func TestZZIndirectScenario(t *testing.T) {

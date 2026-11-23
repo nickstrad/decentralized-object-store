@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/occ"
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
+	"github.com/nickstrad/object-store/internal/occ"
+	"github.com/nickstrad/object-store/internal/sim"
 )
 
 var updateGolden = flag.Bool("update-golden", false, "rewrite testdata golden files")

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 type Node struct {

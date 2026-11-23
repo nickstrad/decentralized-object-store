@@ -16,7 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
+	"github.com/nickstrad/object-store/internal/sim"
 )
 
 //go:embed help.txt

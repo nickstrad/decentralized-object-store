@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/merkle"
+	"github.com/nickstrad/object-store/internal/merkle"
 )
 
 // TestRootKnownVectors proves that Tree.Root matches pinned SHA-256 test

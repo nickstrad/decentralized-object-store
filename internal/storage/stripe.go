@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickstrad/decentralized-object-store/internal/erasure"
+	"github.com/nickstrad/object-store/internal/erasure"
 )
 
 // Default striping parameters (4+2 coding, 1 MiB stripes) and the maximum

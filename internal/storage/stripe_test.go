@@ -9,8 +9,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/erasure"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/erasure"
+	"github.com/nickstrad/object-store/internal/storage"
 	"pgregory.net/rapid"
 )
 

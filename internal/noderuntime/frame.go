@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/node"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/node"
 )
 
 // Wire frame and datagram size limits and header layout constants.

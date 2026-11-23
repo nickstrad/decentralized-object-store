@@ -1,9 +1,9 @@
 package node
 
 import (
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/saga"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/saga"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 // Canary switches exposed to black-box tests for planting missed recounts or

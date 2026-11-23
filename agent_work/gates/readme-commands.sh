@@ -20,7 +20,7 @@ list=0; [ "${1:-}" = --list ] && { list=1; shift; }
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 commit=$(git -C "$repo" rev-parse --verify "${1:-HEAD}^{commit}" 2>/dev/null) || { echo "readme-commands: no such commit" >&2; exit 2; }
 work=$(mktemp -d /tmp/readme-commands.XXXXXX) || exit 2
-clone="$work/decentralized-object-store"
+clone="$work/object-store"
 # The clone gets its OWN compose project. compose.yaml names the project, so without this
 # every checkout on the machine shares one project, and taking the clone's project down
 # would stop containers (a running gate, a cluster) and delete the cache volumes of the

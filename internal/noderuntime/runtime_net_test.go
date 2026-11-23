@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/gossip"
-	"github.com/nickstrad/decentralized-object-store/internal/node"
-	"github.com/nickstrad/decentralized-object-store/internal/noderuntime"
-	"github.com/nickstrad/decentralized-object-store/internal/occ"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
-	"github.com/nickstrad/decentralized-object-store/internal/testutil/leakcheck"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/gossip"
+	"github.com/nickstrad/object-store/internal/node"
+	"github.com/nickstrad/object-store/internal/noderuntime"
+	"github.com/nickstrad/object-store/internal/occ"
+	"github.com/nickstrad/object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/testutil/leakcheck"
 )
 
 func TestMain(m *testing.M) { os.Exit(leakcheck.Main(m, 5*time.Second)) }

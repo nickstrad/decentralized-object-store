@@ -59,7 +59,7 @@ chunks = {
 }
 T = '''# Brief — Chunk {n} BUILD: {title}
 
-Seat: Opus builder (fresh). Worktree: /root/Software/decentralized-object-store-work/{slug}
+Seat: Opus builder (fresh). Worktree: /root/Software/object-store-work/{slug}
 (branch `chunk/{slug}`). Work notes: `agent_work/{slug}/`.
 
 FIRST read `agent_work/{slug}/objstore-p2-builder-rules.md` (binding), then PLAN.md sections

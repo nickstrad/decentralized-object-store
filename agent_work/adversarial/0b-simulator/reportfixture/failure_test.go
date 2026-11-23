@@ -1,8 +1,8 @@
 package reportfixture
 
 import (
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
-	"github.com/nickstrad/decentralized-object-store/internal/sim/simtest"
+	"github.com/nickstrad/object-store/internal/sim"
+	"github.com/nickstrad/object-store/internal/sim/simtest"
 	"testing"
 )
 

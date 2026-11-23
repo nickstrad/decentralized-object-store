@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	m "github.com/nickstrad/decentralized-object-store/internal/merkle"
+	m "github.com/nickstrad/object-store/internal/merkle"
 	"math/rand/v2"
 	"os"
 	"sort"

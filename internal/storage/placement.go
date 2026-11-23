@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // Member pairs a node's identifier with its failure-domain region.

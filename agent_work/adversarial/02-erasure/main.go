@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"strings"
 
-	e "github.com/nickstrad/decentralized-object-store/internal/erasure"
+	e "github.com/nickstrad/object-store/internal/erasure"
 )
 
 var broken int

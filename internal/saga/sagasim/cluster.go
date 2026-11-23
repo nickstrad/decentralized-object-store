@@ -16,9 +16,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/saga"
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/saga"
+	"github.com/nickstrad/object-store/internal/sim"
 )
 
 // Bucket is the default bucket name seeded by Build and migrated by the matrix

@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/occ"
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/occ"
+	"github.com/nickstrad/object-store/internal/sim"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 // TestArbitrationOrphansPlusAnUnwrittenShardFixed proves a k=2,m=2 write with

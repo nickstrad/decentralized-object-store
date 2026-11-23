@@ -5,7 +5,7 @@ import (
 	"math/bits"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // local converts global virtual time g into node n's local clock using pure

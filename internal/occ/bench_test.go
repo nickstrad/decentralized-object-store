@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/occ"
+	"github.com/nickstrad/object-store/internal/occ"
 )
 
 func benchDocs(b *testing.B, n int) (*occ.Doc, *occ.Doc) {

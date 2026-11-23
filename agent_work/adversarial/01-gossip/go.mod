@@ -1,6 +1,6 @@
-module github.com/nickstrad/decentralized-object-store/adversarial/gossip
+module github.com/nickstrad/object-store/adversarial/gossip
 
 go 1.26.0
 
-require github.com/nickstrad/decentralized-object-store v0.0.0
-replace github.com/nickstrad/decentralized-object-store => ../../..
+require github.com/nickstrad/object-store v0.0.0
+replace github.com/nickstrad/object-store => ../../..

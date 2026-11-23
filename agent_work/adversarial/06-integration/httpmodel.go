@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/nickstrad/decentralized-object-store/internal/node"
-	"github.com/nickstrad/decentralized-object-store/internal/storage/httpapi"
+	"github.com/nickstrad/object-store/internal/node"
+	"github.com/nickstrad/object-store/internal/storage/httpapi"
 	"net/http/httptest"
 	"os"
 	"strings"

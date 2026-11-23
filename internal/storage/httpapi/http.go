@@ -20,10 +20,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/occ"
-	"github.com/nickstrad/decentralized-object-store/internal/saga"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/occ"
+	"github.com/nickstrad/object-store/internal/saga"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 // Default HTTP server bounds, list cap, and custom response header names.

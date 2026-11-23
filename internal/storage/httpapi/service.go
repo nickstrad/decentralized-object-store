@@ -3,7 +3,7 @@ package httpapi
 import (
 	"context"
 
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 // Service is the backend interface served by the HTTP object API.

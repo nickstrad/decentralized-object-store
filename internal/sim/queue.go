@@ -1,7 +1,7 @@
 package sim
 
 import (
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // evKind identifies the category of a scheduled simulation event.

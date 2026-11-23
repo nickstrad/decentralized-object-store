@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // FaultKind identifies one fault or heal action that can be applied to a Sim

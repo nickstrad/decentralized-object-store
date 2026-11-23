@@ -48,7 +48,7 @@ EXEMPT_SOURCES = {"PLAN.md"}
 EXEMPT_BUILT = {"plan.html"}
 TEXT_SUFFIXES = {".md", ".json", ".html", ".mmd", ".txt", ".css", ".js", ".svg", ".yml", ".yaml"}
 NEVER = ("docs/knowledge/", "agent_work/", "kb/", ".kb/", ".git/", "STATE.md")
-REPO_URL = "https://github.com/nickstrad/decentralized-object-store"
+REPO_URL = "https://github.com/nickstrad/object-store"
 # name -> expected rule (None = clean). Trees under testdata/site/<name>.
 SELFTEST = {"good": None, "missing-chapter": "chapter-missing",
             "broken-link": "broken-link", "root-path": "machine-ref",
@@ -186,7 +186,7 @@ def check_private_links(root, src, findings):
         parts = urlsplit(url)
         if parts.scheme or url.startswith("//") or not parts.path:
             if parts.scheme in ("http", "https") and parts.netloc == "github.com":
-                m2 = re.match(r"^/nickstrad/decentralized-object-store/(?:blob|tree)/[^/]+/(.*)$",
+                m2 = re.match(r"^/nickstrad/object-store/(?:blob|tree)/[^/]+/(.*)$",
                               unquote(parts.path))
                 if m2 and is_never(m2.group(1)):
                     findings.append("%s: private-link: %r points at an operational file" % (rel, url))
@@ -307,7 +307,7 @@ def check_site(site, findings):
             if parts.scheme or url.startswith("//"):
                 if (parts.scheme in ("http", "https") and parts.netloc == "github.com"
                         and rel not in EXEMPT_BUILT):
-                    m2 = re.match(r"^/nickstrad/decentralized-object-store/(?:blob|tree)/[^/]+/(.*)$",
+                    m2 = re.match(r"^/nickstrad/object-store/(?:blob|tree)/[^/]+/(.*)$",
                                   unquote(parts.path))
                     if m2 and is_never(m2.group(1)):
                         findings.append("%s: private-link: <%s %s=%r> points at an operational file"

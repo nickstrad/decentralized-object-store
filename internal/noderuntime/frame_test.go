@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/merkle"
-	"github.com/nickstrad/decentralized-object-store/internal/node"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/merkle"
+	"github.com/nickstrad/object-store/internal/node"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 // TestFrameRoundTrips proves TCP request/response frames, error-message

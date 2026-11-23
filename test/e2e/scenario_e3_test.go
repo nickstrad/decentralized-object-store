@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 // movedCounter is implemented by simCluster to report storage-channel bytes

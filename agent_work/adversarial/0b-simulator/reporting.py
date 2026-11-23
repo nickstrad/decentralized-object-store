@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory(prefix='.cli-',dir=base) as d:
     for name in ['main.go','help.txt']:
         shutil.copyfile(root/'cmd/objsim'/name,dst/name)
     (dst/'scenarios.go').write_text('''package main
-import "github.com/nickstrad/decentralized-object-store/internal/sim"
+import "github.com/nickstrad/object-store/internal/sim"
 func scenarios() []sim.Scenario {return []sim.Scenario{{Name:"adversarial-fail",Run:func(seed int64)*sim.Sim{
 s:=sim.New(sim.Config{Seed:seed});s.At(0,"deliberate",func(){panic("cli-replay-fixture")});_=s.RunUntilQuiet();return s
 }}}}

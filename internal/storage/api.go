@@ -3,7 +3,7 @@ package storage
 import (
 	"errors"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // Sentinel errors for object-API bucket, migration, and HTTP method failures:

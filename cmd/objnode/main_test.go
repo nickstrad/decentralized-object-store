@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/node"
-	"github.com/nickstrad/decentralized-object-store/internal/noderuntime"
-	"github.com/nickstrad/decentralized-object-store/internal/testutil/leakcheck"
+	"github.com/nickstrad/object-store/internal/node"
+	"github.com/nickstrad/object-store/internal/noderuntime"
+	"github.com/nickstrad/object-store/internal/testutil/leakcheck"
 )
 
 func TestMain(m *testing.M) { os.Exit(leakcheck.Main(m, 5*time.Second)) }

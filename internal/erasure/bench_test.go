@@ -4,7 +4,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/erasure"
+	"github.com/nickstrad/object-store/internal/erasure"
 )
 
 func benchStripe(b *testing.B) (*erasure.Codec, [][]byte) {

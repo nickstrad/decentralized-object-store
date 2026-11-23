@@ -13,9 +13,9 @@ import (
 
 	"pgregory.net/rapid"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
-	"github.com/nickstrad/decentralized-object-store/internal/sim/simtoy"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/sim"
+	"github.com/nickstrad/object-store/internal/sim/simtoy"
 )
 
 // TestPropStreamsIndependent proves that extra draws on one named PRNG stream

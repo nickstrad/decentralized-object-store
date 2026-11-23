@@ -3,7 +3,7 @@ package merkle
 import (
 	"errors"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // Sentinel errors returned by tree operations, wire decoding, diff sessions,

@@ -17,8 +17,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/erasure"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/erasure"
 )
 
 // Default coordinator timeouts, stripe-window size, and transient-error retry limits.

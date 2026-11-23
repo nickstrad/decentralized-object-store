@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // EventKind identifies the membership transition reported in an Event.

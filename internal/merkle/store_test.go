@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/merkle"
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/merkle"
+	"github.com/nickstrad/object-store/internal/sim"
 )
 
 const (

@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // State is a member's lifecycle state in the SWIM membership lattice.

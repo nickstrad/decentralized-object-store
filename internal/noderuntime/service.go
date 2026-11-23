@@ -7,10 +7,10 @@ import (
 	"runtime"
 	"sync/atomic"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/node"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
-	"github.com/nickstrad/decentralized-object-store/internal/storage/httpapi"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/node"
+	"github.com/nickstrad/object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/storage/httpapi"
 )
 
 type result[T any] struct {

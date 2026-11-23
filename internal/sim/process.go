@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 func (s *Sim) upNode(op string, id env.NodeID) (*node, error) {

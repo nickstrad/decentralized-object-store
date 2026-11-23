@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // DefaultPrefix is the disk blob prefix used when Config.Prefix is empty.

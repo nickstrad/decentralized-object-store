@@ -5,7 +5,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/sim"
+	"github.com/nickstrad/object-store/internal/sim"
 )
 
 // TestStreamDerivationMatchesThePlan proves that NewStream and NodeStream match

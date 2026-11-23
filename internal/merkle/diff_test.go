@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/merkle"
+	"github.com/nickstrad/object-store/internal/merkle"
 )
 
 // TestDiffProtocolSteps proves the level-by-level wire exchange for a single

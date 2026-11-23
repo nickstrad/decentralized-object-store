@@ -1,6 +1,6 @@
 package node
 
-import "github.com/nickstrad/decentralized-object-store/internal/storage"
+import "github.com/nickstrad/object-store/internal/storage"
 
 // StatusRows returns the HTTP status mappings for this package's sentinel
 // errors, intended to be passed as extra rows to httpapi.NewHandler or

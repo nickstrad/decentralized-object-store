@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/env"
 )
 
 // Usage holds a bucket's tracked byte and object totals.

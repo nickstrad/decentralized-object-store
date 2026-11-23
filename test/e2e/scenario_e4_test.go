@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 func allowedDuringMigration(k *Call) bool {

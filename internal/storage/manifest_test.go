@@ -6,8 +6,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 func sampleManifest(size int64) *storage.Manifest {

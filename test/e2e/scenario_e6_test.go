@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 func incarnationOf(c Cluster, observer, target Node) (uint32, string, error) {

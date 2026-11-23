@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickstrad/decentralized-object-store/internal/merkle"
+	"github.com/nickstrad/object-store/internal/merkle"
 	"pgregory.net/rapid"
 )
 

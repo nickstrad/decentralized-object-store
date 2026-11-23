@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/gossip"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/gossip"
 )
 
 func exchange(t *testing.T, a *harness, aID env.NodeID, b *harness, bID env.NodeID) {

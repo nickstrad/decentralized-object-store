@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickstrad/decentralized-object-store/internal/gossip"
+	"github.com/nickstrad/object-store/internal/gossip"
 )
 
 const fuzzMaxInput = 64 << 10

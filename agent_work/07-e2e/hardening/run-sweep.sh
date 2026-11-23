@@ -17,7 +17,7 @@ only=${SWEEP_ONLY:-}
 pkgs=$(go list -f '{{.ImportPath}} {{join .TestImports " "}} {{join .XTestImports " "}}' ./... | grep 'internal/sim/simtest' | cut -d' ' -f1 | grep -v '/sim/simtest$')
 printf 'package\tcal_seeds\tcal_seconds\tseeds\tbase\tseconds\texit\tfailing\n' > "$out/summary.tsv"
 for pkg in $pkgs; do
-  short=${pkg#github.com/nickstrad/decentralized-object-store/}
+  short=${pkg#github.com/nickstrad/object-store/}
   if [ -n "$only" ] && ! [[ "$short" =~ $only ]]; then continue; fi
   name=$(tr '/' '_' <<<"$short")
   s=$(date +%s)

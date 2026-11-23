@@ -3,9 +3,9 @@ package node
 import (
 	"time"
 
-	"github.com/nickstrad/decentralized-object-store/internal/env"
-	"github.com/nickstrad/decentralized-object-store/internal/gossip"
-	"github.com/nickstrad/decentralized-object-store/internal/storage"
+	"github.com/nickstrad/object-store/internal/env"
+	"github.com/nickstrad/object-store/internal/gossip"
+	"github.com/nickstrad/object-store/internal/storage"
 )
 
 // Leading channel byte prepended to every multiplexed message on env.Transport.
