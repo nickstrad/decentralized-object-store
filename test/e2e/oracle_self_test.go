@@ -394,3 +394,48 @@ func TestNemesisSettleValidatesTerminalErrorsForEveryOp(t *testing.T) {
 		}
 	})
 }
+
+func TestOracleSeesMigratedManifestSwap(t *testing.T) {
+	c := newSimCluster(18, fuzzOptions())
+	if err := c.boot(); err != nil {
+		t.Fatal(err)
+	}
+	if err := createBucket(c, simBounds, storage.BucketSpec{Name: "m", Region: "r0"}); err != nil {
+		t.Fatal(err)
+	}
+	k := c.Put(c.nodes[0], "m", "k0", randomBytes(c.Rand(), 2048), storage.Condition{})
+	if err := waitAll(c, k); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Await("replicated", simBounds.converge, c.Converged); err != nil {
+		t.Fatal(err)
+	}
+	start := c.StartMigration(c.nodes[0], "m", "r1")
+	if err := waitAll(c, start); err != nil {
+		t.Fatal(err)
+	}
+	mi, _, _, err := awaitMigration(c, simBounds, c.nodes[0], start.Mig.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mi.State != "completed" {
+		t.Fatalf("migration ended %q, want completed", mi.State)
+	}
+	if _, err := c.Await("converged", simBounds.converge, c.Converged); err != nil {
+		t.Fatal(err)
+	}
+	man := manifestFor(t, c, "m", "k0")
+	if c.o.mans[man.Version] == nil {
+		t.Fatalf("oracle mans missing migrated version %s swapped in by Retire", man.Version)
+	}
+	n := c.upNodes()[0]
+	lk := occ.TagKey("m", "k0", "~lost/"+man.Version.String())
+	v, err := n.OCC().Put(lk, []byte("unrecoverable"), occ.Precondition{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.o.checkLossDeclaration(n.ID(), lk, v)
+	if len(c.o.failed) == 0 || !strings.Contains(c.o.failed[0], "verifiable shards") {
+		t.Fatalf("loss oracle did not judge migrated version: %v", c.o.failed)
+	}
+}

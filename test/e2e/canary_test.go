@@ -1,6 +1,8 @@
 package e2e
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"strings"
 	"testing"
@@ -538,4 +540,241 @@ func TestCanaryE2AndE8UnrecordedDiscardCounterFails(t *testing.T) {
 			expectCanaryFailure(t, s, tc.want)
 		})
 	}
+}
+
+type pauseBeforeStep struct {
+	saga.Step
+	onBefore func()
+}
+
+func (p pauseBeforeStep) Do(c saga.Call, done func([]byte, error)) {
+	if p.onBefore != nil {
+		p.onBefore()
+	}
+	p.Step.Do(c, done)
+}
+
+type unverifiedVerifyStep struct{ saga.Step }
+
+func (unverifiedVerifyStep) Do(c saga.Call, done func([]byte, error)) {
+	done(c.Outputs[1], nil)
+}
+
+type unverifiedRetireStep struct {
+	saga.Step
+	cluster func() *simCluster
+	coord   env.NodeID
+}
+
+func stagedObjectBytes(raw []byte) ([]byte, error) {
+	if len(raw) < 2 || raw[0] != 1 {
+		return nil, fmt.Errorf("bad staged record version")
+	}
+	b := raw[1:]
+	n, k := binary.Uvarint(b)
+	if k <= 0 || uint64(len(b)-k) < n+uint64(len(occ.ETag{})) {
+		return nil, fmt.Errorf("bad staged saga field")
+	}
+	b = b[k+int(n)+len(occ.ETag{}):]
+	m, k := binary.Uvarint(b)
+	if k <= 0 || uint64(len(b)-k) < m {
+		return nil, fmt.Errorf("bad staged object field")
+	}
+	return b[k : k+int(m)], nil
+}
+
+func (u unverifiedRetireStep) Do(c saga.Call, done func([]byte, error)) {
+	cl := u.cluster()
+	nd := cl.node(u.coord)
+	if nd == nil {
+		done(nil, env.ErrUnreachable)
+		return
+	}
+	m, err := saga.DecodeMigrationInput(c.Input)
+	if err != nil {
+		done(nil, err)
+		return
+	}
+	rd, err := nd.OCC().Reader()
+	if err != nil {
+		done(nil, err)
+		return
+	}
+	id := string(c.Key.Saga)
+	for _, k := range rd.Keys() {
+		if len(k) == 0 || occ.Kind(k[0]) != occ.KindTag || !rd.Record(k).Live() {
+			continue
+		}
+		_, parts, err := occ.ParseKey(k)
+		if err != nil || parts[0] != m.Bucket || parts[2] != "~stage/"+id {
+			continue
+		}
+		val, _, err := rd.Get(k)
+		if err != nil {
+			continue
+		}
+		objBytes, err := stagedObjectBytes(val)
+		if err != nil {
+			done(nil, err)
+			return
+		}
+		mk := occ.ManifestKey(m.Bucket, parts[1])
+		cur := rd.Record(mk)
+		v, err := nd.OCC().Put(mk, objBytes, occ.Unconditional())
+		if err != nil {
+			done(nil, err)
+			return
+		}
+		cl.o.commit(u.coord, mk, cur, v)
+		nd.RecordMeta(mk)
+		if _, err := nd.OCC().Delete(k, occ.Unconditional()); err != nil {
+			done(nil, err)
+			return
+		}
+		nd.RecordMeta(k)
+	}
+	lk := occ.TagKey(m.Bucket, "", "~live")
+	if _, err := nd.OCC().SetScalar(lk, []byte(m.To)); err != nil {
+		done(nil, err)
+		return
+	}
+	nd.RecordMeta(lk)
+	done([]byte(saga.OutcomeMoved), nil)
+}
+
+func runStallCanarySchedule(seed int64, bypassVerify bool) *sim.Sim {
+	const (
+		bucket = "ms"
+		from   = "r0"
+		to     = "r1"
+	)
+	opts := fuzzOptions()
+	opts.cfg.OrphanGrace = 15 * time.Second
+	opts.cfg.GCGrace = 5 * time.Second
+	opts.cfg.MaintainPeriod = 500 * time.Millisecond
+	pauseDur := opts.cfg.OrphanGrace + 10*time.Second
+
+	var cl *simCluster
+	coordID := env.NodeID("n000")
+	blockMeta := false
+	paused := false
+
+	opts.wrap = func(id env.NodeID, e env.Env) env.Env {
+		if id != coordID {
+			return e
+		}
+		return e.WithNet(deafNet{Transport: e.Net, clock: e.Clock, deaf: func() bool { return blockMeta }})
+	}
+	opts.tweak = func(cfg *node.Config) {
+		cfg.WrapMigration = func(d saga.Definition) saga.Definition {
+			steps := make([]saga.Step, len(d.Steps))
+			copy(steps, d.Steps)
+			for i, st := range steps {
+				switch st.Name() {
+				case saga.StepVerify:
+					inner := st
+					if bypassVerify {
+						inner = unverifiedVerifyStep{Step: st}
+					}
+					steps[i] = pauseBeforeStep{Step: inner, onBefore: func() {
+						if paused || cl == nil {
+							return
+						}
+						paused = true
+						cl.o.off = true
+						if err := cl.s.Pause(coordID); err != nil {
+							cl.fail(err)
+							return
+						}
+						cl.s.At(cl.s.Now().Add(pauseDur), "resume-stall-canary", func() {
+							blockMeta = false
+							cl.o.off = false
+							if err := cl.s.Resume(coordID); err != nil {
+								cl.fail(err)
+							}
+						})
+					}}
+				case saga.StepDeleteSource:
+					if bypassVerify {
+						steps[i] = unverifiedRetireStep{Step: st, cluster: func() *simCluster { return cl }, coord: coordID}
+					}
+				}
+			}
+			d.Steps = steps
+			return d
+		}
+	}
+
+	c := newSimCluster(seed, opts)
+	cl = c
+	c.procWrap = func(id env.NodeID, p env.Process) env.Process {
+		if id != coordID {
+			return p
+		}
+		return deafProc{Process: p, deaf: func() bool { return blockMeta }}
+	}
+	if err := c.boot(); err != nil {
+		c.fail(err)
+		return c.s
+	}
+	if err := createBucket(c, simBounds, storage.BucketSpec{Name: bucket, Region: from}); err != nil {
+		c.fail(err)
+		return c.s
+	}
+	put := c.Put(c.nodes[0], bucket, "warm00", randomBytes(c.Rand(), 4096), storage.Condition{})
+	if err := waitAll(c, put); err != nil {
+		c.fail(err)
+		return c.s
+	}
+	if _, err := c.Await("replicated", simBounds.converge, c.Converged); err != nil {
+		c.fail(err)
+		return c.s
+	}
+	blockMeta = true
+	start := c.StartMigration(c.nodes[0], bucket, to)
+	if err := waitAll(c, start); err != nil {
+		c.fail(err)
+		return c.s
+	}
+	b := simBounds
+	b.migrate = pauseDur + 60*time.Second
+	mi, _, _, err := awaitMigration(c, b, c.nodes[0], start.Mig.ID, nil)
+	if err != nil {
+		c.fail(err)
+		return c.s
+	}
+	if !paused || !terminal(mi.State) {
+		c.fail(failf("paused=%v state=%q", paused, mi.State))
+		return c.s
+	}
+	if _, err := c.Await("converged", simBounds.converge, c.Converged); err != nil {
+		c.fail(err)
+		return c.s
+	}
+	g := c.Get(c.nodes[0], bucket, "warm00")
+	if err := waitAll(c, g); err != nil {
+		c.fail(err)
+		return c.s
+	}
+	if sha256.Sum256(g.Data) != put.Sum {
+		c.fail(failf("wrong bytes after stalled migration"))
+		return c.s
+	}
+	if len(c.o.declared) > 0 {
+		c.fail(failf("loss declared: %v", c.o.declared))
+	}
+	return c.s
+}
+
+func TestCanaryMigrationUnverifiedStallLosesObject(t *testing.T) {
+	t.Run("real product survives stall without losing object", func(t *testing.T) {
+		s := runStallCanarySchedule(31337, false)
+		if err := s.Verify(); err != nil {
+			t.Fatalf("real product failed stall schedule: %v", err)
+		}
+	})
+	t.Run("disabling destination shard verification via WrapMigration is caught", func(t *testing.T) {
+		s := runStallCanarySchedule(31337, true)
+		expectCanaryFailure(t, s, "after its shard")
+	})
 }
