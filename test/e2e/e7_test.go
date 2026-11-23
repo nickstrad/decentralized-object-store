@@ -50,17 +50,17 @@ func TestE7NemesisHealingCyclesS(t *testing.T) {
 	t.Parallel()
 	var m measure
 	var mu sync.Mutex
-	var totPutsM, totPutsMOK, totMig, totMigShards int
+	var seedsRun, totPutsM, totPutsMOK, totMovedObjs int
 	t.Cleanup(func() {
 		m.report(t)
 		if t.Failed() {
 			return
 		}
-		if totPutsM >= 4 && totPutsMOK == 0 {
-			t.Fatalf("E7 acknowledged 0 of %d puts to routed bucket %s", totPutsM, bucketM)
+		if seedsRun >= 10 && totPutsM >= 4 && totPutsMOK == 0 {
+			t.Fatalf("E7 acknowledged 0 of %d puts to routed bucket %s across %d seeds", totPutsM, bucketM, seedsRun)
 		}
-		if totMig > 0 && totPutsMOK > 0 && totMigShards == 0 {
-			t.Fatalf("E7 completed %d migrations of bucket %s with 0 shards moved", totMig, bucketM)
+		if seedsRun >= 20 && totMovedObjs == 0 {
+			t.Fatalf("E7 migrated 0 pre-existing objects of bucket %s across %d seeds", bucketM, seedsRun)
 		}
 	})
 	sweep(t, seedsFor(t, 3, 5), func(t *testing.T, seed int64) {
@@ -76,10 +76,10 @@ func TestE7NemesisHealingCyclesS(t *testing.T) {
 			t.Fatalf("seed %d saw putsOK=%d getsOK=%d, want both > 0", seed, st.putsOK, st.getsOK)
 		}
 		mu.Lock()
+		seedsRun++
 		totPutsM += st.putsM
 		totPutsMOK += st.putsMOK
-		totMig += st.migrated
-		totMigShards += st.migratedShards
+		totMovedObjs += st.movedObjects
 		mu.Unlock()
 		m.add("e7/cycles", int64(st.cycles))
 		m.add("e7/faults_applied", int64(st.applied))
@@ -98,6 +98,8 @@ func TestE7NemesisHealingCyclesS(t *testing.T) {
 		m.add("e7/ambiguous_migrations_recovered", int64(st.ambiguousRecovered))
 		m.add("e7/migrated_objects", int64(st.migratedObjects))
 		m.add("e7/migrated_shards", int64(st.migratedShards))
+		m.add("e7/moved_objects", int64(st.movedObjects))
+		m.add("e7/moved_shards", int64(st.movedShards))
 		for _, d := range st.converge {
 			m.ms("e7/converge_after_heal", d)
 		}

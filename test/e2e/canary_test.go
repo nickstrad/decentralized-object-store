@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickstrad/decentralized-object-store/internal/env"
 	"github.com/nickstrad/decentralized-object-store/internal/node"
+	"github.com/nickstrad/decentralized-object-store/internal/occ"
 	"github.com/nickstrad/decentralized-object-store/internal/saga"
 	"github.com/nickstrad/decentralized-object-store/internal/saga/sagasim"
 	"github.com/nickstrad/decentralized-object-store/internal/sim"
@@ -320,6 +321,66 @@ func TestCanaryE7WipingTheOnlyCopyOfAnAcknowledgedWriteIsCaught(t *testing.T) {
 		return randomPlan(n.r, e7Cycles, e7Chaos)
 	}, &st)(seed)
 	expectCanaryFailure(t, s, "on no discard record")
+}
+
+type dropBucketOnCopyStep struct {
+	saga.Step
+	cluster func() *simCluster
+	bucket  string
+}
+
+func (s dropBucketOnCopyStep) Do(call saga.Call, done func([]byte, error)) {
+	if c := s.cluster(); c != nil {
+		for _, nd := range c.upNodes() {
+			rd, err := nd.OCC().Reader()
+			if err != nil {
+				continue
+			}
+			for _, k := range rd.Keys() {
+				if len(k) == 0 || occ.Kind(k[0]) != occ.KindManifest || !rd.Record(k).Live() {
+					continue
+				}
+				v, ok := rd.Record(k).Version()
+				if !ok {
+					continue
+				}
+				man := manifestOf(k, v)
+				if man != nil && man.Bucket == s.bucket {
+					_, _ = nd.DeleteObject(man.Bucket, man.Key, storage.Condition{})
+				}
+			}
+		}
+	}
+	s.Step.Do(call, done)
+}
+
+func TestCanaryE7CompletedMigrationMissingPreExistingShardsFails(t *testing.T) {
+	const seed = 2
+	var cl *simCluster
+	opts := e7Options()
+	opts.tweak = func(cfg *node.Config) {
+		cfg.WrapMigration = func(d saga.Definition) saga.Definition {
+			steps := make([]saga.Step, len(d.Steps))
+			copy(steps, d.Steps)
+			for i, st := range steps {
+				if st.Name() == saga.StepCopy {
+					steps[i] = dropBucketOnCopyStep{Step: st, cluster: func() *simCluster { return cl }, bucket: bucketM}
+				}
+			}
+			d.Steps = steps
+			return d
+		}
+	}
+	c := newSimCluster(seed, opts)
+	cl = c
+	if err := c.boot(); err != nil {
+		t.Fatal(err)
+	}
+	n := newNemesis(c)
+	if err := n.run(randomPlan(n.r, e7Cycles, e7Chaos)); err != nil {
+		c.fail(err)
+	}
+	expectCanaryFailure(t, c.s, "left pre-existing object")
 }
 
 func TestCanaryFuzzRoutedBucketCannotPlaceShards(t *testing.T) {

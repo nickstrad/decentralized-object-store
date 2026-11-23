@@ -78,6 +78,7 @@ type nemesisStats struct {
 	availabilityGets                int
 	discards, declared, migrated    int
 	migratedObjects, migratedShards int
+	movedObjects, movedShards       int
 	ambiguousRecovered              int
 	compensated                     int
 	finalRegion                     string
@@ -103,6 +104,7 @@ type nemesis struct {
 	mig                *Call
 	migCoord           Node
 	migTo              string
+	migPreKeys         []string
 	seenSagas          map[saga.ID]bool
 	region             string
 	seq                int
@@ -455,6 +457,7 @@ func (n *nemesis) apply(op chaosOp) error {
 				n.seenSagas[sid] = true
 			}
 		}
+		n.migPreKeys = bucketLiveKeys(c, coord, bucketM)
 		to := c.regions[(slices.Index(c.regions, n.region)+1+op.b%2)%len(c.regions)]
 		n.migCoord = coord
 		n.migTo = to
@@ -492,16 +495,45 @@ func (n *nemesis) fullyRepaired() (bool, error) {
 	return true, nil
 }
 
-func bucketShardsIn(c *simCluster, bucket, region string) (int, int, error) {
+func bucketLiveKeys(c *simCluster, at Node, bucket string) []string {
+	nd := c.node(env.NodeID(at.ID))
+	if nd == nil {
+		return nil
+	}
+	rd, err := nd.OCC().Reader()
+	if err != nil {
+		return nil
+	}
+	var keys []string
+	for _, k := range rd.Keys() {
+		if len(k) == 0 || occ.Kind(k[0]) != occ.KindManifest || !rd.Record(k).Live() {
+			continue
+		}
+		v, ok := rd.Record(k).Version()
+		if !ok {
+			continue
+		}
+		man := manifestOf(k, v)
+		if man == nil || man.Bucket != bucket || len(man.Stripes) == 0 {
+			continue
+		}
+		keys = append(keys, man.Key)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+func bucketShardsIn(c *simCluster, bucket, region string) (int, int, map[string]int, error) {
 	ns := c.upNodes()
 	if len(ns) == 0 {
-		return 0, 0, failf("no node is up")
+		return 0, 0, nil, failf("no node is up")
 	}
 	rd, err := ns[0].OCC().Reader()
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
 	objs, shards := 0, 0
+	perKey := map[string]int{}
 	for _, k := range rd.Keys() {
 		if len(k) == 0 || occ.Kind(k[0]) != occ.KindManifest || !rd.Record(k).Live() {
 			continue
@@ -515,6 +547,7 @@ func bucketShardsIn(c *simCluster, bucket, region string) (int, int, error) {
 			continue
 		}
 		objs++
+		keyShards := 0
 		for s, st := range man.Stripes {
 			for i, ref := range st.Shards {
 				if string(c.s.Region(ref.Node)) != region {
@@ -525,12 +558,14 @@ func bucketShardsIn(c *simCluster, bucket, region string) (int, int, error) {
 					continue
 				}
 				if b, ok := d.Peek(man.ShardID(s, i).BlobName()); ok && storage.BlobChecksum(b) == ref.Checksum {
-					shards++
+					keyShards++
 				}
 			}
 		}
+		perKey[man.Key] = keyShards
+		shards += keyShards
 	}
-	return objs, shards, nil
+	return objs, shards, perKey, nil
 }
 
 func (n *nemesis) findNewSaga(coord Node) (saga.ID, bool) {
@@ -610,10 +645,12 @@ func (n *nemesis) finishMigration() error {
 	start := n.mig
 	coord := n.migCoord
 	wantTo := n.migTo
+	preKeys := n.migPreKeys
 	prevRegion := n.region
 	defer func() {
 		n.mig = nil
 		n.migTo = ""
+		n.migPreKeys = nil
 	}()
 	migID := ""
 	if start.Err != nil {
@@ -674,14 +711,22 @@ func (n *nemesis) finishMigration() error {
 		return err
 	}
 	if mi.State == "completed" {
-		objs, shards, err := bucketShardsIn(c, bucketM, n.region)
+		objs, shards, perKey, err := bucketShardsIn(c, bucketM, n.region)
 		if err != nil {
 			return err
 		}
 		n.st.migratedObjects += objs
 		n.st.migratedShards += shards
-		if n.warmM > 0 && shards == 0 {
-			return failf("completed migration of bucket %s moved 0 shards", bucketM)
+		for _, key := range preKeys {
+			have := perKey[key]
+			if have < c.cfg.Layout.K {
+				return failf("completed migration %s of bucket %s left pre-existing object %s with %d verified shards in %s (need >= %d)", migID, bucketM, key, have, n.region, c.cfg.Layout.K)
+			}
+			n.st.movedObjects++
+			n.st.movedShards += have
+		}
+		if n.warmM > 0 && (len(preKeys) < n.warmM || shards == 0) {
+			return failf("completed migration %s of bucket %s left %d shards in %s (pre-existing %d, warm-up %d)", migID, bucketM, shards, n.region, len(preKeys), n.warmM)
 		}
 	}
 	return nil
