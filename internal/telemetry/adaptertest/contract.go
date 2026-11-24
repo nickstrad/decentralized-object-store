@@ -27,7 +27,7 @@ func Identity() telemetry.Identity {
 }
 func Batch() metrics.Batch {
 	id := Identity()
-	return metrics.Batch{SchemaVersion: 1, NodeID: id.NodeID, Region: id.Region, BootID: id.BootID, StartUnixNano: 1, TimeUnixNano: 2, Sequence: 1, Snapshots: []metrics.Snapshot{{Component: "http", Points: []metrics.Point{{Name: "objstore_http_requests_total", Labels: []metrics.Label{{Name: "operation", Value: "health"}, {Name: "status_class", Value: "2xx"}}}, {Name: "objstore_http_requests_in_flight"}}}}}
+	return metrics.Batch{SchemaVersion: 1, NodeID: id.NodeID, Region: id.Region, BootID: id.BootID, StartUnixNano: 1, TimeUnixNano: 2, Sequence: 1, Snapshots: []metrics.Snapshot{{Component: "http", Points: []metrics.Point{{Name: "objstore_http_requests_total", Labels: []metrics.Label{{Name: "operation", Value: "health"}, {Name: "status_class", Value: "2xx"}}}, {Name: "objstore_http_requests_in_flight"}, {Name: "objstore_http_request_duration_nanoseconds_total", Labels: []metrics.Label{{Name: "operation", Value: "health"}}, Counter: 17}, {Name: "objstore_http_request_bytes_total", Counter: 23}}}}}
 }
 func projection(b metrics.Batch) []metrics.Point {
 	var p []metrics.Point
@@ -35,7 +35,7 @@ func projection(b metrics.Batch) []metrics.Point {
 		p = append(p, s.Points...)
 	}
 	for i := range p {
-		p[i].Labels = slices.Clone(p[i].Labels)
+		p[i].Labels = append([]metrics.Label(nil), p[i].Labels...)
 		slices.SortFunc(p[i].Labels, func(a, b metrics.Label) int { return strings.Compare(a.Name, b.Name) })
 	}
 	slices.SortFunc(p, func(a, b metrics.Point) int { return strings.Compare(a.Name, b.Name) })
@@ -79,7 +79,7 @@ func Run(t *testing.T, makeFixture func(*testing.T) Fixture) {
 	t.Run("values-and-replacement", func(t *testing.T) {
 		f := fresh(t)
 		b := Batch()
-		for i, v := range []uint64{0, 7, 1<<53 + 1, math.MaxInt64, 0} {
+		for i, v := range []uint64{0, 7, 1<<53 + 1, math.MaxInt64} {
 			b.Sequence = uint64(i + 1)
 			b.TimeUnixNano += 1
 			b.Snapshots[0].Points[0].Counter = v
@@ -112,6 +112,26 @@ func Run(t *testing.T, makeFixture func(*testing.T) Fixture) {
 			t.Fatal("retained caller memory", e)
 		}
 	})
+	t.Run("new-process-starts-at-zero", func(t *testing.T) {
+		old := fresh(t)
+		b := Batch()
+		b.Snapshots[0].Points[0].Counter = 99
+		if err := old.Adapter.Publish(context.Background(), b); err != nil {
+			t.Fatal(err)
+		}
+		if err := old.Adapter.Shutdown(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		next := fresh(t)
+		if err := next.Adapter.Publish(context.Background(), Batch()); err != nil {
+			t.Fatal(err)
+		}
+		got, err := next.Readback(context.Background())
+		if err != nil || !sameProjection(got, Batch()) {
+			t.Fatal("new sink retained old cumulative state", err)
+		}
+	})
+
 	t.Run("reject-invalid", func(t *testing.T) {
 		f := fresh(t)
 		for _, mutate := range []func(*metrics.Batch){func(b *metrics.Batch) { b.Snapshots[0].Points[0].Name = "unknown" }, func(b *metrics.Batch) {

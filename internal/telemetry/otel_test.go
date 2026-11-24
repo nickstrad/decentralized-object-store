@@ -178,3 +178,40 @@ func TestOTelTLSAndHeaders(t *testing.T) {
 func pemCertificate(b []byte) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: b})
 }
+
+func TestOTelRetryRecoveryAndRestart(t *testing.T) {
+	calls := 0
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		b, _ := io.ReadAll(r.Body)
+		requests = append(requests, string(b))
+		if calls == 1 {
+			w.WriteHeader(503)
+			return
+		}
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer server.Close()
+	a, b := openTest(t, server.URL)
+	if err := a.Publish(context.Background(), b); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || requests[0] != requests[1] {
+		t.Fatal("retry changed cumulative batch", calls)
+	}
+	if err := a.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	next, reset := openTest(t, server.URL)
+	reset.Snapshots[0].Points[0].Counter = 0
+	if reset.BootID == b.BootID {
+		t.Fatal("boot identity reused")
+	}
+	if err := next.Publish(context.Background(), reset); err != nil {
+		t.Fatal(err)
+	}
+	if requests[1] == requests[2] || !strings.Contains(requests[2], reset.BootID) {
+		t.Fatal("restart metadata lost")
+	}
+}

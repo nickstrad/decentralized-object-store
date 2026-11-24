@@ -1,0 +1,29 @@
+# Merge with compose.yaml; always choose a unique -p / COMPOSE_PROJECT_NAME.
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.145.0@sha256:a7343f01869071ea3f4c5e1e97df1bb1b3c4d5c77247db80e053a80b9df530c4
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./deploy/observability/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    networks: [observability]
+  prometheus:
+    image: prom/prometheus:v3.9.1@sha256:1f0f50f06acaceb0f5670d2c8a658a599affe7b0d8e78b898c1035653849a702
+    command: ["--config.file=/etc/prometheus/prometheus.yaml", "--storage.tsdb.retention.time=24h", "--storage.tsdb.retention.size=256MB"]
+    volumes:
+      - ./deploy/observability/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+    networks: [observability]
+  obs-node:
+    image: objstore-dev:local
+    working_dir: /src
+    command: ["/src/agent_work/10-observability/bin/objnode", "-config", "/etc/objnode.json"]
+    volumes:
+      - .:/src:ro
+      - ./deploy/observability/obs-node.json:/etc/objnode.json:ro
+      - obs-data:/data
+    networks: [observability]
+  dev:
+    networks: [observability]
+networks:
+  observability: {}
+volumes:
+  obs-data: {}

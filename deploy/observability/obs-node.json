@@ -1,0 +1,16 @@
+{
+  "id": "obs-node:7946",
+  "region": "local",
+  "listen": ":7946",
+  "http": ":8080",
+  "data": "/data",
+  "k": 1,
+  "m": 0,
+  "observability": {
+    "enabled": true,
+    "adapter": "otel",
+    "interval": "1s",
+    "timeout": "500ms",
+    "settings": {"endpoint": "http://otel-collector:4318/v1/metrics", "insecure": true}
+  }
+}

@@ -56,8 +56,10 @@ func TestOTelContract(t *testing.T) {
 			for _, rm := range payload.ResourceMetrics {
 				for _, sm := range rm.ScopeMetrics {
 					for _, m := range sm.Metrics {
-						if m.Description == "" || m.Unit == "" {
-							t.Error("lost descriptor")
+						for _, descriptor := range metrics.Catalogue() {
+							if descriptor.Name == m.Name && (descriptor.Help != m.Description || descriptor.Unit != m.Unit) {
+								t.Error("descriptor changed")
+							}
 						}
 						points := []readPoint{}
 						if m.Sum != nil {

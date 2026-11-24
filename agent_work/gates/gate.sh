@@ -193,7 +193,7 @@ product_go_files() {
 # not, so a helper package cannot hide a clock.
 detlint_dirs() {
   local d roots=() dirs pkgs deps
-  for d in env sim gossip erasure merkle occ saga node; do [ -d "internal/$d" ] && roots+=("internal/$d"); done
+  for d in metrics env sim gossip erasure merkle occ saga node; do [ -d "internal/$d" ] && roots+=("internal/$d"); done
   [ ${#roots[@]} -gt 0 ] || return 0
   dirs=$(find "${roots[@]}" -type f -name '*.go' -not -path '*/testdata/*' -not -path 'internal/sim/simtest/*' -printf '%h\n' | sort -u)
   [ -n "$dirs" ] || return 0
@@ -255,7 +255,7 @@ g0_selfcontained() {
 }
 
 # ---- G1 unit + coverage floor
-floor_pkgs='internal/sim internal/gossip internal/erasure internal/storage internal/merkle internal/occ internal/saga internal/node internal/noderuntime internal/storage/httpapi'
+floor_pkgs='internal/metrics internal/telemetry internal/sim internal/gossip internal/erasure internal/storage internal/merkle internal/occ internal/saga internal/node internal/noderuntime internal/storage/httpapi'
 g1_unit() {
   local rc=0 p line pct
   [ "$short" = false ] || echo "NOTE: short run (go test -short); does not count for landing"

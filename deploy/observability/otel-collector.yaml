@@ -1,0 +1,16 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:9464
+    send_timestamps: false
+    metric_expiration: 30s
+    translation_strategy: UnderscoreEscapingWithoutSuffixes
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [prometheus]

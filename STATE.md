@@ -80,8 +80,9 @@ The GitHub description is Neon's draft (agent_work/09-cleanup/repo-description.t
 
 Goal/spec: [observability plan](agent_work/10-observability/PLAN.md), with Nick's
 2026-11-24 amendment (CSV disk flush; DuckDB analysis over CSV, no runtime DuckDB writer).
-Core value model and finite catalogue committed in `5b2e656`; selector, runner, contract suite,
-OTLP adapter and pinned local Docker pipeline implemented and undergoing final checks.
+Core value model and finite catalogue committed in `5b2e656`; selector, runner, contract suite and
+OTLP adapter committed in `1072417`. Pinned local Docker pipeline and bounded check
+script are ready. Final fast checks follow the deployment commit.
 No component Snapshot wiring or Prometheus/CSV adapters were built in this seat.
 
 Evidence so far: Collector 0.145.0 validates its config; real Docker Prometheus 3.9.1
