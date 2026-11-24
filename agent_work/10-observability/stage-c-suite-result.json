@@ -1,0 +1,21 @@
+{
+  "product_commit": "978c322",
+  "results": [
+    {
+      "command": "go build ./...",
+      "exit": 0,
+      "seconds": 5.71
+    },
+    {
+      "command": "go vet ./...",
+      "exit": 0,
+      "seconds": 7.6
+    },
+    {
+      "command": "go test -p 2 -timeout 30m ./...",
+      "exit": 0,
+      "seconds": 682.55
+    }
+  ],
+  "exit": 0
+}

@@ -1,0 +1,13 @@
+time="2026-11-24T22:43:42Z" level=warning msg="volume \"objstore-gomod\" already exists but was created for project \"objstore\" (expected \"objstore-obs-resume-race-final\"). Use `external: true` to use an existing volume"
+time="2026-11-24T22:43:42Z" level=warning msg="volume \"objstore-gocache\" already exists but was created for project \"objstore\" (expected \"objstore-obs-resume-race-final\"). Use `external: true` to use an existing volume"
+ Network objstore-obs-resume-race-final_default Creating 
+ Network objstore-obs-resume-race-final_default Creating 
+ Network objstore-obs-resume-race-final_default Created 
+ Network objstore-obs-resume-race-final_default Created 
+ Container objstore-obs-resume-race-final-dev-run-df2fd44d89c7 Creating 
+ Container objstore-obs-resume-race-final-dev-run-df2fd44d89c7 Created 
+ok  	github.com/nickstrad/object-store/internal/noderuntime	9.246s
+ok  	github.com/nickstrad/object-store/internal/storage/httpapi	3.684s
+ok  	github.com/nickstrad/object-store/internal/telemetry	4.420s
+?   	github.com/nickstrad/object-store/internal/telemetry/adaptertest	[no test files]
+ok  	github.com/nickstrad/object-store/cmd/objnode	4.359s

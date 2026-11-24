@@ -23,7 +23,7 @@ Status: PHASE 2 (BUILD) COMPLETE, 2026-11-23, and the CLEANUP PHASE (rename to O
 prose cleanup) COMPLETE, 2026-11-24 — see "Cleanup phase" below. Every chunk is landed on main:
 Step 0, 0a, 0b, the five protocol chunks (1–5), Chunk 6 (integration, f64aa11), Chunk 7
 (end-to-end suite and hardening, d618607) and Chunk 8 (publishing finish, fbb0e2a). The book is
-live at the new URL. Observability core is now built; see its section below. Prior-phase done markers: /root/runs/objstore-phase2-done.txt and
+live at the new URL. Observability Stage C is now DONE; the final pass remains pending. See its section below. Prior-phase done markers: /root/runs/objstore-phase2-done.txt and
 /root/runs/objstore-cleanup-done.txt.
 
 Seats (this project only): Fable orchestrates, gates and lands; Opus writes
@@ -76,56 +76,57 @@ command check on a clean clone; site lint clean (22 pages); sweep part 1 empty; 
 the new URL, all pages HTTP 200. No full gate was run in this phase (by the mission).
 The GitHub description is Neon's draft (agent_work/09-cleanup/repo-description.txt).
 
-## Observability phase — core: DONE (2026-11-24; build, review pending)
+## Observability phase — Stage C: DONE (2026-11-24); phase NOT READY
 
-Goal/spec: [observability plan](agent_work/10-observability/PLAN.md), including Nick's
-2026-11-24 amendment: mandatory OTel/Prometheus, CSV disk flush, DuckDB analysis over
-CSV; no runtime DuckDB writer without a valid runtime use case.
+Goal/spec: [observability plan](agent_work/10-observability/PLAN.md), including the owner's
+CSV-disk-flush / DuckDB-analysis amendment. Core A0/A1 and erasure catalogue cleanup were
+already complete at f711468; Stage C resumed from that commit. Frozen metrics interfaces
+and catalogue, go.mod and go.sum are unchanged by Stage C.
 
-Astra core build commits on feat/observability:
-- `5b2e656`: framework-free metrics values, Source, finite catalogue and validation.
-- `1072417`: config gating, selector/port, runner, shared contracts and stdlib OTLP.
-- `7ad39f1`: pinned Docker Collector/Prometheus setup, bounded pipeline check and gates.
-- `ca42bf1`: prevent boot_id labels in Prometheus; bounded warning text and joined shutdown.
-- `4c4f330`: active-export cancellation/shutdown test.
-- `bcd9c5d`, `017c0ad`, `55e430b`: durable knowledge, reusable-script index, fixture proof
-  and the unrelated saga gate failure record.
+| Stage C deliverable | Commits on feat/observability | Status |
+|---|---|---|
+| O1 component snapshots/config, metered codec, stripe hooks, aggregate sources | ca8d9b6, b254d38, 99263a7, 88e9b08; cost/accounting repairs ed81d14, 978c322 | DONE |
+| O2 HTTP, bounded runtime collector, objnode config/flags/lifecycle | a5cbca3, 01253b5, 131b37e, 7b420ad | DONE |
+| O3 Prometheus and CSV/readback | 822bb08, ea0667e; f2319e0, d993950, ba2005f | DONE |
+| O4 pinned DuckDB-over-CSV, precision and actual-node smokes | 44ee96d, 79b35ba, f69ef35, 060bb3e | DONE |
+| A2 actual objnode → Collector → Prometheus and bounded CI | 7954bdb, 8f25539 | DONE |
+| Bounded snapshot cost regression/benchmark | 7304a6b | DONE |
 
-Verified: go build ./..., go vet ./..., and Docker fast lane G0/G1/G6 PASS on `55e430b`.
-Metrics coverage 96.6%; telemetry 95.7%. The prior `017c0ad` gate failed only the existing
-saga randomized coverage-of-draws assertion (20 cases passed; no retry-exhaustion draw);
-one unchanged-code retry passed. No full/race/fuzz/large-sweep lane was run.
-Real Docker A1 fixture proof: HTTP counter 7 -> 15, in-flight gauge 1, stored boot_id
-label count 0. Collector 0.145.0 configuration validated; Prometheus 3.9.1; immutable
-image digests pinned. This is NOT the A2 real-objnode proof.
+All independent reviews pass after one repair round. Evidence and accepted nits:
+[Stage C verification](agent_work/10-observability/STAGE-C-VERIFICATION.md),
+[review reports](agent_work/10-observability/reviews/),
+[final-pass handoff](agent_work/10-observability/STAGE-C-HANDOFF.md).
 
-Records: [core verification](agent_work/10-observability/CORE-VERIFICATION.md),
-[fast result](agent_work/10-observability/core-fast-result.json),
-[query evidence](agent_work/10-observability/core-fixture-results.json),
-[knowledge](docs/knowledge/observability-core.md), [script index](work-scripts/README.md).
-Done marker: /root/runs/objstore-obs-core-done.txt.
+Verified on final production Go code 978c322: build and vet all packages; complete
+`go test -p 2 -timeout 30m ./...` (682.55s, no filtered/shortened tests); Docker G0/G1/G6
+(all coverage floors >=85%); focused Docker race checks; real objnode OTel/Prometheus
+counter growth/gauge/boot-label proof; real objnode CSV→pinned DuckDB and exact >2^53
+fixture; fixed snapshot cardinality/allocations at 1/100/1000 objects. Initial default
+10-minute E2E timeout and cold CSV compile timeout are preserved in the verification
+record; complete reruns passed. No full landing/fuzz/large-sweep gate was run.
+
+Durable knowledge: docs/knowledge/observability-{core,components,runtime,adapters}.md.
+Reusable checks/query commands: [work-scripts](work-scripts/README.md).
+CSV is the runtime disk sink; DuckDB is analysis over finalized CSV. No runtime DuckDB
+writer was introduced. No push, main merge or publication occurred.
 
 Next, in order:
-1. Conductor: fresh cross-company review of this build before acceptance/landing.
-2. Opus O1/O2: component Snapshot methods, runtime collector, HTTP and objnode wiring.
-3. Astra A2: run the prepared default check-otel.sh real-node path and add the CI hook.
-4. Opus O3/O4: register mandatory Prometheus/CSV adapters; exact CSV readback and DuckDB
-   analysis over finalized CSV files. No placeholder factories or ReadCSVDir were added.
-5. Neon N1: final documentation/polish. Nick/conductor retains merge/publish gates.
+1. Neon/conductor: second final pass updating README/reference/help/book/C4 to match the
+   delivered sources, flags, all three adapters and analysis paths; use STAGE-C-HANDOFF.md.
+2. Neon/conductor: verify final prose/commands and decide phase readiness. This Stage C
+   checkpoint intentionally leaves the observability phase NOT READY.
+3. Owner/conductor retains landing/publish gates; no merge is authorized by this checkpoint.
 
-Resume: feat/observability is in /root/Software/object-store-work/10-obs-core, retained
-for conductor review. Build/check processes have stopped; no background process to
-relaunch. Logs: /root/runs/objstore-obs-core-fast-retry.log,
-/root/runs/objstore-obs-pipeline-final.log; preserved failed gate:
-/root/runs/objstore-obs-core-fast-saga-failure.{json,log}.
-No build blocker. Independent review and O1/O2 wiring are the next dependencies.
+Resume: target feat/observability is in /root/Software/object-store. No background build,
+review or metrics process remains. All resumed/reviewer worktrees were cleaned; original
+interrupted 10-obs-{components,runtime,adapters} worktrees are preserved untouched, as is
+10-obs-core. Read this checkpoint and verification record; no Stage C job needs relaunch.
+Done marker: /root/runs/objstore-obs-rest-done.txt.
 
 ## In progress
 
-Observability core, cleanup fix, and Neon final-pass code tweaks/docs are on
-`feat/observability`, but **the observability phase is NOT READY**: Stage C
-(`C-rest-sol`: O1/O2/O3/O4 and A2 real-`objnode` proof) never re-ran after the
-erasure catalogue blocker was resolved (see the checkpoint below).
+Observability Stage C is DONE. Neon's second final pass is next; phase remains NOT READY.
+No active build or review run. See the observability section above for SHAs and evidence.
 
 ## Per-chunk pipeline (as run for chunks 1–5; worked examples in each agent_work/<slug>/)
 
@@ -245,256 +246,8 @@ erasure catalogue blocker was resolved (see the checkpoint below).
 
 ## Resume
 
-Phase 2 and cleanup are complete; observability core is DONE and the erasure label-domain
-blocker has been resolved by the Neon cleanup fix on `feat/observability` (see the current
-checkpoint below). No run is alive. For
-follow-up work read this file, PLAN.md and /root/briefs/objstore-phase2-mission.md; start a new
-branch and worktree from main (worktrees under /root/Software/object-store-work/).
-`agent_work/orch/launch.sh` names run files `objstore-p2-<run>` unless RUN_PREFIX is set. The full gate on main is `GATE_STAGE=final agent_work/gates/gate.sh <name>`.
-
-## Observability phase — NOT READY (core + tweaks + docs done; Stage C missing, 2026-11-24)
-
-Core was completed at `bd3e01c` (independent review remains separate). The remaining Sol
-build (`C-rest-sol`) stopped under the explicit core-contract blocker rule because
-`internal/metrics/catalogue.go` configured HTTP operation values instead of
-`{encode, reconstruct}` for `objstore_erasure_input_bytes_total` and
-`objstore_erasure_output_bytes_total` (recorded in `9dbf6ab`,
-[REST-BLOCKER](agent_work/10-observability/REST-BLOCKER.md), and
-`/root/runs/objstore-obs-rest-blocked.txt`).
-
-Cleanup fix (Neon, 2026-11-24, on `feat/observability` at `/root/Software/object-store`, `f5c4538`):
-- Fixed `labelDomains` in `internal/metrics/catalogue.go` so both
-  `objstore_erasure_input_bytes_total` and `objstore_erasure_output_bytes_total` allow
-  `operation` in `{"encode", "reconstruct"}` per PLAN section 3. Audited all 83 catalogue
-  descriptors and 25 labeled metrics against PLAN section 3; no other mismatches found.
-- Added regression coverage in `internal/metrics/metrics_test.go`
-  (`TestErasureByteOperationDomains` plus full-domain coverage and label-sort checks in
-  `TestCatalogueAndClone`).
-- Done marker: `/root/runs/objstore-obs-cleanup-done.txt`.
-
-Final tweak pass (Neon, 2026-11-24, on `feat/observability` at `/root/Software/object-store`):
-- **Why NOT READY:** `/root/runs/objstore-obs-conductor2.sh` (lines 106–110) ran
-  `neon_cleanup` when `C-rest-sol` blocked without `/root/runs/objstore-obs-rest-done.txt`,
-  then fell straight through to `gate` and `D-neon-final` without re-running `C-rest-sol`
-  or checking for `/root/runs/objstore-obs-rest-done.txt`. Consequently, ALL Stage C
-  deliverables from PLAN.md and Nick's 2026-11-24 amendment remain unbuilt on
-  `feat/observability`:
-  1. O1: component `Snapshot()` methods, `MetricsEnabled` config propagation, `erasure.MeteredCodec`,
-     `storage.StripeCodec`/`EncodeStripeWithCodec`/`DecodeStripeWithCodec`, `node.MetricSources()`.
-  2. O2: `internal/noderuntime/metrics.go` (`MetricsCollector`, metrics-exempt inspection path,
-     `Runtime.Snapshot()`), `httpapi.Server.Snapshot()`, and `cmd/objnode` `observability` JSON/flags.
-  3. A2: real `objnode` → Collector → Prometheus proof (`TestObjnodeOTelPrometheus` / default
-     `check-otel.sh`) and CI hook.
-  4. O3: mandatory direct `prometheus` scrape adapter and first-class `csv` disk-flush adapter +
-     `telemetry.ReadCSVDir` (`internal/telemetry/registry.go` currently registers only `otel`).
-  5. O4: DuckDB-over-CSV analysis layer (`deploy/observability/queries.sql`, `query-csv.sh`,
-     optional pinned `dev-observability` Docker target, and real CSV smoke).
-- **Small tweaks applied to built core/OTel code:**
-  - `internal/telemetry/otel.go`: honored caller context deadlines beyond 2s (removed hardcoded
-    2s `http.Client.Timeout` and `Transport.ResponseHeaderTimeout`; kept 2s fallback when caller
-    passes no deadline), checked `json.Marshal` error before batch byte-limit check, checked
-    `ctx.Err()` on `io.ReadAll` failure in `send`, and checked `ok` from `ctx.Deadline()`.
-  - `internal/telemetry/runner.go`: replaced magic `counts` indices with named constants, removed
-    unused `err` parameter on `report`, removed redundant `shutdownDone` channel/select after
-    synchronous `shutdownOnce.Do`, and guarded non-negative duration/timestamp conversions.
-  - `internal/telemetry/runner_test.go`: fixed data races detected by `go test -race` on test
-    `sink`, `logs`, `calls`, and `r.counts` inside `synctest` tests.
-  - `internal/telemetry/adaptertest/contract.go`: added deterministic label tie-breaker to
-    `projection` sorting for multi-series points sharing a metric name.
-  - `internal/metrics/catalogue.go`: corrected acronym casing in metric `Help` strings
-    (`HTTP`, `RPC`, `OCC`, `LWW`).
-  - `internal/telemetry/otel_test.go`: added `TestOTelHonorsCallerTimeoutBeyondDefault`.
-- **Reader-facing docs written (truthful to current tree):**
-  - `docs/observability.md` and a short `## Observability` section + links in `README.md`,
-    documenting the 83-descriptor catalogue, off-by-default toggle, `otel` adapter, Docker
-    Collector → Prometheus stack, extension guide (one file + one `registry.go` entry), and
-    explicitly noting current wiring status (no false claims about unbuilt adapters or flags).
-- **Verified (all PASS):** `gofmt -s -l`, `go build ./...`, `go vet ./...`,
-  `go test -v -race -cover ./internal/metrics ./internal/telemetry/...` (metrics 96.6%,
-  telemetry 94.9%), `go test -short ./...`, and Docker fast lane
-  `COMPOSE_PROJECT_NAME=objstore-obs-neon-final agent_work/gates/ci-fast.sh` (G0 including
-  `detlint`, `panics`, `deps`, `selfcontained`, `site_lint.py` + selftest; G1 unit + coverage
-  floors; G6 docker).
-- Done marker / owner report: `/root/runs/objstore-obs-neon-done.txt`.
-
-Retained interrupted worktrees from the stopped run remain untouched for inspection:
-`/root/Software/object-store-work/10-obs-{components,adapters,runtime}` on
-`work/obs-{components,adapters,runtime}` (partial uncommitted Prometheus work in adapters;
-no product changes in components/runtime). Logs/briefs/PIDs/exits:
-`/root/runs/objstore-obs-{components,adapters,runtime}*`.
-
-Next: fix the Stage C retry/check in `/root/runs/objstore-obs-conductor2.sh` (or dispatch
-fresh O1/O2/O3/O4 + A2 runs from the current `feat/observability` tip), run independent review
-and real-`objnode` / DuckDB-over-CSV checks, then update `docs/observability.md` and `README.md`
-for the newly wired components, flags, Prometheus/CSV adapters, and DuckDB-over-CSV queries
-before marking the observability phase READY. DuckDB ruling remains CSV analysis over flushed
-CSV files, no runtime writer.
-
-
-## Stage C resumption — A2 preparation (2026-11-24)
-
-Goal: complete O1/O2/O3/O4 and A2 under the [observability plan](agent_work/10-observability/PLAN.md).
-Status: implementation resumed from f711468; phase remains NOT READY. No core blocker.
-A2 now asserts health counter growth, the in-flight gauge, and absence of boot_id labels;
-Compose has the observability profile and CI has a separate five-minute Docker proof job.
-Static preparation checks pass: go test ./test/observability (integration gated), shell syntax,
-Docker Compose config. Docker daemon 29.7.2 is available; live proof waits for O1/O2.
-
-Active worktrees: 10-obs-resume-components (O1), 10-obs-resume-runtime (O2),
-10-obs-resume-adapters (O3/O4), 10-obs-resume-proof (A2 preparation), all under
-/root/Software/object-store-work. Retained interrupted worktrees are untouched.
-Next: combine tested implementation commits on feat/observability, run the real Docker
-proof and CSV/DuckDB smoke, independent cross-company review, required fast lane, then
-record Stage C DONE with SHAs. Neon owns the second final pass and phase readiness.
-No detached process for A2 is running; rerun check-otel.sh after wiring lands.
-
-A2 preparation independent review: NITS addressed/recorded in agent_work/10-observability/A2-REVIEW.md; added Collector-side no-boot-label assertion. Live run remains pending wiring.
-
-Stage C live claims and verification dependencies: agent_work/10-observability/COORDINATION.md. A2 prep on target at 7954bdb + 8f25539; independent review exit/output verified.
-### Stage C O1 resume checkpoint (component worktree)
-
-O1 implementation DONE on work/obs-resume-components; independent review is coordinated
-by the Stage C conductor. Commits: 81256e2 (erasure facade and stripe hooks), c9f6888
-(storage transitions/shared codec totals), 797897d (gossip/Merkle/OCC/saga sources),
-ae0b0c4 (node propagation and fixed aggregate sources). Phase remains NOT READY.
-
-Verified: go build ./..., go vet ./..., full go test for all seven owned component
-packages, focused TestMetrics/TestMetered transitions, determinism lint (74 files in
-10 packages), paniccheck, and git diff --check. No frozen core interfaces/catalogue changed.
-No component background process remains. Resume by reading this checkpoint and the
-conductor's Stage C state; await independent review, then finish O2/O3/O4/A2 integration.
-
-### Stage C adapter resume checkpoint (Sol, 2026-11-24)
-
-Branch/worktree: `work/obs-resume-adapters`, `10-obs-resume-adapters`.
-O3 direct Prometheus implementation and shared contracts complete: immutable bounded
-cache, private listener, no pre-first/stale values, escaped/sorted exposition and joined
-shutdown. Enabled config uses a private registry validation hook for the two-interval
-staleness bound; public interfaces/catalogue unchanged. Focused telemetry tests pass.
-CSV and DuckDB analysis work remains in progress; no background run to resume.
-
-O3 CSV implementation complete: exact unsigned integers and metadata through
-`ReadCSVDir`, one header-bearing batch per private atomic finalized segment, configurable
-sync and post-success retention. Shared contracts cover a real filesystem failure and
-recovery; focused cases cover rotation, max uint64, crash temp exclusion, invalid files,
-identity and byte limits. No runtime DuckDB writer is built (owner ruling); CSV is the
-runtime disk sink and DuckDB remains an offline analysis consumer. O4 remains in progress.
-
-Prometheus independent review returned NITS; the cache encoding nit is repaired by
-encoding before acquiring the cache write lock. Concurrent publish/scrape tests assert
-whole-cache coherence, and a slow-header connection verifies bounded joined shutdown.
-Two focused race-suite runs pass. No merge/publish performed.
-
-CSV follow-up: enforce the metrics encoded-byte bound independently of configured segment
-size; correct the sync JSON tag caught by vet. Vet and Docker precision smoke pass. Empty
-point batches return an explicit error (the frozen CSV schema requires one metric value
-per row); empty component snapshots contribute no rows, preserving all batch metadata
-and exported series. Real-node CSV smoke remains conductor-owned after O2 integration.
-
-O4 analysis implementation and pinned fixture smoke complete: `queries.sql` defines
-exact typed CSV views, per-boot counter deltas, OCC discards, HTTP rates/mean latency and
-in-flight gauges; `query-csv.sh` runs the pinned CLI in memory using a caller directory.
-Optional Docker `dev-observability` target pins DuckDB 1.5.0 and archive SHA256.
-Docker fixture smoke: two Go-flushed CSV batches, >2^53 exact unsigned value, JSON labels,
-crash `.tmp` exclusion, counter deltas, rate and mean latency all PASS.
-Image bytes: normal dev 299026663; analysis 320741177; added 21714514 bytes.
-Logs: `/root/runs/objstore-obs-{csv-smoke,analysis-build,analysis-base-build}.log`.
-Real objnode CSV smoke is still pending runtime integration, owned by conductor. Phase
-remains NOT READY; no runtime DuckDB writer was introduced.
-A2/O4 integration preparation: check-objnode-csv.sh runs actual CSV-enabled objnode in the pinned analysis image, asserts multiple sequences/all ten metric components/positive HTTP health counter/gauge, and ignores crash .tmp residue. Live execution still awaits O1/O2/O3/O4 integration.
-
-Durable assessment: recorded adapter/file-contract pitfalls, private settings-validation
-pattern and measured analysis image delta in `docs/knowledge/observability-adapters.md`;
-indexed reusable CSV analysis/query scripts in `work-scripts/README.md`. Adapter branch
-commits: Prometheus `e064ec9` + review repair `3d4eb5e`, CSV `5e2121e` + `b810145`,
-DuckDB analysis `a3b52a5`. Focused telemetry race tests, vet and Docker fixture smoke pass.
-The conductor owns integration of these commits, independent review and real-node smoke.
-
-CSV independent review NITS repaired: preserve literal CRLF in allowed batch identity
-fields during CSV readback, with an exact disk round-trip regression. Reader also checks
-the encoded byte cap before parsing. Remaining retention/crash/directory-sync limitations
-are recorded explicitly in the adapter knowledge entry; finalized rows remain replayable.
-### Stage C O2 runtime checkpoint — 2026-11-24
-
-O2 implementation complete on `work/obs-resume-runtime` in
-`/root/Software/object-store-work/10-obs-resume-runtime`; phase remains NOT READY.
-Commits: `8097006` HTTP source; `86cf67c` independent-review HTTP nits repaired;
-`c374af3` runtime collector; `9f309a8` objnode configuration and lifecycle.
-
-Verified: all tests in `internal/noderuntime`, `internal/storage/httpapi`, and
-`cmd/objnode` pass; focused race tests for new metrics and lifecycle tests pass.
-Verification used temporary copies of the O1 agent's pending component sources and
-Prometheus implementation `822bb08` for compile dependencies; those files are not in
-these commits. Exact-dependency re-verification follows O1's final commits. No frozen
-core API/catalogue changed, no full gate/push/merge/publish. No O2 background run.
-Next owner: conductor integrates and independently reviews the runtime/CLI commits,
-reruns exact-tree fast lane and A2 proof, and records Stage C completion. O1/O3/O4
-remain separate owners. Resume from this branch; no command needs relaunching.
-
-O4 independent analysis review: NITS, no blocking defect; static precision smoke and adversarial boot/reset/duplicate/MaxUint64/path probes pass. Real CSV smoke now names and force-cleans its container on all exits, including timeout. All ten components are required because PLAN mandates fixed zero-valued first-batch series.
-
-Stage C checkpoint: O2 code integrated (131b37e, 7b420ad; HTTP a5cbca3 + 01253b5). O3/O4 adapter/HTTP confirm review PASS; archived reports under agent_work/10-observability/reviews/. Completed adapter worktree cleaned; exact O1 dependency checks and real-node proofs remain pending.
-
-Stage C live acceptance checkpoint: real Docker TestObjnodeOTelPrometheus PASS on product 88e9b08 (health 1→11, gauge 0, boot labels 0, Collector-side check clean). Actual objnode CSV→DuckDB smoke PASS (3 segments, sequences 1–3, all ten components, health 0→6, clean zero-goroutine shutdown); precision fixture PASS. Tracked query summaries: stage-c-otel-results.json and stage-c-csv-results.json under agent_work/10-observability/. Full required host suite, Docker race check and O1/O2 independent reviews remain in progress.
-### Stage C snapshot cost acceptance checkpoint (2026-11-24)
-
-Added `TestMetricsSnapshotCostIndependentOfObjectCount` and
-`BenchmarkMetricsSnapshotObjectCount` in `internal/node/metrics_cost_test.go`.
-Real simulated object PUTs populate 1/100/1000 local shards, 5/104/1004 metadata
-records and 6/204/2004 Merkle entries. All seven MetricSources retain 109 points
-and 494 allocations per collection. Benchmark at 200ms reports 42,376 B/op in
-every case; observed CPU 684,528 / 473,440 / 735,160 ns/op on a host concurrently
-running integration suites (descriptive, no wall-clock assertion).
-Focused regression (42.2s), benchmark (40.7s), `go vet ./internal/node` and
-`git diff --check` PASS. Evidence: `/root/runs/objstore-obs-snapshot-cost.log`.
-No production changes. Branch/worktree: `work/obs-snapshot-cost`,
-`/root/Software/object-store-work/10-obs-snapshot-cost`; no background run remains.
-Conductor owns independent review and integration; phase remains NOT READY.
-Durable assessment: this acceptance fixture and benchmark are the reusable
-artifact; no additional environment knowledge or helper script is warranted.
-
-### Stage C disabled callback allocation repair (2026-11-24)
-
-Branch `work/obs-off-repair`, worktree `10-obs-off-repair`: storage requests and node
-Put/Get now pass the original callback directly when metrics state is nil. Metrics-on
-wrappers are unchanged. Allocation regression tests retain callbacks and compare to the
-original transport/operation path: storage direct/off = 0/0 allocations; node not-ready
-Put/Get original/off = 4/4 each. The enabled storage wrapper remains exercised.
-Focused storage/node metrics tests, full storage tests, package build/vet pass.
-Compiler audit confirms erasure measurement closures and node synchronous operation
-metric defers do not escape; no other new O1 hot-path callback wrappers were found.
-Verification logs: `/root/runs/objstore-obs-off-repair-{tests,storage,escape}.log`.
-Next: conductor integrates this checkpoint and reviewer findings, then runs final checks.
-Observability phase readiness remains pending Neon's second final pass.
-
-Disabled callback repair code/test checkpoint: `726e6b8`. Focused determinism lint passes
-for storage/node without the global allowlist (its sim import entry is outside this scope).
-The callback allocation finding is recorded in `docs/knowledge/observability-components.md`;
-no new reusable script or VM/environment knowledge was needed.
-
-Stage C verification checkpoint: first integrated go build ./... and go vet ./... PASS. go test ./... passed every package except test/e2e, whose active migration failure matrix hit the default 10-minute package timeout under concurrent review/suite load; no assertion failure preceded it. Preserved /root/runs/objstore-obs-resume-fast.{log,json,exit}. Final rerun will use the existing gate's 30-minute timeout and -p 2 after F1/F2 cost/accounting repairs, with all tests retained. O1 review NITS requires shared-owner construction to eliminate scoped inventory rescans; repair in progress.
-### Stage C component review repair checkpoint (2026-11-24)
-
-O1 reviewer F1/F2 repaired in `work/obs-off-repair`: scoped storage and migration copier
-construction now shares owner metric state before initialization, avoiding discarded metric
-maps and full inventory scans. MetricsEnabled remains propagated. New regression checks
-both actual node paths for zero additional disk Read/List calls, shared inventory updates,
-and shared erasure totals. Storage bytes count accepted Disk.Write bytes only; idempotent
-Put contributes no write bytes. Inventory gauges reflect the written layer even when Put
-or Delete Sync fails; operation outcome still reports the Sync error. Focused metrics tests,
-full storage suite, storage/node build/vet, and focused determinism lint all PASS.
-Logs: `/root/runs/objstore-obs-off-repair-review-{tests,storage,node,detlint}.log`.
-Next: conductor integrates and obtains confirm review in this same O1 review round.
-F3/F4/F5 have documented existing semantics; no frozen catalogue/port change was needed.
-
-Component-review repair code/test checkpoint: `46f115e`. Durable component notes now
-record owner-first facade construction, written-layer byte/gauge semantics, HEAD mapping,
-private codec invariant and saga terminal-log recovery counting. No additional reusable
-script or VM knowledge was needed. Worktree has no live build/check processes; conductor
-owns integration, confirm review and final exact-tree checks. Phase readiness is unchanged.
-
-Final-check checkpoint: O1 repair confirm PASS. Repeated A2 on 978c322 PASS. The repeated CSV smoke hit its 90s wrapper deadline during a cold Go build before node startup; added the same shared Go cache mounts as Compose, preserving timeout/coverage and container cleanup, then retry once. Runtime reviewer PASS report exists; three self-matching/missing-file polling shells were stopped so its CLI can finish and write its exit file. No product assertion failed.
-
-Final review checkpoint: O1 confirm PASS, O2 runtime/CLI PASS (CLI exit 0; its stale wait monitors were cleared). Final A2 PASS; final actual-node CSV retry PASS after shared-cache mount fix (original cold compile timeout preserved). Tracked final query summaries updated for product 978c322; first full-suite timeout summary preserved. Final complete host suite and Docker fast lane remain running. Reader-facing final-pass checklist: agent_work/10-observability/STAGE-C-HANDOFF.md.
-
-Final gate checkpoint: Docker G0/G1/G6 PASS on product 978c322, all required coverage floors >=85% (metrics 96.6%, telemetry 91.0%, node 87.5%, runtime 88.5%, HTTP 89.5%). Final focused Docker race PASS. Only the complete host migration matrix remains active under the 30-minute test timeout. Completed resumed builder/reviewer worktrees cleaned; original interrupted worktrees preserved. Snapshot-cost findings and real-node CSV smoke indexed separately.
+Phase 2 and cleanup are complete. Observability Stage C is DONE on feat/observability;
+Neon's second final pass and readiness decision remain. Read the observability checkpoint
+and its handoff/verification records above. No background run needs resuming. The complete
+host suite, Docker fast lane and both real-node observability proofs passed; no push,
+main merge or publication was performed. Original interrupted worktrees remain retained.
