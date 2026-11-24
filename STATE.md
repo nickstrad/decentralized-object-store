@@ -422,3 +422,5 @@ core API/catalogue changed, no full gate/push/merge/publish. No O2 background ru
 Next owner: conductor integrates and independently reviews the runtime/CLI commits,
 reruns exact-tree fast lane and A2 proof, and records Stage C completion. O1/O3/O4
 remain separate owners. Resume from this branch; no command needs relaunching.
+
+O4 independent analysis review: NITS, no blocking defect; static precision smoke and adversarial boot/reset/duplicate/MaxUint64/path probes pass. Real CSV smoke now names and force-cleans its container on all exits, including timeout. All ten components are required because PLAN mandates fixed zero-valued first-batch series.
