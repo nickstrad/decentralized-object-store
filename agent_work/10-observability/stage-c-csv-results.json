@@ -1,0 +1,28 @@
+{
+  "product_commit": "88e9b08",
+  "segments": 3,
+  "sequences": [
+    1,
+    2,
+    3
+  ],
+  "components": [
+    "erasure",
+    "gossip",
+    "http",
+    "merkle",
+    "node",
+    "occ",
+    "runtime",
+    "saga",
+    "storage",
+    "telemetry"
+  ],
+  "health_counts": [
+    0,
+    6
+  ],
+  "real_objnode_duckdb_assertions": "PASS",
+  "fixture_precision_assertions": "PASS",
+  "node_exit_goroutines": 0
+}

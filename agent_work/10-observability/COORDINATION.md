@@ -21,3 +21,5 @@ CSV exact readback + real objnode CSV segments queried by pinned DuckDB in Docke
 No READY claim: Neon's second final pass owns phase readiness.
 
 Adapter/HTTP fresh confirm verdict PASS; reports archived under reviews/. CSV precision fixture rerun on integrated tree PASS. Completed adapter and review worktrees removed. Original interrupted worktrees remain untouched.
+
+Live proof checkpoint: A2 PASS (1→11 HTTP health counter, gauge, boot label count 0); real node CSV smoke PASS (three sequences/all ten components/positive health/gauge), pinned precision fixture PASS. Product revision 88e9b08. O1/O2 independent reviews running; host full lane and Docker focused race in progress.

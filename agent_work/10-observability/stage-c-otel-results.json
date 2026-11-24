@@ -1,0 +1,106 @@
+{
+  "product_commit": "88e9b08",
+  "test": "TestObjnodeOTelPrometheus",
+  "results": [
+    {
+      "query": "objstore_http_requests_total{node_id=\"obs-node:7946\",operation=\"health\",status_class=\"2xx\"}",
+      "response": {
+        "status": "success",
+        "data": {
+          "resultType": "vector",
+          "result": [
+            {
+              "metric": {
+                "__name__": "objstore_http_requests_total",
+                "instance": "obs-node:7946",
+                "job": "objstore",
+                "node_id": "obs-node:7946",
+                "operation": "health",
+                "otel_scope_name": "objstore.metrics",
+                "otel_scope_version": "1",
+                "region": "local",
+                "status_class": "2xx"
+              },
+              "value": [
+                1795559059.595,
+                "1"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "query": "objstore_http_requests_total{node_id=\"obs-node:7946\",operation=\"health\",status_class=\"2xx\"}",
+      "response": {
+        "status": "success",
+        "data": {
+          "resultType": "vector",
+          "result": [
+            {
+              "metric": {
+                "__name__": "objstore_http_requests_total",
+                "instance": "obs-node:7946",
+                "job": "objstore",
+                "node_id": "obs-node:7946",
+                "operation": "health",
+                "otel_scope_name": "objstore.metrics",
+                "otel_scope_version": "1",
+                "region": "local",
+                "status_class": "2xx"
+              },
+              "value": [
+                1795559060.89,
+                "11"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "query": "objstore_http_requests_in_flight{node_id=\"obs-node:7946\"}",
+      "response": {
+        "status": "success",
+        "data": {
+          "resultType": "vector",
+          "result": [
+            {
+              "metric": {
+                "__name__": "objstore_http_requests_in_flight",
+                "instance": "obs-node:7946",
+                "job": "objstore",
+                "node_id": "obs-node:7946",
+                "otel_scope_name": "objstore.metrics",
+                "otel_scope_version": "1",
+                "region": "local"
+              },
+              "value": [
+                1795559060.895,
+                "0"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "query": "count({boot_id!=\"\"}) or vector(0)",
+      "response": {
+        "status": "success",
+        "data": {
+          "resultType": "vector",
+          "result": [
+            {
+              "metric": {},
+              "value": [
+                1795559060.897,
+                "0"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
