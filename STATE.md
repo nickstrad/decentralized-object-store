@@ -436,3 +436,19 @@ O4 independent analysis review: NITS, no blocking defect; static precision smoke
 Stage C checkpoint: O2 code integrated (131b37e, 7b420ad; HTTP a5cbca3 + 01253b5). O3/O4 adapter/HTTP confirm review PASS; archived reports under agent_work/10-observability/reviews/. Completed adapter worktree cleaned; exact O1 dependency checks and real-node proofs remain pending.
 
 Stage C live acceptance checkpoint: real Docker TestObjnodeOTelPrometheus PASS on product 88e9b08 (health 1→11, gauge 0, boot labels 0, Collector-side check clean). Actual objnode CSV→DuckDB smoke PASS (3 segments, sequences 1–3, all ten components, health 0→6, clean zero-goroutine shutdown); precision fixture PASS. Tracked query summaries: stage-c-otel-results.json and stage-c-csv-results.json under agent_work/10-observability/. Full required host suite, Docker race check and O1/O2 independent reviews remain in progress.
+### Stage C snapshot cost acceptance checkpoint (2026-11-24)
+
+Added `TestMetricsSnapshotCostIndependentOfObjectCount` and
+`BenchmarkMetricsSnapshotObjectCount` in `internal/node/metrics_cost_test.go`.
+Real simulated object PUTs populate 1/100/1000 local shards, 5/104/1004 metadata
+records and 6/204/2004 Merkle entries. All seven MetricSources retain 109 points
+and 494 allocations per collection. Benchmark at 200ms reports 42,376 B/op in
+every case; observed CPU 684,528 / 473,440 / 735,160 ns/op on a host concurrently
+running integration suites (descriptive, no wall-clock assertion).
+Focused regression (42.2s), benchmark (40.7s), `go vet ./internal/node` and
+`git diff --check` PASS. Evidence: `/root/runs/objstore-obs-snapshot-cost.log`.
+No production changes. Branch/worktree: `work/obs-snapshot-cost`,
+`/root/Software/object-store-work/10-obs-snapshot-cost`; no background run remains.
+Conductor owns independent review and integration; phase remains NOT READY.
+Durable assessment: this acceptance fixture and benchmark are the reusable
+artifact; no additional environment knowledge or helper script is warranted.
