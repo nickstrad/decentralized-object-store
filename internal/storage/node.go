@@ -172,6 +172,10 @@ func (n *Node) EncodeState() []byte {
 
 func (n *Node) request(to env.NodeID, req []byte, cb func([]byte, error)) {
 	n.stats.Requests++
+	if n.metric == nil {
+		n.e.Net.Request(to, req, n.cfg.RequestTimeout, cb)
+		return
+	}
 	n.metric.adjust("storage_requests_in_flight", 1)
 	n.e.Net.Request(to, req, n.cfg.RequestTimeout, func(b []byte, err error) {
 		n.metric.adjust("storage_requests_in_flight", -1)

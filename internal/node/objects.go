@@ -817,11 +817,19 @@ func (n *Node) Health() (metricResult0 storage.Health) {
 }
 
 func (n *Node) PutObject(req storage.PutRequest, cb func(storage.ObjectInfo, error)) {
+	if n.metric == nil {
+		n.observedPutObject(req, cb)
+		return
+	}
 	n.metric.adjust("node_operations_in_flight", 1)
 	n.observedPutObject(req, func(i storage.ObjectInfo, e error) { n.operationDone("put", e); cb(i, e) })
 }
 
 func (n *Node) GetObject(bucket, key string, cb func(storage.ObjectInfo, []byte, error)) {
+	if n.metric == nil {
+		n.observedGetObject(bucket, key, cb)
+		return
+	}
 	n.metric.adjust("node_operations_in_flight", 1)
 	n.observedGetObject(bucket, key, func(i storage.ObjectInfo, b []byte, e error) { n.operationDone("get", e); cb(i, b, e) })
 }

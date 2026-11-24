@@ -452,3 +452,17 @@ No production changes. Branch/worktree: `work/obs-snapshot-cost`,
 Conductor owns independent review and integration; phase remains NOT READY.
 Durable assessment: this acceptance fixture and benchmark are the reusable
 artifact; no additional environment knowledge or helper script is warranted.
+
+### Stage C disabled callback allocation repair (2026-11-24)
+
+Branch `work/obs-off-repair`, worktree `10-obs-off-repair`: storage requests and node
+Put/Get now pass the original callback directly when metrics state is nil. Metrics-on
+wrappers are unchanged. Allocation regression tests retain callbacks and compare to the
+original transport/operation path: storage direct/off = 0/0 allocations; node not-ready
+Put/Get original/off = 4/4 each. The enabled storage wrapper remains exercised.
+Focused storage/node metrics tests, full storage tests, package build/vet pass.
+Compiler audit confirms erasure measurement closures and node synchronous operation
+metric defers do not escape; no other new O1 hot-path callback wrappers were found.
+Verification logs: `/root/runs/objstore-obs-off-repair-{tests,storage,escape}.log`.
+Next: conductor integrates this checkpoint and reviewer findings, then runs final checks.
+Observability phase readiness remains pending Neon's second final pass.
