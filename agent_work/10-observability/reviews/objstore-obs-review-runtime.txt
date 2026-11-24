@@ -1,0 +1,48 @@
+O2 runtime/CLI wiring — independent review (Sonnet 5.5, cross-company). Commits 131b37e + 7b420ad, HEAD 88e9b08 (O1 integrated).
+Worktree: /root/Software/object-store-work/10-obs-review-runtime. No product changes, no commits (temp probe tests created then deleted; git status clean).
+
+VERDICT: PASS (2 NITS, 0 defects; no core defect found)
+
+Evidence run
+- go build ./..., go vet (cmd, noderuntime, telemetry, storage, metrics): clean.
+- go test -count=1 cmd/... noderuntime telemetry storage(+httpapi) metrics: all ok except one failure:
+  noderuntime TestLoopbackClusterServesObjectsAcrossNodes (runtime_net_test.go:129, 1s shard RPC timeout) failed once at box load avg 12-16;
+  3/3 pass alone, and the full noderuntime package passes on re-run. Pre-existing 1s-timeout sensitivity, unrelated to O2.
+- go test -race: noderuntime -run 'Metrics|Snapshot' -count=3, cmd/objnode, telemetry, httpapi: ok.
+- Independent probe 1 (real-time, -race): stalled owner loop, 50 goroutines x 20 Collects at 2ms timeout, then 3000 Collects canceled at
+  random microsecond offsets against a live loop: gate=0, ctrl queue=0, goroutines flat, Abandoned()=0, final Collect ok.
+- Independent probe 2 (run() end-to-end, 14 cases): disabled + unknown adapter / bad interval / timeout>=interval / wrong-typed enabled /
+  string settings / trailing JSON in -observability-settings / unknown top-level key => exit 2; -observability=false overriding file enabled
+  (still validates adapter name) => exit 2 on bad name; -observability-adapter fixing a bad file adapter => exit 0; settings:null disabled => 0;
+  enabled csv/prometheus with unknown settings keys => exit 2.
+
+Checklist
+- One bounded metrics-exempt owner-loop read per batch: PASS. metrics.go:35-43 copies all node.MetricSources in one loop turn via the
+  dedicated metricReads channel (runtime.go loop case), never through call(), so Abandoned is untouched (probe + test).
+- Canceled collections, no accumulation: PASS. metricReads is unbuffered, metricGate cap 1 held only by an in-flight/handed-off read; a
+  canceled Collect releases the gate itself before handoff, or the loop releases it (defer in readMetrics, ctx.Err check skips the work);
+  result chan cap 1 so the loop never blocks. Zero queued reads behind a stalled loop (probe 1).
+- Safe runtime Snapshot / extras after loop: PASS. Snapshot uses atomics + rt.mu only (no loop); runtime and extras (HTTP) sampled after the
+  loop result, with ctx checks and Clone. Failure discards the whole batch (no partial/zero-filled).
+- Config propagation: PASS. MetricsEnabled -> cfg.Node.MetricsEnabled (after withDefaults) and httpapi.Limits.MetricsEnabled; off => no
+  metered handler, empty runtime Snapshot, extras never sampled (TestMetricsDisabledNeverSamplesSources).
+- Off: PASS. Open returns (nil,nil) when disabled (after name/duration/settings-shape validation), no factory call, no runner/goroutine,
+  no export, no listener (Prometheus occupied-address test with -observability=false => exit 0).
+- JSON strictness / per-field precedence: PASS. Config.UnmarshalJSON rejects unknown keys, trailing data, null/wrongly typed common fields;
+  merge() applies each flag only if set (explicit -observability=false works); adapter and settings independent (stale settings fail strict).
+- Exit codes: PASS. Config errors (incl. enabled strict settings, joined with errUsage in serve) => 2; sink open/bind/shutdown failures => 1.
+- Shared Identity: PASS. One NewIdentity passed to Open and NewRunner (main.go).
+- Startup rollback: PASS. Open failure => rt.Close; rt.Start / srv.Start failure => rt.Close + adapter Shutdown (Prometheus listener
+  leak test proves the port is released).
+- Shutdown ordering: PASS. stopRunner, join runnerDone, then srv.Shutdown, rt.Shutdown, runner.Shutdown (adapter) under one sctx budget;
+  TestObjnodeShutdownCancelsExportOutage proves an in-flight export is canceled and joined inside the budget.
+
+Findings
+1. NIT cmd/objnode/main.go:~220 (`<-runnerDone`): the runner join is unbounded by sctx. It relies on every adapter honouring the
+   Publish context (built-in ones do; the runner's own per-cycle timeout also bounds a cooperative adapter). A future non-cooperative
+   adapter could hold shutdown past ShutdownTimeout. Suggest `select { case <-runnerDone: case <-sctx.Done(): }` and report ctx error.
+   Reproducer: register an adapter whose Publish ignores ctx, enable it, send SIGTERM mid-publish.
+2. NIT cmd/objnode/main.go (NewRunner error branch in serve): uses srv.Shutdown(ctx) with the (possibly already canceled / unbounded) signal
+   context and rt.Close() rather than a timeout-bound ctx. Effectively unreachable (same config/identity already passed Open), so cosmetic.
+Pre-existing, out of O2 scope (not flagged as core defect): top-level config decode (main.go parse) does not reject trailing JSON after the
+object (`{"observability":{}} {}` is accepted); observability sub-object itself is strict. Frozen behavior left untouched.

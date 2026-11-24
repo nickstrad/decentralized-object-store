@@ -494,3 +494,5 @@ script or VM knowledge was needed. Worktree has no live build/check processes; c
 owns integration, confirm review and final exact-tree checks. Phase readiness is unchanged.
 
 Final-check checkpoint: O1 repair confirm PASS. Repeated A2 on 978c322 PASS. The repeated CSV smoke hit its 90s wrapper deadline during a cold Go build before node startup; added the same shared Go cache mounts as Compose, preserving timeout/coverage and container cleanup, then retry once. Runtime reviewer PASS report exists; three self-matching/missing-file polling shells were stopped so its CLI can finish and write its exit file. No product assertion failed.
+
+Final review checkpoint: O1 confirm PASS, O2 runtime/CLI PASS (CLI exit 0; its stale wait monitors were cleared). Final A2 PASS; final actual-node CSV retry PASS after shared-cache mount fix (original cold compile timeout preserved). Tracked final query summaries updated for product 978c322; first full-suite timeout summary preserved. Final complete host suite and Docker fast lane remain running. Reader-facing final-pass checklist: agent_work/10-observability/STAGE-C-HANDOFF.md.

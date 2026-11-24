@@ -1,0 +1,18 @@
+VERDICT: PASS  (no remaining blockers; no nits requiring repair)
+Reviewer: fresh, read-only, worktree 10-obs-review-components-confirm, HEAD 88b27cf (ed81d14 + 978c322 + 7304a6b examined).
+
+REPAIRED FINDINGS
+- Disabled path: storage.Node.request returns direct n.e.Net.Request(.., cb) when n.metric==nil; node.PutObject/GetObject call observedPut/GetObject(cb) directly when metric==nil. No new closure escapes. TestMetricsDisabledRequestAllocations (direct==disabled; enabled>disabled; callback fires) and TestMetricsDisabledObjectCallbackAllocations (put/get 4==4) PASS and exercise the real public methods.
+- F1: newNode(owner) skips newMetricState/enableMetrics (no List/Read) and builds the codec with metrics off, then ShareMetrics(owner) shares metric, sizes, codec counters. node.scope and migrator.copier both use NewNodeSharingMetrics. MetricsEnabled/config still passed through. TestMetricsSharedStorageConstructionDoesNotScan drives real n.scope and g.copier on a counting disk: 0 extra List/Read, shared inventory visible, codec encode counted on owner, Put/Delete reach owner gauges. PASS. Owner aggregate codec/local-disk gauges preserved; owner==nil path unchanged.
+- F2: observedWrite called right after successful disk.Write (before Sync), observedDelete right after successful/not-found disk.Delete; operation outcome still decided by Sync/err via observedOperation. Idempotent identical Put returns before any write, so no byte count. TestMetricsStorageWrittenLayerAndIdempotentBytes covers sync-fail put, idempotent put x2, sync-fail delete, retry; PASS. No semantic change to returned errors.
+- F3/F4/F5: documented in docs/knowledge/observability-components.md as the task states; accepted as documented.
+
+COST TESTS (7304a6b)
+- TestMetricsSnapshotCostIndependentOfObjectCount: real puts via simulator, 1/100/1000 objects, fixture asserts populated metadata/shards/merkle, Validate passes. Rerun: PASS 23s; point counts [24 19 18 10 10 16 12] and 494 allocs identical at all sizes. Benchmark log objstore-obs-snapshot-cost.log matches (42376 B/op, 494 allocs/op constant; ns/op noise, not asserted). Sound, host-independent assertions.
+
+TARGETED VALIDATION RUN
+go test ./internal/storage -run Metrics (ok); node: DisabledObjectCallbackAllocations, SharedStorageConstructionDoesNotScan, NodeSourcesAndOffEquivalence, SnapshotCostIndependentOfObjectCount (all PASS); go vet storage+node clean. Full suites not run (root owns).
+
+MINOR OBSERVATIONS (non-blocking)
+- observedWrite counts shard_bytes_total{write} before Sync, so a failed-sync write is counted though the put errors: matches "actual written bytes" intent and is tested.
+- Owner startup scan still Reads every blob body for size (List-size-only improvement not made); one-time, acceptable.

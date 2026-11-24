@@ -1,10 +1,12 @@
 {
-  "product_commit": "88e9b08",
-  "segments": 3,
+  "product_commit": "978c322",
+  "boot_id": "855a161949b709d3c327b991e9105f40",
+  "segments": 4,
   "sequences": [
     1,
     2,
-    3
+    3,
+    4
   ],
   "components": [
     "erasure",
@@ -20,7 +22,8 @@
   ],
   "health_counts": [
     0,
-    6
+    1,
+    5
   ],
   "real_objnode_duckdb_assertions": "PASS",
   "fixture_precision_assertions": "PASS",

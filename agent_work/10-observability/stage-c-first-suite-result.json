@@ -1,0 +1,20 @@
+{
+  "results": [
+    {
+      "command": "go build ./...",
+      "exit": 0,
+      "seconds": 7.21
+    },
+    {
+      "command": "go vet ./...",
+      "exit": 0,
+      "seconds": 9.59
+    },
+    {
+      "command": "go test ./...",
+      "exit": 1,
+      "seconds": 740.23
+    }
+  ],
+  "exit": 1
+}
