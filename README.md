@@ -30,6 +30,7 @@ Read the book at [nickstrad.github.io/object-store](https://nickstrad.github.io/
 | OCC metadata | ETags, `If-Match`/`If-None-Match`, version vectors, last-writer-wins with logged discards, quotas (`internal/occ`) |
 | Sagas | Checksummed log, crash recovery, five-step bucket migration (`internal/saga`, `sagasim`) |
 | Node, runtime, and API | Wired node (`internal/node`), real runtime (`internal/noderuntime`), object API (`httpapi`), `cmd/objnode` |
+| Observability | Framework-free metric catalogue (`internal/metrics`), off-by-default runner and OTLP/HTTP JSON adapter (`internal/telemetry`), pinned Docker Collector/Prometheus setup (`compose.observability.yaml`) |
 | E2E suite and hardening | Simulated and real-process scenarios (E1–E9), continuous oracles, nemesis, `FuzzClusterNemesis` (`test/e2e`) |
 | Book | Preface, topic map, eight chapters, C4 diagrams, published site (`book/`, `docs/`) |
 
@@ -97,7 +98,12 @@ echo
 docker compose --profile cluster down
 ```
 
+## Observability
+
+Metrics are defined as plain standard-library value types in `internal/metrics` (83 catalogue descriptors across 10 components) and exported through `internal/telemetry`, which is off by default and isolated from the protocol core. An OTLP/HTTP JSON adapter (`otel`) and a pinned Docker Compose OpenTelemetry Collector → Prometheus stack (`compose.observability.yaml`) are included; see [docs/observability.md](docs/observability.md) for the full metric catalogue, configuration and toggle semantics, local Collector/Prometheus setup, current wiring status, and how to add an adapter.
+
 ## Where things are
 
 - **Book:** [book/manifest.json](book/manifest.json) (front matter in `book/front/`, chapters in `book/chapters/`).
 - **C4 diagrams:** [docs/c4/README.md](docs/c4/README.md) (system, container, and component views).
+- **Observability:** [docs/observability.md](docs/observability.md) (metric catalogue, toggle, OTLP/HTTP adapter, Collector → Prometheus setup, and adapter extension guide).
