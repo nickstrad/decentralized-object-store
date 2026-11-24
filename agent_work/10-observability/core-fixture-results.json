@@ -1,0 +1,101 @@
+{
+  "scope": "A1 fixture, not objnode",
+  "results": [
+    {
+      "query": "objstore_http_requests_total{node_id=\"fixture-node\",region=\"local\",operation=\"health\",status_class=\"2xx\"}",
+      "result": {
+        "Status": "success",
+        "Data": {
+          "Result": [
+            {
+              "Metric": {
+                "__name__": "objstore_http_requests_total",
+                "instance": "fixture-node",
+                "job": "objstore",
+                "node_id": "fixture-node",
+                "operation": "health",
+                "otel_scope_name": "objstore.metrics",
+                "otel_scope_version": "1",
+                "region": "local",
+                "status_class": "2xx"
+              },
+              "Value": [
+                1795555438.031,
+                "7"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "query": "objstore_http_requests_total{node_id=\"fixture-node\",region=\"local\",operation=\"health\",status_class=\"2xx\"}",
+      "result": {
+        "Status": "success",
+        "Data": {
+          "Result": [
+            {
+              "Metric": {
+                "__name__": "objstore_http_requests_total",
+                "instance": "fixture-node",
+                "job": "objstore",
+                "node_id": "fixture-node",
+                "operation": "health",
+                "otel_scope_name": "objstore.metrics",
+                "otel_scope_version": "1",
+                "region": "local",
+                "status_class": "2xx"
+              },
+              "Value": [
+                1795555439.073,
+                "15"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "query": "objstore_http_requests_in_flight{node_id=\"fixture-node\",region=\"local\"}",
+      "result": {
+        "Status": "success",
+        "Data": {
+          "Result": [
+            {
+              "Metric": {
+                "__name__": "objstore_http_requests_in_flight",
+                "instance": "fixture-node",
+                "job": "objstore",
+                "node_id": "fixture-node",
+                "otel_scope_name": "objstore.metrics",
+                "otel_scope_version": "1",
+                "region": "local"
+              },
+              "Value": [
+                1795555439.075,
+                "1"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "query": "count({boot_id!=\"\"}) or vector(0)",
+      "result": {
+        "Status": "success",
+        "Data": {
+          "Result": [
+            {
+              "Metric": {},
+              "Value": [
+                1795555439.076,
+                "0"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
