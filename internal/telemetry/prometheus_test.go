@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/nickstrad/object-store/internal/metrics"
 	"io"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"testing"
-	"testing/synctest"
 	"time"
 )
 
@@ -113,16 +113,66 @@ func TestPrometheusConfigAndListener(t *testing.T) {
 	}
 }
 func TestPrometheusShutdownDeadline(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		// HTTP sockets use real I/O; graceful shutdown must also handle a canceled budget.
-		a := openProm(t, `{"listen":"127.0.0.1:0"}`)
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-		e := a.Shutdown(ctx)
-		if e != nil && !errors.Is(e, context.Canceled) {
-			t.Fatal(e)
+	a := openProm(t, `{"listen":"127.0.0.1:0"}`)
+	conn, err := net.DialTimeout("tcp", a.listener.Addr().String(), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err = io.WriteString(conn, "GET /metrics HTTP/1.1\r\nHost: local\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	err = a.Shutdown(ctx)
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal(err)
+	}
+	if time.Since(started) > time.Second {
+		t.Fatal("shutdown exceeded budget")
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err = conn.Read(make([]byte, 1)); err == nil {
+		t.Fatal("slow connection retained")
+	}
+	if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		t.Fatal("connection was not closed", err)
+	}
+}
+
+func TestPrometheusConcurrentCacheCoherence(t *testing.T) {
+	a := openProm(t, `{"listen":"127.0.0.1:0"}`)
+	b := testBatch(a.id)
+	b.Snapshots = []metrics.Snapshot{{Component: "http", Points: []metrics.Point{{Name: "objstore_http_request_bytes_total", Counter: 7}, {Name: "objstore_http_requests_in_flight", Gauge: 7}}}}
+	if err := a.Publish(context.Background(), b); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		for i := 0; i < 100; i++ {
+			v := uint64(7 + i%2)
+			b.Snapshots[0].Points[0].Counter = v
+			b.Snapshots[0].Points[1].Gauge = v
+			if err := a.Publish(context.Background(), b); err != nil {
+				done <- err
+				return
+			}
 		}
-	})
+		done <- nil
+	}()
+	for i := 0; i < 50; i++ {
+		status, body := scrapeProm(t, a, "/metrics", "GET")
+		if status != 200 {
+			t.Fatal(status)
+		}
+		if !(strings.Count(body, " 7\n") == 2 || strings.Count(body, " 8\n") == 2) {
+			t.Fatal("mixed cache", body)
+		}
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestPrometheusStalenessIntervals(t *testing.T) {

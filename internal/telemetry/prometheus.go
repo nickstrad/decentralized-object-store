@@ -148,9 +148,10 @@ func encodePrometheus(b metrics.Batch) (string, error) {
 	return out.String(), nil
 }
 func (a *prometheusAdapter) Publish(ctx context.Context, b metrics.Batch) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.closed {
+	a.mu.RLock()
+	closed := a.closed
+	a.mu.RUnlock()
+	if closed {
 		return ErrClosed
 	}
 	if err := ctx.Err(); err != nil {
@@ -165,6 +166,14 @@ func (a *prometheusAdapter) Publish(ctx context.Context, b metrics.Batch) error 
 	body, err := encodePrometheus(b)
 	if err != nil {
 		return err
+	}
+	if err = ctx.Err(); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.closed {
+		return ErrClosed
 	}
 	if err = ctx.Err(); err != nil {
 		return err

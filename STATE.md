@@ -371,3 +371,8 @@ sync and post-success retention. Shared contracts cover a real filesystem failur
 recovery; focused cases cover rotation, max uint64, crash temp exclusion, invalid files,
 identity and byte limits. No runtime DuckDB writer is built (owner ruling); CSV is the
 runtime disk sink and DuckDB remains an offline analysis consumer. O4 remains in progress.
+
+Prometheus independent review returned NITS; the cache encoding nit is repaired by
+encoding before acquiring the cache write lock. Concurrent publish/scrape tests assert
+whole-cache coherence, and a slow-header connection verifies bounded joined shutdown.
+Two focused race-suite runs pass. No merge/publish performed.
