@@ -122,7 +122,9 @@ No build blocker. Independent review and O1/O2 wiring are the next dependencies.
 
 ## In progress
 
-Observability core build is DONE; awaiting conductor review and O1/O2 dispatch.
+Observability core build is DONE and the erasure catalogue blocker is FIXED on
+`feat/observability` (cleanup fix); ready to resume remaining observability build
+(O1/O2/O3/O4) from the updated `feat/observability` tip.
 
 ## Per-chunk pipeline (as run for chunks 1–5; worked examples in each agent_work/<slug>/)
 
@@ -242,32 +244,44 @@ Observability core build is DONE; awaiting conductor review and O1/O2 dispatch.
 
 ## Resume
 
-Phase 2 and cleanup are complete; observability is PLAN TWEAKED (see its section above). No run
-is alive. For
+Phase 2 and cleanup are complete; observability core is DONE and the erasure label-domain
+blocker has been resolved by the Neon cleanup fix on `feat/observability` (see the current
+checkpoint below). No run is alive. For
 follow-up work read this file, PLAN.md and /root/briefs/objstore-phase2-mission.md; start a new
 branch and worktree from main (worktrees under /root/Software/object-store-work/).
 `agent_work/orch/launch.sh` names run files `objstore-p2-<run>` unless RUN_PREFIX is set. The full gate on main is `GATE_STAGE=final agent_work/gates/gate.sh <name>`.
 
-## Observability rest build — BLOCKED (2026-11-24)
+## Observability rest build — UNBLOCKED after cleanup fix (2026-11-24)
 
-Core is complete at bd3e01c (independent review remains separate). Nick reassigned
-remaining Opus scope to Sol. Current branch/worktree: feat/observability at
-/root/Software/object-store. Remaining build stopped under the explicit core-contract
-blocker rule; no implementation commits were integrated.
+Core was completed at `bd3e01c` (independent review remains separate). The remaining Sol
+build (`C-rest-sol`) stopped under the explicit core-contract blocker rule because
+`internal/metrics/catalogue.go` configured HTTP operation values instead of
+`{encode, reconstruct}` for `objstore_erasure_input_bytes_total` and
+`objstore_erasure_output_bytes_total` (recorded in `9dbf6ab`,
+[REST-BLOCKER](agent_work/10-observability/REST-BLOCKER.md), and
+`/root/runs/objstore-obs-rest-blocked.txt`).
 
-Blocker owner: Astra/core owner. The operation domains for erasure input/output byte
-counters are HTTP operations, rejecting encode/reconstruct required by the plan.
-Evidence and reproducer: [REST-BLOCKER](agent_work/10-observability/REST-BLOCKER.md).
-Marker: /root/runs/objstore-obs-rest-blocked.txt. No done marker is claimed.
+Cleanup fix (Neon, 2026-11-24, on `feat/observability` at `/root/Software/object-store`):
+- Fixed `labelDomains` in `internal/metrics/catalogue.go` so both
+  `objstore_erasure_input_bytes_total` and `objstore_erasure_output_bytes_total` allow
+  `operation` in `{"encode", "reconstruct"}` per PLAN section 3. Audited all 84 catalogue
+  descriptors and 25 labeled metrics against PLAN section 3; no other mismatches found.
+- Added regression coverage in `internal/metrics/metrics_test.go`
+  (`TestErasureByteOperationDomains` plus full-domain coverage and label-sort checks in
+  `TestCatalogueAndClone`).
+- Verified: `gofmt -s -l internal/metrics/` clean; `go build ./...`, `go vet ./...`,
+  `go test -v ./internal/metrics ./internal/telemetry/...`, `go test -short ./...`,
+  coverage (`internal/metrics` 96.6%, `internal/telemetry` 95.7%), and Docker gates
+  `G0,G6` (including `detlint`, `panics`, `deps`, `selfcontained`) all PASS.
+- Done marker: `/root/runs/objstore-obs-cleanup-done.txt`.
 
-All three fresh Sol runs stopped (exit 1/interrupted); no background builds remain.
-Retained worktrees: /root/Software/object-store-work/10-obs-{components,adapters,runtime}
-on work/obs-{components,adapters,runtime}. Partial Prometheus implementation/tests are
-uncommitted in adapters; components and runtime have no product changes. Logs, briefs,
-PIDs and exits: /root/runs/objstore-obs-{components,adapters,runtime}*.
+Retained interrupted worktrees from the stopped run remain untouched for inspection:
+`/root/Software/object-store-work/10-obs-{components,adapters,runtime}` on
+`work/obs-{components,adapters,runtime}` (partial uncommitted Prometheus work in adapters;
+no product changes in components/runtime). Logs/briefs/PIDs/exits:
+`/root/runs/objstore-obs-{components,adapters,runtime}*`.
 
-Next: core owner corrects the two label domains with regression tests, then fresh
-agents resume O1/O2/O3/O4, independent review and fast-lane acceptance. No full/race/long
-gate, push, main merge, publication or independent implementation review was run.
-DuckDB ruling remains CSV analysis, no runtime writer. Usage checked: Claude weekly
-6% used (Fable 11%); Codex weekly 82% left; Muse server supplied no usage data.
+Next: fresh agents/worktrees based on the updated `feat/observability` tip resume
+O1/O2/O3/O4, independent review, and fast-lane acceptance. No full/race/long gate, push,
+main merge, publication, or independent implementation review was run. DuckDB ruling
+remains CSV analysis over flushed CSV files, no runtime writer.

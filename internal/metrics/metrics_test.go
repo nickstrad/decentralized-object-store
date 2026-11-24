@@ -52,13 +52,96 @@ func TestCatalogueAndClone(t *testing.T) {
 	b.Snapshots = nil
 	for _, d := range Catalogue() {
 		component := strings.SplitN(strings.TrimPrefix(d.Name, "objstore_"), "_", 2)[0]
-		p := Point{Name: d.Name}
-		for _, l := range d.LabelNames {
-			p.Labels = append(p.Labels, Label{l, labelDomains[d.Name][l][0]})
+		if len(d.LabelNames) == 0 {
+			if len(labelDomains[d.Name]) != 0 {
+				t.Fatalf("unexpected label domains for %s", d.Name)
+			}
+			b.Snapshots = []Snapshot{{component, []Point{{Name: d.Name}}}}
+			if err := Validate(b); err != nil {
+				t.Fatal(err)
+			}
+			continue
 		}
-		b.Snapshots = []Snapshot{{component, []Point{p}}}
-		if err := Validate(b); err != nil {
-			t.Fatal(err)
+		if len(labelDomains[d.Name]) != len(d.LabelNames) {
+			t.Fatalf("label domain mismatch for %s", d.Name)
+		}
+		for i, l := range d.LabelNames {
+			if i > 0 && d.LabelNames[i-1] >= l {
+				t.Fatalf("unsorted label names for %s: %v", d.Name, d.LabelNames)
+			}
+			vals := labelDomains[d.Name][l]
+			if len(vals) == 0 {
+				t.Fatalf("empty label domain for %s.%s", d.Name, l)
+			}
+			for _, v := range vals {
+				p := Point{Name: d.Name}
+				for _, ln := range d.LabelNames {
+					val := labelDomains[d.Name][ln][0]
+					if ln == l {
+						val = v
+					}
+					p.Labels = append(p.Labels, Label{ln, val})
+				}
+				b.Snapshots = []Snapshot{{component, []Point{p}}}
+				if err := Validate(b); err != nil {
+					t.Fatalf("%s %s=%s: %v", d.Name, l, v, err)
+				}
+			}
+		}
+	}
+}
+
+func TestErasureByteOperationDomains(t *testing.T) {
+	erasureByteMetrics := []string{
+		"objstore_erasure_input_bytes_total",
+		"objstore_erasure_output_bytes_total",
+	}
+	for _, name := range erasureByteMetrics {
+		for _, op := range []string{"encode", "reconstruct"} {
+			for _, count := range []uint64{0, 4096} {
+				b := Batch{
+					SchemaVersion: SchemaVersion,
+					NodeID:        "node",
+					Region:        "local",
+					BootID:        "boot",
+					Sequence:      1,
+					StartUnixNano: 1,
+					TimeUnixNano:  2,
+					Snapshots: []Snapshot{{
+						Component: "erasure",
+						Points: []Point{{
+							Name:    name,
+							Labels:  []Label{{Name: "operation", Value: op}},
+							Counter: count,
+						}},
+					}},
+				}
+				if err := Validate(b); err != nil {
+					t.Errorf("%s operation=%s count=%d rejected: %v", name, op, count, err)
+				}
+			}
+		}
+		for _, bad := range []string{"health", "members", "bucket", "object", "tag", "acl", "quota", "migration", "unknown", ""} {
+			b := Batch{
+				SchemaVersion: SchemaVersion,
+				NodeID:        "node",
+				Region:        "local",
+				BootID:        "boot",
+				Sequence:      1,
+				StartUnixNano: 1,
+				TimeUnixNano:  2,
+				Snapshots: []Snapshot{{
+					Component: "erasure",
+					Points: []Point{{
+						Name:    name,
+						Labels:  []Label{{Name: "operation", Value: bad}},
+						Counter: 1,
+					}},
+				}},
+			}
+			if err := Validate(b); err == nil {
+				t.Errorf("%s accepted invalid operation=%q", name, bad)
+			}
 		}
 	}
 }
