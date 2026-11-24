@@ -50,6 +50,7 @@ const (
 // count (including self) so sync messages fit the wire count field; deployments
 // with long IDs or regions should set it lower to stay within transport limits.
 type Config struct {
+	MetricsEnabled bool
 	Seeds          []env.NodeID
 	ProbeInterval  time.Duration
 	ProbeTimeout   time.Duration

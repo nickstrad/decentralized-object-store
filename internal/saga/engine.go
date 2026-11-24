@@ -145,11 +145,12 @@ type Point struct {
 // Disk.Sync; returning true freezes the engine to simulate a crash before sync.
 // OnEnd, if non-nil, is called once when a saga's terminal record becomes durable.
 type Config struct {
-	Policy   Policy
-	Prefix   string
-	Hook     func(Point) bool
-	OnEnd    func(Status)
-	skipComp int
+	MetricsEnabled bool
+	Policy         Policy
+	Prefix         string
+	Hook           func(Point) bool
+	OnEnd          func(Status)
+	skipComp       int
 }
 
 // Status reports a saga's current state, step index, attempt count, completed
@@ -193,6 +194,7 @@ type run struct {
 // Engine executes and recovers sagas on a single-threaded event loop using
 // env.Clock, env.Rand, and env.Disk. An Engine is not safe for concurrent use.
 type Engine struct {
+	metric       *metricState
 	e            env.Env
 	cfg          Config
 	defs         []Definition
@@ -219,7 +221,7 @@ func New(e env.Env, cfg Config, defs ...Definition) (*Engine, error) {
 	if cfg.Prefix == "" {
 		cfg.Prefix = DefaultPrefix
 	}
-	g := &Engine{e: e, cfg: cfg, runs: map[ID]*run{}, broken: map[ID]error{}}
+	g := &Engine{metric: newMetricState(cfg.MetricsEnabled), e: e, cfg: cfg, runs: map[ID]*run{}, broken: map[ID]error{}}
 	for _, d := range defs {
 		if err := d.Validate(); err != nil {
 			return nil, err
@@ -329,6 +331,8 @@ func (g *Engine) Begin(id ID, def string, input []byte) error {
 		return fmt.Errorf("saga: begin %s: engine stopped: %w", id, env.ErrClosed)
 	}
 	g.runs[id] = r
+	g.metric.add("saga_starts_total", 1)
+	g.metric.adjust("saga_active", 1)
 	g.drive(r)
 	return nil
 }
@@ -355,6 +359,14 @@ func (g *Engine) write(r *run, rec Record) (bool, error) {
 	if err := g.e.Disk.Sync(r.name); err != nil {
 		return false, err
 	}
+	if rec.Kind == RecEnd && !r.snap.State.Terminal() {
+		outcome := "completed"
+		if next.State == StateCompensated {
+			outcome = "compensated"
+		}
+		g.metric.add("saga_completions_total", 1, outcome)
+		g.metric.adjust("saga_active", -1)
+	}
 	r.snap = next
 	return true, nil
 }
@@ -368,6 +380,9 @@ func (g *Engine) log(r *run, rec Record) bool {
 }
 
 func (g *Engine) suspend(r *run, err error) {
+	if !r.suspended {
+		g.metric.adjust("saga_suspended", 1)
+	}
 	r.suspended, r.err, r.busy = true, err, false
 	if r.timer != nil {
 		r.timer.Stop()
@@ -481,6 +496,7 @@ func (g *Engine) startDo(r *run) {
 		return
 	}
 	g.stats[r.def][step].Attempts++
+	g.metric.add("saga_step_attempts_total", 1)
 	var tok uint64
 	tok = g.arm(r, func() { g.onDo(r, tok, step, attempt, nil, timeoutErr(g.cfg.Policy)) })
 	c := g.call(r, step, attempt)
@@ -503,6 +519,7 @@ func (g *Engine) onDo(r *run, tok uint64, step, attempt int, out []byte, err err
 	se := &StepError{Saga: r.id, Step: g.defs[r.def].Steps[step].Name(), Attempt: attempt, Err: err}
 	r.err = se
 	g.stats[r.def][step].Failures++
+	g.metric.add("saga_step_failures_total", 1)
 	// ErrPermanent aborts at or before the pivot; past the pivot every error retries.
 	if errors.Is(err, ErrPermanent) && step <= sh.pivot {
 		if g.log(r, Record{Kind: RecAbort, Step: sh.abortFrom(step), Data: cause(se)}) {
@@ -518,6 +535,7 @@ func (g *Engine) onDo(r *run, tok uint64, step, attempt int, out []byte, err err
 }
 
 func (g *Engine) wait(r *run, attempt int) {
+	g.metric.add("saga_retries_total", 1)
 	g.token++
 	tok := g.token
 	r.token, r.busy = tok, true
@@ -535,6 +553,7 @@ func (g *Engine) startComp(r *run) {
 		return
 	}
 	g.stats[r.def][step].Compensations++
+	g.metric.add("saga_compensations_total", 1)
 	var tok uint64
 	tok = g.arm(r, func() { g.onComp(r, tok, step, attempt, timeoutErr(g.cfg.Policy)) })
 	if g.cfg.skipComp == step+1 {
@@ -558,6 +577,7 @@ func (g *Engine) onComp(r *run, tok uint64, step, attempt int, err error) {
 	}
 	r.err = &StepError{Saga: r.id, Step: g.defs[r.def].Steps[step].Name(), Attempt: attempt, Compensation: true, Err: err}
 	g.stats[r.def][step].CompFailures++
+	g.metric.add("saga_compensation_failures_total", 1)
 	g.wait(r, attempt)
 }
 
@@ -592,6 +612,9 @@ func (g *Engine) Recover() error {
 
 func (g *Engine) fail(id ID, err error) error {
 	err = fmt.Errorf("saga: recover %s: %w", id, err)
+	if _, ok := g.broken[id]; !ok {
+		g.metric.add("saga_completions_total", 1, "failed")
+	}
 	g.broken[id] = err
 	return err
 }
@@ -652,6 +675,10 @@ func (g *Engine) load(id ID) error {
 	}
 	r := &run{id: id, def: di, name: name, snap: snap}
 	g.runs[id] = r
+	g.metric.add("saga_recoveries_total", 1)
+	if !r.snap.State.Terminal() {
+		g.metric.adjust("saga_active", 1)
+	}
 	g.drive(r)
 	return nil
 }

@@ -27,13 +27,14 @@ func (m StaticMembership) Peers() []env.NodeID { return slices.Clone(m) }
 // and optional discard reporting hooks. Zero timing or fanout fields fall back
 // to the Default* constants.
 type Config struct {
-	Membership Membership
-	Period     time.Duration
-	Timeout    time.Duration
-	Fanout     int
-	MaxDelta   int
-	Log        func(line string)
-	OnDiscard  func(key string, winner, loser Version)
+	MetricsEnabled bool
+	Membership     Membership
+	Period         time.Duration
+	Timeout        time.Duration
+	Fanout         int
+	MaxDelta       int
+	Log            func(line string)
+	OnDiscard      func(key string, winner, loser Version)
 }
 
 // Storage and replication defaults for Node:
@@ -93,10 +94,11 @@ type Stats struct {
 // Node does not schedule quota recounts automatically; callers drive
 // RecountQuota after syncing (for example, from Config.OnDiscard).
 type Node struct {
-	e     env.Env
-	cfg   Config
-	store *Store
-	stats Stats
+	metric *metricState
+	e      env.Env
+	cfg    Config
+	store  *Store
+	stats  Stats
 }
 
 // NewFactory returns a process constructor suitable for sim.Sim that creates
@@ -109,7 +111,7 @@ func NewFactory(cfg Config) func(env.Env) env.Process {
 // NewNode constructs an unstarted Node bound to environment e and cfg.
 // Call Start before issuing reads, writes, or inbound messages.
 func NewNode(e env.Env, cfg Config) *Node {
-	return &Node{e: e, cfg: cfg.withDefaults()}
+	return &Node{metric: newMetricState(cfg.MetricsEnabled), e: e, cfg: cfg.withDefaults()}
 }
 
 // Node lifecycle and diagnostic accessors:
@@ -215,7 +217,7 @@ func (n *Node) load() {
 }
 
 func (n *Node) open(st persisted, fresh bool) {
-	cfg := StoreConfig{
+	cfg := StoreConfig{MetricsEnabled: n.cfg.MetricsEnabled,
 		Node:      n.e.ID,
 		Clock:     n.e.Clock,
 		Rand:      n.e.Rand,
@@ -243,10 +245,12 @@ func (n *Node) open(st persisted, fresh bool) {
 func (n *Node) persist(blob []byte) error {
 	if err := n.e.Disk.Write(StateBlob, blob); err != nil {
 		n.stats.DiskErrors++
+		n.metric.add("occ_replication_errors_total", 1, "disk")
 		return fmt.Errorf("occ: persist %s: %w", StateBlob, err)
 	}
 	if err := n.e.Disk.Sync(StateBlob); err != nil {
 		n.stats.DiskErrors++
+		n.metric.add("occ_replication_errors_total", 1, "disk")
 		return fmt.Errorf("occ: sync %s: %w", StateBlob, err)
 	}
 	return nil
@@ -288,31 +292,38 @@ func (n *Node) round() {
 }
 
 func (n *Node) onDigestReply(peer env.NodeID, reply []byte, err error) {
+	outcome := "error"
+	defer func() { n.metric.add("occ_replication_rounds_total", 1, outcome) }()
 	if n.store == nil {
 		return
 	}
 	if err != nil {
 		n.stats.NetErrors++
+		n.metric.add("occ_replication_errors_total", 1, "network")
 		return
 	}
 	if len(reply) == 1 && reply[0] == replyMatch {
 		n.stats.Matches++
+		outcome = "ok"
 		return
 	}
 	if len(reply) == 0 || reply[0] != replyState {
 		n.stats.Malformed++
+		n.metric.add("occ_replication_errors_total", 1, "malformed")
 		return
 	}
 	state := reply[1:]
 	doc, err := Decode(state)
 	if err != nil {
 		n.stats.Malformed++
+		n.metric.add("occ_replication_errors_total", 1, "malformed")
 		return
 	}
 	n.stats.Pulls++
 	if _, err := n.store.Merge(doc); err != nil {
 		return
 	}
+	outcome = "ok"
 	// Push back only when our merged state still differs from what peer sent,
 	// meaning we hold newer or additional versions peer has not seen.
 	if n.Digest() != stateDigest(state) {
@@ -320,6 +331,7 @@ func (n *Node) onDigestReply(peer env.NodeID, reply []byte, err error) {
 		n.e.Net.Request(peer, append([]byte{msgPush}, n.store.doc.Encode()...), n.cfg.Timeout, func(_ []byte, err error) {
 			if err != nil {
 				n.stats.NetErrors++
+				n.metric.add("occ_replication_errors_total", 1, "network")
 			}
 		})
 	}
@@ -334,11 +346,13 @@ func (n *Node) OnDatagram(from env.NodeID, msg []byte) {
 	}
 	if len(msg) == 0 || msg[0] != msgDelta {
 		n.stats.Malformed++
+		n.metric.add("occ_replication_errors_total", 1, "malformed")
 		return
 	}
 	doc, err := Decode(msg[1:])
 	if err != nil {
 		n.stats.Malformed++
+		n.metric.add("occ_replication_errors_total", 1, "malformed")
 		return
 	}
 	n.stats.Deltas++
@@ -373,6 +387,7 @@ func (n *Node) OnRequest(from env.NodeID, req []byte, reply env.Reply) {
 		doc, err := Decode(req[1:])
 		if err != nil {
 			n.stats.Malformed++
+			n.metric.add("occ_replication_errors_total", 1, "malformed")
 			reply(nil, fmt.Errorf("occ: push from %s: %w", from, err))
 			return
 		}
@@ -425,6 +440,7 @@ func (n *Node) broadcast(key string) {
 	for i := 0; i < n.cfg.Fanout && len(ps) > 0; i++ {
 		if err := n.e.Net.Send(ps[n.e.Rand.IntN(len(ps))], delta); err != nil {
 			n.stats.NetErrors++
+			n.metric.add("occ_replication_errors_total", 1, "network")
 		}
 	}
 }

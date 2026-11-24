@@ -142,21 +142,24 @@ type tombRef struct {
 }
 
 type probeState struct {
-	active bool
-	acked  bool
-	target env.NodeID
-	seq    uint32
-	timer  env.Timer
+	active     bool
+	acked      bool
+	indirect   bool
+	directDone bool
+	target     env.NodeID
+	seq        uint32
+	timer      env.Timer
 }
 
 // Node is a single-threaded SWIM gossip member implementing env.Process and
 // Membership. A Node is not safe for concurrent use.
 type Node struct {
-	e     env.Env
-	cfg   Config
-	self  Member
-	view  *View
-	local map[env.NodeID]*memberLocal
+	metric *metricState
+	e      env.Env
+	cfg    Config
+	self   Member
+	view   *View
+	local  map[env.NodeID]*memberLocal
 
 	queue  []*queued
 	qindex map[env.NodeID]*queued
@@ -208,7 +211,7 @@ func New(e env.Env, cfg Config) (*Node, error) {
 	case e.Clock == nil || e.Net == nil || e.Rand == nil:
 		return nil, fmt.Errorf("gossip: new node %s: environment lacks a clock, transport or random stream: %w", e.ID, env.ErrInvalidArgument)
 	}
-	n := &Node{
+	n := &Node{metric: newMetricState(cfg.MetricsEnabled),
 		e:        e,
 		cfg:      cfg,
 		self:     Member{ID: e.ID, Region: e.Region, State: StateAlive},
@@ -220,7 +223,7 @@ func New(e env.Env, cfg Config) (*Node, error) {
 		relays:   map[uint32]relay{},
 	}
 	n.remember(cfg.Seeds)
-	n.view.Apply(n.self)
+	n.applyMetricMember(n.self)
 	return n, nil
 }
 
@@ -315,6 +318,12 @@ func (n *Node) LastError() error { return n.lastErr }
 func (n *Node) Closed() bool { return n.closed }
 
 func (n *Node) record(counter *uint64, err error) {
+	if counter == &n.stats.Malformed {
+		n.metric.add("gossip_malformed_total", 1)
+	}
+	if counter == &n.stats.SyncErrors {
+		n.metric.add("gossip_syncs_total", 1, "error")
+	}
 	*counter++
 	n.lastErr = err
 }
@@ -427,6 +436,13 @@ func (n *Node) onPingReq(from env.NodeID, m Message) {
 func (n *Node) onAck(seq uint32) {
 	if n.probe.active && !n.probe.acked && n.probe.seq == seq {
 		n.probe.acked = true
+		kind := "direct"
+		if n.probe.indirect {
+			kind = "indirect"
+		}
+		if n.probe.indirect || !n.probe.directDone {
+			n.metric.add("gossip_probes_total", 1, kind, "ok")
+		}
 		if n.probe.timer != nil {
 			n.probe.timer.Stop()
 		}
@@ -473,7 +489,7 @@ func (n *Node) refute(u Member) {
 		n.self.Incarnation = u.Incarnation + 1
 		n.stats.Refutations++
 	}
-	n.view.Apply(n.self)
+	n.applyMetricMember(n.self)
 	n.enqueue(n.self)
 }
 
@@ -520,7 +536,7 @@ func (n *Node) apply(u Member) bool {
 		if t, ok := n.tombs[u.ID]; ok && !Supersedes(u, t.m) {
 			if u.State.Live() && n.admit(u.ID) {
 				delete(n.tombs, u.ID)
-				n.view.Apply(t.m)
+				n.applyMetricMember(t.m)
 				n.markChanged(u.ID, t.m)
 				n.stats.Reinstated++
 			}
@@ -531,7 +547,7 @@ func (n *Node) apply(u Member) bool {
 		}
 		delete(n.tombs, u.ID)
 	}
-	if !n.view.Apply(u) {
+	if !n.applyMetricMember(u) {
 		return false
 	}
 	l := n.markChanged(u.ID, u)
@@ -636,6 +652,13 @@ func (n *Node) onTick() {
 		return
 	}
 	if n.probe.active && !n.probe.acked {
+		kind := "direct"
+		if n.probe.indirect {
+			kind = "indirect"
+		}
+		if n.probe.indirect || !n.probe.directDone {
+			n.metric.add("gossip_probes_total", 1, kind, "timeout")
+		}
 		n.suspectLocally(n.probe.target)
 	}
 	if n.probe.timer != nil {
@@ -657,7 +680,10 @@ func (n *Node) onTick() {
 		seq := n.seq
 		n.probe = probeState{active: true, target: target, seq: seq}
 		n.stats.Probes++
-		n.send(target, Message{Kind: KindPing, Seq: seq})
+		if !n.sendWith(target, Message{Kind: KindPing, Seq: seq}, nil) {
+			n.metric.add("gossip_probes_total", 1, "direct", "error")
+			n.probe.directDone = true
+		}
 		n.probe.timer = n.e.Clock.AfterFunc(n.cfg.ProbeTimeout, func() { n.onProbeTimeout(seq) })
 	}
 	n.tick = n.e.Clock.AfterFunc(n.cfg.ProbeInterval, n.onTick)
@@ -675,6 +701,10 @@ func (n *Node) suspectLocally(id env.NodeID) {
 }
 
 func (n *Node) onProbeTimeout(seq uint32) {
+	if n.probe.active && !n.probe.acked && n.probe.seq == seq && !n.probe.directDone {
+		n.metric.add("gossip_probes_total", 1, "direct", "timeout")
+		n.probe.directDone = true
+	}
 	if n.closed || !n.probe.active || n.probe.acked || n.probe.seq != seq || n.cfg.noIndirect {
 		return
 	}
@@ -693,6 +723,7 @@ func (n *Node) onProbeTimeout(seq uint32) {
 		cands[i], cands[j] = cands[j], cands[i]
 	}
 	n.stats.IndirectProbes++
+	n.probe.indirect = true
 	for _, via := range cands[:k] {
 		n.send(via, Message{Kind: KindPingReq, Seq: seq, Target: n.probe.target})
 	}
@@ -720,7 +751,7 @@ func (n *Node) purge(now env.Time) {
 		return
 	}
 	for _, m := range expired {
-		n.view.Remove(m.ID)
+		n.removeMetricMember(m.ID)
 		delete(n.local, m.ID)
 		delete(n.qindex, m.ID)
 		n.bury(m)
@@ -933,6 +964,7 @@ func (n *Node) syncWith(peer env.NodeID, cb func(error)) {
 			n.receive(u)
 		}
 		n.stats.Syncs++
+		n.metric.add("gossip_syncs_total", 1, "ok")
 		cb(nil)
 	})
 }
@@ -1012,7 +1044,7 @@ func (n *Node) Leave() error {
 		return fmt.Errorf("gossip: leave: %w", ErrClosed)
 	}
 	n.self.State = StateLeft
-	n.view.Apply(n.self)
+	n.applyMetricMember(n.self)
 	// Replace any still-queued StateAlive self entry before sending so leave
 	// datagrams carry self once, as StateLeft.
 	n.enqueue(n.self)

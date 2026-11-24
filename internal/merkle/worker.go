@@ -52,13 +52,14 @@ type Repairer interface {
 // Config configures a Worker. Depth is required; zero values for Period,
 // Timeout, RoundDeadline, ScrubBatch, and MaxRepairs select their defaults.
 type Config struct {
-	Depth         int
-	Period        time.Duration
-	Timeout       time.Duration
-	RoundDeadline time.Duration
-	ScrubBatch    int
-	MaxRepairs    int
-	Limits        Limits
+	MetricsEnabled bool
+	Depth          int
+	Period         time.Duration
+	Timeout        time.Duration
+	RoundDeadline  time.Duration
+	ScrubBatch     int
+	MaxRepairs     int
+	Limits         Limits
 }
 
 // Stats holds cumulative counters and in-flight status for a Worker.
@@ -95,20 +96,23 @@ type Stats struct {
 // next tick is the retry. Worker is single-threaded and driven by the node's
 // event loop.
 type Worker struct {
-	e        env.Env
-	cfg      Config
-	m        Membership
-	r        Repairer
-	tree     *Tree
-	cursor   string
-	gen      uint64
-	busy     bool
-	deadline env.Timer
-	timer    env.Timer
-	session  *Session
-	stats    Stats
-	last     error
-	started  bool
+	metric        *metricState
+	roundRepaired bool
+	roundEqual    bool
+	e             env.Env
+	cfg           Config
+	m             Membership
+	r             Repairer
+	tree          *Tree
+	cursor        string
+	gen           uint64
+	busy          bool
+	deadline      env.Timer
+	timer         env.Timer
+	session       *Session
+	stats         Stats
+	last          error
+	started       bool
 }
 
 // NewWorker validates cfg, m, and r and constructs a stopped Worker with an
@@ -141,7 +145,7 @@ func NewWorker(e env.Env, cfg Config, m Membership, r Repairer) (*Worker, error)
 	if err != nil {
 		return nil, fmt.Errorf("merkle: new worker: %w", err)
 	}
-	return &Worker{e: e, cfg: cfg, m: m, r: r, tree: t}, nil
+	return &Worker{metric: newMetricState(cfg.MetricsEnabled), e: e, cfg: cfg, m: m, r: r, tree: t}, nil
 }
 
 // Start performs a full scrub of Repairer to rebuild the in-memory tree and
@@ -347,6 +351,8 @@ func (w *Worker) startRound() {
 	g := w.gen
 	w.busy = true
 	w.stats.Rounds++
+	w.roundRepaired = false
+	w.roundEqual = false
 	s := w.tree.Diff(w.cfg.Limits)
 	w.session = s
 	w.deadline = w.e.Clock.AfterFunc(w.cfg.RoundDeadline, func() {
@@ -391,18 +397,22 @@ func (w *Worker) account() {
 	w.session = nil
 	w.stats.RoundTrips += uint64(c.RoundTrips)
 	w.stats.Hashes += uint64(c.Hashes)
+	w.metric.add("merkle_hashes_compared_total", uint64(c.Hashes))
 	w.stats.DiffBytes += uint64(c.BytesSent + c.BytesReceived)
 	w.stats.MaxRoundTrips = max(w.stats.MaxRoundTrips, uint64(c.RoundTrips))
 }
 
 func (w *Worker) repair(g uint64, peer env.NodeID, res Result) {
+	w.metric.add("merkle_differences_total", uint64(len(res.Diffs)))
 	if res.Truncated {
 		w.stats.Truncated++
+		w.metric.add("merkle_budget_exhaustions_total", 1)
 	}
 	// A truncated round dropped unchecked branches, so zero diffs does not mean
 	// the replicas are in sync.
 	if !res.Truncated && len(res.Diffs) == 0 {
 		w.stats.InSync++
+		w.roundEqual = true
 	}
 	var todo []string
 	for _, d := range res.Diffs {
@@ -420,6 +430,7 @@ func (w *Worker) repair(g uint64, peer env.NodeID, res Result) {
 		}
 		if len(todo) >= w.cfg.MaxRepairs {
 			w.stats.Deferred++
+			w.metric.add("merkle_budget_exhaustions_total", 1)
 			continue
 		}
 		todo = append(todo, d.Key)
@@ -453,11 +464,13 @@ func (w *Worker) repair(g uint64, peer env.NodeID, res Result) {
 func (w *Worker) apply(peer env.NodeID, key string, data []byte, err error) error {
 	if err != nil {
 		w.stats.FetchFailed++
+		w.metric.add("merkle_repairs_total", 1, "error")
 		return fmt.Errorf("merkle: repair %q from %s: %w", key, peer, err)
 	}
 	h := Sum(data)
 	if !w.r.Valid(key, h) {
 		w.stats.Rejected++
+		w.metric.add("merkle_repairs_total", 1, "error")
 		return fmt.Errorf("merkle: repair %q from %s: %w", key, peer, ErrRejected)
 	}
 	if cur, ok := w.tree.Get(key); ok && cur == h {
@@ -465,6 +478,7 @@ func (w *Worker) apply(peer env.NodeID, key string, data []byte, err error) erro
 	}
 	if err := w.r.Put(key, data); err != nil {
 		w.stats.PutFailed++
+		w.metric.add("merkle_repairs_total", 1, "error")
 		return fmt.Errorf("merkle: repair %q: put: %w", key, err)
 	}
 	if err := w.tree.Set(key, h); err != nil {
@@ -472,6 +486,8 @@ func (w *Worker) apply(peer env.NodeID, key string, data []byte, err error) erro
 		return fmt.Errorf("merkle: repair %q: %w", key, err)
 	}
 	w.stats.Repaired++
+	w.roundRepaired = true
+	w.metric.add("merkle_repairs_total", 1, "ok")
 	w.stats.RepairedBytes += uint64(len(data))
 	return nil
 }
@@ -488,8 +504,14 @@ func (w *Worker) finish(g uint64, err error) {
 	}
 	if err != nil {
 		w.stats.Failed++
+		w.metric.add("merkle_rounds_total", 1, "error")
 		w.last = err
 		return
 	}
 	w.stats.Completed++
+	outcome := "repaired"
+	if w.roundEqual {
+		outcome = "equal"
+	}
+	w.metric.add("merkle_rounds_total", 1, outcome)
 }

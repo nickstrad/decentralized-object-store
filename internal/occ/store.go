@@ -33,16 +33,17 @@ var (
 // and Doc because the state blob supplies them. Persist, Log, and OnDiscard are
 // optional hooks.
 type StoreConfig struct {
-	Node      env.NodeID
-	Epoch     uint64
-	Counter   uint64
-	Discards  uint64
-	Clock     env.Clock
-	Rand      *rand.Rand
-	Doc       *Doc
-	Persist   func(state []byte) error
-	Log       func(line string)
-	OnDiscard func(key string, winner, loser Version)
+	MetricsEnabled bool
+	Node           env.NodeID
+	Epoch          uint64
+	Counter        uint64
+	Discards       uint64
+	Clock          env.Clock
+	Rand           *rand.Rand
+	Doc            *Doc
+	Persist        func(state []byte) error
+	Log            func(line string)
+	OnDiscard      func(key string, winner, loser Version)
 }
 
 // Discard records a single last-writer-wins loss observed by a node when
@@ -83,6 +84,8 @@ func lossOf(key string, loser VersionID) lossID {
 // local LWW discard tracking. Every mutating method rolls back completely if
 // Persist returns an error.
 type Store struct {
+	metric *metricState
+
 	Reader
 	actor     Actor
 	counter   uint64
@@ -131,7 +134,7 @@ func NewStore(cfg StoreConfig) (*Store, error) {
 }
 
 func newStore(cfg StoreConfig) *Store {
-	s := &Store{
+	s := &Store{metric: newMetricState(cfg.MetricsEnabled),
 		actor:     Actor{Node: cfg.Node, Epoch: cfg.Epoch},
 		counter:   cfg.Counter,
 		discards:  cfg.Discards,
@@ -250,10 +253,16 @@ func (s *Store) touch(u *undo, key string) {
 func (s *Store) end(u *undo, err error) error {
 	if err == nil && u.changed && s.persist != nil {
 		err = s.persist(s.EncodeState())
+		if err != nil {
+			s.metric.add("occ_persist_errors_total", 1)
+		}
 	}
 	if err != nil {
 		s.rollback(u)
 		return err
+	}
+	if s.discards >= u.discards {
+		s.metric.add("occ_lww_discards_total", s.discards-u.discards)
 	}
 	if len(u.pending) > 0 {
 		s.emit(u.pending)
@@ -305,6 +314,7 @@ func (s *Store) drain() {
 		return
 	}
 	if s.persist(s.EncodeState()) != nil {
+		s.metric.add("occ_persist_errors_total", 1)
 		s.outbox = kept[max(0, len(kept)-DiscardOutboxLen):]
 	}
 }
@@ -401,7 +411,8 @@ func (s *Store) SetScalar(key string, value []byte) (Version, error) {
 	return s.Put(key, value, Unconditional())
 }
 
-func (s *Store) write(key string, tomb bool, value []byte, p Precondition) (Version, error) {
+func (s *Store) write(key string, tomb bool, value []byte, p Precondition) (vout Version, eout error) {
+	defer func() { s.writeMetric(eout) }()
 	held := s.doc.Record(key)
 	if !p.Holds(held) {
 		return Version{}, fmt.Errorf("%s against etag %s: %w", p.String(), held.ETag().String(), ErrPreconditionFailed)
@@ -457,7 +468,16 @@ func (s *Store) successor(held Record, tomb bool, value []byte) (Version, error)
 // losers, and persists the updated state. The returned bool reports whether
 // the document itself changed (a merge that only records a rejected loser
 // persists the discard and returns false, nil).
-func (s *Store) Merge(o *Doc) (bool, error) {
+func (s *Store) Merge(o *Doc) (changed bool, eout error) {
+	defer func() {
+		outcome := "unchanged"
+		if eout != nil {
+			outcome = "error"
+		} else if changed {
+			outcome = "changed"
+		}
+		s.metric.add("occ_merges_total", 1, outcome)
+	}()
 	u := s.begin()
 	s.observe(o)
 	u.docChanged = s.doc.merge(o, func(key string, held, next Record) {
