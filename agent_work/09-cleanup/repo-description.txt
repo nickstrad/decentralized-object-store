@@ -1,0 +1,1 @@
+Leaderless multi-region object store in Go (stdlib only) — SWIM gossip, Reed-Solomon erasure coding, Merkle anti-entropy, OCC metadata with last-writer-wins, bucket-migration sagas; verified with deterministic simulation testing, property tests, and fuzzing.

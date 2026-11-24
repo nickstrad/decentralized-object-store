@@ -14,7 +14,7 @@ RUNS=${RUNS:-/root/runs}
 [ -d "$3" ] || { echo "no workdir: $3" >&2; exit 2; }
 name=$1; seat=$2; wd=$(cd "$3" && pwd -P); brief=$(readlink -f "$4")
 [ -n "$wd" ] && [ "$wd" != / ] || { echo "bad workdir: $3" >&2; exit 2; }
-base="$RUNS/objstore-p2-$name"
+base="$RUNS/${RUN_PREFIX:-objstore-p2}-$name"
 [ -f "$brief" ] || { echo "no brief: $brief" >&2; exit 2; }
 rm -f "$base.exit"
 export PATH="$HOME/.nvm/versions/node/v22.23.2/bin:$HOME/.deno/bin:$HOME/.opencode/bin:/usr/local/go/bin:$PATH"
