@@ -54,6 +54,7 @@ const (
 // net.DefaultResolver; an empty Listen defaults to ":<port>" from ID unless
 // NoNetwork is true.
 type RuntimeConfig struct {
+	MetricsEnabled bool
 	ID             env.NodeID
 	Region         env.Region
 	Listen         string
@@ -163,9 +164,11 @@ type Runtime struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	ctrl    chan func()
-	dgrams  chan inboundDatagram
-	connSem chan struct{}
+	metricReads chan metricRead
+	metricGate  chan struct{}
+	ctrl        chan func()
+	dgrams      chan inboundDatagram
+	connSem     chan struct{}
 
 	dropped    atomic.Uint64
 	refused    atomic.Uint64
@@ -201,8 +204,10 @@ func NewRuntime(cfg RuntimeConfig) (*Runtime, error) {
 		return nil, err
 	}
 	cfg = cfg.withDefaults()
+	cfg.Node.MetricsEnabled = cfg.MetricsEnabled
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Runtime{
+		metricReads: make(chan metricRead), metricGate: make(chan struct{}, 1),
 		cfg: cfg, codes: codes, closeCh: make(chan struct{}), done: make(chan struct{}),
 		conns: map[net.Conn]struct{}{}, ctx: ctx, cancel: cancel,
 		ctrl: make(chan func(), cfg.ControlQueue), dgrams: make(chan inboundDatagram, cfg.DatagramQueue),
@@ -387,6 +392,8 @@ func (rt *Runtime) loop() {
 		select {
 		case <-rt.ctx.Done():
 			return
+		case read := <-rt.metricReads:
+			rt.readMetrics(read)
 		case f := <-rt.ctrl:
 			f()
 		case d := <-rt.dgrams:
