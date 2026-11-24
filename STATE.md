@@ -84,7 +84,9 @@ Core value model and finite catalogue committed in `5b2e656`; selector, runner, 
 OTLP adapter committed in `1072417`. Pinned local Docker pipeline and bounded check
 script are ready. Deployment committed in `7ad39f1`. Final checks found a Collector default that
 exports resource attributes on target_info; the scrape config now drops boot_id to
-preserve the no-per-boot-series rule. Rechecking this fix and shutdown resource cleanup.
+preserve the no-per-boot-series rule. The fix is committed in `ca42bf1`; active-export shutdown cancellation is
+covered in `4c4f330`. Docker fixture passed again, including zero stored boot_id labels.
+Fast lane passed on `7ad39f1`; final rerun includes the shutdown/boot-label fixes.
 No component Snapshot wiring or Prometheus/CSV adapters were built in this seat.
 
 Evidence so far: Collector 0.145.0 validates its config; real Docker Prometheus 3.9.1
