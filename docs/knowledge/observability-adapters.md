@@ -40,3 +40,16 @@ image. The analysis target explicitly rejects other CPU architectures.
 Go flushes two segments with an exact value above 2^53, then pinned DuckDB asserts JSON
 extraction, temp-file exclusion, exact integers, counter deltas, rate and mean latency.
 This fixture proof does not replace the real objnode CSV smoke or the real OTel pipeline.
+
+`encoding/csv.Reader` normally changes literal CRLF inside quoted fields into LF.
+Because the metrics identity contract permits CRLF, `ReadCSVDir` first reads the bounded
+raw LF-terminated segment and protects CRLF before parsing; the reader's normalization
+then restores the original field bytes. A dedicated file round-trip test covers CRLF in
+all three identity fields. Reading a segment also enforces the encoded byte bound before
+allocation grows beyond that small limit.
+
+Retention ordering uses creation timestamp/sequence filenames. Finalized files survive
+an error during later retention cleanup, so a Publish error is not a promise of no disk
+side effect; sequence metadata makes replay identifiable. Crash temp files are deliberately
+ignored rather than deleted on startup. `sync=true` synchronizes each file before rename;
+it does not promise directory-entry durability after machine power loss.

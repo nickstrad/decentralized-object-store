@@ -225,7 +225,15 @@ func ReadCSVDir(dir string) ([]metrics.Batch, error) {
 }
 func csvDecode(r io.Reader) (metrics.Batch, error) {
 	var b metrics.Batch
-	reader := csv.NewReader(r)
+	data, err := io.ReadAll(io.LimitReader(r, metrics.MaxBatchBytes+1))
+	if err != nil {
+		return b, err
+	}
+	if len(data) > metrics.MaxBatchBytes {
+		return b, errors.New("CSV segment exceeds encoded byte bound")
+	}
+	data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\r\r\n"))
+	reader := csv.NewReader(bytes.NewReader(data))
 	header, err := reader.Read()
 	if err != nil {
 		return b, err

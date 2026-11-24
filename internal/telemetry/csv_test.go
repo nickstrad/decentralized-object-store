@@ -141,3 +141,22 @@ func TestWriteCSVAnalysisFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCSVPreservesCRLFIdentity(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "csv")
+	id := Identity{NodeID: "node\r\nline", Region: "region\r\nline", BootID: "boot\r\nline", StartUnixNano: 1}
+	raw, _ := json.Marshal(map[string]any{"directory": dir, "sync": false})
+	a, err := Open(context.Background(), Config{Enabled: true, Adapter: "csv", Settings: raw}, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Shutdown(context.Background())
+	b := testBatch(id)
+	if err = a.Publish(context.Background(), b); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadCSVDir(dir)
+	if err != nil || len(got) != 1 || !reflect.DeepEqual(got[0], b) {
+		t.Fatalf("got %#v: %v", got, err)
+	}
+}

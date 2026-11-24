@@ -401,3 +401,8 @@ indexed reusable CSV analysis/query scripts in `work-scripts/README.md`. Adapter
 commits: Prometheus `e064ec9` + review repair `3d4eb5e`, CSV `5e2121e` + `b810145`,
 DuckDB analysis `a3b52a5`. Focused telemetry race tests, vet and Docker fixture smoke pass.
 The conductor owns integration of these commits, independent review and real-node smoke.
+
+CSV independent review NITS repaired: preserve literal CRLF in allowed batch identity
+fields during CSV readback, with an exact disk round-trip regression. Reader also checks
+the encoded byte cap before parsing. Remaining retention/crash/directory-sync limitations
+are recorded explicitly in the adapter knowledge entry; finalized rows remain replayable.
