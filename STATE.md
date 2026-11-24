@@ -247,3 +247,20 @@ is alive. For
 follow-up work read this file, PLAN.md and /root/briefs/objstore-phase2-mission.md; start a new
 branch and worktree from main (worktrees under /root/Software/object-store-work/).
 `agent_work/orch/launch.sh` names run files `objstore-p2-<run>` unless RUN_PREFIX is set. The full gate on main is `GATE_STAGE=final agent_work/gates/gate.sh <name>`.
+
+## Observability rest build — active (2026-11-24)
+
+Nick reassigned remaining Opus scope to Sol; core handoff at bd3e01c is the base.
+Current branch: feat/observability in /root/Software/object-store. Core retained worktree
+is detached and untouched. DuckDB ruling remains analysis-over-CSV, no runtime writer.
+
+In flight: fresh Sol headless O1 components in work/obs-components and O3 adapters in
+work/obs-adapters, under /root/Software/object-store-work/10-obs-{components,adapters}.
+Briefs/logs/PIDs/exit/result: /root/runs/objstore-obs-{components,adapters}*.
+Check both exit file and result output; verify /proc/<pid>/cwd. One failure retry maximum.
+No core interface changes authorized; report exact blocker if needed. Fast lane only.
+
+Next: integrate component commits; fresh O2 runtime/HTTP/config unit; integrate adapters;
+fresh O4 DuckDB analysis; independent cross-company review, repair and final fast lane.
+No main merge/push/publication authorized. Usage check: Claude weekly 6% (Fable 11%);
+Muse server supplied no usage data; Codex status attempt did not yet yield a gauge.
