@@ -20,10 +20,10 @@ cleanup() {
 }
 trap cleanup EXIT
 "${compose[@]}" build dev > "$logs/build.log" 2>&1
-"${compose[@]}" run --rm -T --no-deps otel-collector validate --config=/etc/otelcol-contrib/config.yaml > "$logs/validate.log" 2>&1
+"${compose[@]}" run --rm -T --no-deps otel-collector validate --config=/etc/otelcol-contrib/config.yaml </dev/null > "$logs/validate.log" 2>&1
 services=(otel-collector prometheus)
 if [[ "$mode" == node ]]; then
-  "${compose[@]}" run --rm -T --no-deps dev go build -o agent_work/10-observability/bin/objnode ./cmd/objnode
+  "${compose[@]}" run --rm -T --no-deps dev go build -o agent_work/10-observability/bin/objnode ./cmd/objnode </dev/null
   services+=(obs-node)
 fi
 "${compose[@]}" up -d "${services[@]}"
@@ -36,7 +36,7 @@ timeout 60s "${compose[@]}" run --rm -T --no-deps -e OBS_FIXTURE="$([[ "$mode" =
   else
     go test -json -count=1 -timeout 55s -run "^TestOTelCollectorFixture$" ./internal/telemetry
   fi
-' | tee "$logs/test.jsonl"
+' </dev/null | tee "$logs/test.jsonl"
 testname=TestObjnodeOTelPrometheus
 [[ "$mode" == node ]] || testname=TestOTelCollectorFixture
 jq -se --arg name "$testname" 'any(.[]; .Test == $name and .Action == "pass") and (all(.[]; .Action != "fail" and .Action != "skip"))' "$logs/test.jsonl" >/dev/null
