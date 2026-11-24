@@ -393,3 +393,4 @@ Image bytes: normal dev 299026663; analysis 320741177; added 21714514 bytes.
 Logs: `/root/runs/objstore-obs-{csv-smoke,analysis-build,analysis-base-build}.log`.
 Real objnode CSV smoke is still pending runtime integration, owned by conductor. Phase
 remains NOT READY; no runtime DuckDB writer was introduced.
+A2/O4 integration preparation: check-objnode-csv.sh runs actual CSV-enabled objnode in the pinned analysis image, asserts multiple sequences/all ten metric components/positive HTTP health counter/gauge, and ignores crash .tmp residue. Live execution still awaits O1/O2/O3/O4 integration.
