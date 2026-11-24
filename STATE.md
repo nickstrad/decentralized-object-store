@@ -364,3 +364,10 @@ cache, private listener, no pre-first/stale values, escaped/sorted exposition an
 shutdown. Enabled config uses a private registry validation hook for the two-interval
 staleness bound; public interfaces/catalogue unchanged. Focused telemetry tests pass.
 CSV and DuckDB analysis work remains in progress; no background run to resume.
+
+O3 CSV implementation complete: exact unsigned integers and metadata through
+`ReadCSVDir`, one header-bearing batch per private atomic finalized segment, configurable
+sync and post-success retention. Shared contracts cover a real filesystem failure and
+recovery; focused cases cover rotation, max uint64, crash temp exclusion, invalid files,
+identity and byte limits. No runtime DuckDB writer is built (owner ruling); CSV is the
+runtime disk sink and DuckDB remains an offline analysis consumer. O4 remains in progress.
