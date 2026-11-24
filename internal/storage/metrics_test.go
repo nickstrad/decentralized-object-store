@@ -2,6 +2,7 @@ package storage_test
 
 import (
 	"errors"
+	"github.com/nickstrad/object-store/internal/env"
 	"github.com/nickstrad/object-store/internal/metrics"
 	"github.com/nickstrad/object-store/internal/sim"
 	"github.com/nickstrad/object-store/internal/storage"
@@ -115,4 +116,65 @@ func mustBlob(t *testing.T, id storage.ShardID) []byte {
 		t.Fatal(err)
 	}
 	return b
+}
+
+type metricsSyncFailDisk struct {
+	env.Disk
+	fail bool
+}
+
+func (d *metricsSyncFailDisk) Sync(name string) error {
+	if d.fail {
+		return env.ErrIO
+	}
+	return d.Disk.Sync(name)
+}
+func TestMetricsStorageWrittenLayerAndIdempotentBytes(t *testing.T) {
+	_, _, raw := simDisk(t)
+	disk := &metricsSyncFailDisk{Disk: raw}
+	n, err := storage.NewNode(env.Env{Disk: disk}, storage.Config{MetricsEnabled: true, Layout: storage.Layout{K: 1, StripeSize: 64}, Members: storage.StaticMembership{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := storage.ShardID{Bucket: "bucket", Version: 1}
+	blob := mustBlob(t, id)
+	disk.fail = true
+	if err := n.Store().Put(id, blob); !errors.Is(err, env.ErrIO) {
+		t.Fatalf("put sync error = %v", err)
+	}
+	if _, err := n.Store().GetBlob(id); err != nil {
+		t.Fatal(err)
+	}
+	s := n.Snapshot()
+	if storageMetric(s, "local_shards") != 1 || storageMetric(s, "local_bytes") != uint64(len(blob)) || storageMetric(s, "shard_bytes_total", "write") != uint64(len(blob)) || storageMetric(s, "shard_operations_total", "put", "error") != 1 {
+		t.Fatalf("written put not accounted: %+v", s)
+	}
+	disk.fail = false
+	if err := n.Store().Put(id, blob); err != nil {
+		t.Fatal(err)
+	}
+	if err := n.Store().Put(id, blob); err != nil {
+		t.Fatal(err)
+	}
+	if storageMetric(n.Snapshot(), "shard_bytes_total", "write") != uint64(len(blob)) {
+		t.Fatal("idempotent put counted bytes not written")
+	}
+	disk.fail = true
+	if err := n.Store().Delete(id); !errors.Is(err, env.ErrIO) {
+		t.Fatalf("delete sync error = %v", err)
+	}
+	if _, err := n.Store().GetBlob(id); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatal(err)
+	}
+	s = n.Snapshot()
+	if storageMetric(s, "local_shards") != 0 || storageMetric(s, "local_bytes") != 0 || storageMetric(s, "shard_operations_total", "delete", "error") != 1 {
+		t.Fatalf("written deletion not accounted: %+v", s)
+	}
+	disk.fail = false
+	if err := n.Store().Delete(id); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatal(err)
+	}
+	if storageMetric(n.Snapshot(), "local_shards") != 0 {
+		t.Fatal("delete retry drifted gauge")
+	}
 }

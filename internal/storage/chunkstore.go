@@ -96,7 +96,7 @@ func (s *ChunkStore) GetBlob(id ShardID) (bout []byte, eout error) {
 // overwritten (repaired). A malformed or mismatched blob returns ErrCorrupt
 // without writing.
 func (s *ChunkStore) Put(id ShardID, blob []byte) (eout error) {
-	defer func() { s.observedPut(id, blob, eout) }()
+	defer func() { s.observedOperation("put", eout) }()
 	if err := id.Validate(); err != nil {
 		return err
 	}
@@ -124,6 +124,7 @@ func (s *ChunkStore) Put(id ShardID, blob []byte) (eout error) {
 	if err := s.disk.Write(name, blob); err != nil {
 		return fmt.Errorf("storage: put shard %s: write: %w", name, err)
 	}
+	s.observedWrite(id, blob)
 	if err := s.disk.Sync(name); err != nil {
 		return fmt.Errorf("storage: put shard %s: sync: %w", name, err)
 	}
@@ -134,7 +135,7 @@ func (s *ChunkStore) Put(id ShardID, blob []byte) (eout error) {
 // crash. If the shard is absent from the written layer, Delete still syncs any
 // pending deletion before returning ErrNotFound (joined with env.ErrNotFound).
 func (s *ChunkStore) Delete(id ShardID) (eout error) {
-	defer func() { s.observedDelete(id, eout) }()
+	defer func() { s.observedOperation("delete", eout) }()
 	if err := id.Validate(); err != nil {
 		return err
 	}
@@ -143,6 +144,7 @@ func (s *ChunkStore) Delete(id ShardID) (eout error) {
 		if !errors.Is(err, env.ErrNotFound) {
 			return fmt.Errorf("storage: delete shard %s: %w", name, err)
 		}
+		s.observedDelete(id)
 		// Flush a prior unsynced deletion; env.ErrNotFound from Sync means
 		// nothing existed in the durable layer either.
 		if serr := s.disk.Sync(name); serr != nil && !errors.Is(serr, env.ErrNotFound) {
@@ -150,6 +152,7 @@ func (s *ChunkStore) Delete(id ShardID) (eout error) {
 		}
 		return fmt.Errorf("storage: delete shard %s: %w", name, errors.Join(ErrNotFound, err))
 	}
+	s.observedDelete(id)
 	if err := s.disk.Sync(name); err != nil && !errors.Is(err, env.ErrNotFound) {
 		return fmt.Errorf("storage: delete shard %s: sync: %w", name, err)
 	}

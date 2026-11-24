@@ -544,13 +544,12 @@ func (n *Node) scope(region string) *storage.Node {
 	if s, ok := n.scoped[r]; ok {
 		return s
 	}
-	s, err := storage.NewNode(n.e.WithNet(chanNet{net: n.e.Net, ch: chStorage}), storage.Config{MetricsEnabled: n.cfg.MetricsEnabled,
+	s, err := storage.NewNodeSharingMetrics(n.e.WithNet(chanNet{net: n.e.Net, ch: chStorage}), storage.Config{MetricsEnabled: n.cfg.MetricsEnabled,
 		Layout: n.cfg.Layout, Members: regionView{v: n.view, region: r}, AckQuorum: n.cfg.AckQuorum, RequestTimeout: n.cfg.RequestTimeout,
-	})
+	}, n.store)
 	if err != nil {
 		return n.store
 	}
-	s.ShareMetrics(n.store)
 	n.scoped[r] = s
 	return s
 }

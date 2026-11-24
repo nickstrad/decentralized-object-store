@@ -106,15 +106,28 @@ type Node struct {
 // NewNode validates cfg and creates a Node backed by e. It returns ErrInvalid
 // if cfg is invalid.
 func NewNode(e env.Env, cfg Config) (*Node, error) {
+	return newNode(e, cfg, nil)
+}
+
+func NewNodeSharingMetrics(e env.Env, cfg Config, owner *Node) (*Node, error) {
+	return newNode(e, cfg, owner)
+}
+
+func newNode(e env.Env, cfg Config, owner *Node) (*Node, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	codec, err := erasure.NewMetered(cfg.Layout.K, cfg.Layout.M, cfg.MetricsEnabled)
+	codec, err := erasure.NewMetered(cfg.Layout.K, cfg.Layout.M, cfg.MetricsEnabled && owner == nil)
 	if err != nil {
 		return nil, err
 	}
-	n := &Node{metric: newMetricState(cfg.MetricsEnabled), e: e, cfg: cfg.withDefaults(), codec: codec, store: NewChunkStore(e.Disk)}
-	n.store.enableMetrics(n.metric)
+	n := &Node{e: e, cfg: cfg.withDefaults(), codec: codec, store: NewChunkStore(e.Disk)}
+	if owner == nil {
+		n.metric = newMetricState(cfg.MetricsEnabled)
+		n.store.enableMetrics(n.metric)
+	} else {
+		n.ShareMetrics(owner)
+	}
 	return n, nil
 }
 

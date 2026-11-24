@@ -116,9 +116,8 @@ func (s *ChunkStore) enableMetrics(m *metricState) {
 		}
 	}
 }
-func (s *ChunkStore) observedPut(id ShardID, b []byte, err error) {
-	s.observedOperation("put", err)
-	if err != nil || s.metric == nil {
+func (s *ChunkStore) observedWrite(id ShardID, b []byte) {
+	if s.metric == nil {
 		return
 	}
 	s.metric.add("storage_shard_bytes_total", uint64(len(b)), "write")
@@ -130,9 +129,8 @@ func (s *ChunkStore) observedPut(id ShardID, b []byte, err error) {
 	s.metric.adjust("storage_local_bytes", int64(len(b))-int64(old))
 	s.sizes[name] = uint64(len(b))
 }
-func (s *ChunkStore) observedDelete(id ShardID, err error) {
-	s.observedOperation("delete", err)
-	if s.metric == nil || err != nil && !errors.Is(err, ErrNotFound) {
+func (s *ChunkStore) observedDelete(id ShardID) {
+	if s.metric == nil {
 		return
 	}
 	name := id.BlobName()

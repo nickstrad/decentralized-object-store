@@ -473,3 +473,16 @@ The callback allocation finding is recorded in `docs/knowledge/observability-com
 no new reusable script or VM/environment knowledge was needed.
 
 Stage C verification checkpoint: first integrated go build ./... and go vet ./... PASS. go test ./... passed every package except test/e2e, whose active migration failure matrix hit the default 10-minute package timeout under concurrent review/suite load; no assertion failure preceded it. Preserved /root/runs/objstore-obs-resume-fast.{log,json,exit}. Final rerun will use the existing gate's 30-minute timeout and -p 2 after F1/F2 cost/accounting repairs, with all tests retained. O1 review NITS requires shared-owner construction to eliminate scoped inventory rescans; repair in progress.
+### Stage C component review repair checkpoint (2026-11-24)
+
+O1 reviewer F1/F2 repaired in `work/obs-off-repair`: scoped storage and migration copier
+construction now shares owner metric state before initialization, avoiding discarded metric
+maps and full inventory scans. MetricsEnabled remains propagated. New regression checks
+both actual node paths for zero additional disk Read/List calls, shared inventory updates,
+and shared erasure totals. Storage bytes count accepted Disk.Write bytes only; idempotent
+Put contributes no write bytes. Inventory gauges reflect the written layer even when Put
+or Delete Sync fails; operation outcome still reports the Sync error. Focused metrics tests,
+full storage suite, storage/node build/vet, and focused determinism lint all PASS.
+Logs: `/root/runs/objstore-obs-off-repair-review-{tests,storage,node,detlint}.log`.
+Next: conductor integrates and obtains confirm review in this same O1 review round.
+F3/F4/F5 have documented existing semantics; no frozen catalogue/port change was needed.
