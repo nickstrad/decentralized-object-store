@@ -10,6 +10,9 @@ import (
 	"testing"
 
 	"github.com/nickstrad/object-store/internal/metrics"
+	"github.com/nickstrad/object-store/internal/storage"
+	"math"
+	"sync/atomic"
 )
 
 func httpValue(s metrics.Snapshot, name string, labels ...string) uint64 {
@@ -65,7 +68,7 @@ func TestHTTPMetricsResponsesAndBytes(t *testing.T) {
 }
 func TestHTTPOperationDomain(t *testing.T) {
 	for path, want := range map[string]string{"/_health": "health", "/_cluster/members": "members", "/_migrations/id": "migration", "/bucket": "bucket", "/bucket/key": "object", "/bucket/key?tag=x": "tag", "/bucket?acl=x": "acl", "/bucket?quota": "quota", "/": "unknown"} {
-		if got := metricOperations[metricOperation(httptest.NewRequest("GET", path, nil))]; got != want {
+		if got := metricOperations[metricOperation(httptest.NewRequest("PUT", path, nil))]; got != want {
 			t.Errorf("%s: %s", path, got)
 		}
 	}
@@ -122,3 +125,83 @@ type shortWriter struct{ header http.Header }
 func (w *shortWriter) Header() http.Header       { return w.header }
 func (w *shortWriter) WriteHeader(int)           {}
 func (w *shortWriter) Write([]byte) (int, error) { return 1, io.ErrShortWrite }
+
+func TestHTTPMetricsPanicPreservesPanicAndAvoidsSuccess(t *testing.T) {
+	m := &meteredHandler{next: http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("broken") })}
+	func() {
+		defer func() {
+			if recover() != "broken" {
+				t.Error("panic was swallowed")
+			}
+		}()
+		m.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/_health", nil))
+	}()
+	s := m.Snapshot()
+	if httpValue(s, "requests_total", "health", "other") != 1 || httpValue(s, "requests_total", "health", "2xx") != 0 || httpValue(s, "requests_in_flight") != 0 {
+		t.Fatal("panic recorded as success or leaked gauge")
+	}
+}
+func TestHTTPTagOperationMatchesRouting(t *testing.T) {
+	for _, method := range []string{"GET", "HEAD", "DELETE", "PUT"} {
+		want := "object"
+		if method == "PUT" {
+			want = "tag"
+		}
+		if got := metricOperations[metricOperation(httptest.NewRequest(method, "/bucket/key?tag=x", nil))]; got != want {
+			t.Errorf("%s: got %s want %s", method, got, want)
+		}
+	}
+}
+
+type metricHealthService struct {
+	Service
+	health func(context.Context) (storage.Health, error)
+}
+
+func (s metricHealthService) Health(ctx context.Context) (storage.Health, error) {
+	return s.health(ctx)
+}
+func TestHTTPMetricsRealHandlerFailuresAndCancellation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		status string
+	}{{"missing", storage.ErrNotFound, "4xx"}, {"unavailable", storage.ErrUnavailable, "5xx"}, {"cancel", context.Canceled, "5xx"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := metricHealthService{health: func(ctx context.Context) (storage.Health, error) {
+				if tc.name == "cancel" {
+					<-ctx.Done()
+					return storage.Health{}, ctx.Err()
+				}
+				return storage.Health{}, tc.err
+			}}
+			h := NewHandler(svc, Limits{MetricsEnabled: true}).(*meteredHandler)
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/_health", nil).WithContext(ctx))
+			if httpValue(h.Snapshot(), "requests_total", "health", tc.status) != 1 {
+				t.Fatal("wrong error class")
+			}
+		})
+	}
+	h := NewHandler(nil, Limits{MetricsEnabled: true, MaxObjectSize: 1}).(*meteredHandler)
+	r := httptest.NewRequest("PUT", "/bucket/key", strings.NewReader("abc"))
+	r.ContentLength = -1
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	if httpValue(h.Snapshot(), "requests_total", "object", "4xx") != 1 || httpValue(h.Snapshot(), "request_bytes_total") != 2 {
+		t.Fatal("overflow was not measured from actual bounded read")
+	}
+}
+func TestHTTPMetricImplicitSuccessAndSaturation(t *testing.T) {
+	m := &meteredHandler{next: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})}
+	m.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/_health", nil))
+	if httpValue(m.Snapshot(), "requests_total", "health", "2xx") != 1 {
+		t.Fatal("empty successful response")
+	}
+	var counter atomic.Uint64
+	counter.Store(math.MaxUint64 - 1)
+	addMetric(&counter, 3)
+	if counter.Load() != math.MaxUint64 {
+		t.Fatal("counter wrapped")
+	}
+}

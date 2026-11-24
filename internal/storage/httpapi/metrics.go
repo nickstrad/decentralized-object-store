@@ -59,7 +59,7 @@ func metricOperation(r *http.Request) int {
 	if key == "" || len(key) > storage.MaxKeyLen {
 		return 8
 	}
-	if q.Has("tag") {
+	if r.Method == http.MethodPut && q.Has("tag") {
 		return 4
 	}
 	return 3
@@ -102,6 +102,7 @@ func (w *metricWriter) Write(p []byte) (int, error) {
 }
 func (m *meteredHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	completed := false
 	op := metricOperation(r)
 	addMetric(&m.inFlight, 1)
 	writer := &metricWriter{ResponseWriter: w, bytes: &m.responseBytes}
@@ -111,7 +112,7 @@ func (m *meteredHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		m.inFlight.Add(^uint64(0))
 		status := writer.status
-		if status == 0 {
+		if status == 0 && completed {
 			status = http.StatusOK
 		}
 		class := 4
@@ -123,6 +124,7 @@ func (m *meteredHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		addMetric(&m.durations[op], uint64(max(0, time.Since(start))))
 	}()
 	m.next.ServeHTTP(writer, r)
+	completed = true
 }
 
 func (m *meteredHandler) Snapshot() metrics.Snapshot {
