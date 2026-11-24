@@ -1,8 +1,8 @@
 # C4 Level 1 — System Context
 
-**As built.** The system, its HTTP API, the `objnode` binary, the traffic between peers and the DST harness exist and match this diagram (relationships 1, 2, 3 and 5 checked against `cmd/objnode`, `internal/storage/httpapi`, `internal/noderuntime` and `internal/node` when Chunk 6 landed, 2026-11-22; relationship 3 checked again against `internal/node` for the migration's shard check, 2026-11-23). Sync is between nodes only: there is no client replica.
+Object Store is a leaderless cluster of `objnode` peers with an HTTP object API and a deterministic simulation testing (DST) harness. Sync is between nodes only: there is no client replica.
 
-Model: diagram `context` in [model.json](model.json). Source: PLAN.md sections 1, 2.1, 2.7, 7.1.
+Model: diagram `context` in [model.json](model.json).
 
 ```mermaid
 flowchart TB
@@ -55,7 +55,7 @@ flowchart TB
 
 | # | From | To | Relationship | Technology |
 | --- | --- | --- | --- | --- |
-| 1 | Object API client | Store | Creates buckets; puts, gets, heads, deletes and lists objects; edits tags, ACL entries and quota; reads object metadata | HTTP, path-style (OQ-6) |
+| 1 | Object API client | Store | Creates buckets; puts, gets, heads, deletes and lists objects; edits tags, ACL entries and quota; reads object metadata | HTTP, path-style |
 | 2 | Operator | Store | Runs nodes; starts and checks bucket migrations; reads membership and health | CLI flags or JSON config file; HTTP |
 | 3 | Store | Peer nodes | Gossips membership; sends and fetches shards; diffs the metadata Merkle tree and fetches the keys that differ; exchanges metadata versions (digest first, then the document; changed keys after each write); asks for pointer views, asks the holders of copied shards to verify them and sends purge lists during a migration | UDP datagrams; TCP length-prefixed frames, one connection per request |
 | 4 | Developer or reader | DST harness | Runs and replays scenarios from one `int64` seed | `go test -seed`, `DST_SEED`, `cmd/objsim` |

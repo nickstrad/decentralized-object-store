@@ -1,10 +1,10 @@
-# Decentralized Object Store & Local-First Sync Engine
+# Object Store
 
-A leaderless, multi-region object store written in Go on the standard library alone, with `pgregory.net/rapid` restricted to test files and enforced by a gate. It is a learning project built testing-first: every claim about durability, repair, and convergence is backed by deterministic simulation testing, property tests, and fuzzing. Metadata updates use optimistic concurrency control for conditional writes, while concurrent writes across partitions settle by last-writer-wins (highest hybrid logical clock, node ID breaking ties) so all replicas converge; every discarded write is counted and logged.
+A leaderless, multi-region object store written in Go on the standard library alone, with `pgregory.net/rapid` restricted to test files and enforced by a check. Every claim about durability, repair, and convergence is backed by deterministic simulation testing, property tests, and fuzzing. Metadata updates use optimistic concurrency control for conditional writes, while concurrent writes across partitions settle by last-writer-wins (highest hybrid logical clock, node ID breaking ties) so all replicas converge; every discarded write is counted and logged.
 
 ## Read the book
 
-Read the book at [nickstrad.github.io/decentralized-object-store](https://nickstrad.github.io/decentralized-object-store/) or in this repository: each chapter explains one mechanism, maps it to packages and code excerpts, and states what the tests prove and do not.
+Read the book at [nickstrad.github.io/object-store](https://nickstrad.github.io/object-store/) or in this repository: each chapter explains one mechanism, maps it to packages and code excerpts, and states what the tests prove and do not.
 
 - [Preface](book/front/preface.md) — scope, reading order, and stated limits
 - [Topic Map](book/front/topic-map.md) — topics, packages, and main test targets
@@ -18,20 +18,20 @@ Read the book at [nickstrad.github.io/decentralized-object-store](https://nickst
 7. [The Object Store and Sync Engine](book/chapters/07-object-store-and-sync-engine.md)
 8. [End-to-End Tests and Hardening](book/chapters/08-end-to-end-and-hardening.md)
 
-## What is built
+## What is in the repository
 
-| Building block | Status | Scope |
-| --- | --- | --- |
-| Foundation | Built | Docker Go 1.26.11 image, landing gates (G0–G7, G5R), canaries, site build |
-| Deterministic simulator | Built | `internal/env`, event loop and nemesis (`internal/sim`, `simtest`), `cmd/objsim` |
-| SWIM gossip membership | Built | Direct/indirect probing, suspicion, refutation, tombstones, push-pull sync (`internal/gossip`) |
-| Reed-Solomon erasure coding | Built | GF(2^8) Cauchy codec (`internal/erasure`, `4+2` default), chunk store, striping, placement (`internal/storage`) |
-| Merkle-tree anti-entropy | Built | Fanout-16 SHA-256 trie, bounded diff protocol, scrubber and repair worker (`internal/merkle`) |
-| OCC metadata | Built | ETags, `If-Match`/`If-None-Match`, version vectors, last-writer-wins with logged discards, quotas (`internal/occ`) |
-| Sagas | Built | Checksummed log, crash recovery, five-step bucket migration (`internal/saga`, `sagasim`) |
-| Integration | Built | Wired node (`internal/node`), real runtime (`internal/noderuntime`), object API (`httpapi`), `cmd/objnode` |
-| E2E suite and hardening | Built | Simulated and real-process scenarios (E1–E9), continuous oracles, nemesis, `FuzzClusterNemesis` (`test/e2e`) |
-| Finished book | Built | Preface, topic map, eight chapters, as-built C4 diagrams, published site (`book/`, `docs/`) |
+| Part | Scope |
+| --- | --- |
+| Environment and checks | Docker Go 1.26.11 image, check suite (G0–G7, G5R), canaries, site build |
+| Deterministic simulator | `internal/env`, event loop and nemesis (`internal/sim`, `simtest`), `cmd/objsim` |
+| SWIM gossip membership | Direct/indirect probing, suspicion, refutation, tombstones, push-pull sync (`internal/gossip`) |
+| Reed-Solomon erasure coding | GF(2^8) Cauchy codec (`internal/erasure`, `4+2` default), chunk store, striping, placement (`internal/storage`) |
+| Merkle-tree anti-entropy | Fanout-16 SHA-256 trie, bounded diff protocol, scrubber and repair worker (`internal/merkle`) |
+| OCC metadata | ETags, `If-Match`/`If-None-Match`, version vectors, last-writer-wins with logged discards, quotas (`internal/occ`) |
+| Sagas | Checksummed log, crash recovery, five-step bucket migration (`internal/saga`, `sagasim`) |
+| Node, runtime, and API | Wired node (`internal/node`), real runtime (`internal/noderuntime`), object API (`httpapi`), `cmd/objnode` |
+| E2E suite and hardening | Simulated and real-process scenarios (E1–E9), continuous oracles, nemesis, `FuzzClusterNemesis` (`test/e2e`) |
+| Book | Preface, topic map, eight chapters, C4 diagrams, published site (`book/`, `docs/`) |
 
 ## Run the tests through Docker
 
@@ -48,7 +48,7 @@ Run the fast lane (G0 hygiene, G1 `go test -short` with coverage floors, and G6 
 agent_work/gates/ci-fast.sh
 ```
 
-Run the full landing gate on demand (G0–G7 including real processes; also needs `jq` and `sha256sum` on the host; about 2.5 hours on a 4-core machine; `demo` labels the output directory):
+Run the full check suite on demand (G0–G7 including real processes; also needs `jq` and `sha256sum` on the host; about 2.5 hours on a 4-core machine; `demo` labels the output directory):
 
 ```text
 GATE_STAGE=final agent_work/gates/gate.sh demo
@@ -56,7 +56,7 @@ GATE_STAGE=final agent_work/gates/gate.sh demo
 
 Checks run in order:
 
-- **G0 (hygiene):** gate tools, `gofmt`, `go vet`, `go build`, determinism lint, panic allowlist, stdlib-only dependency check, comment check (skipped in `final`), self-containment, and site lint.
+- **G0 (hygiene):** check tools, `gofmt`, `go vet`, `go build`, determinism lint, panic allowlist, stdlib-only dependency check, comment check (skipped in `final`), self-containment, and site lint.
 - **G5R (real-process end-to-end):** runs first; runs end-to-end scenarios on real `-race` `objnode` processes (`E2E_TIER_R=1`).
 - **G1 (unit):** `go test -count=1 -cover ./...` with an 85% statement coverage floor on core packages.
 - **G2 (property):** `pgregory.net/rapid` property tests at 2,000 checks per property, seeded from the commit.
@@ -100,6 +100,4 @@ docker compose --profile cluster down
 ## Where things are
 
 - **Book:** [book/manifest.json](book/manifest.json) (front matter in `book/front/`, chapters in `book/chapters/`).
-- **C4 diagrams:** [docs/c4/README.md](docs/c4/README.md) (as-built system, container, and component views).
-- **Plan:** [PLAN.md](PLAN.md) (build plan, testing strategy, and landing gates).
-- **Specification:** [docs/project-source.md](docs/project-source.md) (original specification).
+- **C4 diagrams:** [docs/c4/README.md](docs/c4/README.md) (system, container, and component views).

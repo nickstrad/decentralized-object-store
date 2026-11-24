@@ -1,5 +1,4 @@
-// Package e2e hosts the end-to-end test suite for the object store and metadata
-// sync engine.
+// Package e2e hosts the end-to-end test suite for Object Store.
 //
 // Shared scenarios run against real packages on two tiers: deterministic
 // simulated clusters (tier S, run by default through go test) and real objnode

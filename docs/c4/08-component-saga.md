@@ -1,8 +1,8 @@
 # C4 Level 3 — Component: saga (`internal/saga`)
 
-**As built.** The orchestrator, the saga log, recovery, the bucket-migration workflow, the step interfaces and the model cluster exist and match this diagram (checked against `internal/saga` and `internal/saga/sagasim` when Chunk 5 landed, 2026-11-22). Relationships 1 and 9 to 11 are as built since Chunk 6 (checked against `internal/node`, 2026-11-22; relationship 9 again for the migration's shard check, 2026-11-23). The package still imports only `internal/env`: the Node core (`internal/node`) creates the engine and implements the step interfaces on the storage, Merkle and metadata packages, so the steps are bound to the real components from outside this package.
+The package imports only `internal/env`: the Node core (`internal/node`) creates the engine and implements the step interfaces on the storage, Merkle and metadata packages, so the steps are bound to the real components from outside this package.
 
-Model: diagram `component-saga` in [model.json](model.json). Source: PLAN.md sections 3, 4.2 (Chunk 5), 7.8; code in `engine.go`, `policy.go`, `log.go`, `resume.go`, `migration.go`, and `sagasim/`; the real step implementation is `internal/node/migrate.go`.
+Model: diagram `component-saga` in [model.json](model.json). Code in `engine.go`, `policy.go`, `log.go`, `resume.go`, `migration.go`, and `sagasim/`; the real step implementation is `internal/node/migrate.go`.
 
 ```mermaid
 flowchart TB
@@ -122,14 +122,14 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
                     └─────────────────────────┘
 ```
 
-| ID | Component | As built |
+| ID | Component | Description |
 | --- | --- | --- |
 | `s-orch` | Orchestrator | `engine.go`, `policy.go`: `Engine` (`Begin`, `Status`, `Stats`) and `Policy`. Single-threaded. Steps before the pivot retry up to `MaxAttempts` with clock-driven backoff and jitter, then compensate in reverse order; the pivot aborts only on `ErrPermanent`; later steps and compensations retry until they succeed. Each call carries the idempotency key `Key{Saga, Step}` |
 | `s-log` | Saga log | `log.go`: the record format of the per-saga blob `saga/<id>`. Append-only frames with a magic byte, a length and two CRC-32C checksums; `AppendRecord` encodes and `DecodeLog` returns the valid prefix. A strict prefix of a frame is a torn tail; anything else wrong is `ErrLogCorrupt`. This code does no I/O |
 | `s-recovery` | Recovery | `Engine.Recover` in `engine.go` and the pure `Resume` state machine in `resume.go`. Truncates a torn tail before anything is appended, validates every transition, and plans the next action: run a step, abort, compensate or end. A corrupt log is left as found and reported by `Status` |
 | `s-workflow` | Bucket-migration workflow | `migration.go`: `Migration(ops)`, five steps: `allocate` → `copy` → `verify` → `flip` (the pivot) → `delete-source`. `delete-source` seals the source, runs a catch-up copy and a second root comparison, retires the source and then promotes the target |
 | `s-steps` | Step interfaces | `migration.go`: `MigrationOps`, made of `Allocator`, `Copier`, `Verifier`, `Router` and `Retirer`. Two implementations: the model cluster's `Ops`, and `migrator` in `internal/node`, which runs the steps on the real storage, Merkle and metadata packages |
-| `s-sim` | Model cluster | `internal/saga/sagasim`, added by the build; PLAN.md does not name it. Test support: model stores, a coordinator process that hosts the `Engine`, and a writing client, as simulator nodes. It also exports the 78-cell failure-point matrix runner (`Harness`, `Cells`, `Run`) and the nemesis and duel scenario drivers, for reuse on real components |
+| `s-sim` | Model cluster | `internal/saga/sagasim`. Test support: model stores, a coordinator process that hosts the `Engine`, and a writing client, as simulator nodes. It also exports the 78-cell failure-point matrix runner (`Harness`, `Cells`, `Run`) and the nemesis and duel scenario drivers, for reuse on real components |
 
 | # | From | To | Relationship |
 | --- | --- | --- | --- |
@@ -151,18 +151,8 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 16 | Model cluster | Environment interfaces | Requests between coordinator, stores and client; each store's state blob; client and reload retry timers (Transport, Disk, Clock, Rand) |
 | 17 | Model cluster | DST harness | Builds the cluster as simulated nodes; crashes, torn crashes, the nemesis and invariants |
 
-Differences from the target design:
+Notes:
 
-- Relationship 7 started at the Saga log in the target design. As built, the log code is a
-  record format and does no I/O; recovery and the orchestrator make the `env.Disk` calls
-  (relationships 7 and 8).
-- Relationship 12 is new: the orchestrator and recovery share one state machine, so a
-  record that would be an illegal transition is never written.
-- The Model cluster and relationships 13 to 17 are new.
-- Relationship 1 started at the Object API in the target design, and relationships 9 to 11
-  ran from the step interfaces to the Storage engine, Merkle anti-entropy and the metadata
-  layer. As built the package calls none of them. The Node core starts and reads
-  migrations (1) and implements the step interfaces (9), and the calls into storage,
-  Merkle and OCC metadata are made by that implementation, outside this package; they
-  are relationships 5, 6 and 9 of [02-container.md](02-container.md). Relationships 10
-  and 11 are new in their place.
+- The log code is a record format and does no I/O; recovery and the orchestrator make the `env.Disk` calls (relationships 7 and 8).
+- The orchestrator and recovery share one state machine (relationship 12), so a record that would be an illegal transition is never written.
+- The package does not call storage, Merkle or OCC metadata directly. The Node core starts and reads migrations (relationship 1) and implements the step interfaces (relationship 9), and the calls into storage, Merkle and OCC metadata are made by that implementation outside this package (relationships 5, 6 and 9 of [02-container.md](02-container.md)).

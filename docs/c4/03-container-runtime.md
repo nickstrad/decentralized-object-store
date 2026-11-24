@@ -1,8 +1,8 @@
 # C4 Level 2 — Container, runtime and environment view
 
-**As built.** Every container and relationship exists and matches this diagram (checked against `cmd/objnode`, `internal/noderuntime`, `internal/node` and `internal/storage/httpapi` when Chunk 6 landed, 2026-11-22; relationship 21 checked again against `test/e2e`, 2026-11-23). The target design had one Node runtime in `internal/node`. As built it is two packages: the Node core (`internal/node`), which is the single-threaded node that the simulator also runs, and the Node runtime (`internal/noderuntime`), which holds the sockets, the file disk, the wall clock and the loop goroutine. The Object API is drawn here too, because `cmd/objnode` starts it and it calls the runtime.
+The node is split into two packages: the Node core (`internal/node`), which is the single-threaded node that the simulator also runs, and the Node runtime (`internal/noderuntime`), which holds the sockets, the file disk, the wall clock and the loop goroutine. The Object API is drawn here too, because `cmd/objnode` starts it and it calls the runtime.
 
-Model: diagram `container-runtime` in [model.json](model.json). Source: PLAN.md sections 2.1, 2.5, 3, 7.1; code in `cmd/objnode/main.go`, `internal/noderuntime` (`runtime.go`, `service.go`, `realenv.go`, `frame.go`, `vfs.go`) and `internal/node` (`node.go`, `mux.go`).
+Model: diagram `container-runtime` in [model.json](model.json). Code in `cmd/objnode/main.go`, `internal/noderuntime` (`runtime.go`, `service.go`, `realenv.go`, `frame.go`, `vfs.go`) and `internal/node` (`node.go`, `mux.go`).
 One protocol core, two environments: `internal/noderuntime` (real) and the DST harness
 (simulated) both implement `internal/env`, and both run the same `node.Node`. Domain
 relationships between the same containers are in [02-container.md](02-container.md).
@@ -174,19 +174,8 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 20 | DST harness | Environment interfaces | Implements Clock, Rand, Transport, Disk for every simulated node; its event loop calls the same protocol handlers |
 | 21 | DST harness | Node core | Runs the same `Node` as a simulated process (`node.NewFactory`). Test code: the full-node simulation tests of `internal/node`, the conformance test of `internal/noderuntime`, which runs the same scenarios on the simulator and on loopback sockets, and the end-to-end suite (`test/e2e`), which runs its scenarios on the simulator and on real `objnode` processes over HTTP |
 
-Differences from the target design:
+Notes:
 
-- The Node runtime of the target design is two containers, the Node core and the Node
-  runtime. Relationships 3 (implements the environment), 9 (peers) and 10 (disk) of the
-  target design now start at the Node runtime (6 to 8 here); the wiring of the five
-  protocol packages starts at the Node core (10 to 14).
-- Relationships 3 and 4 are new: `cmd/objnode` starts the HTTP server, and the server
-  calls the runtime through an interface. The target design drew the Object API only in
-  the domain view.
-- Relationship 9 is new: the node core is itself protocol code on the environment
-  interfaces. It lists and reads the shard files, sets the maintenance timer and sends its
-  own node requests.
-- Relationship 21 is new. It is test code, drawn because it is the check that the
-  simulator and the real runtime execute the same node.
-- The Node disk holds the OCC state blob (`occ/state`) as well as the shard files and the
-  saga logs.
+- The node core (`internal/node`) is itself protocol code on the environment interfaces (relationship 9): it lists and reads the shard files, sets the maintenance timer and sends its own node requests.
+- Relationship 21 is test code, drawn because it verifies that the simulator and the real runtime execute the same node.
+- The Node disk holds the OCC state blob (`occ/state`) as well as the shard files and the saga logs.

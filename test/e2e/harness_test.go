@@ -86,7 +86,7 @@ func sweep(t *testing.T, seeds []int64, fn func(t *testing.T, seed int64)) {
 const fullSeedsEnv = "E2E_FULL_SEEDS"
 
 // seedsFor returns all pinned seeds plus a num/den share of the unpinned sweep
-// seeds so multi-hundred-seed sweeps fit within gate budgets. Explicit -seed
+// seeds so multi-hundred-seed sweeps fit within check-suite budgets. Explicit -seed
 // replays and E2E_FULL_SEEDS=1 bypass sharing; -race builds run one unpinned
 // seed because tier S is single-threaded.
 func seedsFor(t *testing.T, num, den int) []int64 {

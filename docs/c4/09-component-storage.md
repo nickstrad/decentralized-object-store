@@ -1,8 +1,8 @@
 # C4 Level 3 — Component: storage (`internal/storage`)
 
-**As built.** The shard format, chunk store, striping, manifest, placement, shard request protocol and the node's put and get paths exist and match this diagram (checked against `internal/storage` when Chunk 2 landed, 2026-11-21). Relationships 1, 5, 11, 12, 16 and 17 are as built since Chunk 6 (checked against `internal/node`, 2026-11-22; relationship 12 again for the migration's shard check, 2026-11-23). The one caller of the package's engine is the Node core (`internal/node`). The package imports only `internal/env` and `internal/erasure`: it does not call gossip, the metadata layer or Merkle.
+The one caller of the package's engine is the Node core (`internal/node`). The package imports only `internal/env` and `internal/erasure`: it does not call gossip, the metadata layer or Merkle.
 
-Model: diagram `component-storage` in [model.json](model.json). Source: PLAN.md sections 3, 4.2 (Chunks 2 and 6), 7.2, 7.4; code in `shard.go`, `chunkstore.go`, `stripe.go`, `manifest.go`, `placement.go`, `shardproto.go`, `node.go`.
+Model: diagram `component-storage` in [model.json](model.json). Code in `shard.go`, `chunkstore.go`, `stripe.go`, `manifest.go`, `placement.go`, `shardproto.go`, `node.go`.
 The HTTP object API is its own package, `internal/storage/httpapi`, and its own container (`c-api`). `api.go` in this package holds only what the API and the node core share: the request and response types and the API error sentinels (wire codes 160 to 163).
 
 ```mermaid
@@ -135,14 +135,14 @@ Terminal rendering, in 5 parts. Each numbered relationship appears in exactly on
                 └────────────────────────┘
 ```
 
-| ID | Component | As built |
+| ID | Component | Description |
 | --- | --- | --- |
 | `t-format` | Shard file format | `shard.go`: 64-byte header plus payload; the SHA-256 in the header covers the other header fields and the payload; canonical blob names |
 | `t-chunk` | Local chunk store | `chunkstore.go`: `ChunkStore` over `env.Disk`: write then sync, verified read, list, delete; a returned `Put` or `Delete` is durable |
 | `t-stripe` | Object striping | `stripe.go`: `Layout` (default 4+2, 1 MiB stripes); `EncodeStripe` and `DecodeStripe` work one stripe at a time |
 | `t-manifest` | Object manifest | `manifest.go`: size, content SHA-256, layout (`k`, `m`, stripe size), and per shard the node chosen and the blob checksum; canonical binary encoding |
 | `t-place` | Placement | `placement.go`: region-aware rendezvous hashing over the `Membership` interface declared here; `Place` for a new stripe, `Replace` for repair |
-| `t-proto` | Shard request protocol | `shardproto.go`: op byte (put, get or delete shard), blob name, body; errors return as wire codes 96 to 100. Added by the build; PLAN.md does not name it |
+| `t-proto` | Shard request protocol | `shardproto.go`: op byte (put, get or delete shard), blob name, body; errors return as wire codes 96 to 100 |
 | `t-paths` | Object put and get paths | `node.go`: `Node`. PUT succeeds when every stripe has `k+1` durable shard acknowledgements and returns the manifest; GET reads any `k` verified shards per stripe; the same node serves shard requests. The package stores no manifest and has no object delete: the node core keeps the manifest in OCC metadata, and a delete is an OCC tombstone there |
 
 | # | From | To | State | Relationship |
@@ -165,20 +165,10 @@ Terminal rendering, in 5 parts. Each numbered relationship appears in exactly on
 | 16 | Node core | Object striping | built | Rebuild of a missing or rotted shard: `DecodeStripe` from the other holders' shards against the manifest's checksums, then `EncodeStripe`, keeping its own index |
 | 17 | Node core | Shard request protocol | built | Encodes get-shard requests to the other holders for a rebuild. Decodes every inbound shard request before the storage node sees it: a shard delete is refused, and so is a put of a shard the node recorded absent |
 
-Differences from the target design:
+Notes:
 
-- Relationship 1 started at the Object API. As built the API calls the node through one
-  service interface, and the Node core calls this package.
-- Relationship 5 ended at Gossip membership. As built placement reads an interface that
-  the Node core implements from the gossip view; this package does not import
-  `internal/gossip`.
-- Relationship 11 ran from the Object manifest to the metadata layer. As built it is
-  reversed in ownership: the Node core stores the manifest, and this package never calls
-  `internal/occ`.
-- Relationship 12 started at Merkle anti-entropy, as a `Repairer` over the chunk store.
-  As built the Merkle worker repairs metadata only. Shards are repaired by the Node core:
-  it compares the tree of shards a bucket's manifests expect with the tree of shards on
-  disk, and rebuilds or collects on the chunk store itself.
-- Relationships 16 and 17 are new.
-- Not built: re-placing the shards of a node that never returns. `Replace` in
-  `placement.go` has no caller outside the package's tests.
+- The Object API calls the node through one service interface, and the Node core calls this package (relationship 1).
+- Placement reads a `Membership` interface that the Node core implements from the gossip view (relationship 5); this package does not import `internal/gossip`.
+- The Node core stores the manifest (relationship 11), and this package never calls `internal/occ`.
+- The Merkle worker repairs metadata only. Shards are repaired by the Node core (relationship 12): it compares the tree of shards a bucket's manifests expect with the tree of shards on disk, and rebuilds or collects on the chunk store itself.
+- Re-placing the shards of a node that never returns is not implemented; `Replace` in `placement.go` has no caller outside the package's tests.

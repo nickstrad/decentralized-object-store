@@ -1,8 +1,8 @@
 # C4 Level 2 — Container, domain view
 
-**As built.** Every container and relationship exists and matches this diagram (checked against the imports and calls of `internal/node`, `internal/noderuntime`, `internal/storage/httpapi` and `cmd/objnode` when Chunk 6 landed, 2026-11-22; relationship 14 checked again against `internal/node` for the migration's shard check, 2026-11-23). The view differs from the target design in one way that changes most of its arrows: no protocol package calls another. Storage, gossip, Merkle, OCC and saga import only `internal/env` (storage also imports `internal/erasure`); each declares the small interfaces it needs, and the Node core (`internal/node`) builds all five into one node and implements those interfaces. The Object API does not call the protocol packages either: it calls one `Service` interface, which the Node runtime implements. See "Differences from the target design" below.
+No protocol package calls another. Storage, gossip, Merkle, OCC and saga import only `internal/env` (storage also imports `internal/erasure`); each declares the small interfaces it needs, and the Node core (`internal/node`) builds all five into one node and implements those interfaces. The Object API calls one `Service` interface, which the Node runtime implements.
 
-Model: diagram `container` in [model.json](model.json). Source: PLAN.md sections 3, 4.2, 7.2, 7.4, 7.5, 7.8; code in `internal/node`, `internal/noderuntime`, `internal/storage/httpapi`.
+Model: diagram `container` in [model.json](model.json). Code in `internal/node`, `internal/noderuntime`, `internal/storage/httpapi`.
 Containers are Go packages inside one `objnode` process. The runtime and environment
 wiring of the same containers is in [03-container-runtime.md](03-container-runtime.md).
 
@@ -136,32 +136,11 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 13 | Merkle anti-entropy | Node core | Reads its peers through `Membership` and reaches the stored data through `Repairer`. The node core implements both: the repairer (`metaRepairer`) is over the OCC metadata keys, tombstones included, and stores a fetched version by merging it with last-writer-wins |
 | 14 | Saga engine | Node core | Runs the migration steps through `MigrationOps`. The node core's `migrator` implements them: claims and registrations as metadata keys, the copy through a storage node of its own, the shard check as a node request to each holder of a copied shard, the roots with `merkle.Build`, the flip as a write of the routing pointer |
 
-Differences from the target design:
+Notes:
 
-- **The Node core is the only binder.** The target design drew direct calls between the
-  protocol packages: storage to gossip and to the metadata layer, Merkle to storage, the
-  metadata layer to gossip, saga to storage, Merkle and the metadata layer. As built none
-  of those calls exists. Each package declares an interface and `internal/node` implements
-  it (relationships 11 to 14) and makes the calls itself (5 to 9). The eleven target
-  relationships between the Object API or a protocol package and another protocol package
-  are replaced by relationships 3 to 9 and 11 to 14.
-- **The Object API calls one interface.** The target design had the API call storage, the
-  metadata layer, the saga engine and gossip. As built it calls `Service` (relationship 3).
-  It imports `internal/occ`, `internal/saga` and `internal/env` only for the error values
-  in its status table, and `internal/storage` for the request and response types.
-- **The Object API moved** from `internal/storage` to `internal/storage/httpapi`, so that
-  `internal/storage` stays free of `net/http` and passes the determinism lint.
-- **The runtime is split in two.** The target design had one Node runtime in
-  `internal/node`. As built, `internal/node` is the protocol core that the simulator also
-  runs, and `internal/noderuntime` holds the sockets, the file disk, the wall clock and
-  the loop goroutine.
-- **Merkle repairs metadata, not shards, through `Repairer`.** The worker's tree is one
-  tree per node over every metadata key, not a manifest tree per bucket: repair is
-  pull-only, and a per-bucket worker cannot learn of a bucket it has never heard of.
-  Shard repair does not use the worker: the node core compares two local trees and
-  rebuilds from the other holders. Peers do not exchange shard-inventory trees.
-- **The object manifest is stored by the node core**, inside the object record, with the
-  store's ordinary conditional `Put`. Storage returns the manifest and stores nothing;
-  the typed `PutManifest` of `internal/occ` is not used.
-- **The migration verify step** compares two roots as bytes inside `internal/saga`. The
-  node core builds both roots; the saga package does not call `internal/merkle`.
+- **The Node core is the only binder.** No protocol package calls another directly; each package declares an interface and `internal/node` implements it (relationships 11 to 14) and makes the calls itself (5 to 9).
+- **The Object API calls one interface.** It calls `Service` (relationship 3), importing `internal/occ`, `internal/saga` and `internal/env` only for error values in its status table, and `internal/storage` for request and response types. It lives in `internal/storage/httpapi` so `internal/storage` stays free of `net/http` and passes the determinism lint.
+- **The runtime is split in two.** `internal/node` is the protocol core that the simulator also runs, and `internal/noderuntime` holds the sockets, the file disk, the wall clock and the loop goroutine.
+- **Merkle repairs metadata, not shards, through `Repairer`.** The worker's tree is one tree per node over every metadata key, not a manifest tree per bucket: repair is pull-only, and a per-bucket worker cannot learn of a bucket it has never heard of. Shard repair does not use the worker: the node core compares two local trees and rebuilds from the other holders. Peers do not exchange shard-inventory trees.
+- **The object manifest is stored by the node core**, inside the object record, with the store's ordinary conditional `Put`. Storage returns the manifest and stores nothing; the typed `PutManifest` of `internal/occ` is not used.
+- **The migration verify step** compares two roots as bytes inside `internal/saga`. The node core builds both roots; the saga package does not call `internal/merkle`.

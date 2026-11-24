@@ -215,7 +215,7 @@ func (s *Store) end(u *undo, err error) error {
 
 Measurements ran in the 4-core Docker container:
 
-- **500-seed sweeps (`DST_SEEDS=500`, base 1, 241.8 s; gated 239 s):**
+- **500-seed sweeps (`DST_SEEDS=500`, base 1, 241.8 s; 239 s in the check suite):**
   - *Multi-region* (1,500 disk losses): 51,161 acks — 3,959 current, 32,452 superseded, 13,999 discarded (~27.4%), 751 lost with disk (~0.5/loss); events/seed p50 100, p99 145, max 152; distinct p50 36, p99 50, max 54; converge p50 2.25 s, p99 4.32 s, max 4.69 s (bound 15 s); state blob p50 4,799 B, max 7,896 B.
   - *Offline region*: 74,443 acks — 2,000 current, 61,645 superseded, 10,798 discarded (~14.5%), 0 unexplained; events p50 60, p99 90, max 100; distinct p50 24, p99 35, max 39; region `c` won 834 keys (1–3/seed), lost 3,296 writes (2–14/seed); converge p50 0.77 s, p99 1.65 s, max 1.79 s.
   - *Writer-loss* (3,000 disk losses): 62,175 acks — 3,878 current, 41,007 superseded, 17,287 discarded, 3 lost with disk before reaching a peer; events p50 81, max 111; distinct p50 41, max 51; converge p50 0.81 s, p99 3.02 s, max 3.97 s.

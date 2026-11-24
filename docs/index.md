@@ -1,6 +1,6 @@
-# Decentralized Object Store & Local-First Sync Engine
+# Object Store
 
-A leaderless, multi-region object store written in Go on the standard library alone, with `pgregory.net/rapid` restricted to test files. Built testing-first as a learning project, it uses optimistic concurrency control for conditional metadata writes and settles concurrent writes across partitions by last-writer-wins (highest hybrid logical clock, node ID breaking ties) with every discarded write counted and logged.
+A leaderless, multi-region object store written in Go on the standard library alone, with `pgregory.net/rapid` restricted to test files. It uses optimistic concurrency control for conditional metadata writes and settles concurrent writes across partitions by last-writer-wins (highest hybrid logical clock, node ID breaking ties) with every discarded write counted and logged.
 
 ## Start here
 
@@ -20,9 +20,8 @@ The book is the main guide to the system. Start with the front matter, then read
 
 ## Elsewhere on this site
 
-- **[C4 diagrams](c4/README.md)** — as-built system, container, and component architecture views.
-- **[The Plan](../PLAN.md)** — testing strategy, building blocks, and landing gates.
-- **[The README](../README.md)** — build status, Docker test commands, seed replay, and local cluster quickstart.
+- **[C4 diagrams](c4/README.md)** — system, container, and component architecture views.
+- **[The README](../README.md)** — component overview, Docker test commands, seed replay, and local cluster quickstart.
 
 ## Run locally through Docker
 

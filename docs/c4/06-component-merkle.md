@@ -1,8 +1,8 @@
 # C4 Level 3 — Component: merkle (`internal/merkle`)
 
-**As built.** The tree builder, the diff protocol, the anti-entropy worker, the `Repairer` interface, the wire codec and the `Membership` interface exist and match this diagram (checked against `internal/merkle` when Chunk 3 landed, 2026-11-22). Relationships 4, 5, 8, 11 and 12 are as built since Chunk 6 (checked against `internal/node`, 2026-11-22). The one user of the package is the Node core (`internal/node`). The storage engine and the saga engine do not call it, and the worker repairs metadata, not shards.
+The one user of the package is the Node core (`internal/node`). The storage engine and the saga engine do not call it, and the worker repairs metadata, not shards.
 
-Model: diagram `component-merkle` in [model.json](model.json). Source: PLAN.md sections 3, 4.2 (Chunk 3), 7.4, 7.8; code in `tree.go`, `diff.go`, `wire.go`, `worker.go`, `errors.go`.
+Model: diagram `component-merkle` in [model.json](model.json). Code in `tree.go`, `diff.go`, `wire.go`, `worker.go`, `errors.go`.
 The package uses Clock, Rand and Transport and no Disk: the worker reaches stored bytes only through the `Repairer` interface. The tree is kept in memory and rebuilt from the stored data at every start.
 
 ```mermaid
@@ -99,14 +99,14 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
                           └────────────────────┘
 ```
 
-| ID | Component | As built |
+| ID | Component | Description |
 | --- | --- | --- |
 | `m-tree` | Tree builder | `Tree` in `tree.go`: `New`, `Build`, `Set`, `Delete`, `Get`, `Root`, `Snapshot`, `DepthFor`. A trie of fixed depth (1 to 16) and fanout 16 on the first 64 bits of `SHA-256(key)`; a leaf holds its entries sorted by key. Leaf and inner hashes are domain-separated by a tag byte, and an inner hash also covers its level; an empty subtree is the all-zero hash. Nodes are immutable: `Set` and `Delete` copy one path, and `Snapshot` is O(1). Limits: keys of at most 1,024 bytes (`ErrKey`), at most 4,096 entries per leaf (`ErrLeafFull`) |
 | `m-diff` | Diff protocol | `diff.go`. `Session` is the asking side: a state machine over a snapshot of the local tree that produces one request per tree level (`Request`) and takes the reply (`Feed`). `Tree.Answer` is the answering side and holds no state between requests. Leaf entries are packed into replies of at most 1 MiB; a leaf that does not fit is cut and resumed after its last key. At most `Limits.Frontier` mismatched nodes (default 1,024, at most 2,040) go on to the next level; the rest are dropped and the result is marked `Truncated`. Every reply is validated, so a session ends within `Depth + 5·Frontier` round trips whatever the peer sends. `Compare` runs a whole diff in memory. This code does no I/O |
-| `m-wire` | Wire codec | `wire.go` and `errors.go`, added by the build; PLAN.md does not name it. Encodes and decodes the diff request and the four reply kinds: inner, leaf, cut leaf and equal. Big-endian, minimal varints; decoding is strict and canonical. Sets `MaxReplyBytes` (1 MiB) and `MaxRequestNodes` (2,040). Wire error codes 112 and 113, in the package's block 112 to 127. This code does no I/O |
+| `m-wire` | Wire codec | `wire.go` and `errors.go`. Encodes and decodes the diff request and the four reply kinds: inner, leaf, cut leaf and equal. Big-endian, minimal varints; decoding is strict and canonical. Sets `MaxReplyBytes` (1 MiB) and `MaxRequestNodes` (2,040). Wire error codes 112 and 113, in the package's block 112 to 127. This code does no I/O |
 | `m-worker` | Anti-entropy worker | `Worker` in `worker.go`: `NewWorker`, `Start`, `Stop`, `Record`, `Forget`, `OnRequest`, `Stats`. Each jittered period it re-reads and re-hashes the next `ScrubBatch` stored keys, so that rotted, missing and unreadable data shows in its tree (the scrub). Then, if no round is in flight, it picks one peer at random, diffs, and pulls each key whose remote hash `Repairer.Valid` accepts, at most `MaxRepairs` per round. Pull-only: a node repairs itself. A round has a deadline; a failed round is abandoned whole and the next period is the retry. `Stop` ends the round in flight with `env.ErrClosed`; `Start` after `Stop` rescans and resumes |
 | `m-repairer` | Repairer interface | `Repairer` in `worker.go`, declared by the package: `Keys`, `Read`, `Valid`, `Fetch`, `Put`. The worker's only way to stored bytes, local or on a peer. `Valid` decides which hash is right for a key; fetched bytes are stored only when their SHA-256 passes it. The node core implements it over the OCC metadata keys (`metaRepairer`); the package's tests implement it over a test chunk store |
-| `m-membership` | Membership interface | `Membership` in `worker.go`, added by the build; PLAN.md does not name it. `Peers` returns the candidate peer IDs; the worker sorts them and removes duplicates and its own ID. The node core implements it from the gossip view |
+| `m-membership` | Membership interface | `Membership` in `worker.go`. `Peers` returns the candidate peer IDs; the worker sorts them and removes duplicates and its own ID. The node core implements it from the gossip view |
 
 | # | From | To | Relationship |
 | --- | --- | --- | --- |
@@ -123,29 +123,10 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 11 | Node core | Anti-entropy worker | Creates one worker per node (depth 3, period 1 s by default), starts and stops it with the node, records each metadata key it writes (`Record`), and passes it the peers' diff requests (`OnRequest`) |
 | 12 | Node core | Membership interface | Implements it: `gossipView.Peers`, the live members other than the node itself |
 
-Differences from the target design:
+Notes:
 
-- Relationship 6 ran from the Diff protocol to the Transport in the target design. As
-  built, the diff code does no I/O: the worker sends each request and feeds the reply to
-  the session (relationship 7). Relationship 6 now shows the Wire codec, which is new.
-- Relationship 7 named the Clock only. As built, the worker also uses Rand and Transport.
-  The package makes no Disk call.
-- Relationships 9 and 10 and the Membership interface are new. The worker owns the tree
-  and fills it itself, by hashing what `Repairer.Keys` and `Repairer.Read` return and
-  through the write hooks `Record` and `Forget`.
-- Relationships 4 and 5 started at the Storage engine and relationship 8 at the Saga
-  engine in the target design. As built all three start at the Node core, and they mean
-  something else. The `Repairer` is over metadata keys: one tree per node covers the whole
-  OCC document, because repair is pull-only and a tree per bucket cannot discover a bucket
-  the node has never heard of. Shards are not repaired through the worker: the node core
-  keeps two trees per bucket and compares them locally (5 and 8), and peers exchange no
-  shard-inventory trees. The saga verify step compares two roots as bytes; the node core
-  builds them (5).
-- Relationships 11 and 12 are new.
-- Round trips: PLAN.md says "≤ depth". As built, a diff takes one round trip per tree
-  level, `Depth + 1` with the leaf level, plus one for each further leaf reply when the
-  leaf data passes the 1 MiB reply limit.
-- The package has no tombstones: `Forget` removes a key from the tree, and a later round
-  with a peer that still holds the key would pull it back. The node core does not use
-  `Forget` for deletes. A deleted key stays in the tree as its OCC tombstone version, which
-  wins the merge against the stale live version a peer still holds.
+- The diff code does no I/O: the worker sends each request and feeds the reply to the session (relationship 7). The package makes no Disk call.
+- The worker owns the tree and fills it itself, by hashing what `Repairer.Keys` and `Repairer.Read` return and through the write hooks `Record` and `Forget`.
+- The `Repairer` is over metadata keys: one tree per node covers the whole OCC document, because repair is pull-only and a tree per bucket cannot discover a bucket the node has never heard of. Shards are not repaired through the worker: the node core keeps two trees per bucket and compares them locally (relationships 5 and 8), and peers exchange no shard-inventory trees. The saga verify step compares two roots as bytes; the node core builds them (relationship 5).
+- Round trips: a diff takes one round trip per tree level, `Depth + 1` with the leaf level, plus one for each further leaf reply when the leaf data passes the 1 MiB reply limit.
+- The package has no tombstones: `Forget` removes a key from the tree, and a later round with a peer that still holds the key would pull it back. The node core does not use `Forget` for deletes. A deleted key stays in the tree as its OCC tombstone version, which wins the merge against the stale live version a peer still holds.

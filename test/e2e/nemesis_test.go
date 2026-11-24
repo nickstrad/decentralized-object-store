@@ -399,7 +399,7 @@ func (n *nemesis) allows(node env.NodeID, blob string) bool {
 
 // metadataElsewhere reports whether every metadata version currently held on id
 // is also held, with the same version ID, by at least one other up node.
-// Because local-first metadata writes acknowledge after a single local fsync,
+// Because metadata writes acknowledge after a single local fsync,
 // wiping the sole holder before anti-entropy copies a write permanently loses
 // it without a discard record; the budget therefore skips lone-holder wipes
 // unless the canary switch loneWipe is enabled.

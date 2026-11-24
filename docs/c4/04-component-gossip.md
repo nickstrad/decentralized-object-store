@@ -1,8 +1,8 @@
 # C4 Level 3 — Component: gossip (`internal/gossip`)
 
-**As built.** The seven components PLAN.md names and the wire codec exist and match this diagram (checked against `internal/gossip` when Chunk 1 landed, 2026-11-22). Relationships 10 and 11 are as built since Chunk 6 (checked against `internal/node`, 2026-11-22). The one reader of the view is the Node core (`internal/node`): storage, Merkle and OCC do not import this package, and take their members through interfaces they declare and the node core implements.
+The one reader of the view is the Node core (`internal/node`): storage, Merkle and OCC do not import this package, and take their members through interfaces they declare and the node core implements.
 
-Model: diagram `component-gossip` in [model.json](model.json). Source: PLAN.md sections 3, 4.2 (Chunk 1), 7.7; code in `node.go`, `member.go`, `wire.go`, `config.go`, `errors.go`.
+Model: diagram `component-gossip` in [model.json](model.json). Code in `node.go`, `member.go`, `wire.go`, `config.go`, `errors.go`.
 All components but the wire codec and the `View` lattice are parts of one single-threaded `Node`; the boxes are groups of its handlers, not separate types.
 
 ```mermaid
@@ -164,7 +164,7 @@ Terminal rendering, in 5 parts. Each numbered relationship appears in exactly on
 └─────────┘     └──────────────┘
 ```
 
-| ID | Component | As built |
+| ID | Component | Description |
 | --- | --- | --- |
 | `g-join` | Join and leave | `Join` and `Leave` in `node.go`. `Join` sends the push-pull sync to every seed at once and completes on the first reply, or fails with `ErrJoinFailed` and each seed's cause; its callback never runs inside `Join`. Seeds from `Config.Seeds` and from `Join` are remembered, at most `MaxSeeds` (256). `Leave` marks the node left at its incarnation, tells every live member in one gossip datagram, stops the timers and closes the node |
 | `g-probe` | Probe | `onTick` and `nextTarget`. One ping per `ProbeInterval` to the next live member in shuffled round-robin order; a member that becomes live in mid-round is inserted at a random later position. A target with no ack, direct or relayed, by the next tick becomes suspect |
@@ -172,8 +172,8 @@ Terminal rendering, in 5 parts. Each numbered relationship appears in exactly on
 | `g-suspicion` | Suspicion state machine | `suspectLocally`, `startSuspicion` and `refute`. A member that becomes suspect, by a failed probe or by gossip, gets a timer of `SuspicionMult` × ⌈log₂ N⌉ × `ProbeInterval`; if it is still suspect at that incarnation when the timer fires, it is declared dead. A node refutes any claim about itself, other than alive at its own incarnation, by raising its incarnation; it cannot go past the maximum `uint32` |
 | `g-dissem` | Piggybacked dissemination | `enqueue`, `piggyback` and `sendWith`. One queue entry per member. Every datagram the node sends carries updates within `MaxPacket`: explicit leads, then the destination's own entry if it is not alive, then the queue, fewest transmissions first. An entry is dropped after `RetransmitMult` × ⌈log₂ N⌉ transmissions |
 | `g-sync` | Full-state sync | `syncWith`, `onSync` and `OnRequest`. Push-pull: the caller sends its whole view, the receiver merges it and replies with its merged view, the caller merges that. Every `SyncInterval` a node syncs with one random live member and one random heal target, taken from the dead entries in its view, its dead tombstones and its remembered seeds that are not live |
-| `g-view` | Membership view and change events | `View` in `member.go`, the pure merge lattice ordered by (incarnation, state, region) through `Supersedes`, and the node's merge step `apply`. Exposes the `Membership` interface (`Members`, `Lookup`, `Subscribe`) and five event kinds, delivered synchronously: joined, suspected, recovered, died, left. Holds at most `MaxMembers` entries. Added by the build: a dead or left entry stays for `DeadRetention` and then becomes a tombstone; at most `MaxTombstones` (4,096) are kept and the oldest is evicted |
-| `g-wire` | Wire codec | `wire.go` and `errors.go`, added by the build; PLAN.md does not name it. `Message`, `Encode` and `Decode`, version 1. Ping, ack, ping-req and gossip are datagram kinds; sync request and sync response travel only as requests. Decoding is strict and canonical. Wire error codes 80 to 84. This code does no I/O |
+| `g-view` | Membership view and change events | `View` in `member.go`, the pure merge lattice ordered by (incarnation, state, region) through `Supersedes`, and the node's merge step `apply`. Exposes the `Membership` interface (`Members`, `Lookup`, `Subscribe`) and five event kinds, delivered synchronously: joined, suspected, recovered, died, left. Holds at most `MaxMembers` entries. A dead or left entry stays for `DeadRetention` and then becomes a tombstone; at most `MaxTombstones` (4,096) are kept and the oldest is evicted |
+| `g-wire` | Wire codec | `wire.go` and `errors.go`. `Message`, `Encode` and `Decode`, version 1. Ping, ack, ping-req and gossip are datagram kinds; sync request and sync response travel only as requests. Decoding is strict and canonical. Wire error codes 80 to 84. This code does no I/O |
 
 | # | From | To | Relationship |
 | --- | --- | --- | --- |
@@ -204,21 +204,10 @@ Terminal rendering, in 5 parts. Each numbered relationship appears in exactly on
 | 25 | Join and leave | Environment interfaces | Zero-delay timer, so that a join callback never runs inside `Join` (Clock) |
 | 26 | Probe | Join and leave | While the node knows no live member but itself, re-joins the remembered seeds once per period |
 
-Differences from the target design:
+Notes:
 
-- Relationship 5 ended at the Suspicion state machine in the target design. As built, a
-  relayed ack only marks the probe acknowledged; the probe alone reports a failure
-  (relationship 4). Relationship 5 now shows what the indirect probe takes from the view.
-- Relationship 9 named the Transport in the target design. As built, every datagram
-  leaves through the dissemination send path (relationships 16, 17, 18 and 21), so that
-  each one carries piggybacked updates.
-- Relationship 7 covered every state change in the target design. As built, the view's
-  merge step queues changes (relationship 14) and the suspicion code queues only this
-  node's refutation.
-- Relationships 10 and 11 started at the Storage engine and at the metadata layer in the
-  target design. As built both start at the Node core. It also starts the gossip node and
-  hands it the datagrams and requests of the gossip channel; that is not drawn, because
-  those calls enter every component.
-- Relationships 12 to 26 and the Wire codec are new. The package uses Clock, Rand and
-  Transport and no Disk. The view and its tombstones also read the time from the Clock,
-  for event times and retention; that is not drawn.
+- A relayed ack only marks the probe acknowledged; the probe alone reports a failure (relationship 4).
+- Every datagram leaves through the dissemination send path (relationships 16, 17, 18 and 21), so that each one carries piggybacked updates.
+- The view's merge step queues changes (relationship 14); the suspicion code queues only this node's refutation (relationship 7).
+- The Node core also starts the gossip node and hands it the datagrams and requests of the gossip channel; that is not drawn, because those calls enter every component.
+- The package uses Clock, Rand and Transport and no Disk. The view and its tombstones also read the time from the Clock, for event times and retention; that is not drawn.

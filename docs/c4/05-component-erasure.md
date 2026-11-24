@@ -1,8 +1,6 @@
 # C4 Level 3 — Component: erasure (`internal/erasure`)
 
-**As built.** Checked against `internal/erasure` when Chunk 2 landed (2026-11-21).
-
-Model: diagram `component-erasure` in [model.json](model.json). Source: PLAN.md sections 3, 4.2 (Chunk 2), 7.3; code in `gf256.go`, `matrix.go`, `codec.go`.
+Model: diagram `component-erasure` in [model.json](model.json). Code in `gf256.go`, `matrix.go`, `codec.go`.
 
 ```mermaid
 flowchart TB
@@ -88,7 +86,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 └───────────┘
 ```
 
-| ID | Component | As built |
+| ID | Component | Description |
 | --- | --- | --- |
 | `e-gf` | GF(2^8) arithmetic | `gf256.go`: polynomial 0x11D, generator 2, exp/log tables and a 256×256 multiplication table; `MulAddSlice` for whole shards |
 | `e-matrix` | Matrix inversion | `matrix.go`: `Matrix.Invert`, Gauss-Jordan; a singular matrix is `ErrSingular` |
@@ -111,9 +109,7 @@ Terminal rendering, in 4 parts. Each numbered relationship appears in exactly on
 | 10 | Reconstruct | GF(2^8) arithmetic | Multiplies present shards by inverse-matrix coefficients (`MulAddSlice`) |
 | 11 | Verify | GF(2^8) arithmetic | Multiplies data shards by matrix coefficients (`MulAddSlice`) |
 
-Differences from the target design:
+Notes:
 
-- No product code calls `Verify`. The target design had the Storage engine call it. The
-  Storage engine finds a damaged shard by its checksum and passes it to Reconstruct as
-  missing, because the code corrects erasures at known positions and does not locate errors.
-- Relationships 9 to 11 are new: the three operations call the field arithmetic directly.
+- No product code calls `Verify`. The Storage engine finds a damaged shard by its checksum and passes it to Reconstruct as missing, because the code corrects erasures at known positions and does not locate errors.
+- Encode, Reconstruct and Verify call the field arithmetic directly (relationships 9 to 11).
