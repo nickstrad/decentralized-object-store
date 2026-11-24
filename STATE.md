@@ -406,3 +406,19 @@ CSV independent review NITS repaired: preserve literal CRLF in allowed batch ide
 fields during CSV readback, with an exact disk round-trip regression. Reader also checks
 the encoded byte cap before parsing. Remaining retention/crash/directory-sync limitations
 are recorded explicitly in the adapter knowledge entry; finalized rows remain replayable.
+### Stage C O2 runtime checkpoint — 2026-11-24
+
+O2 implementation complete on `work/obs-resume-runtime` in
+`/root/Software/object-store-work/10-obs-resume-runtime`; phase remains NOT READY.
+Commits: `8097006` HTTP source; `86cf67c` independent-review HTTP nits repaired;
+`c374af3` runtime collector; `9f309a8` objnode configuration and lifecycle.
+
+Verified: all tests in `internal/noderuntime`, `internal/storage/httpapi`, and
+`cmd/objnode` pass; focused race tests for new metrics and lifecycle tests pass.
+Verification used temporary copies of the O1 agent's pending component sources and
+Prometheus implementation `822bb08` for compile dependencies; those files are not in
+these commits. Exact-dependency re-verification follows O1's final commits. No frozen
+core API/catalogue changed, no full gate/push/merge/publish. No O2 background run.
+Next owner: conductor integrates and independently reviews the runtime/CLI commits,
+reruns exact-tree fast lane and A2 proof, and records Stage C completion. O1/O3/O4
+remain separate owners. Resume from this branch; no command needs relaunching.
