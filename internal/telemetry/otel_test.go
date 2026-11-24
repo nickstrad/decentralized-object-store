@@ -215,3 +215,29 @@ func TestOTelRetryRecoveryAndRestart(t *testing.T) {
 		t.Fatal("restart metadata lost")
 	}
 }
+
+func TestOTelShutdownCancelsActivePublish(t *testing.T) {
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		close(started)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	a, b := openTest(t, server.URL)
+	finished := make(chan error, 1)
+	go func() { finished <- a.Publish(context.Background(), b) }()
+	<-started
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := a.Shutdown(ctx)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if err = <-finished; !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if err = a.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
