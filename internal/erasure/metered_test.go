@@ -87,3 +87,24 @@ func TestMeteredCodec(t *testing.T) {
 		t.Fatal("disabled metrics allocate state")
 	}
 }
+
+func TestMeteredReconstructFailuresAndParityOnly(t *testing.T) {
+	c, _ := NewMetered(2, 1, true)
+	if err := c.Reconstruct(nil); err == nil {
+		t.Fatal("missing shard set accepted")
+	}
+	if c.state.operations[1][1] != 1 || c.state.restored != 0 || c.state.input[1] != 0 {
+		t.Fatal("failure counted restored data")
+	}
+	shards := c.Split([]byte("data"))
+	if err := c.Encode(shards); err != nil {
+		t.Fatal(err)
+	}
+	shards[2] = nil
+	if err := c.ReconstructData(shards); err != nil {
+		t.Fatal(err)
+	}
+	if shards[2] != nil || c.state.restored != 0 || c.state.output[1] != 0 {
+		t.Fatal("parity-only erasure counted as data restoration")
+	}
+}

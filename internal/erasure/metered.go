@@ -74,7 +74,9 @@ func (c *MeteredCodec) measure(op int, shards [][]byte, dataOnly bool, fn func()
 			// All successfully reconstructed shards have equal length.
 			for _, b := range shards {
 				if b != nil {
-					output = uint64(len(b)) * missing
+					for range missing {
+						satAdd(&output, uint64(len(b)))
+					}
 					break
 				}
 			}
@@ -104,3 +106,6 @@ func (c *MeteredCodec) Snapshot() metrics.Snapshot {
 	s.Points = append(s.Points, metrics.Point{Name: "objstore_erasure_reconstructed_shards_total", Counter: c.state.restored}, metrics.Point{Name: "objstore_erasure_operations_in_flight"})
 	return s
 }
+
+// ShareMetrics folds ephemeral facades into one owner's lifetime counters.
+func (c *MeteredCodec) ShareMetrics(owner *MeteredCodec) { c.state = owner.state }

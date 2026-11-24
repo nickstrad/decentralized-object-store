@@ -12,7 +12,9 @@ import (
 // Every read verifies the shard header, checksum, and ShardID match; every
 // successful Put or Delete syncs before returning so its result survives a crash.
 type ChunkStore struct {
-	disk env.Disk
+	disk   env.Disk
+	metric *metricState
+	sizes  map[string]uint64
 }
 
 // NewChunkStore returns a ChunkStore backed by d.
@@ -51,7 +53,13 @@ func (s *ChunkStore) read(id ShardID) ([]byte, error) {
 // Get reads and verifies shard id, returning its header and payload. It returns
 // ErrInvalid for a bad bucket, ErrNotFound (joined with env.ErrNotFound) if
 // absent, ErrCorrupt if verification fails, or the underlying disk error.
-func (s *ChunkStore) Get(id ShardID) (ShardHeader, []byte, error) {
+func (s *ChunkStore) Get(id ShardID) (hout ShardHeader, bout []byte, eout error) {
+	defer func() {
+		s.observedOperation("get", eout)
+		if eout == nil {
+			s.metric.add("storage_shard_bytes_total", uint64(HeaderSize+len(bout)), "read")
+		}
+	}()
 	blob, err := s.read(id)
 	if err != nil {
 		return ShardHeader{}, nil, err
@@ -65,7 +73,13 @@ func (s *ChunkStore) Get(id ShardID) (ShardHeader, []byte, error) {
 
 // GetBlob reads and verifies shard id, returning the complete encoded blob.
 // Error semantics match Get.
-func (s *ChunkStore) GetBlob(id ShardID) ([]byte, error) {
+func (s *ChunkStore) GetBlob(id ShardID) (bout []byte, eout error) {
+	defer func() {
+		s.observedOperation("get", eout)
+		if eout == nil {
+			s.metric.add("storage_shard_bytes_total", uint64(len(bout)), "read")
+		}
+	}()
 	blob, err := s.read(id)
 	if err != nil {
 		return nil, err
@@ -81,7 +95,8 @@ func (s *ChunkStore) GetBlob(id ShardID) ([]byte, error) {
 // shard with different bytes returns ErrExists; a corrupt existing blob is
 // overwritten (repaired). A malformed or mismatched blob returns ErrCorrupt
 // without writing.
-func (s *ChunkStore) Put(id ShardID, blob []byte) error {
+func (s *ChunkStore) Put(id ShardID, blob []byte) (eout error) {
+	defer func() { s.observedPut(id, blob, eout) }()
 	if err := id.Validate(); err != nil {
 		return err
 	}
@@ -118,7 +133,8 @@ func (s *ChunkStore) Put(id ShardID, blob []byte) error {
 // Delete removes shard id and syncs the removal so it stays deleted across a
 // crash. If the shard is absent from the written layer, Delete still syncs any
 // pending deletion before returning ErrNotFound (joined with env.ErrNotFound).
-func (s *ChunkStore) Delete(id ShardID) error {
+func (s *ChunkStore) Delete(id ShardID) (eout error) {
+	defer func() { s.observedDelete(id, eout) }()
 	if err := id.Validate(); err != nil {
 		return err
 	}

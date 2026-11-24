@@ -35,6 +35,7 @@ const (
 // does not cap shard requests still outstanding to slow holders after a stripe
 // reaches quorum or decodes.
 type Config struct {
+	MetricsEnabled bool
 	Layout         Layout
 	Members        Membership
 	AckQuorum      int
@@ -94,11 +95,12 @@ type NodeStats struct {
 // Node is an env.Process that serves local shard RPCs from its ChunkStore and
 // coordinates striped erasure-coded Put and Get operations across peers.
 type Node struct {
-	e     env.Env
-	cfg   Config
-	codec *erasure.Codec
-	store *ChunkStore
-	stats NodeStats
+	metric *metricState
+	e      env.Env
+	cfg    Config
+	codec  StripeCodec
+	store  *ChunkStore
+	stats  NodeStats
 }
 
 // NewNode validates cfg and creates a Node backed by e. It returns ErrInvalid
@@ -107,11 +109,13 @@ func NewNode(e env.Env, cfg Config) (*Node, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	codec, err := cfg.Layout.Codec()
+	codec, err := erasure.NewMetered(cfg.Layout.K, cfg.Layout.M, cfg.MetricsEnabled)
 	if err != nil {
 		return nil, err
 	}
-	return &Node{e: e, cfg: cfg.withDefaults(), codec: codec, store: NewChunkStore(e.Disk)}, nil
+	n := &Node{metric: newMetricState(cfg.MetricsEnabled), e: e, cfg: cfg.withDefaults(), codec: codec, store: NewChunkStore(e.Disk)}
+	n.store.enableMetrics(n.metric)
+	return n, nil
 }
 
 // Store returns the node's local ChunkStore.
@@ -168,7 +172,14 @@ func (n *Node) EncodeState() []byte {
 
 func (n *Node) request(to env.NodeID, req []byte, cb func([]byte, error)) {
 	n.stats.Requests++
-	n.e.Net.Request(to, req, n.cfg.RequestTimeout, cb)
+	n.metric.adjust("storage_requests_in_flight", 1)
+	n.e.Net.Request(to, req, n.cfg.RequestTimeout, func(b []byte, err error) {
+		n.metric.adjust("storage_requests_in_flight", -1)
+		if errors.Is(err, env.ErrTimeout) {
+			n.metric.add("storage_rpc_timeouts_total", 1)
+		}
+		cb(b, err)
+	})
 }
 
 func (n *Node) later(fn func()) {
@@ -268,7 +279,7 @@ func (op *putOp) launch(i int) error {
 	stripe := uint32(i)
 	lo := int64(i) * int64(man.Layout.StripeSize)
 	data := op.data[lo : lo+int64(man.Layout.StripeLen(man.Size, i))]
-	blobs, err := EncodeStripe(n.codec, man.Version, stripe, data)
+	blobs, err := EncodeStripeWithCodec(n.codec, man.Version, stripe, data)
 	if err != nil {
 		return err
 	}
@@ -334,7 +345,7 @@ type GetResult struct {
 
 type getOp struct {
 	n        *Node
-	codec    *erasure.Codec
+	codec    StripeCodec
 	man      *Manifest
 	cb       func(GetResult, error)
 	res      GetResult
@@ -376,7 +387,7 @@ func (n *Node) Get(man *Manifest, cb func(GetResult, error)) {
 	op.codec = n.codec
 	err := man.Validate()
 	if err == nil && (man.Layout.K != n.codec.K() || man.Layout.M != n.codec.M()) {
-		op.codec, err = man.Layout.Codec()
+		op.codec, err = n.NewCodec(man.Layout.K, man.Layout.M)
 	}
 	if err != nil {
 		n.later(func() { op.finish(err) })
