@@ -40,6 +40,12 @@ Prometheus/CSV adapters and DuckDB analysis are not implemented here.
   deterministic sizing without weakening detlint. The earlier cancellation fixture hung
   until it consumed its HTTP request body; the corrected focused tests pass.
 
+The fast run at `017c0ad` passed G0/G6 and observability tests (metrics 96.6%, telemetry
+95.7%) but failed existing saga TestPropTerminalState: rapid reported 20 successful cases,
+then its coverage-of-draws assertion found zero retry exhaustion cases. No saga code was
+changed. The failure log/result were preserved under /root/runs/objstore-obs-core-fast-saga-failure.*;
+one bounded rerun with unchanged product/tests follows.
+
 ## Handoff
 
 Conductor selects the fresh cross-company reviewer before acceptance/landing. No merge,

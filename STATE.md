@@ -86,7 +86,11 @@ script are ready. Deployment committed in `7ad39f1`. Final checks found a Collec
 exports resource attributes on target_info; the scrape config now drops boot_id to
 preserve the no-per-boot-series rule. The fix is committed in `ca42bf1`; active-export shutdown cancellation is
 covered in `4c4f330`. Docker fixture passed again, including zero stored boot_id labels.
-Fast lane passed on `7ad39f1`; final rerun includes the shutdown/boot-label fixes.
+Fast lane passed on `7ad39f1`. The `017c0ad` final rerun passed all G0/G6 and
+observability tests (metrics 96.6%, telemetry 95.7%) but failed the existing saga
+TestPropTerminalState coverage-of-random-draws assertion: 20 cases passed, none reached
+retry exhaustion. Failure evidence is /root/runs/objstore-obs-core-fast-saga-failure.*.
+One bounded fast-lane rerun follows, with no product/test changes.
 No component Snapshot wiring or Prometheus/CSV adapters were built in this seat.
 
 Evidence so far: Collector 0.145.0 validates its config; real Docker Prometheus 3.9.1
