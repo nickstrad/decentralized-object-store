@@ -23,7 +23,7 @@ Status: PHASE 2 (BUILD) COMPLETE, 2026-11-23, and the CLEANUP PHASE (rename to O
 prose cleanup) COMPLETE, 2026-11-24 — see "Cleanup phase" below. Every chunk is landed on main:
 Step 0, 0a, 0b, the five protocol chunks (1–5), Chunk 6 (integration, f64aa11), Chunk 7
 (end-to-end suite and hardening, d618607) and Chunk 8 (publishing finish, fbb0e2a). The book is
-live at the new URL. Observability Stage C is now DONE; the final pass remains pending. See its section below. Prior-phase done markers: /root/runs/objstore-phase2-done.txt and
+live at the new URL. Observability phase is READY on feat/observability (awaiting owner landing/merge). See its section below. Prior-phase done markers: /root/runs/objstore-phase2-done.txt and
 /root/runs/objstore-cleanup-done.txt.
 
 Seats (this project only): Fable orchestrates, gates and lands; Opus writes
@@ -76,14 +76,14 @@ command check on a clean clone; site lint clean (22 pages); sweep part 1 empty; 
 the new URL, all pages HTTP 200. No full gate was run in this phase (by the mission).
 The GitHub description is Neon's draft (agent_work/09-cleanup/repo-description.txt).
 
-## Observability phase — Stage C: DONE (2026-11-24); phase NOT READY
+## Observability phase — READY (2026-11-24)
 
 Goal/spec: [observability plan](agent_work/10-observability/PLAN.md), including the owner's
-CSV-disk-flush / DuckDB-analysis amendment. Core A0/A1 and erasure catalogue cleanup were
-already complete at f711468; Stage C resumed from that commit. Frozen metrics interfaces
-and catalogue, go.mod and go.sum are unchanged by Stage C.
+CSV-disk-flush / DuckDB-analysis amendment. Core A0/A1, erasure catalogue cleanup, Stage C
+(O1–O4, A2), and Neon's second final pass are complete on `feat/observability`. Frozen
+metrics interfaces and catalogue, `go.mod`, and `go.sum` are unchanged.
 
-| Stage C deliverable | Commits on feat/observability | Status |
+| Deliverable | Commits on feat/observability | Status |
 |---|---|---|
 | O1 component snapshots/config, metered codec, stripe hooks, aggregate sources | ca8d9b6, b254d38, 99263a7, 88e9b08; cost/accounting repairs ed81d14, 978c322 | DONE |
 | O2 HTTP, bounded runtime collector, objnode config/flags/lifecycle | a5cbca3, 01253b5, 131b37e, 7b420ad | DONE |
@@ -91,19 +91,33 @@ and catalogue, go.mod and go.sum are unchanged by Stage C.
 | O4 pinned DuckDB-over-CSV, precision and actual-node smokes | 44ee96d, 79b35ba, f69ef35, 060bb3e | DONE |
 | A2 actual objnode → Collector → Prometheus and bounded CI | 7954bdb, 8f25539 | DONE |
 | Bounded snapshot cost regression/benchmark | 7304a6b | DONE |
+| Final pass #2 verification, `check-otel.sh` stdin fix, final docs/README | Neon final pass #2 commits on `feat/observability` | DONE |
 
 All independent reviews pass after one repair round. Evidence and accepted nits:
 [Stage C verification](agent_work/10-observability/STAGE-C-VERIFICATION.md),
 [review reports](agent_work/10-observability/reviews/),
 [final-pass handoff](agent_work/10-observability/STAGE-C-HANDOFF.md).
 
-Verified on final production Go code 978c322: build and vet all packages; complete
-`go test -p 2 -timeout 30m ./...` (682.55s, no filtered/shortened tests); Docker G0/G1/G6
-(all coverage floors >=85%); focused Docker race checks; real objnode OTel/Prometheus
-counter growth/gauge/boot-label proof; real objnode CSV→pinned DuckDB and exact >2^53
-fixture; fixed snapshot cardinality/allocations at 1/100/1000 objects. Initial default
-10-minute E2E timeout and cold CSV compile timeout are preserved in the verification
-record; complete reruns passed. No full landing/fuzz/large-sweep gate was run.
+Verified on final production Go code 978c322 plus final pass #2 script/doc updates:
+- Stage C full suite: `go build ./...`, `go vet ./...`, complete `go test -p 2 -timeout 30m ./...`
+  (682.55s, no filtered/shortened tests), fixed snapshot cardinality/allocations at 1/100/1000
+  objects (109 points, 494 allocs, 42,376 B/collection).
+- Final pass #2 independent verification:
+  - `go test -v -race -count=1 ./internal/metrics ./internal/telemetry/...` PASS (all three adapters
+    `otel`, `prometheus`, `csv` pass `adaptertest.Run` contract tests).
+  - `go test -race -count=1 ./internal/noderuntime ./internal/storage/httpapi ./cmd/objnode` PASS.
+  - `go test -count=1 ./internal/{erasure,storage,node,gossip,merkle,occ,saga} -run 'TestMetrics|TestMetered'` PASS.
+  - Real `objnode` → Collector → Prometheus proof (`agent_work/10-observability/check-otel.sh`):
+    PASS after fixing `docker compose run --rm -T` stdin hang with `</dev/null` (HTTP health
+    counter 1 → 11, in-flight gauge 0, zero `boot_id` labels in Prometheus and Collector `objstore_*`).
+  - DuckDB-over-CSV proofs (`check-csv.sh` and `check-objnode-csv.sh`): PASS (exact >2^53 `UBIGINT`,
+    JSON label extraction, `.tmp` exclusion, real CSV-enabled `objnode` exporting all 10 components
+    across multiple batches with clean shutdown).
+  - Docker fast lane (`agent_work/gates/ci-fast.sh`): PASS (G0/G1/G6 all green, `overall=pass`,
+    `counts_for_landing=false`; no full landing/fuzz/large-sweep gate claimed).
+- Reader-facing docs updated (`docs/observability.md`, `README.md`) to describe the complete wired
+  system (`otel`, `prometheus`, `csv`, `objnode` flags, DuckDB-over-CSV analysis, Collector →
+  Prometheus stack).
 
 Durable knowledge: docs/knowledge/observability-{core,components,runtime,adapters}.md.
 Reusable checks/query commands: [work-scripts](work-scripts/README.md).
@@ -111,21 +125,17 @@ CSV is the runtime disk sink; DuckDB is analysis over finalized CSV. No runtime 
 writer was introduced. No push, main merge or publication occurred.
 
 Next, in order:
-1. Neon/conductor: second final pass updating README/reference/help/book/C4 to match the
-   delivered sources, flags, all three adapters and analysis paths; use STAGE-C-HANDOFF.md.
-2. Neon/conductor: verify final prose/commands and decide phase readiness. This Stage C
-   checkpoint intentionally leaves the observability phase NOT READY.
-3. Owner/conductor retains landing/publish gates; no merge is authorized by this checkpoint.
+1. Owner/conductor: run any desired full landing gate and merge/push `feat/observability` to `main`.
 
-Resume: target feat/observability is in /root/Software/object-store. No background build,
-review or metrics process remains. All resumed/reviewer worktrees were cleaned; original
-interrupted 10-obs-{components,runtime,adapters} worktrees are preserved untouched, as is
-10-obs-core. Read this checkpoint and verification record; no Stage C job needs relaunch.
-Done marker: /root/runs/objstore-obs-rest-done.txt.
+Resume: target `feat/observability` is in `/root/Software/object-store` and is **READY** for owner
+landing review. No background build, review, or metrics process remains. All resumed/reviewer
+worktrees were cleaned; original interrupted `10-obs-{core,components,runtime,adapters}` worktrees
+remain preserved untouched. Done markers: `/root/runs/objstore-obs-rest-done.txt`,
+`/root/runs/objstore-obs-neon2-done.txt`.
 
 ## In progress
 
-Observability Stage C is DONE. Neon's second final pass is next; phase remains NOT READY.
+Observability phase is READY on `feat/observability` (awaiting owner landing/merge).
 No active build or review run. See the observability section above for SHAs and evidence.
 
 ## Per-chunk pipeline (as run for chunks 1–5; worked examples in each agent_work/<slug>/)
@@ -246,8 +256,8 @@ No active build or review run. See the observability section above for SHAs and 
 
 ## Resume
 
-Phase 2 and cleanup are complete. Observability Stage C is DONE on feat/observability;
-Neon's second final pass and readiness decision remain. Read the observability checkpoint
-and its handoff/verification records above. No background run needs resuming. The complete
-host suite, Docker fast lane and both real-node observability proofs passed; no push,
-main merge or publication was performed. Original interrupted worktrees remain retained.
+Phase 2 and cleanup are complete. The observability phase is READY on `feat/observability`
+after Stage C and Neon's second final pass (see the observability section above and
+`/root/runs/objstore-obs-neon2-done.txt`). No background run needs resuming. No push,
+main merge, or publication was performed; owner retains landing authority. Original
+interrupted worktrees remain retained.
