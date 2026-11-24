@@ -486,3 +486,9 @@ full storage suite, storage/node build/vet, and focused determinism lint all PAS
 Logs: `/root/runs/objstore-obs-off-repair-review-{tests,storage,node,detlint}.log`.
 Next: conductor integrates and obtains confirm review in this same O1 review round.
 F3/F4/F5 have documented existing semantics; no frozen catalogue/port change was needed.
+
+Component-review repair code/test checkpoint: `46f115e`. Durable component notes now
+record owner-first facade construction, written-layer byte/gauge semantics, HEAD mapping,
+private codec invariant and saga terminal-log recovery counting. No additional reusable
+script or VM knowledge was needed. Worktree has no live build/check processes; conductor
+owns integration, confirm review and final exact-tree checks. Phase readiness is unchanged.

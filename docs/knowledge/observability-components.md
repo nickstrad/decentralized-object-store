@@ -41,3 +41,32 @@ and compares allocations with direct transport calls; node's
 operation paths using a retaining fake clock. These tests isolate metrics overhead without
 network traffic or timing thresholds. Compiler escape analysis also distinguishes retained
 callbacks from the nonescaping synchronous erasure closures and node metric defers.
+
+Region-scoped storage nodes and migration copiers use `NewNodeSharingMetrics` with the
+same disk and owner loop as their owner. This constructor shares the existing inventory
+index and codec meter before metric initialization, so constructing a facade performs no
+inventory List/Read and allocates no discarded metric map or codec counter state. The
+primary storage node still inventories the disk once on construction; env.Disk exposes
+names but no blob sizes, so this startup inventory reads blob bodies. The regression
+`TestMetricsSharedStorageConstructionDoesNotScan` exercises both actual facade paths and
+checks disk calls, shared local gauges and erasure lifetime totals.
+
+Storage write bytes count bytes accepted by Disk.Write, including a write followed by a
+failed Sync. An identical idempotent Put only Syncs and adds no write bytes. Local shard
+and byte gauges describe the readable written disk layer, so accepted Write/Delete updates
+them before Sync; operation outcome counters still report a Sync failure. A restart rebuilds
+the inventory from the surviving disk state. `TestMetricsStorageWrittenLayerAndIdempotentBytes`
+covers these distinctions.
+
+Node HEAD operations use the finite `get` category. A public operation called from an
+asynchronous completion callback is a separate operation: the wrapper records completion
+before invoking that callback. Synchronous public methods use the depth guard to avoid
+counting their own nested implementation calls. Storage's private codec field is created
+only as a MeteredCodec by the two constructors; the internal type assertions depend on
+that invariant, so any future codec injection must preserve it or change those assertions.
+
+Saga recoveries count successfully loaded known saga logs once per engine incarnation,
+including terminal logs. Terminal reloads do not increment fresh starts or completions;
+only nonterminal reloads enter the active gauge and resume work. The existing
+`TestMetricsSagaRetryCompensationRecovery` pins the terminal reload behavior. This is a
+log-load counter rather than a count of only interrupted executions.
