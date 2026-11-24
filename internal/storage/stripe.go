@@ -70,7 +70,7 @@ func (l Layout) StripeLen(size int64, i int) int {
 // EncodeStripe splits data into k+m erasure-coded shards and wraps each in a
 // checksummed shard blob for object version v and stripe index stripe. It
 // returns ErrInvalid if len(data) > MaxStripeSize.
-func EncodeStripe(codec *erasure.Codec, v VersionID, stripe uint32, data []byte) ([][]byte, error) {
+func EncodeStripeWithCodec(codec StripeCodec, v VersionID, stripe uint32, data []byte) ([][]byte, error) {
 	if len(data) > MaxStripeSize {
 		return nil, fmt.Errorf("storage: encode stripe %d: %d bytes over %d: %w", stripe, len(data), MaxStripeSize, ErrInvalid)
 	}
@@ -99,7 +99,7 @@ type shardExpect struct {
 	length    int
 }
 
-func expectFor(codec *erasure.Codec, v VersionID, stripe uint32, dataLen int) shardExpect {
+func expectFor(codec StripeCodec, v VersionID, stripe uint32, dataLen int) shardExpect {
 	return shardExpect{k: codec.K(), m: codec.M(), version: v, stripe: stripe, shardSize: codec.ShardSize(dataLen), length: dataLen}
 }
 
@@ -123,7 +123,7 @@ func (e shardExpect) verify(index int, blob []byte, want *[32]byte) ([]byte, err
 	return payload, nil
 }
 
-func decodeVerified(codec *erasure.Codec, stripe uint32, dataLen int, payloads [][]byte, causes []error) ([]byte, error) {
+func decodeVerified(codec StripeCodec, stripe uint32, dataLen int, payloads [][]byte, causes []error) ([]byte, error) {
 	shards := make([][]byte, len(payloads))
 	copy(shards, payloads)
 	if err := codec.ReconstructData(shards); err != nil {
@@ -142,7 +142,7 @@ func decodeVerified(codec *erasure.Codec, stripe uint32, dataLen int, payloads [
 // present blobs that failed verification, and an error (ErrInvalid for bad
 // argument shapes, or ErrUnavailable joined with per-shard causes if fewer than
 // k blobs verified).
-func DecodeStripe(codec *erasure.Codec, v VersionID, stripe uint32, dataLen int, blobs [][]byte, want [][32]byte) ([]byte, []int, error) {
+func DecodeStripeWithCodec(codec StripeCodec, v VersionID, stripe uint32, dataLen int, blobs [][]byte, want [][32]byte) ([]byte, []int, error) {
 	n := codec.N()
 	if len(blobs) != n || want != nil && len(want) != n || dataLen < 0 || dataLen > MaxStripeSize {
 		return nil, nil, fmt.Errorf("storage: decode stripe %d: %d blobs, %d checksums, length %d: %w", stripe, len(blobs), len(want), dataLen, ErrInvalid)
@@ -172,4 +172,25 @@ func DecodeStripe(codec *erasure.Codec, v VersionID, stripe uint32, dataLen int,
 		return nil, bad, err
 	}
 	return data, bad, nil
+}
+
+func EncodeStripe(codec *erasure.Codec, v VersionID, stripe uint32, data []byte) ([][]byte, error) {
+	return EncodeStripeWithCodec(codec, v, stripe, data)
+}
+
+func DecodeStripe(codec *erasure.Codec, v VersionID, stripe uint32, dataLen int, blobs [][]byte, want [][32]byte) ([]byte, []int, error) {
+	return DecodeStripeWithCodec(codec, v, stripe, dataLen, blobs, want)
+}
+
+type StripeCodec interface {
+	K() int
+	M() int
+	N() int
+	ShardSize(int) int
+	Split([]byte) [][]byte
+	Encode([][]byte) error
+	Verify([][]byte) error
+	Reconstruct([][]byte) error
+	ReconstructData([][]byte) error
+	Join([][]byte, int) ([]byte, error)
 }
