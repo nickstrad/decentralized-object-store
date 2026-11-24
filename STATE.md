@@ -76,38 +76,44 @@ command check on a clean clone; site lint clean (22 pages); sweep part 1 empty; 
 the new URL, all pages HTTP 200. No full gate was run in this phase (by the mission).
 The GitHub description is Neon's draft (agent_work/09-cleanup/repo-description.txt).
 
-## Observability phase — PLANNED (2026-11-24)
+## Observability phase — PLAN TWEAKED (2026-11-24)
 
-Goal: framework-free component snapshots and config-selected OTel, Prometheus, CSV and
-DuckDB adapters. Implementation spec: [agent_work/10-observability/PLAN.md](agent_work/10-observability/PLAN.md).
-Planning baseline: main `379e622`; plan and this status are committed together on
-`feat/observability` (resolve the plan checkpoint with
+Goal: framework-free component snapshots, config-selected mandatory OTel and Prometheus
+adapters (with Docker Compose for local Collector + Prometheus), first-class CSV disk-flush
+adapter for tests and local analysis without OTel/Prometheus, and a DuckDB-over-CSV analysis
+layer (no runtime DuckDB writer adapter in v1 — no valid runtime use case over CSV + native
+DuckDB CSV queries; recorded per the 2026-11-24 owner amendment). Implementation spec:
+[agent_work/10-observability/PLAN.md](agent_work/10-observability/PLAN.md).
+Planning baseline: main `379e622`; Astra's plan (`68c4c81`) and Neon's plan tweak are
+committed on `feat/observability` (resolve the plan checkpoint with
 `git log -1 --format=%H feat/observability -- agent_work/10-observability/PLAN.md`).
 
-Done: architecture, exact ports, metric catalogue, toggle/cost model, adapter contracts,
-Docker Collector-to-Prometheus path, dependency rulings, chunk acceptance and seat split.
+Done: architecture, exact detlint-clean ports, metric catalogue, toggle/cost model, adapter
+contracts, Docker Collector-to-Prometheus Compose setup, CSV disk-flush schema +
+DuckDB-over-CSV analysis layer, dependency rulings, chunk acceptance and seat split.
 No product code was changed or product tests run for this planning-only checkpoint.
-Status: PLANNED; implementation not started; no background build/review run is alive.
+Status: PLAN TWEAKED; ready for build dispatch (A0); no background build/review run is alive.
 
 Next, in order: conductor briefs A0/A1 for Astra (core/selector/OTel first); Opus builds
 O1/O2 (component/runtime/objnode wiring); Astra completes A2 (real objnode metric queried
-in Prometheus); Opus builds O3/O4 (Prometheus, CSV, DuckDB); Neon performs N1 cleanup,
+in Prometheus); Opus builds O3 (mandatory Prometheus + first-class CSV adapters) and O4
+(DuckDB-over-CSV analysis queries/helper + pinned Docker CLI smoke); Neon performs N1 cleanup,
 docs and final polish. See the plan for dependencies, acceptance and independent review.
 Open implementation choices: Astra pins and validates Collector/Prometheus image digests
-in A1; Opus pins the DuckDB CLI/checksum and measures its cost in O4. No planning blocker.
+in A1; Opus pins the DuckDB CLI/checksum in the optional `dev-observability` Docker target
+and measures its image delta in O4. No planning blocker.
 Publication/merge remains a Nick/conductor gate, not authorized by the planning task.
 
-Resume: main ref remains at `379e622`; the primary checkout is switched to
-`feat/observability` after completion. The temporary
-planning worktree `/root/Software/object-store-work/10-observability` is removed after the
-planning commit and done marker are verified; create a fresh worktree from the branch for
-implementation. Marker: `/root/runs/objstore-obs-plan-done.txt` (branch, exact plan SHA,
-five key rulings). There are no detached processes to relaunch. Verify branch/git before
-starting A0; do not rerun a build inferred only from the old Phase 2 resume section.
+Resume: main ref remains at `379e622`; `feat/observability` holds the tweaked plan and this
+checkpoint. Markers: `/root/runs/objstore-obs-plan-done.txt` (Astra plan) and
+`/root/runs/objstore-obs-plan-tweak-done.txt` (Neon tweak). Create or refresh a worktree from
+`feat/observability` for A0 implementation. There are no detached processes to relaunch.
+Verify branch/git before starting A0; do not rerun a build inferred only from the old Phase 2
+resume section.
 
 ## In progress
 
-Observability is planned; no implementation run is active.
+Observability plan is PLAN TWEAKED; ready for A0 dispatch; no implementation run is active.
 
 ## Per-chunk pipeline (as run for chunks 1–5; worked examples in each agent_work/<slug>/)
 
@@ -227,7 +233,7 @@ Observability is planned; no implementation run is active.
 
 ## Resume
 
-Phase 2 and cleanup are complete; observability is PLANNED (see its section above). No run
+Phase 2 and cleanup are complete; observability is PLAN TWEAKED (see its section above). No run
 is alive. For
 follow-up work read this file, PLAN.md and /root/briefs/objstore-phase2-mission.md; start a new
 branch and worktree from main (worktrees under /root/Software/object-store-work/).
