@@ -248,19 +248,26 @@ follow-up work read this file, PLAN.md and /root/briefs/objstore-phase2-mission.
 branch and worktree from main (worktrees under /root/Software/object-store-work/).
 `agent_work/orch/launch.sh` names run files `objstore-p2-<run>` unless RUN_PREFIX is set. The full gate on main is `GATE_STAGE=final agent_work/gates/gate.sh <name>`.
 
-## Observability rest build — active (2026-11-24)
+## Observability rest build — BLOCKED (2026-11-24)
 
-Nick reassigned remaining Opus scope to Sol; core handoff at bd3e01c is the base.
-Current branch: feat/observability in /root/Software/object-store. Core retained worktree
-is detached and untouched. DuckDB ruling remains analysis-over-CSV, no runtime writer.
+Core is complete at bd3e01c (independent review remains separate). Nick reassigned
+remaining Opus scope to Sol. Current branch/worktree: feat/observability at
+/root/Software/object-store. Remaining build stopped under the explicit core-contract
+blocker rule; no implementation commits were integrated.
 
-In flight: fresh Sol headless O1 components in work/obs-components and O3 adapters in
-work/obs-adapters, under /root/Software/object-store-work/10-obs-{components,adapters}.
-Briefs/logs/PIDs/exit/result: /root/runs/objstore-obs-{components,adapters}*.
-Check both exit file and result output; verify /proc/<pid>/cwd. One failure retry maximum.
-No core interface changes authorized; report exact blocker if needed. Fast lane only.
+Blocker owner: Astra/core owner. The operation domains for erasure input/output byte
+counters are HTTP operations, rejecting encode/reconstruct required by the plan.
+Evidence and reproducer: [REST-BLOCKER](agent_work/10-observability/REST-BLOCKER.md).
+Marker: /root/runs/objstore-obs-rest-blocked.txt. No done marker is claimed.
 
-Next: integrate component commits; fresh O2 runtime/HTTP/config unit; integrate adapters;
-fresh O4 DuckDB analysis; independent cross-company review, repair and final fast lane.
-No main merge/push/publication authorized. Usage check: Claude weekly 6% (Fable 11%);
-Muse server supplied no usage data; Codex status attempt did not yet yield a gauge.
+All three fresh Sol runs stopped (exit 1/interrupted); no background builds remain.
+Retained worktrees: /root/Software/object-store-work/10-obs-{components,adapters,runtime}
+on work/obs-{components,adapters,runtime}. Partial Prometheus implementation/tests are
+uncommitted in adapters; components and runtime have no product changes. Logs, briefs,
+PIDs and exits: /root/runs/objstore-obs-{components,adapters,runtime}*.
+
+Next: core owner corrects the two label domains with regression tests, then fresh
+agents resume O1/O2/O3/O4, independent review and fast-lane acceptance. No full/race/long
+gate, push, main merge, publication or independent implementation review was run.
+DuckDB ruling remains CSV analysis, no runtime writer. Usage checked: Claude weekly
+6% used (Fable 11%); Codex weekly 82% left; Muse server supplied no usage data.
