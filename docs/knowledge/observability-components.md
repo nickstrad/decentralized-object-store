@@ -70,3 +70,16 @@ including terminal logs. Terminal reloads do not increment fresh starts or compl
 only nonterminal reloads enter the active gauge and resume work. The existing
 `TestMetricsSagaRetryCompensationRecovery` pins the terminal reload behavior. This is a
 log-load counter rather than a count of only interrupted executions.
+
+## Snapshot cost acceptance
+
+`TestMetricsSnapshotCostIndependentOfObjectCount` and
+`BenchmarkMetricsSnapshotObjectCount` populate 1, 100 and 1,000 real objects in the
+simulator. The largest fixture has 1,004 metadata records, 1,000 local shards and 2,004
+Merkle entries. All seven component sources retain 109 points and identical allocation
+counts across sizes. The Go 1.26.11 measurement was 494 allocations and 42,376 bytes per
+collection; those absolute numbers are an implementation measurement, not a permanent API
+promise. CPU timing is descriptive because host load varies; the regression asserts
+cardinality and allocation independence rather than wall time. Run the benchmark with
+`go test ./internal/node -run '^$' -bench '^BenchmarkMetricsSnapshotObjectCount$' -benchtime=200ms`.
+The setup performs real persistence work and is intentionally outside the timed loop.

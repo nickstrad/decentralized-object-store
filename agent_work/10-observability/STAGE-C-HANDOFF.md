@@ -35,8 +35,8 @@ checkpoint. They now need to describe the actual delivered behavior:
   CSV-enabled objnode and pinned DuckDB without Collector/Prometheus or network access,
   asserts all ten components and multiple batches, and verifies clean process shutdown.
 
-Component semantics and accepted review nits are recorded in docs/knowledge/observability-
-components.md, observability-runtime.md and observability-adapters.md. Review reports under
+Component semantics and accepted review nits are recorded in `docs/knowledge/observability-components.md`, `observability-runtime.md` and
+`observability-adapters.md`. Review reports under
 reviews/ distinguish initial NITS from passing confirms. In particular shard write bytes
 follow successful disk Write, including a later Sync failure; idempotent Put adds no bytes.
 
