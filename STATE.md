@@ -76,44 +76,32 @@ command check on a clean clone; site lint clean (22 pages); sweep part 1 empty; 
 the new URL, all pages HTTP 200. No full gate was run in this phase (by the mission).
 The GitHub description is Neon's draft (agent_work/09-cleanup/repo-description.txt).
 
-## Observability phase — PLAN TWEAKED (2026-11-24)
+## Observability phase — CORE BUILD IN VALIDATION (2026-11-24)
 
-Goal: framework-free component snapshots, config-selected mandatory OTel and Prometheus
-adapters (with Docker Compose for local Collector + Prometheus), first-class CSV disk-flush
-adapter for tests and local analysis without OTel/Prometheus, and a DuckDB-over-CSV analysis
-layer (no runtime DuckDB writer adapter in v1 — no valid runtime use case over CSV + native
-DuckDB CSV queries; recorded per the 2026-11-24 owner amendment). Implementation spec:
-[agent_work/10-observability/PLAN.md](agent_work/10-observability/PLAN.md).
-Planning baseline: main `379e622`; Astra's plan (`68c4c81`) and Neon's plan tweak are
-committed on `feat/observability` (resolve the plan checkpoint with
-`git log -1 --format=%H feat/observability -- agent_work/10-observability/PLAN.md`).
+Goal/spec: [observability plan](agent_work/10-observability/PLAN.md), with Nick's
+2026-11-24 amendment (CSV disk flush; DuckDB analysis over CSV, no runtime DuckDB writer).
+Core value model and finite catalogue implemented; selector, runner, contract suite,
+OTLP adapter and pinned local Docker pipeline implemented and undergoing final checks.
+No component Snapshot wiring or Prometheus/CSV adapters were built in this seat.
 
-Done: architecture, exact detlint-clean ports, metric catalogue, toggle/cost model, adapter
-contracts, Docker Collector-to-Prometheus Compose setup, CSV disk-flush schema +
-DuckDB-over-CSV analysis layer, dependency rulings, chunk acceptance and seat split.
-No product code was changed or product tests run for this planning-only checkpoint.
-Status: PLAN TWEAKED; ready for build dispatch (A0); no background build/review run is alive.
+Evidence so far: Collector 0.145.0 validates its config; real Docker Prometheus 3.9.1
+observed fixture HTTP requests 7 -> 15 and in-flight gauge 1. This is A1 fixture proof,
+not the A2 objnode production proof. Build/vet and focused tests passed. Fast lane is
+running; its first determinism lint found encoding/json in metrics. Removed that
+import in favor of a conservative deterministic byte bound, retaining exact OTLP
+encoded-byte enforcement in the adapter. Full fast-lane rerun follows.
 
-Next, in order: conductor briefs A0/A1 for Astra (core/selector/OTel first); Opus builds
-O1/O2 (component/runtime/objnode wiring); Astra completes A2 (real objnode metric queried
-in Prometheus); Opus builds O3 (mandatory Prometheus + first-class CSV adapters) and O4
-(DuckDB-over-CSV analysis queries/helper + pinned Docker CLI smoke); Neon performs N1 cleanup,
-docs and final polish. See the plan for dependencies, acceptance and independent review.
-Open implementation choices: Astra pins and validates Collector/Prometheus image digests
-in A1; Opus pins the DuckDB CLI/checksum in the optional `dev-observability` Docker target
-and measures its image delta in O4. No planning blocker.
-Publication/merge remains a Nick/conductor gate, not authorized by the planning task.
-
-Resume: main ref remains at `379e622`; `feat/observability` holds the tweaked plan and this
-checkpoint. Markers: `/root/runs/objstore-obs-plan-done.txt` (Astra plan) and
-`/root/runs/objstore-obs-plan-tweak-done.txt` (Neon tweak). Create or refresh a worktree from
-`feat/observability` for A0 implementation. There are no detached processes to relaunch.
-Verify branch/git before starting A0; do not rerun a build inferred only from the old Phase 2
-resume section.
+Resume: branch feat/observability is checked out in
+/root/Software/object-store-work/10-obs-core. Build log:
+/root/runs/objstore-obs-core.log; checks: /root/runs/objstore-obs-core-fast.log and
+/root/runs/objstore-obs-pipeline.log. No merge/push/publish authorized here.
+Next: finish fast checks and core commits; conductor selects independent cross-company
+reviewer; Opus O1/O2 component/runtime/objnode wiring; Astra A2 real node proof; then
+Opus O3/O4 Prometheus/CSV and DuckDB analysis; Neon N1 documentation.
 
 ## In progress
 
-Observability plan is PLAN TWEAKED; ready for A0 dispatch; no implementation run is active.
+Observability core build is in validation in the dedicated 10-obs-core worktree.
 
 ## Per-chunk pipeline (as run for chunks 1–5; worked examples in each agent_work/<slug>/)
 
