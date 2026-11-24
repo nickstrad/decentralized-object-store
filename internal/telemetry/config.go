@@ -119,6 +119,13 @@ func normalize(c Config) (normalized, error) {
 	if n.settings[0] != '{' || json.Unmarshal(n.settings, &o) != nil {
 		return n, fmt.Errorf("%w: settings must be an object", ErrConfig)
 	}
+	if c.Enabled {
+		if validate := settingValidators[n.name]; validate != nil {
+			if err := validate(n.interval, n.settings); err != nil {
+				return n, err
+			}
+		}
+	}
 	return n, nil
 }
 func Open(ctx context.Context, c Config, id Identity) (Adapter, error) {

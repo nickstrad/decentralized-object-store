@@ -356,3 +356,11 @@ Stage C live claims and verification dependencies: agent_work/10-observability/C
 In progress on work/obs-resume-components. Erasure facade and compatible measured stripe
 entry points implemented; focused erasure/storage tests pass. Remaining component counters,
 config propagation and bounded aggregate sources are being implemented. No background run.
+### Stage C adapter resume checkpoint (Sol, 2026-11-24)
+
+Branch/worktree: `work/obs-resume-adapters`, `10-obs-resume-adapters`.
+O3 direct Prometheus implementation and shared contracts complete: immutable bounded
+cache, private listener, no pre-first/stale values, escaped/sorted exposition and joined
+shutdown. Enabled config uses a private registry validation hook for the two-interval
+staleness bound; public interfaces/catalogue unchanged. Focused telemetry tests pass.
+CSV and DuckDB analysis work remains in progress; no background run to resume.
