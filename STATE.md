@@ -329,3 +329,21 @@ and real-`objnode` / DuckDB-over-CSV checks, then update `docs/observability.md`
 for the newly wired components, flags, Prometheus/CSV adapters, and DuckDB-over-CSV queries
 before marking the observability phase READY. DuckDB ruling remains CSV analysis over flushed
 CSV files, no runtime writer.
+
+
+## Stage C resumption — A2 preparation (2026-11-24)
+
+Goal: complete O1/O2/O3/O4 and A2 under the [observability plan](agent_work/10-observability/PLAN.md).
+Status: implementation resumed from f711468; phase remains NOT READY. No core blocker.
+A2 now asserts health counter growth, the in-flight gauge, and absence of boot_id labels;
+Compose has the observability profile and CI has a separate five-minute Docker proof job.
+Static preparation checks pass: go test ./test/observability (integration gated), shell syntax,
+Docker Compose config. Docker daemon 29.7.2 is available; live proof waits for O1/O2.
+
+Active worktrees: 10-obs-resume-components (O1), 10-obs-resume-runtime (O2),
+10-obs-resume-adapters (O3/O4), 10-obs-resume-proof (A2 preparation), all under
+/root/Software/object-store-work. Retained interrupted worktrees are untouched.
+Next: combine tested implementation commits on feat/observability, run the real Docker
+proof and CSV/DuckDB smoke, independent cross-company review, required fast lane, then
+record Stage C DONE with SHAs. Neon owns the second final pass and phase readiness.
+No detached process for A2 is running; rerun check-otel.sh after wiring lands.

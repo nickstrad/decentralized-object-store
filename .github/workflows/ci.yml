@@ -41,3 +41,21 @@ jobs:
             agent_work/ci/gates/result.json
             agent_work/ci/gates/*.log
           if-no-files-found: ignore
+
+  observability:
+    name: Objnode through Collector to Prometheus
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify real objnode metrics through the Docker pipeline
+        env:
+          COMPOSE_PROJECT_NAME: objstore-obs-ci
+        run: agent_work/10-observability/check-otel.sh
+      - name: Upload observability proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: observability-proof
+          path: agent_work/10-observability/evidence/node/
+          if-no-files-found: error

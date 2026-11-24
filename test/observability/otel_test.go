@@ -14,7 +14,7 @@ import (
 
 func TestObjnodeOTelPrometheus(t *testing.T) {
 	if os.Getenv("OBS_INTEGRATION") != "1" {
-		t.Skip("requires Docker observability services and O2 objnode wiring")
+		t.Skip("requires Docker observability services (check-otel.sh)")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -40,7 +40,7 @@ func TestObjnodeOTelPrometheus(t *testing.T) {
 			request("http://obs-node:8080/_health")
 		}
 	}
-	poll := func(q string, above float64) float64 {
+	poll := func(q string, accept func(float64) bool) float64 {
 		t.Helper()
 		for {
 			b := request("http://prometheus:9090/api/v1/query?query=" + url.QueryEscape(q))
@@ -58,22 +58,23 @@ func TestObjnodeOTelPrometheus(t *testing.T) {
 				var s string
 				_ = json.Unmarshal(v.Data.Result[0].Value[1], &s)
 				n, e := strconv.ParseFloat(s, 64)
-				if e == nil && n > above {
+				if e == nil && accept(n) {
 					t.Logf("query=%s result=%s", q, b)
 					return n
 				}
 			}
 			select {
 			case <-ctx.Done():
-				t.Fatalf("metric did not advance: %s %s", q, b)
+				t.Fatalf("metric did not meet expectation: %s %s", q, b)
 			case <-time.After(100 * time.Millisecond):
 			}
 		}
 	}
 	health()
 	q := `objstore_http_requests_total{node_id="obs-node:7946",operation="health",status_class="2xx"}`
-	first := poll(q, 0)
+	first := poll(q, func(n float64) bool { return n > 0 })
 	health()
-	poll(q, first)
-	poll(`objstore_http_requests_in_flight{node_id="obs-node:7946"}`, -1)
+	poll(q, func(n float64) bool { return n > first })
+	poll(`objstore_http_requests_in_flight{node_id="obs-node:7946"}`, func(n float64) bool { return n >= 0 })
+	poll(`count({boot_id!=""}) or vector(0)`, func(n float64) bool { return n == 0 })
 }

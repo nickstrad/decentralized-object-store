@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Default is the real objnode proof (requires O2). --fixture is only A1 transport evidence.
+# Default is the real objnode proof. --fixture is only A1 transport evidence.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 mode=${1:-node}
 if [[ "$mode" != node && "$mode" != --fixture ]]; then echo 'usage: check-otel.sh [--fixture]' >&2; exit 2; fi
 project=${COMPOSE_PROJECT_NAME:-objstore-obs-$$}
 export COMPOSE_PROJECT_NAME="$project"
-compose=(docker compose -p "$project" -f compose.yaml -f compose.observability.yaml)
+compose=(docker compose -p "$project" -f compose.yaml -f compose.observability.yaml --profile observability)
 logs="agent_work/10-observability/evidence/$mode"
 mkdir -p "$logs" agent_work/10-observability/bin
 cleanup() {
