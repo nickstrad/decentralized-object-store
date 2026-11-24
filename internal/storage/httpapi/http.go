@@ -44,6 +44,7 @@ const (
 // Limits bounds request sizes, headers, and timeouts on the HTTP handler and
 // server. Zero fields are replaced by Default* values via WithDefaults.
 type Limits struct {
+	MetricsEnabled    bool
 	MaxObjectSize     int64
 	MaxSmallBody      int64
 	MaxHeaderBytes    int
@@ -139,7 +140,11 @@ type handler struct {
 // NewHandler returns an http.Handler routing the object-store HTTP API to svc
 // with the given size/timeout limits and optional extra error-status rows.
 func NewHandler(svc Service, l Limits, extra ...storage.StatusRow) http.Handler {
-	return &handler{svc: svc, l: l.WithDefaults(), table: StatusTable(extra...)}
+	h := &handler{svc: svc, l: l.WithDefaults(), table: StatusTable(extra...)}
+	if l.MetricsEnabled {
+		return &meteredHandler{next: h}
+	}
+	return h
 }
 
 type errorBody struct {
@@ -597,19 +602,22 @@ func (h *handler) object(ctx context.Context, w http.ResponseWriter, r *http.Req
 // Server wraps an http.Server with bounded listen, serve, and graceful
 // shutdown lifecycle management.
 type Server struct {
-	srv *http.Server
-	mu  sync.Mutex
-	ln  net.Listener
-	wg  sync.WaitGroup
-	err error
+	meter *meteredHandler
+	srv   *http.Server
+	mu    sync.Mutex
+	ln    net.Listener
+	wg    sync.WaitGroup
+	err   error
 }
 
 // NewServer constructs an unstarted HTTP Server bound to addr with Limits l
 // (filled via WithDefaults) and optional extra status rows.
 func NewServer(addr string, svc Service, l Limits, extra ...storage.StatusRow) *Server {
 	l = l.WithDefaults()
-	return &Server{srv: &http.Server{
-		Addr: addr, Handler: NewHandler(svc, l, extra...), MaxHeaderBytes: l.MaxHeaderBytes,
+	handler := NewHandler(svc, l, extra...)
+	meter, _ := handler.(*meteredHandler)
+	return &Server{meter: meter, srv: &http.Server{
+		Addr: addr, Handler: handler, MaxHeaderBytes: l.MaxHeaderBytes,
 		ReadHeaderTimeout: l.ReadHeaderTimeout, ReadTimeout: l.ReadTimeout, WriteTimeout: l.WriteTimeout, IdleTimeout: l.IdleTimeout,
 	}}
 }
