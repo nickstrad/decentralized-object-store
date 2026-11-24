@@ -38,7 +38,20 @@ func projection(b metrics.Batch) []metrics.Point {
 		p[i].Labels = append([]metrics.Label(nil), p[i].Labels...)
 		slices.SortFunc(p[i].Labels, func(a, b metrics.Label) int { return strings.Compare(a.Name, b.Name) })
 	}
-	slices.SortFunc(p, func(a, b metrics.Point) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(p, func(a, b metrics.Point) int {
+		if c := strings.Compare(a.Name, b.Name); c != 0 {
+			return c
+		}
+		for i := 0; i < len(a.Labels) && i < len(b.Labels); i++ {
+			if c := strings.Compare(a.Labels[i].Name, b.Labels[i].Name); c != 0 {
+				return c
+			}
+			if c := strings.Compare(a.Labels[i].Value, b.Labels[i].Value); c != 0 {
+				return c
+			}
+		}
+		return len(a.Labels) - len(b.Labels)
+	})
 	return p
 }
 

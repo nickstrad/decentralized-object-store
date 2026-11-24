@@ -241,3 +241,20 @@ func TestOTelShutdownCancelsActivePublish(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestOTelHonorsCallerTimeoutBeyondDefault(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer server.Close()
+	a, b := openTest(t, server.URL)
+	if a.client.Timeout != 0 || a.transport.ResponseHeaderTimeout != 0 {
+		t.Fatalf("unexpected fixed client timeouts: client=%v header=%v", a.client.Timeout, a.transport.ResponseHeaderTimeout)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := a.Publish(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+}

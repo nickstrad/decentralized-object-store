@@ -22,6 +22,8 @@ import (
 	"time"
 )
 
+const defaultOTelPublishTimeout = 2 * time.Second
+
 type otelSettings struct {
 	Endpoint    string `json:"endpoint"`
 	Insecure    bool   `json:"insecure"`
@@ -87,10 +89,9 @@ func newOTel(ctx context.Context, id Identity, raw json.RawMessage) (Adapter, er
 	tr.TLSClientConfig = tlsConfig
 	tr.MaxConnsPerHost = 1
 	tr.MaxIdleConnsPerHost = 1
-	tr.ResponseHeaderTimeout = 2 * time.Second
 	life, cancel := context.WithCancel(context.Background())
 	a := &otelAdapter{transport: tr, endpoint: s.Endpoint, headers: headers, id: id, life: life, cancel: cancel, shutdownDone: make(chan struct{})}
-	a.client = &http.Client{Transport: tr, Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	a.client = &http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return a, nil
 }
 func validHeader(k, v string) bool {
@@ -214,10 +215,13 @@ func encodeOTel(b metrics.Batch) ([]byte, error) {
 	}
 	req := otelRequest{[]otelResourceMetrics{{Resource: otelResource{[]otelAttribute{attr("service.name", "objstore"), attr("service.instance.id", b.NodeID), attr("region", b.Region), attr("boot_id", b.BootID)}}, ScopeMetrics: []otelScopeMetrics{{Scope: otelScope{"objstore.metrics", "1"}, Metrics: ms}}}}}
 	out, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
 	if len(out) > metrics.MaxBatchBytes {
 		return nil, errors.New("OTLP batch exceeds byte bound")
 	}
-	return out, err
+	return out, nil
 }
 func (a *otelAdapter) Publish(ctx context.Context, b metrics.Batch) error {
 	a.mu.Lock()
@@ -228,7 +232,12 @@ func (a *otelAdapter) Publish(ctx context.Context, b metrics.Batch) error {
 	a.active.Add(1)
 	a.mu.Unlock()
 	defer a.active.Done()
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	var cancel context.CancelFunc
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		ctx, cancel = context.WithTimeout(ctx, defaultOTelPublishTimeout)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
 	defer cancel()
 	stop := context.AfterFunc(a.life, cancel)
 	defer stop()
@@ -250,8 +259,7 @@ func (a *otelAdapter) Publish(ctx context.Context, b metrics.Batch) error {
 		if err == nil || !retry || attempt == 1 {
 			return err
 		}
-		deadline, _ := ctx.Deadline()
-		if time.Until(deadline) <= delay {
+		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) <= delay {
 			return err
 		}
 		timer := time.NewTimer(delay)
@@ -283,6 +291,9 @@ func (a *otelAdapter) send(ctx context.Context, body []byte) (bool, time.Duratio
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 65537))
 	if err != nil {
+		if ctx.Err() != nil {
+			return false, 0, ctx.Err()
+		}
 		return true, 100 * time.Millisecond, errors.New("OTLP response read failed")
 	}
 	if len(data) > 65536 {

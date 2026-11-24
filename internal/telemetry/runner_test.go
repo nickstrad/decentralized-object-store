@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/nickstrad/object-store/internal/metrics"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -16,16 +17,41 @@ type collectFunc func(context.Context) (metrics.Batch, error)
 func (f collectFunc) Collect(c context.Context) (metrics.Batch, error) { return f(c) }
 
 type sink struct {
+	mu      sync.Mutex
 	batches []metrics.Batch
 	err     error
 	closes  int
 }
 
 func (s *sink) Publish(c context.Context, b metrics.Batch) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.batches = append(s.batches, b)
 	return s.err
 }
-func (s *sink) Shutdown(context.Context) error { s.closes++; return nil }
+func (s *sink) Shutdown(context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closes++
+	return nil
+}
+func (s *sink) setErr(err error) {
+	s.mu.Lock()
+	s.err = err
+	s.mu.Unlock()
+}
+func (s *sink) snapshotBatches() []metrics.Batch {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]metrics.Batch, len(s.batches))
+	copy(out, s.batches)
+	return out
+}
+func (s *sink) closeCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closes
+}
 func TestConfig(t *testing.T) {
 	for _, c := range []Config{{Adapter: "missing"}, {Interval: "bad"}, {Timeout: "bad"}, {Interval: "1ms"}, {Interval: "2h"}, {Timeout: "0s"}, {Interval: "1s", Timeout: "2s"}, {Settings: json.RawMessage(`[]`)}, {Settings: json.RawMessage(`{`)}} {
 		if _, e := Open(context.Background(), c, Identity{}); !errors.Is(e, ErrConfig) {
@@ -95,7 +121,7 @@ func TestRunnerLifecycle(t *testing.T) {
 		id := NewIdentity("node", "region")
 		s := &sink{}
 		calls := 0
-		logs := 0
+		var logs atomic.Int64
 		c := Config{Enabled: true, Interval: "100ms", Timeout: "40ms"}
 		collector := collectFunc(func(ctx context.Context) (metrics.Batch, error) {
 			calls++
@@ -107,7 +133,7 @@ func TestRunnerLifecycle(t *testing.T) {
 			}
 			return metrics.Batch{Snapshots: []metrics.Snapshot{{Component: "node", Points: []metrics.Point{{Name: "objstore_node_ready", Gauge: 1}}}}}, nil
 		})
-		r, e := NewRunner(c, id, collector, s, func(string, ...any) { logs++ })
+		r, e := NewRunner(c, id, collector, s, func(string, ...any) { logs.Add(1) })
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -116,25 +142,26 @@ func TestRunnerLifecycle(t *testing.T) {
 		var wg sync.WaitGroup
 		wg.Go(func() { _ = r.Run(ctx) })
 		synctest.Wait()
-		if len(s.batches) != 1 || s.batches[0].Sequence != 1 || s.batches[0].BootID != id.BootID {
-			t.Fatal(s.batches)
+		batches := s.snapshotBatches()
+		if len(batches) != 1 || batches[0].Sequence != 1 || batches[0].BootID != id.BootID {
+			t.Fatal(batches)
 		}
-		s.err = ErrPartial
+		s.setErr(ErrPartial)
 		time.Sleep(300 * time.Millisecond)
 		synctest.Wait()
-		s.err = errors.New("export")
+		s.setErr(errors.New("export"))
 		time.Sleep(200 * time.Millisecond)
 		synctest.Wait()
-		if logs != 3 || r.counts[1] != 2 || r.counts[4] == 0 || r.counts[3] == 0 {
-			t.Fatal(logs, r.counts)
-		}
 		if e = r.Shutdown(context.Background()); e != nil {
 			t.Fatal(e)
 		}
 		wg.Wait()
+		if logs.Load() != 3 || r.counts[countCollectErr] != 2 || r.counts[countExportPartial] == 0 || r.counts[countExportErr] == 0 {
+			t.Fatal(logs.Load(), r.counts)
+		}
 		_ = r.Shutdown(context.Background())
-		if s.closes != 1 {
-			t.Fatal(s.closes)
+		if s.closeCount() != 1 {
+			t.Fatal(s.closeCount())
 		}
 	})
 }
@@ -150,11 +177,11 @@ func TestRunnerTimeoutAndJoin(t *testing.T) {
 		synctest.Wait()
 		time.Sleep(50 * time.Millisecond)
 		synctest.Wait()
-		if r.counts[1] != 1 || len(s.batches) != 0 {
-			t.Fatal(r.counts)
-		}
 		if e = r.Shutdown(context.Background()); e != nil {
 			t.Fatal(e)
+		}
+		if r.counts[countCollectErr] != 1 || len(s.snapshotBatches()) != 0 {
+			t.Fatal(r.counts)
 		}
 	})
 }
@@ -163,10 +190,10 @@ func TestRunnerSlowCyclesCoalesce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		id := NewIdentity("node", "region")
 		s := &sink{}
-		calls := 0
+		var calls atomic.Int64
 		r, err := NewRunner(Config{Enabled: true, Interval: "100ms", Timeout: "90ms"}, id,
 			collectFunc(func(ctx context.Context) (metrics.Batch, error) {
-				calls++
+				calls.Add(1)
 				// A misbehaving synchronous source still cannot cause overlapping work.
 				time.Sleep(350 * time.Millisecond)
 				return metrics.Batch{}, ctx.Err()
@@ -178,8 +205,8 @@ func TestRunnerSlowCyclesCoalesce(t *testing.T) {
 		synctest.Wait()
 		time.Sleep(350 * time.Millisecond)
 		synctest.Wait()
-		if calls != 2 || r.counts[5] != 2 {
-			t.Fatal(calls, r.counts)
+		if calls.Load() != 2 {
+			t.Fatal(calls.Load())
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 		defer cancel()
@@ -191,8 +218,8 @@ func TestRunnerSlowCyclesCoalesce(t *testing.T) {
 		if err := r.Shutdown(context.Background()); err != nil {
 			t.Fatal(err)
 		}
-		if s.closes != 1 || len(s.batches) != 0 {
-			t.Fatal(s)
+		if r.counts[countSkippedTicks] != 4 || s.closeCount() != 1 || len(s.snapshotBatches()) != 0 {
+			t.Fatal(r.counts, s.closeCount(), len(s.snapshotBatches()))
 		}
 	})
 }
