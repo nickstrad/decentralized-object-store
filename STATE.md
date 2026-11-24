@@ -394,3 +394,10 @@ Logs: `/root/runs/objstore-obs-{csv-smoke,analysis-build,analysis-base-build}.lo
 Real objnode CSV smoke is still pending runtime integration, owned by conductor. Phase
 remains NOT READY; no runtime DuckDB writer was introduced.
 A2/O4 integration preparation: check-objnode-csv.sh runs actual CSV-enabled objnode in the pinned analysis image, asserts multiple sequences/all ten metric components/positive HTTP health counter/gauge, and ignores crash .tmp residue. Live execution still awaits O1/O2/O3/O4 integration.
+
+Durable assessment: recorded adapter/file-contract pitfalls, private settings-validation
+pattern and measured analysis image delta in `docs/knowledge/observability-adapters.md`;
+indexed reusable CSV analysis/query scripts in `work-scripts/README.md`. Adapter branch
+commits: Prometheus `e064ec9` + review repair `3d4eb5e`, CSV `5e2121e` + `b810145`,
+DuckDB analysis `a3b52a5`. Focused telemetry race tests, vet and Docker fixture smoke pass.
+The conductor owns integration of these commits, independent review and real-node smoke.
