@@ -353,9 +353,17 @@ A2 preparation independent review: NITS addressed/recorded in agent_work/10-obse
 Stage C live claims and verification dependencies: agent_work/10-observability/COORDINATION.md. A2 prep on target at 7954bdb + 8f25539; independent review exit/output verified.
 ### Stage C O1 resume checkpoint (component worktree)
 
-In progress on work/obs-resume-components. Erasure facade and compatible measured stripe
-entry points implemented; focused erasure/storage tests pass. Remaining component counters,
-config propagation and bounded aggregate sources are being implemented. No background run.
+O1 implementation DONE on work/obs-resume-components; independent review is coordinated
+by the Stage C conductor. Commits: 81256e2 (erasure facade and stripe hooks), c9f6888
+(storage transitions/shared codec totals), 797897d (gossip/Merkle/OCC/saga sources),
+ae0b0c4 (node propagation and fixed aggregate sources). Phase remains NOT READY.
+
+Verified: go build ./..., go vet ./..., full go test for all seven owned component
+packages, focused TestMetrics/TestMetered transitions, determinism lint (74 files in
+10 packages), paniccheck, and git diff --check. No frozen core interfaces/catalogue changed.
+No component background process remains. Resume by reading this checkpoint and the
+conductor's Stage C state; await independent review, then finish O2/O3/O4/A2 integration.
+
 ### Stage C adapter resume checkpoint (Sol, 2026-11-24)
 
 Branch/worktree: `work/obs-resume-adapters`, `10-obs-resume-adapters`.
