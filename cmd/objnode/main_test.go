@@ -86,10 +86,13 @@ func TestHelpListsEveryFlag(t *testing.T) {
 	}
 	fs := flag.NewFlagSet("x", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	for _, name := range strings.Fields(help) {
-		fs.Bool(name, false, "")
+	for _, line := range strings.Split(strings.TrimSpace(help), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 {
+			fs.Bool(fields[0], false, "")
+		}
 	}
-	for _, want := range []string{"id", "region", "listen", "http", "data", "seeds", "k", "m", "stripe", "max-object", "shutdown-timeout", "config"} {
+	for _, want := range []string{"id", "region", "listen", "http", "data", "seeds", "k", "m", "stripe", "max-object", "shutdown-timeout", "config", "observability", "observability-adapter", "observability-interval", "observability-timeout", "observability-settings"} {
 		if fs.Lookup(want) == nil {
 			t.Errorf("help.txt does not name -%s", want)
 		}

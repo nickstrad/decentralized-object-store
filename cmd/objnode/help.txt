@@ -10,3 +10,8 @@ stripe            byte size of each band (1048576)
 max-object        largest PUT body in bytes (33554432 cap)
 shutdown-timeout  graceful stop deadline on signal (20s limit)
 config            JSON options file; CLI flags override its fields
+observability     enable periodic metrics export (false by default)
+observability-adapter  metric adapter: otel, prometheus, or csv (otel default)
+observability-interval  observation period as a duration string (10s default)
+observability-timeout  collection/export timeout as a duration string (2s default)
+observability-settings  adapter settings as a JSON object

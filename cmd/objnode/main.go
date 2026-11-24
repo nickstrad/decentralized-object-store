@@ -28,6 +28,7 @@ import (
 	"github.com/nickstrad/object-store/internal/noderuntime"
 	"github.com/nickstrad/object-store/internal/storage"
 	"github.com/nickstrad/object-store/internal/storage/httpapi"
+	"github.com/nickstrad/object-store/internal/telemetry"
 )
 
 //go:embed help.txt
@@ -36,17 +37,18 @@ var help string
 var errUsage = errors.New("objnode: invalid options")
 
 type options struct {
-	ID              string        `json:"id"`
-	Region          string        `json:"region"`
-	Listen          string        `json:"listen"`
-	HTTP            string        `json:"http"`
-	Data            string        `json:"data"`
-	Seeds           string        `json:"seeds"`
-	K               int           `json:"k"`
-	M               int           `json:"m"`
-	Stripe          int           `json:"stripe"`
-	MaxObject       int64         `json:"max_object"`
-	ShutdownTimeout time.Duration `json:"shutdown_timeout"`
+	Observability   telemetry.Config `json:"observability"`
+	ID              string           `json:"id"`
+	Region          string           `json:"region"`
+	Listen          string           `json:"listen"`
+	HTTP            string           `json:"http"`
+	Data            string           `json:"data"`
+	Seeds           string           `json:"seeds"`
+	K               int              `json:"k"`
+	M               int              `json:"m"`
+	Stripe          int              `json:"stripe"`
+	MaxObject       int64            `json:"max_object"`
+	ShutdownTimeout time.Duration    `json:"shutdown_timeout"`
 }
 
 func defaults() options {
@@ -61,6 +63,11 @@ func parse(args []string, stderr io.Writer) (options, error) {
 	fs.SetOutput(stderr)
 	fs.Usage = func() { fmt.Fprint(stderr, help) }
 	config := fs.String("config", "", "")
+	fs.BoolVar(&o.Observability.Enabled, "observability", false, "")
+	fs.StringVar(&o.Observability.Adapter, "observability-adapter", "", "")
+	fs.StringVar(&o.Observability.Interval, "observability-interval", "", "")
+	fs.StringVar(&o.Observability.Timeout, "observability-timeout", "", "")
+	fs.Func("observability-settings", "", func(value string) error { o.Observability.Settings = json.RawMessage(value); return nil })
 	fs.StringVar(&o.ID, "id", "", "")
 	fs.StringVar(&o.Region, "region", "", "")
 	fs.StringVar(&o.Listen, "listen", "", "")
@@ -105,7 +112,12 @@ func parse(args []string, stderr io.Writer) (options, error) {
 func merge(file, flags options, set map[string]bool) options {
 	out := file
 	pick := map[string]func(){
-		"id": func() { out.ID = flags.ID }, "region": func() { out.Region = flags.Region }, "listen": func() { out.Listen = flags.Listen },
+		"observability":          func() { out.Observability.Enabled = flags.Observability.Enabled },
+		"observability-adapter":  func() { out.Observability.Adapter = flags.Observability.Adapter },
+		"observability-interval": func() { out.Observability.Interval = flags.Observability.Interval },
+		"observability-timeout":  func() { out.Observability.Timeout = flags.Observability.Timeout },
+		"observability-settings": func() { out.Observability.Settings = flags.Observability.Settings },
+		"id":                     func() { out.ID = flags.ID }, "region": func() { out.Region = flags.Region }, "listen": func() { out.Listen = flags.Listen },
 		"http": func() { out.HTTP = flags.HTTP }, "data": func() { out.Data = flags.Data }, "seeds": func() { out.Seeds = flags.Seeds },
 		"k": func() { out.K = flags.K }, "m": func() { out.M = flags.M }, "stripe": func() { out.Stripe = flags.Stripe },
 		"max-object": func() { out.MaxObject = flags.MaxObject }, "shutdown-timeout": func() { out.ShutdownTimeout = flags.ShutdownTimeout },
@@ -120,6 +132,11 @@ func merge(file, flags options, set map[string]bool) options {
 
 // configs validates o and builds the noderuntime and HTTP server configs.
 func (o options) configs(logf func(string, ...any)) (noderuntime.RuntimeConfig, httpapi.Limits, error) {
+	check := o.Observability
+	check.Enabled = false
+	if _, err := telemetry.Open(context.Background(), check, telemetry.Identity{}); err != nil {
+		return noderuntime.RuntimeConfig{}, httpapi.Limits{}, errors.Join(errUsage, err)
+	}
 	var seeds []env.NodeID
 	for _, s := range strings.Split(o.Seeds, ",") {
 		if s = strings.TrimSpace(s); s != "" {
@@ -127,7 +144,8 @@ func (o options) configs(logf func(string, ...any)) (noderuntime.RuntimeConfig, 
 		}
 	}
 	cfg := noderuntime.RuntimeConfig{
-		ID: env.NodeID(o.ID), Region: env.Region(o.Region), Listen: o.Listen, DataDir: o.Data, Logf: logf,
+		MetricsEnabled: o.Observability.Enabled,
+		ID:             env.NodeID(o.ID), Region: env.Region(o.Region), Listen: o.Listen, DataDir: o.Data, Logf: logf,
 		Node: node.Config{
 			Seeds: seeds, Layout: storage.Layout{K: o.K, M: o.M, StripeSize: o.Stripe}, MaxObjectSize: o.MaxObject,
 			Log: func(line string) { logf("%s", line) },
@@ -139,7 +157,7 @@ func (o options) configs(logf func(string, ...any)) (noderuntime.RuntimeConfig, 
 	if o.HTTP == "" {
 		return cfg, httpapi.Limits{}, fmt.Errorf("objnode: no http address: %w", errUsage)
 	}
-	return cfg, httpapi.Limits{MaxObjectSize: o.MaxObject}, nil
+	return cfg, httpapi.Limits{MaxObjectSize: o.MaxObject, MetricsEnabled: o.Observability.Enabled}, nil
 }
 
 // serve starts the node runtime and HTTP server, waits for ctx cancellation or
@@ -153,12 +171,40 @@ func serve(ctx context.Context, o options, logger *log.Logger, ready func(httpAd
 	if err != nil {
 		return err
 	}
+	id := telemetry.NewIdentity(o.ID, o.Region)
+	adapter, err := telemetry.Open(ctx, o.Observability, id)
+	if err != nil {
+		if errors.Is(err, telemetry.ErrConfig) {
+			err = errors.Join(errUsage, err)
+		}
+		return errors.Join(err, rt.Close())
+	}
+	closeAdapter := func() error {
+		if adapter == nil {
+			return nil
+		}
+		sctx, cancel := context.WithTimeout(context.Background(), o.ShutdownTimeout)
+		defer cancel()
+		return adapter.Shutdown(sctx)
+	}
 	if err := rt.Start(ctx); err != nil {
-		return err
+		return errors.Join(err, rt.Close(), closeAdapter())
 	}
 	srv := httpapi.NewServer(o.HTTP, rt, limits, node.StatusRows()...)
 	if err := srv.Start(ctx); err != nil {
-		return errors.Join(err, rt.Close())
+		return errors.Join(err, rt.Close(), closeAdapter())
+	}
+	var runner *telemetry.Runner
+	var runnerDone chan struct{}
+	runnerCtx, stopRunner := context.WithCancel(ctx)
+	defer stopRunner()
+	if adapter != nil {
+		runner, err = telemetry.NewRunner(o.Observability, id, rt.MetricsCollector(srv), adapter, logger.Printf)
+		if err != nil {
+			return errors.Join(errUsage, err, srv.Shutdown(ctx), rt.Close(), closeAdapter())
+		}
+		runnerDone = make(chan struct{})
+		go func() { defer close(runnerDone); _ = runner.Run(runnerCtx) }()
 	}
 	logger.Printf("objnode: node %s in region %q serving http on %s", cfg.ID, cfg.Region, srv.Addr())
 	if ready != nil {
@@ -171,7 +217,17 @@ func serve(ctx context.Context, o options, logger *log.Logger, ready func(httpAd
 	logger.Printf("objnode: shutting down within %v", o.ShutdownTimeout)
 	sctx, cancel := context.WithTimeout(context.Background(), o.ShutdownTimeout)
 	defer cancel()
-	return errors.Join(rt.Err(), srv.Shutdown(sctx), rt.Shutdown(sctx))
+	stopRunner()
+	if runnerDone != nil {
+		<-runnerDone
+	}
+	httpErr := srv.Shutdown(sctx)
+	runtimeErr := rt.Shutdown(sctx)
+	var adapterErr error
+	if runner != nil {
+		adapterErr = runner.Shutdown(sctx)
+	}
+	return errors.Join(rt.Err(), httpErr, runtimeErr, adapterErr)
 }
 
 // run executes the CLI lifecycle and maps outcomes to process exit codes:
