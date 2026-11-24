@@ -16,3 +16,4 @@ existing file rather than adding a duplicate.
 The vendored `kb` tool indexes `docs/knowledge/*.md` through `.kb/` (this README is excluded
 from the index). Rebuild with `agent_work/kb-sync.sh index`, then search with
 `.kb/bin/kb search "<question>"`.
+\n- [Component observability](observability-components.md): source ownership, shared codec totals, inventory gauges and committed OCC discard semantics.\n
