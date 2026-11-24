@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "objstore",
-  "title": "Object Store \u2014 architecture as built",
+  "title": "Object Store \u2014 architecture",
   "revision": "as-built-final-2026-11-23",
   "defaultDiagramId": "context",
   "model": {
@@ -198,7 +198,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "As built, the one reader of the Membership view is the node core (internal/node), which answers the Membership interfaces of storage, Merkle and OCC from it."
+          "The one reader of the Membership view is the node core (internal/node), which answers the Membership interfaces of storage, Merkle and OCC from it."
         ],
         "docIds": [],
         "sourceIds": [
@@ -216,7 +216,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "As built, the node core (internal/node) implements Repairer over the OCC metadata keys and Membership from the gossip view; one worker per node covers all metadata. Shards are repaired by the node core with two local trees per bucket, not through the worker.",
+          "The node core (internal/node) implements Repairer over the OCC metadata keys and Membership from the gossip view; one worker per node covers all metadata. Shards are repaired by the node core with two local trees per bucket, not through the worker.",
           "The package has no tombstones. The node core keeps a deleted key in the tree as its OCC tombstone version, which wins the merge against a stale live version."
         ],
         "docIds": [],
@@ -235,8 +235,8 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "As built, the one caller is the node core (internal/node), which also supplies the Membership interface from the gossip view.",
-          "Replaces the CRDT metadata layer of the first design by owner ruling (OCC amendment, 2026-11-21). Keeping concurrent versions as siblings was ruled out in favour of last-writer-wins with every discard recorded.",
+          "The one caller is the node core (internal/node), which also supplies the Membership interface from the gossip view.",
+          "Metadata uses optimistic concurrency control with one version per key; there are no CRDT types and no sibling versions. Concurrent writes settle by last-writer-wins with every discard recorded.",
           "The package reports quota-key discards through OnDiscard and offers RecountQuota; it does not schedule recounts. The node core decides when a recount runs.",
           "Tombstones are kept forever, and a mismatched replication round exchanges whole documents."
         ],
@@ -256,7 +256,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "As built, MigrationOps has two implementations: the model cluster's, and migrator in internal/node on the real storage, Merkle and metadata packages."
+          "MigrationOps has two implementations: the model cluster's, and migrator in internal/node on the real storage, Merkle and metadata packages."
         ],
         "docIds": [],
         "sourceIds": [
@@ -394,9 +394,7 @@
         "technology": "Go",
         "status": "existing",
         "tags": [],
-        "plannedNotes": [
-          "Retention followed by bounded tombstones was added by the build; PLAN.md names only the view and its events."
-        ],
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -411,9 +409,7 @@
         "technology": "Go",
         "status": "existing",
         "tags": [],
-        "plannedNotes": [
-          "Added by the build; PLAN.md does not name it."
-        ],
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -586,9 +582,7 @@
         "technology": "Go",
         "status": "existing",
         "tags": [],
-        "plannedNotes": [
-          "Added by the build; PLAN.md does not name it."
-        ],
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -604,7 +598,6 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "Added by the build; PLAN.md does not name it.",
           "The node core implements it from the gossip view."
         ],
         "docIds": [],
@@ -617,7 +610,7 @@
         "kind": "component",
         "parentId": "c-occ",
         "name": "Replicating node",
-        "description": "Node (an env.Process), Client and the wire messages (node.go, wire.go, errors.go). Loads the state blob at start. Each jittered period it sends its document digest to one random peer; the peer answers match or its whole document; the node merges it and pushes its own document back if the two still differ. After each local write it sends the changed key as a datagram to two random peers. Serves remote get, put and delete. All writes go through Node methods, which persist and then broadcast; Reader() is read-only. Wire error codes 128 to 136 in the block 128 to 143, with 131 unassigned. Added in Chunk 6: Node.Merge, which folds a fetched document into the store with the same merge, discard record and persistence, for the metadata anti-entropy of internal/node.",
+        "description": "Node (an env.Process), Client and the wire messages (node.go, wire.go, errors.go). Loads the state blob at start. Each jittered period it sends its document digest to one random peer; the peer answers match or its whole document; the node merges it and pushes its own document back if the two still differ. After each local write it sends the changed key as a datagram to two random peers. Serves remote get, put and delete. All writes go through Node methods, which persist and then broadcast; Reader() is read-only. Wire error codes 128 to 136 in the block 128 to 143, with 131 unassigned. Node.Merge folds a fetched document into the store with the same merge, discard record and persistence, for the metadata anti-entropy of internal/node.",
         "technology": "Go",
         "status": "existing",
         "tags": [],
@@ -870,7 +863,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "Added by the build; PLAN.md does not name it. The node core's tests and the end-to-end suite (test/e2e) reuse its failure-matrix runner on real nodes."
+          "The node core's tests and the end-to-end suite (test/e2e) reuse its failure-matrix runner on real nodes."
         ],
         "docIds": [],
         "sourceIds": [
@@ -962,7 +955,7 @@
         "status": "existing",
         "tags": [],
         "plannedNotes": [
-          "Default k=4, m=2 and the k+1 write threshold are PLAN.md OQ-15.",
+          "Default layout is k=4, m=2 with a k+1 write threshold.",
           "The package stores no manifest and has no object delete: the node core keeps the manifest in OCC metadata, and a delete is an OCC tombstone there."
         ],
         "docIds": [],
@@ -979,9 +972,7 @@
         "technology": "Go",
         "status": "existing",
         "tags": [],
-        "plannedNotes": [
-          "Added by the build; PLAN.md does not name it."
-        ],
+        "plannedNotes": [],
         "docIds": [],
         "sourceIds": [
           "plan"
@@ -2867,7 +2858,7 @@
       "kind": "context",
       "scopeId": "store",
       "status": "existing",
-      "title": "System Context \u2014 as built",
+      "title": "System Context",
       "nodes": [
         {
           "elementId": "api-client"
@@ -2971,7 +2962,7 @@
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, domain view \u2014 as built",
+      "title": "Container, domain view",
       "nodes": [
         {
           "elementId": "api-client"
@@ -3122,7 +3113,7 @@
       "parent": {
         "diagramId": "context"
       },
-      "title": "Container, runtime and environment view \u2014 as built",
+      "title": "Container, runtime and environment view",
       "nodes": [
         {
           "elementId": "operator"
@@ -3305,7 +3296,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, gossip \u2014 as built",
+      "title": "Component, gossip",
       "nodes": [
         {
           "elementId": "g-join"
@@ -3438,7 +3429,7 @@
           {
             "id": "box",
             "label": "Component",
-            "description": "A part of the package that PLAN.md names, or one the build added",
+            "description": "A component inside the package",
             "swatch": {
               "shape": "box",
               "tone": "default",
@@ -3485,7 +3476,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, erasure \u2014 as built",
+      "title": "Component, erasure",
       "nodes": [
         {
           "elementId": "n-storage",
@@ -3561,7 +3552,7 @@
           {
             "id": "box",
             "label": "Component",
-            "description": "A part of the package that PLAN.md names",
+            "description": "A component inside the package",
             "swatch": {
               "shape": "box",
               "tone": "default",
@@ -3608,7 +3599,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, merkle \u2014 as built",
+      "title": "Component, merkle",
       "nodes": [
         {
           "elementId": "m-worker"
@@ -3693,7 +3684,7 @@
           {
             "id": "box",
             "label": "Component",
-            "description": "A part of the package that PLAN.md names, or one the build added",
+            "description": "A component inside the package",
             "swatch": {
               "shape": "box",
               "tone": "default",
@@ -3740,7 +3731,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, occ \u2014 as built",
+      "title": "Component, occ",
       "nodes": [
         {
           "elementId": "o-node"
@@ -3870,7 +3861,7 @@
           {
             "id": "box",
             "label": "Component",
-            "description": "A part of the package that PLAN.md names, or one the build added",
+            "description": "A component inside the package",
             "swatch": {
               "shape": "box",
               "tone": "default",
@@ -3917,7 +3908,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, saga \u2014 as built",
+      "title": "Component, saga",
       "nodes": [
         {
           "elementId": "s-orch"
@@ -4027,7 +4018,7 @@
           {
             "id": "box",
             "label": "Component",
-            "description": "A part of the package that PLAN.md names, or one the build added",
+            "description": "A component inside the package",
             "swatch": {
               "shape": "box",
               "tone": "default",
@@ -4074,7 +4065,7 @@
       "parent": {
         "diagramId": "container"
       },
-      "title": "Component, storage \u2014 as built",
+      "title": "Component, storage",
       "nodes": [
         {
           "elementId": "t-paths"
@@ -4191,7 +4182,7 @@
           {
             "id": "box",
             "label": "Component",
-            "description": "A part of the package that PLAN.md names, or one the build added",
+            "description": "A component inside the package",
             "swatch": {
               "shape": "box",
               "tone": "default",
@@ -4235,9 +4226,9 @@
   "sources": [
     {
       "id": "plan",
-      "title": "PLAN.md \u2014 testing-first plan, Phase 1",
-      "url": "https://github.com/nickstrad/object-store/blob/main/PLAN.md",
-      "notes": "Sections 1, 2.1, 3, 4.2 and 7 define the design that the build started from."
+      "title": "Object Store book",
+      "url": "https://nickstrad.github.io/object-store/book/",
+      "notes": "The Object Store book: architecture and package reference for the system, container, and component views."
     }
   ]
 }
