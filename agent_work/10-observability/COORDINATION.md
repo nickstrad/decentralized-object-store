@@ -23,3 +23,5 @@ No READY claim: Neon's second final pass owns phase readiness.
 Adapter/HTTP fresh confirm verdict PASS; reports archived under reviews/. CSV precision fixture rerun on integrated tree PASS. Completed adapter and review worktrees removed. Original interrupted worktrees remain untouched.
 
 Live proof checkpoint: A2 PASS (1→11 HTTP health counter, gauge, boot label count 0); real node CSV smoke PASS (three sequences/all ten components/positive health/gauge), pinned precision fixture PASS. Product revision 88e9b08. O1/O2 independent reviews running; host full lane and Docker focused race in progress.
+
+O1 review NITS: shared scoped/copy storage construction rescan (material F1) and accepted-byte accounting F2 are being repaired in work/obs-off-repair; disabled callback allocation fix ed81d14 already integrated. First full host test run timed out only in active E5 migration matrix at Go default 10m; preserve failure, final complete run at gate timeout 30m/-p2 pending repair. No frozen-core blocker.

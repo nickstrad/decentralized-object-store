@@ -471,3 +471,5 @@ Disabled callback repair code/test checkpoint: `726e6b8`. Focused determinism li
 for storage/node without the global allowlist (its sim import entry is outside this scope).
 The callback allocation finding is recorded in `docs/knowledge/observability-components.md`;
 no new reusable script or VM/environment knowledge was needed.
+
+Stage C verification checkpoint: first integrated go build ./... and go vet ./... PASS. go test ./... passed every package except test/e2e, whose active migration failure matrix hit the default 10-minute package timeout under concurrent review/suite load; no assertion failure preceded it. Preserved /root/runs/objstore-obs-resume-fast.{log,json,exit}. Final rerun will use the existing gate's 30-minute timeout and -p 2 after F1/F2 cost/accounting repairs, with all tests retained. O1 review NITS requires shared-owner construction to eliminate scoped inventory rescans; repair in progress.
