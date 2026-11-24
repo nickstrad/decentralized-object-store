@@ -77,7 +77,7 @@ func TestCoreImportBoundary(t *testing.T) {
 		if err := dec.Decode(&p); err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(p.ImportPath, "/telemetry") || strings.Contains(p.ImportPath, "opentelemetry") || strings.Contains(p.ImportPath, "prometheus") {
+		if strings.Contains(p.ImportPath, "/telemetry") || (!p.Standard && !strings.HasPrefix(p.ImportPath, "github.com/nickstrad/object-store/")) {
 			t.Fatalf("core reaches framework: %s", p.ImportPath)
 		}
 	}

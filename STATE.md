@@ -80,7 +80,7 @@ The GitHub description is Neon's draft (agent_work/09-cleanup/repo-description.t
 
 Goal/spec: [observability plan](agent_work/10-observability/PLAN.md), with Nick's
 2026-11-24 amendment (CSV disk flush; DuckDB analysis over CSV, no runtime DuckDB writer).
-Core value model and finite catalogue implemented; selector, runner, contract suite,
+Core value model and finite catalogue committed in `5b2e656`; selector, runner, contract suite,
 OTLP adapter and pinned local Docker pipeline implemented and undergoing final checks.
 No component Snapshot wiring or Prometheus/CSV adapters were built in this seat.
 
@@ -89,7 +89,8 @@ observed fixture HTTP requests 7 -> 15 and in-flight gauge 1. This is A1 fixture
 not the A2 objnode production proof. Build/vet and focused tests passed. Fast lane is
 running; its first determinism lint found encoding/json in metrics. Removed that
 import in favor of a conservative deterministic byte bound, retaining exact OTLP
-encoded-byte enforcement in the adapter. Full fast-lane rerun follows.
+encoded-byte enforcement in the adapter. Full fast-lane rerun follows the transport commit. Focused tests now include
+coalesced slow ticks, shutdown join/deadline and sink resource-leak checks.
 
 Resume: branch feat/observability is checked out in
 /root/Software/object-store-work/10-obs-core. Build log:
