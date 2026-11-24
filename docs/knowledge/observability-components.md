@@ -31,3 +31,13 @@ discard totals remain visible separately as a gauge.
 
 Useful focused validation:
 go test ./internal/{erasure,storage,node,gossip,merkle,occ,saga} -run 'TestMetrics|TestMetered' -count=1
+
+Disabled metrics must bypass asynchronous callback wrappers before constructing the
+closure. A nil check inside a retained callback still allocates the wrapper on every
+operation. Storage requests and node Put/Get therefore pass the original callback directly
+when metric state is nil. `TestMetricsDisabledRequestAllocations` retains transport callbacks
+and compares allocations with direct transport calls; node's
+`TestMetricsDisabledObjectCallbackAllocations` compares public Put/Get with their underlying
+operation paths using a retaining fake clock. These tests isolate metrics overhead without
+network traffic or timing thresholds. Compiler escape analysis also distinguishes retained
+callbacks from the nonescaping synchronous erasure closures and node metric defers.

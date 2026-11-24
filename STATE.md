@@ -466,3 +466,8 @@ metric defers do not escape; no other new O1 hot-path callback wrappers were fou
 Verification logs: `/root/runs/objstore-obs-off-repair-{tests,storage,escape}.log`.
 Next: conductor integrates this checkpoint and reviewer findings, then runs final checks.
 Observability phase readiness remains pending Neon's second final pass.
+
+Disabled callback repair code/test checkpoint: `726e6b8`. Focused determinism lint passes
+for storage/node without the global allowlist (its sim import entry is outside this scope).
+The callback allocation finding is recorded in `docs/knowledge/observability-components.md`;
+no new reusable script or VM/environment knowledge was needed.
