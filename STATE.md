@@ -82,7 +82,9 @@ Goal/spec: [observability plan](agent_work/10-observability/PLAN.md), with Nick'
 2026-11-24 amendment (CSV disk flush; DuckDB analysis over CSV, no runtime DuckDB writer).
 Core value model and finite catalogue committed in `5b2e656`; selector, runner, contract suite and
 OTLP adapter committed in `1072417`. Pinned local Docker pipeline and bounded check
-script are ready. Final fast checks follow the deployment commit.
+script are ready. Deployment committed in `7ad39f1`. Final checks found a Collector default that
+exports resource attributes on target_info; the scrape config now drops boot_id to
+preserve the no-per-boot-series rule. Rechecking this fix and shutdown resource cleanup.
 No component Snapshot wiring or Prometheus/CSV adapters were built in this seat.
 
 Evidence so far: Collector 0.145.0 validates its config; real Docker Prometheus 3.9.1

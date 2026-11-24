@@ -443,6 +443,9 @@ scrape_configs:
     honor_labels: true
     static_configs:
       - targets: [otel-collector:9464]
+    metric_relabel_configs:
+      - action: labeldrop
+        regex: boot_id
 ```
 
 This is **OTLP receiver → Collector prometheus exporter → Prometheus scrape**, not remote
@@ -477,6 +480,13 @@ container), `check-otel.sh` probes readiness from `dev` on the `observability` n
 `/api/v1/targets`), and `http://obs-node:8080/_health`. Direct-scrape Prometheus configs
 (`adapter: "prometheus"` binding `0.0.0.0:9464` on the isolated network) can be documented
 alongside `deploy/observability/prometheus.yaml` without adding a second CI Docker integration.
+
+Implementation finding (A1, 2026-11-24): the pinned Collector exports resource attributes
+on `target_info` even with resource-to-telemetry conversion disabled. The Prometheus
+scrape config therefore drops `boot_id` labels, preserving the section 3 rule against
+per-boot Prometheus series while retaining BootID in the original OTLP resource metadata.
+The fixture checks `count({boot_id!=""}) or vector(0)` equals zero. This does not change
+the Collector's direct Prometheus-exporter mechanism or metric-name translation.
 
 A1 selects compatible released images, records tags **and immutable digests** in
 `deploy/observability/images.lock`, and uses those digests in Compose. Validate the config

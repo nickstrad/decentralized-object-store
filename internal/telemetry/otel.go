@@ -29,17 +29,19 @@ type otelSettings struct {
 	HeadersFile string `json:"headers_file"`
 }
 type otelAdapter struct {
-	client    *http.Client
-	transport *http.Transport
-	endpoint  string
-	headers   map[string]string
-	id        Identity
-	mu        sync.Mutex
-	closed    bool
-	cancel    context.CancelFunc
-	life      context.Context
-	active    sync.WaitGroup
-	warningAt time.Time
+	client       *http.Client
+	transport    *http.Transport
+	endpoint     string
+	headers      map[string]string
+	id           Identity
+	mu           sync.Mutex
+	closed       bool
+	cancel       context.CancelFunc
+	life         context.Context
+	active       sync.WaitGroup
+	warningAt    time.Time
+	shutdownOnce sync.Once
+	shutdownDone chan struct{}
 }
 
 func newOTel(ctx context.Context, id Identity, raw json.RawMessage) (Adapter, error) {
@@ -87,7 +89,7 @@ func newOTel(ctx context.Context, id Identity, raw json.RawMessage) (Adapter, er
 	tr.MaxIdleConnsPerHost = 1
 	tr.ResponseHeaderTimeout = 2 * time.Second
 	life, cancel := context.WithCancel(context.Background())
-	a := &otelAdapter{transport: tr, endpoint: s.Endpoint, headers: headers, id: id, life: life, cancel: cancel}
+	a := &otelAdapter{transport: tr, endpoint: s.Endpoint, headers: headers, id: id, life: life, cancel: cancel, shutdownDone: make(chan struct{})}
 	a.client = &http.Client{Transport: tr, Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return a, nil
 }
@@ -337,7 +339,16 @@ func (a *otelAdapter) send(ctx context.Context, body []byte) (bool, time.Duratio
 		if result.Partial.Message != "" {
 			a.mu.Lock()
 			if time.Since(a.warningAt) >= time.Minute {
-				log.Print("observability OTLP receiver warning (zero rejected points; remote text omitted)")
+				message := result.Partial.Message
+				for _, secret := range a.headers {
+					if secret != "" {
+						message = strings.ReplaceAll(message, secret, "[redacted]")
+					}
+				}
+				if len(message) > 512 {
+					message = message[:512]
+				}
+				log.Printf("observability OTLP receiver warning (zero rejected points): %q", message)
 				a.warningAt = time.Now()
 			}
 			a.mu.Unlock()
@@ -350,11 +361,16 @@ func (a *otelAdapter) Shutdown(ctx context.Context) error {
 	a.closed = true
 	a.cancel()
 	a.mu.Unlock()
-	done := make(chan struct{})
-	go func() { a.active.Wait(); close(done) }()
+	a.transport.CloseIdleConnections()
+	a.shutdownOnce.Do(func() {
+		go func() {
+			a.active.Wait()
+			a.transport.CloseIdleConnections()
+			close(a.shutdownDone)
+		}()
+	})
 	select {
-	case <-done:
-		a.transport.CloseIdleConnections()
+	case <-a.shutdownDone:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()

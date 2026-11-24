@@ -6,3 +6,7 @@ scrape_configs:
     honor_labels: true
     static_configs:
       - targets: [otel-collector:9464]
+    # Collector target_info includes resource attributes; keep boot IDs out of storage.
+    metric_relabel_configs:
+      - action: labeldrop
+        regex: boot_id

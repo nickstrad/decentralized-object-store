@@ -86,4 +86,5 @@ func TestOTelCollectorFixture(t *testing.T) {
 	counter.Store(15)
 	poll(query, 15)
 	poll(`objstore_http_requests_in_flight{node_id="fixture-node",region="local"}`, 1)
+	poll(`count({boot_id!=""}) or vector(0)`, 0)
 }
