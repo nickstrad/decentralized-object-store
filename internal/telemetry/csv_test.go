@@ -111,3 +111,33 @@ func TestCSVConfigAndMalformed(t *testing.T) {
 func structSnapshot() metrics.Snapshot {
 	return metrics.Snapshot{Component: "http", Points: []metrics.Point{{Name: "objstore_http_request_bytes_total", Counter: math.MaxUint64}, {Name: "objstore_http_requests_in_flight", Gauge: math.MaxUint64}}}
 }
+
+func TestWriteCSVAnalysisFixture(t *testing.T) {
+	dir := os.Getenv("OBS_CSV_FIXTURE_DIR")
+	if dir == "" {
+		t.Skip("manual DuckDB smoke fixture")
+	}
+	a := openCSV(t, dir, nil)
+	b := testBatch(a.id)
+	b.Snapshots = append(b.Snapshots, metrics.Snapshot{Component: "http", Points: []metrics.Point{
+		{Name: "objstore_http_request_bytes_total", Counter: 1<<53 + 1},
+		{Name: "objstore_http_requests_total", Labels: []metrics.Label{{Name: "operation", Value: "health"}, {Name: "status_class", Value: "2xx"}}, Counter: 2},
+		{Name: "objstore_http_request_duration_nanoseconds_total", Labels: []metrics.Label{{Name: "operation", Value: "health"}}, Counter: 20},
+		{Name: "objstore_http_requests_in_flight", Gauge: 1},
+		{Name: "objstore_http_request_duration_count_total", Labels: []metrics.Label{{Name: "operation", Value: "health"}}, Counter: 2},
+	}})
+	if err := a.Publish(context.Background(), b); err != nil {
+		t.Fatal(err)
+	}
+	b.Sequence++
+	b.TimeUnixNano += 1e9
+	b.Snapshots[1].Points[1].Counter += 2
+	b.Snapshots[1].Points[2].Counter += 40
+	b.Snapshots[1].Points[4].Counter += 2
+	if err := a.Publish(context.Background(), b); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "crash.tmp"), []byte("not CSV"), 0600); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "usage: query-csv.sh CSV_DIRECTORY [SQL_FILE]" >&2
+  exit 2
+fi
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+csv_dir=$1
+sql_file=${2:-$script_dir/queries.sql}
+if [[ ! -d "$csv_dir" || ! -r "$sql_file" ]]; then
+  echo "CSV directory or SQL file is missing" >&2
+  exit 2
+fi
+sql_file=$(realpath -- "$sql_file")
+shopt -s nullglob
+segments=("$csv_dir"/*.csv)
+if [[ ${#segments[@]} -eq 0 ]]; then
+  echo "CSV directory contains no finalized segments" >&2
+  exit 2
+fi
+if [[ $(duckdb --version) != v1.5.0\ * ]]; then
+  echo "DuckDB v1.5.0 required; build Docker target dev-observability" >&2
+  exit 2
+fi
+cd -- "$csv_dir"
+exec duckdb -bail -init /dev/null :memory: < "$sql_file"

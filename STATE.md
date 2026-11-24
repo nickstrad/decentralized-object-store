@@ -382,3 +382,14 @@ size; correct the sync JSON tag caught by vet. Vet and Docker precision smoke pa
 point batches return an explicit error (the frozen CSV schema requires one metric value
 per row); empty component snapshots contribute no rows, preserving all batch metadata
 and exported series. Real-node CSV smoke remains conductor-owned after O2 integration.
+
+O4 analysis implementation and pinned fixture smoke complete: `queries.sql` defines
+exact typed CSV views, per-boot counter deltas, OCC discards, HTTP rates/mean latency and
+in-flight gauges; `query-csv.sh` runs the pinned CLI in memory using a caller directory.
+Optional Docker `dev-observability` target pins DuckDB 1.5.0 and archive SHA256.
+Docker fixture smoke: two Go-flushed CSV batches, >2^53 exact unsigned value, JSON labels,
+crash `.tmp` exclusion, counter deltas, rate and mean latency all PASS.
+Image bytes: normal dev 299026663; analysis 320741177; added 21714514 bytes.
+Logs: `/root/runs/objstore-obs-{csv-smoke,analysis-build,analysis-base-build}.log`.
+Real objnode CSV smoke is still pending runtime integration, owned by conductor. Phase
+remains NOT READY; no runtime DuckDB writer was introduced.
