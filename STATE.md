@@ -23,7 +23,7 @@ Status: PHASE 2 (BUILD) COMPLETE, 2026-11-23, and the CLEANUP PHASE (rename to O
 prose cleanup) COMPLETE, 2026-11-24 — see "Cleanup phase" below. Every chunk is landed on main:
 Step 0, 0a, 0b, the five protocol chunks (1–5), Chunk 6 (integration, f64aa11), Chunk 7
 (end-to-end suite and hardening, d618607) and Chunk 8 (publishing finish, fbb0e2a). The book is
-live at the new URL. Nothing is in flight; done markers: /root/runs/objstore-phase2-done.txt and
+live at the new URL. Observability core is now built; see its section below. Prior-phase done markers: /root/runs/objstore-phase2-done.txt and
 /root/runs/objstore-cleanup-done.txt.
 
 Seats (this project only): Fable orchestrates, gates and lands; Opus writes
@@ -76,42 +76,53 @@ command check on a clean clone; site lint clean (22 pages); sweep part 1 empty; 
 the new URL, all pages HTTP 200. No full gate was run in this phase (by the mission).
 The GitHub description is Neon's draft (agent_work/09-cleanup/repo-description.txt).
 
-## Observability phase — CORE BUILD IN VALIDATION (2026-11-24)
+## Observability phase — core: DONE (2026-11-24; build, review pending)
 
-Goal/spec: [observability plan](agent_work/10-observability/PLAN.md), with Nick's
-2026-11-24 amendment (CSV disk flush; DuckDB analysis over CSV, no runtime DuckDB writer).
-Core value model and finite catalogue committed in `5b2e656`; selector, runner, contract suite and
-OTLP adapter committed in `1072417`. Pinned local Docker pipeline and bounded check
-script are ready. Deployment committed in `7ad39f1`. Final checks found a Collector default that
-exports resource attributes on target_info; the scrape config now drops boot_id to
-preserve the no-per-boot-series rule. The fix is committed in `ca42bf1`; active-export shutdown cancellation is
-covered in `4c4f330`. Docker fixture passed again, including zero stored boot_id labels.
-Fast lane passed on `7ad39f1`. The `017c0ad` final rerun passed all G0/G6 and
-observability tests (metrics 96.6%, telemetry 95.7%) but failed the existing saga
-TestPropTerminalState coverage-of-random-draws assertion: 20 cases passed, none reached
-retry exhaustion. Failure evidence is /root/runs/objstore-obs-core-fast-saga-failure.*.
-One bounded fast-lane rerun follows, with no product/test changes.
-No component Snapshot wiring or Prometheus/CSV adapters were built in this seat.
+Goal/spec: [observability plan](agent_work/10-observability/PLAN.md), including Nick's
+2026-11-24 amendment: mandatory OTel/Prometheus, CSV disk flush, DuckDB analysis over
+CSV; no runtime DuckDB writer without a valid runtime use case.
 
-Evidence so far: Collector 0.145.0 validates its config; real Docker Prometheus 3.9.1
-observed fixture HTTP requests 7 -> 15 and in-flight gauge 1. This is A1 fixture proof,
-not the A2 objnode production proof. Build/vet and focused tests passed. Fast lane is
-running; its first determinism lint found encoding/json in metrics. Removed that
-import in favor of a conservative deterministic byte bound, retaining exact OTLP
-encoded-byte enforcement in the adapter. Full fast-lane rerun follows the transport commit. Focused tests now include
-coalesced slow ticks, shutdown join/deadline and sink resource-leak checks.
+Astra core build commits on feat/observability:
+- `5b2e656`: framework-free metrics values, Source, finite catalogue and validation.
+- `1072417`: config gating, selector/port, runner, shared contracts and stdlib OTLP.
+- `7ad39f1`: pinned Docker Collector/Prometheus setup, bounded pipeline check and gates.
+- `ca42bf1`: prevent boot_id labels in Prometheus; bounded warning text and joined shutdown.
+- `4c4f330`: active-export cancellation/shutdown test.
+- `bcd9c5d`, `017c0ad`, `55e430b`: durable knowledge, reusable-script index, fixture proof
+  and the unrelated saga gate failure record.
 
-Resume: branch feat/observability is checked out in
-/root/Software/object-store-work/10-obs-core. Build log:
-/root/runs/objstore-obs-core.log; checks: /root/runs/objstore-obs-core-fast.log and
-/root/runs/objstore-obs-pipeline.log. No merge/push/publish authorized here.
-Next: finish fast checks and core commits; conductor selects independent cross-company
-reviewer; Opus O1/O2 component/runtime/objnode wiring; Astra A2 real node proof; then
-Opus O3/O4 Prometheus/CSV and DuckDB analysis; Neon N1 documentation.
+Verified: go build ./..., go vet ./..., and Docker fast lane G0/G1/G6 PASS on `55e430b`.
+Metrics coverage 96.6%; telemetry 95.7%. The prior `017c0ad` gate failed only the existing
+saga randomized coverage-of-draws assertion (20 cases passed; no retry-exhaustion draw);
+one unchanged-code retry passed. No full/race/fuzz/large-sweep lane was run.
+Real Docker A1 fixture proof: HTTP counter 7 -> 15, in-flight gauge 1, stored boot_id
+label count 0. Collector 0.145.0 configuration validated; Prometheus 3.9.1; immutable
+image digests pinned. This is NOT the A2 real-objnode proof.
+
+Records: [core verification](agent_work/10-observability/CORE-VERIFICATION.md),
+[fast result](agent_work/10-observability/core-fast-result.json),
+[query evidence](agent_work/10-observability/core-fixture-results.json),
+[knowledge](docs/knowledge/observability-core.md), [script index](work-scripts/README.md).
+Done marker: /root/runs/objstore-obs-core-done.txt.
+
+Next, in order:
+1. Conductor: fresh cross-company review of this build before acceptance/landing.
+2. Opus O1/O2: component Snapshot methods, runtime collector, HTTP and objnode wiring.
+3. Astra A2: run the prepared default check-otel.sh real-node path and add the CI hook.
+4. Opus O3/O4: register mandatory Prometheus/CSV adapters; exact CSV readback and DuckDB
+   analysis over finalized CSV files. No placeholder factories or ReadCSVDir were added.
+5. Neon N1: final documentation/polish. Nick/conductor retains merge/publish gates.
+
+Resume: feat/observability is in /root/Software/object-store-work/10-obs-core, retained
+for conductor review. Build/check processes have stopped; no background process to
+relaunch. Logs: /root/runs/objstore-obs-core-fast-retry.log,
+/root/runs/objstore-obs-pipeline-final.log; preserved failed gate:
+/root/runs/objstore-obs-core-fast-saga-failure.{json,log}.
+No build blocker. Independent review and O1/O2 wiring are the next dependencies.
 
 ## In progress
 
-Observability core build is in validation in the dedicated 10-obs-core worktree.
+Observability core build is DONE; awaiting conductor review and O1/O2 dispatch.
 
 ## Per-chunk pipeline (as run for chunks 1–5; worked examples in each agent_work/<slug>/)
 

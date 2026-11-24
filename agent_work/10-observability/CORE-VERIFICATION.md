@@ -29,8 +29,8 @@ Prometheus/CSV adapters and DuckDB analysis are not implemented here.
 ## Commands and evidence
 
 - `go build ./...` and `go vet ./...`: passed during build; repeated on final code.
-- `COMPOSE_PROJECT_NAME=objstore-obs-core-fast agent_work/gates/ci-fast.sh`: final result
-  recorded below after completion. No race/full/fuzz/sweep lane was requested or run.
+- `COMPOSE_PROJECT_NAME=objstore-obs-core-fast agent_work/gates/ci-fast.sh`: PASS on `55e430b` (clean tree, Docker, G0/G1/G6), archived in
+  core-fast-result.json. Metrics coverage 96.6%; telemetry coverage 95.7%. No race/full/fuzz/sweep lane was requested or run.
 - `agent_work/10-observability/check-otel.sh --fixture`: real Docker, not a fake-only
   fallback. Collector 0.145.0 validates its configuration. Prometheus 3.9.1 observes
   HTTP requests 7 then 15 and an in-flight gauge of 1; boot_id stored-series count is 0.
@@ -44,7 +44,9 @@ The fast run at `017c0ad` passed G0/G6 and observability tests (metrics 96.6%, t
 95.7%) but failed existing saga TestPropTerminalState: rapid reported 20 successful cases,
 then its coverage-of-draws assertion found zero retry exhaustion cases. No saga code was
 changed. The failure log/result were preserved under /root/runs/objstore-obs-core-fast-saga-failure.*;
-one bounded rerun with unchanged product/tests follows.
+the one bounded rerun at `55e430b` PASSED, with unchanged product/tests. Both outcomes
+remain recorded; this is not a claim that the existing randomized coverage assertion is
+deterministic. No full landing gate was run. Subsequent changes only record this result.
 
 ## Handoff
 

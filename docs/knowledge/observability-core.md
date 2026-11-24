@@ -45,3 +45,8 @@ record is `agent_work/10-observability/CORE-VERIFICATION.md`.
 No runtime DuckDB writer is registered: CSV is the disk flush, and DuckDB is the later
 analysis consumer over finalized CSV files. Prometheus, CSV and component wiring remain
 O1–O4 responsibilities.
+
+The final short gate once failed in existing saga TestPropTerminalState: all 20 rapid
+cases passed, but none exercised retry exhaustion and its coverage-of-draws assertion
+failed. The unchanged-code retry passed. Preserve both results if this recurs; this is
+not evidence of an observability defect or grounds to weaken coverage checks.
