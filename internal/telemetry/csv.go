@@ -28,8 +28,7 @@ type csvSettings struct {
 	Directory    string `json:"directory"`
 	MaxFileBytes int64  `json:"max_file_bytes"`
 	KeepFiles    int    `json:"keep_files"`
-	Sync         bool   `json:"sync"
- "syscall"`
+	Sync         bool   `json:"sync"`
 }
 type csvAdapter struct {
 	mu       sync.Mutex
@@ -132,6 +131,9 @@ func (a *csvAdapter) Publish(ctx context.Context, b metrics.Batch) error {
 	data, err := csvEncode(b)
 	if err != nil {
 		return err
+	}
+	if len(data) > metrics.MaxBatchBytes {
+		return errors.New("CSV batch exceeds encoded byte bound")
 	}
 	if int64(len(data)) > a.settings.MaxFileBytes {
 		return errors.New("CSV batch exceeds max_file_bytes")

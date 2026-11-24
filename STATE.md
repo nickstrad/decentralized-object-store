@@ -376,3 +376,9 @@ Prometheus independent review returned NITS; the cache encoding nit is repaired 
 encoding before acquiring the cache write lock. Concurrent publish/scrape tests assert
 whole-cache coherence, and a slow-header connection verifies bounded joined shutdown.
 Two focused race-suite runs pass. No merge/publish performed.
+
+CSV follow-up: enforce the metrics encoded-byte bound independently of configured segment
+size; correct the sync JSON tag caught by vet. Vet and Docker precision smoke pass. Empty
+point batches return an explicit error (the frozen CSV schema requires one metric value
+per row); empty component snapshots contribute no rows, preserving all batch metadata
+and exported series. Real-node CSV smoke remains conductor-owned after O2 integration.
