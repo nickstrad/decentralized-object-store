@@ -209,12 +209,13 @@ func (g *migrator) copier(region string) *storage.Node {
 	}
 	e := g.n.e.WithNet(chanNet{net: g.n.e.Net, ch: chStorage})
 	e.Rand = rand.New(&g.src)
-	s, err := storage.NewNode(e, storage.Config{
+	s, err := storage.NewNode(e, storage.Config{MetricsEnabled: g.n.cfg.MetricsEnabled,
 		Layout: g.n.cfg.Layout, Members: regionView{v: g.n.view, region: r}, AckQuorum: g.n.cfg.AckQuorum, RequestTimeout: g.n.cfg.RequestTimeout,
 	})
 	if err != nil {
 		return nil
 	}
+	s.ShareMetrics(g.n.store)
 	g.copiers[r] = s
 	return s
 }

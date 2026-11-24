@@ -178,6 +178,7 @@ func (n *Node) quotaCheck(rd occ.Reader, bs bucketState, dBytes, dObjects int64)
 	}
 	limit := occ.Usage{Bytes: bs.rec.QuotaBytes, Objects: bs.rec.QuotaObjects}
 	if _, err := occ.AddUsage(dBytes, dObjects, limit)(u); err != nil {
+		n.metric.add("node_quota_rejections_total", 1)
 		return fmt.Errorf("node: put into %q: %w", bs.name, err)
 	}
 	return nil
@@ -188,7 +189,7 @@ func (n *Node) quotaCheck(rd occ.Reader, bs bucketState, dBytes, dObjects int64)
 // invokes cb asynchronously with the resulting ObjectInfo or error. Quotas are
 // pre-checked locally without cross-node reservation; concurrent writes on
 // separate nodes may both succeed and later settle via last-writer-wins.
-func (n *Node) PutObject(req storage.PutRequest, cb func(storage.ObjectInfo, error)) {
+func (n *Node) observedPutObject(req storage.PutRequest, cb func(storage.ObjectInfo, error)) {
 	rd, err := n.reader()
 	if err != nil {
 		n.failLater(cb, err)
@@ -296,7 +297,7 @@ func (n *Node) commitPut(req storage.PutRequest, region string, pre occ.Precondi
 // GetObject reads the object's live manifest and reconstructs its full payload
 // from any k verified shards, invoking cb asynchronously. If a shard fails
 // verification, it flags the bucket's inventory for a full scrub.
-func (n *Node) GetObject(bucket, key string, cb func(storage.ObjectInfo, []byte, error)) {
+func (n *Node) observedGetObject(bucket, key string, cb func(storage.ObjectInfo, []byte, error)) {
 	fail := func(err error) {
 		n.stats.GetFailures++
 		n.later(func() { cb(storage.ObjectInfo{}, nil, err) })
@@ -341,7 +342,10 @@ func (n *Node) head(bucket, key string) (storage.ObjectInfo, objectRecord, error
 // HeadObject returns metadata for the live object at bucket/key, or an error
 // wrapping ErrNotReady, ErrStopped, storage.ErrNoSuchBucket, storage.ErrInvalid,
 // or occ.ErrNotFound.
-func (n *Node) HeadObject(bucket, key string) (storage.ObjectInfo, error) {
+func (n *Node) HeadObject(bucket, key string) (metricResult0 storage.ObjectInfo, metricResult1 error) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "get", metricResult1) }()
+
 	oi, _, err := n.head(bucket, key)
 	return oi, err
 }
@@ -350,7 +354,10 @@ func (n *Node) HeadObject(bucket, key string) (storage.ObjectInfo, error) {
 // the replaced storage version dead (~gc/<version>) so its shards are collected
 // after GCGrace, and decrements local quota usage. Tombstones are retained
 // indefinitely so stale replicas cannot resurrect deleted keys.
-func (n *Node) DeleteObject(bucket, key string, cond storage.Condition) (storage.ObjectInfo, error) {
+func (n *Node) DeleteObject(bucket, key string, cond storage.Condition) (metricResult0 storage.ObjectInfo, metricResult1 error) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "delete", metricResult1) }()
+
 	rd, err := n.reader()
 	if err != nil {
 		return storage.ObjectInfo{}, err
@@ -390,7 +397,10 @@ func (n *Node) DeleteObject(bucket, key string, cond storage.Condition) (storage
 
 // ListObjects returns live objects in bucket whose keys start with prefix, up
 // to limit (unlimited when limit <= 0).
-func (n *Node) ListObjects(bucket, prefix string, limit int) ([]storage.ObjectInfo, error) {
+func (n *Node) ListObjects(bucket, prefix string, limit int) (metricResult0 []storage.ObjectInfo, metricResult1 error) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "other", metricResult1) }()
+
 	rd, err := n.reader()
 	if err != nil {
 		return nil, err
@@ -414,7 +424,10 @@ func (n *Node) ListObjects(bucket, prefix string, limit int) ([]storage.ObjectIn
 // CreateBucket creates a new bucket record and, when spec.Region is non-empty,
 // initializes its routing pointer and ~live tag to that region. It returns
 // storage.ErrBucketExists if the bucket already exists locally.
-func (n *Node) CreateBucket(spec storage.BucketSpec) error {
+func (n *Node) CreateBucket(spec storage.BucketSpec) (metricResult0 error) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "other", metricResult0) }()
+
 	rd, err := n.reader()
 	if err != nil {
 		return err
@@ -456,7 +469,10 @@ func (n *Node) setLive(bucket, region string) error {
 // PutTag writes one user tag on an existing object subject to cond. Names
 // starting with "~" are reserved for system metadata and rejected with
 // storage.ErrInvalid.
-func (n *Node) PutTag(bucket, key, name, value string, cond storage.Condition) (storage.TagInfo, error) {
+func (n *Node) PutTag(bucket, key, name, value string, cond storage.Condition) (metricResult0 storage.TagInfo, metricResult1 error) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "other", metricResult1) }()
+
 	rd, err := n.reader()
 	if err != nil {
 		return storage.TagInfo{}, err
@@ -483,7 +499,10 @@ func (n *Node) PutTag(bucket, key, name, value string, cond storage.Condition) (
 }
 
 // Tags returns all non-system tags currently attached to bucket/key.
-func (n *Node) Tags(bucket, key string) ([]storage.TagInfo, error) {
+func (n *Node) Tags(bucket, key string) (metricResult0 []storage.TagInfo, metricResult1 error) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "other", metricResult1) }()
+
 	rd, err := n.reader()
 	if err != nil {
 		return nil, err
@@ -538,7 +557,10 @@ func permString(p occ.Permission) string {
 
 // PutACL sets a principal's permission letters (subset of "r", "w", "a") on
 // bucket subject to cond.
-func (n *Node) PutACL(bucket, principal, perm string, cond storage.Condition) (storage.ACLInfo, error) {
+func (n *Node) PutACL(bucket, principal, perm string, cond storage.Condition) (metricResult0 storage.ACLInfo, metricResult1 error) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "other", metricResult1) }()
+
 	rd, err := n.reader()
 	if err != nil {
 		return storage.ACLInfo{}, err
@@ -568,7 +590,10 @@ func (n *Node) PutACL(bucket, principal, perm string, cond storage.Condition) (s
 
 // ACL returns a principal's permission entry on bucket, or occ.ErrNotFound if
 // none is set.
-func (n *Node) ACL(bucket, principal string) (storage.ACLInfo, error) {
+func (n *Node) ACL(bucket, principal string) (metricResult0 storage.ACLInfo, metricResult1 error) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "other", metricResult1) }()
+
 	rd, err := n.reader()
 	if err != nil {
 		return storage.ACLInfo{}, err
@@ -585,7 +610,10 @@ func (n *Node) ACL(bucket, principal string) (storage.ACLInfo, error) {
 
 // Quota returns bucket's configured byte and object limits and its currently
 // recorded usage.
-func (n *Node) Quota(bucket string) (storage.QuotaInfo, error) {
+func (n *Node) Quota(bucket string) (metricResult0 storage.QuotaInfo, metricResult1 error) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "other", metricResult1) }()
+
 	rd, err := n.reader()
 	if err != nil {
 		return storage.QuotaInfo{}, err
@@ -603,7 +631,10 @@ func (n *Node) Quota(bucket string) (storage.QuotaInfo, error) {
 
 // SetQuota updates bucket's configured byte and object limits via If-Match on
 // the bucket record and returns the resulting QuotaInfo.
-func (n *Node) SetQuota(bucket string, bytes, objects uint64) (storage.QuotaInfo, error) {
+func (n *Node) SetQuota(bucket string, bytes, objects uint64) (metricResult0 storage.QuotaInfo, metricResult1 error) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "other", metricResult1) }()
+
 	rd, err := n.reader()
 	if err != nil {
 		return storage.QuotaInfo{}, err
@@ -625,7 +656,10 @@ func (n *Node) SetQuota(bucket string, bytes, objects uint64) (storage.QuotaInfo
 // StartMigration begins a compensating migration saga coordinated by this node
 // to move a region-routed bucket to region to. Unrouted buckets or migrations
 // to the current region fail with ErrNoMigration.
-func (n *Node) StartMigration(bucket, to string) (storage.MigrationInfo, error) {
+func (n *Node) StartMigration(bucket, to string) (metricResult0 storage.MigrationInfo, metricResult1 error) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "other", metricResult1) }()
+
 	rd, err := n.reader()
 	if err != nil {
 		return storage.MigrationInfo{}, err
@@ -646,7 +680,10 @@ func (n *Node) StartMigration(bucket, to string) (storage.MigrationInfo, error) 
 }
 
 // BeginMigration starts a migration saga with an explicit saga.ID and input.
-func (n *Node) BeginMigration(id saga.ID, in saga.MigrationInput) error {
+func (n *Node) BeginMigration(id saga.ID, in saga.MigrationInput) (metricResult0 error) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "other", metricResult0) }()
+
 	if _, err := n.reader(); err != nil {
 		return err
 	}
@@ -668,7 +705,10 @@ func (n *Node) newSagaID() string {
 
 // Migration returns the status of a migration saga coordinated by this node, or
 // an error wrapping ErrUnknownSaga and saga.ErrSagaNotFound if unknown locally.
-func (n *Node) Migration(id string) (storage.MigrationInfo, error) {
+func (n *Node) Migration(id string) (metricResult0 storage.MigrationInfo, metricResult1 error) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "other", metricResult1) }()
+
 	if n.stopped {
 		return storage.MigrationInfo{}, ErrStopped
 	}
@@ -691,7 +731,10 @@ func (n *Node) Migration(id string) (storage.MigrationInfo, error) {
 
 // Members returns all members (alive, suspect, and retained dead entries) from
 // the node's local gossip table.
-func (n *Node) Members() []storage.MemberInfo {
+func (n *Node) Members() (metricResult0 []storage.MemberInfo) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "other", nil) }()
+
 	var out []storage.MemberInfo
 	for _, m := range n.gossip.All() {
 		out = append(out, storage.MemberInfo{ID: string(m.ID), Region: string(m.Region), State: m.State.String(), Incarnation: m.Incarnation})
@@ -728,7 +771,10 @@ func kindName(k occ.Kind) string {
 // Health reports node readiness, live membership count, metadata digest and
 // Merkle root (when ready), persisted LWW discard count, the recent discard
 // tail, lost-object count, and diagnostic counters.
-func (n *Node) Health() storage.Health {
+func (n *Node) Health() (metricResult0 storage.Health) {
+	outer := n.beginMetricOperation()
+	defer func() { n.endMetricOperation(outer, "other", nil) }()
+
 	h := storage.Health{Node: string(n.e.ID), Region: string(n.e.Region), Ready: n.Ready(), LiveMembers: n.gossip.LiveCount()}
 	if n.Ready() {
 		d, r := n.occ.Digest(), n.meta.Tree().Root()
@@ -768,4 +814,14 @@ func (n *Node) Health() storage.Health {
 		h.Counters = append(h.Counters, c)
 	}
 	return h
+}
+
+func (n *Node) PutObject(req storage.PutRequest, cb func(storage.ObjectInfo, error)) {
+	n.metric.adjust("node_operations_in_flight", 1)
+	n.observedPutObject(req, func(i storage.ObjectInfo, e error) { n.operationDone("put", e); cb(i, e) })
+}
+
+func (n *Node) GetObject(bucket, key string, cb func(storage.ObjectInfo, []byte, error)) {
+	n.metric.adjust("node_operations_in_flight", 1)
+	n.observedGetObject(bucket, key, func(i storage.ObjectInfo, b []byte, e error) { n.operationDone("get", e); cb(i, b, e) })
 }

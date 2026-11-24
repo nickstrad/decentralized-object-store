@@ -170,21 +170,23 @@ func (n *Node) runInventories(rd occ.Reader) {
 func (n *Node) scrubShard(inv *inventory, name string) {
 	id, err := storage.ParseBlobName(name)
 	if err != nil {
-		inv.actual.Delete(name)
+		n.inventoryDelete(inv, name)
 		return
 	}
 	h, _, err := n.store.Store().Get(id)
 	if err != nil {
 		if isCorrupt(err) {
 			n.stats.ScrubCorrupt++
+			n.metric.add("node_scrub_corrupt_total", 1)
 		} else if !isNotFound(err) {
 			return
 		}
-		inv.actual.Delete(name)
+		n.inventoryDelete(inv, name)
 		return
 	}
 	n.stats.Scrubbed++
-	if err := inv.actual.Set(name, merkle.Hash(h.Checksum)); err != nil {
+	n.metric.add("node_scrubbed_total", 1)
+	if err := n.inventorySet(inv, name, merkle.Hash(h.Checksum)); err != nil {
 		n.logf("inventory %s: %v", name, err)
 	}
 }
@@ -232,6 +234,7 @@ func (n *Node) checkInventory(rd occ.Reader, inv *inventory, exp map[string]expe
 		return len(names)
 	}
 	res, err := merkle.Compare(want, inv.actual, merkle.Limits{})
+	n.meta.ObserveComparison(res, err)
 	if err != nil {
 		n.logf("inventory %s: %v", inv.bucket, err)
 		return len(names)
@@ -484,6 +487,7 @@ func (n *Node) declareLost(rd occ.Reader) {
 		n.markDead(r.man.Bucket, r.man.Version)
 		n.usage(r.man.Bucket, -r.man.Size, -1)
 		n.stats.LostDeclared++
+		n.metric.add("node_lost_declared_total", 1)
 		n.logf("object %s/%s version %s lost: the holders of %d of the %d shards of stripe %d recorded that they hold none, fewer than k=%d remain", r.man.Bucket, r.man.Key, r.man.Version, gone, len(r.man.Stripes[stripe].Shards), stripe, r.man.Layout.K)
 	}
 }
@@ -497,9 +501,17 @@ func (n *Node) collect(inv *inventory, name string) {
 		n.logf("collect %s: %v", name, err)
 		return
 	}
-	inv.actual.Delete(name)
+	n.inventoryDelete(inv, name)
 	n.stats.Collected++
 	loser := n.losers[id.Version]
+	reason := "obsolete"
+	if loser {
+		reason = "loser"
+	}
+	if _, ok := inv.orphans[name]; ok {
+		reason = "orphan"
+	}
+	n.metric.add("node_collected_total", 1, reason)
 	if loser {
 		n.stats.CollectedLoser++
 	}
@@ -515,7 +527,7 @@ func (n *Node) collect(inv *inventory, name string) {
 // or corrupt) and fewer than k verified.
 func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 	man := es.man
-	codec, err := man.Layout.Codec()
+	codec, err := n.store.NewCodec(man.Layout.K, man.Layout.M)
 	if err != nil {
 		return
 	}
@@ -542,9 +554,10 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 			return
 		}
 		stripe := uint32(es.stripe)
-		data, _, err := storage.DecodeStripe(codec, man.Version, stripe, man.Layout.StripeLen(man.Size, es.stripe), blobs, want)
+		data, _, err := storage.DecodeStripeWithCodec(codec, man.Version, stripe, man.Layout.StripeLen(man.Size, es.stripe), blobs, want)
 		if err != nil {
 			n.stats.RebuildFailures++
+			n.metric.add("node_rebuilds_total", 1, "error")
 			verifiable := 0
 			for j, b := range blobs {
 				if b == nil {
@@ -555,7 +568,7 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 				}
 			}
 			if b, rerr := n.store.Store().GetBlob(man.ShardID(es.stripe, es.idx)); rerr == nil && storage.BlobChecksum(b) == want[es.idx] {
-				if serr := inv.actual.Set(name, merkle.Hash(want[es.idx])); serr != nil {
+				if serr := n.inventorySet(inv, name, merkle.Hash(want[es.idx])); serr != nil {
 					n.logf("rebuild %s: %v", name, serr)
 				}
 				return
@@ -565,9 +578,10 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 			}
 			return
 		}
-		enc, err := storage.EncodeStripe(codec, man.Version, stripe, data)
+		enc, err := storage.EncodeStripeWithCodec(codec, man.Version, stripe, data)
 		if err != nil || storage.BlobChecksum(enc[es.idx]) != want[es.idx] || n.purged[man.Version] {
 			n.stats.RebuildFailures++
+			n.metric.add("node_rebuilds_total", 1, "error")
 			return
 		}
 		// Re-check metadata before storing so an in-flight rebuild cannot write a
@@ -575,17 +589,21 @@ func (n *Node) rebuild(inv *inventory, name string, es expectedShard) {
 		rd, err := n.occ.Reader()
 		if err != nil || n.dead(rd, name) || n.statedAbsent(rd, man.ShardID(es.stripe, es.idx)) {
 			n.stats.RebuildFailures++
+			n.metric.add("node_rebuilds_total", 1, "error")
 			return
 		}
 		if err := n.store.Store().Put(man.ShardID(es.stripe, es.idx), enc[es.idx]); err != nil {
 			n.stats.RebuildFailures++
+			n.metric.add("node_rebuilds_total", 1, "error")
 			return
 		}
-		if err := inv.actual.Set(name, merkle.Hash(want[es.idx])); err != nil {
+		if err := n.inventorySet(inv, name, merkle.Hash(want[es.idx])); err != nil {
 			n.logf("rebuild %s: %v", name, err)
 		}
 		n.stats.Rebuilds++
+		n.metric.add("node_rebuilds_total", 1, "ok")
 		n.stats.RebuiltBytes += uint64(len(enc[es.idx]))
+		n.metric.add("node_rebuilt_bytes_total", uint64(len(enc[es.idx])))
 	}
 	net := chanNet{net: n.e.Net, ch: chStorage}
 	for j, ref := range man.Stripes[es.stripe].Shards {
@@ -649,7 +667,7 @@ func (n *Node) serveStorage(from env.NodeID, body []byte, reply env.Reply) {
 			if inv, ok := n.inv[id.Bucket]; ok {
 				switch op {
 				case storage.OpPutShard:
-					if err := inv.actual.Set(id.BlobName(), merkle.Hash(sum)); err != nil {
+					if err := n.inventorySet(inv, id.BlobName(), merkle.Hash(sum)); err != nil {
 						n.logf("inventory %s: %v", id.BlobName(), err)
 					}
 				}
@@ -694,7 +712,7 @@ func (n *Node) purge(bucket string, versions []storage.VersionID) (int, error) {
 			return c, err
 		}
 		if inv, ok := n.inv[bucket]; ok {
-			inv.actual.Delete(id.BlobName())
+			n.inventoryDelete(inv, id.BlobName())
 		}
 		c++
 		n.stats.Purged++
@@ -830,7 +848,7 @@ func (n *Node) verifyShards(bucket string, requireExpected bool, metaDoc []byte,
 		if requireExpected {
 			if inv, ok := n.inv[bucket]; ok {
 				delete(inv.orphans, name)
-				if serr := inv.actual.Set(name, merkle.Hash(req.checksum)); serr != nil {
+				if serr := n.inventorySet(inv, name, merkle.Hash(req.checksum)); serr != nil {
 					n.logf("verify %s: %v", name, serr)
 				}
 			}

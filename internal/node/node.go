@@ -51,6 +51,7 @@ const (
 // back to defaults via WithDefaults. Layout applies to new writes coordinated
 // by this node; reads honor each manifest's recorded layout.
 type Config struct {
+	MetricsEnabled bool
 	Seeds          []env.NodeID
 	Layout         storage.Layout
 	AckQuorum      int
@@ -224,6 +225,7 @@ type collectRecord struct {
 // Node is the single-threaded env.Process combining gossip, storage, OCC
 // metadata, Merkle anti-entropy, shard inventories, and bucket migration sagas.
 type Node struct {
+	metric *metricState
 	e      env.Env
 	cfg    Config
 	net    chanNet
@@ -286,7 +288,7 @@ func New(e env.Env, cfg Config) (*Node, error) {
 	}
 	cfg = cfg.WithDefaults()
 	n := &Node{
-		e: e, cfg: cfg, net: chanNet{net: e.Net, ch: chNode},
+		metric: newMetricState(cfg.MetricsEnabled), e: e, cfg: cfg, net: chanNet{net: e.Net, ch: chNode},
 		scoped: map[env.Region]*storage.Node{}, inv: map[string]*inventory{},
 		absent: map[storage.VersionID]map[[2]int]map[env.NodeID]bool{}, losers: map[storage.VersionID]bool{}, purged: map[storage.VersionID]bool{},
 		recountDue: map[string]env.Time{}, audits: map[string]quotaAudit{}, cache: map[occ.ETag]objectRecord{},
@@ -294,6 +296,7 @@ func New(e env.Env, cfg Config) (*Node, error) {
 	n.view = &gossipView{self: e.ID}
 	gcfg := cfg.Gossip
 	gcfg.Seeds = cfg.Seeds
+	gcfg.MetricsEnabled = cfg.MetricsEnabled
 	g, err := gossip.New(e.WithNet(chanNet{net: e.Net, ch: chGossip}), gcfg)
 	if err != nil {
 		return nil, fmt.Errorf("node: new %s: gossip: %w", e.ID, err)
@@ -301,17 +304,17 @@ func New(e env.Env, cfg Config) (*Node, error) {
 	n.gossip = g
 	n.view.g = g
 	g.Subscribe(n.onMember)
-	st, err := storage.NewNode(e.WithNet(chanNet{net: e.Net, ch: chStorage}), storage.Config{
+	st, err := storage.NewNode(e.WithNet(chanNet{net: e.Net, ch: chStorage}), storage.Config{MetricsEnabled: cfg.MetricsEnabled,
 		Layout: cfg.Layout, Members: n.view, AckQuorum: cfg.AckQuorum, RequestTimeout: cfg.RequestTimeout,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("node: new %s: storage: %w", e.ID, err)
 	}
 	n.store = st
-	n.occ = occ.NewNode(e.WithNet(chanNet{net: e.Net, ch: chOCC}), occ.Config{
+	n.occ = occ.NewNode(e.WithNet(chanNet{net: e.Net, ch: chOCC}), occ.Config{MetricsEnabled: cfg.MetricsEnabled,
 		Membership: n.view, Period: cfg.OCCPeriod, Fanout: cfg.OCCFanout, Log: cfg.Log, OnDiscard: n.onDiscard,
 	})
-	w, err := merkle.NewWorker(e.WithNet(chanNet{net: e.Net, ch: chMeta}), merkle.Config{
+	w, err := merkle.NewWorker(e.WithNet(chanNet{net: e.Net, ch: chMeta}), merkle.Config{MetricsEnabled: cfg.MetricsEnabled,
 		Depth: cfg.MetaDepth, Period: cfg.MetaPeriod, ScrubBatch: cfg.ScrubBatch,
 	}, n.view, &metaRepairer{n: n})
 	if err != nil {
@@ -327,6 +330,7 @@ func New(e env.Env, cfg Config) (*Node, error) {
 	if cfg.ConfigureSaga != nil {
 		cfg.ConfigureSaga(&scfg)
 	}
+	scfg.MetricsEnabled = cfg.MetricsEnabled
 	eng, err := saga.New(e, scfg, def)
 	if err != nil {
 		return nil, fmt.Errorf("node: new %s: saga: %w", e.ID, err)
@@ -514,6 +518,11 @@ func (n *Node) onMember(ev gossip.Event) {
 
 func (n *Node) onSagaEnd(st saga.Status) {
 	n.stats.SagasEnded++
+	outcome := "ok"
+	if st.State != saga.StateCompleted {
+		outcome = "error"
+	}
+	n.metric.add("node_migrations_ended_total", 1, outcome)
 	n.logf("saga %s ended %v", st.ID, st.State)
 }
 
@@ -535,12 +544,13 @@ func (n *Node) scope(region string) *storage.Node {
 	if s, ok := n.scoped[r]; ok {
 		return s
 	}
-	s, err := storage.NewNode(n.e.WithNet(chanNet{net: n.e.Net, ch: chStorage}), storage.Config{
+	s, err := storage.NewNode(n.e.WithNet(chanNet{net: n.e.Net, ch: chStorage}), storage.Config{MetricsEnabled: n.cfg.MetricsEnabled,
 		Layout: n.cfg.Layout, Members: regionView{v: n.view, region: r}, AckQuorum: n.cfg.AckQuorum, RequestTimeout: n.cfg.RequestTimeout,
 	})
 	if err != nil {
 		return n.store
 	}
+	s.ShareMetrics(n.store)
 	n.scoped[r] = s
 	return s
 }
