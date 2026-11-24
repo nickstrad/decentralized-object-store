@@ -122,9 +122,10 @@ No build blocker. Independent review and O1/O2 wiring are the next dependencies.
 
 ## In progress
 
-Observability core build is DONE and the erasure catalogue blocker is FIXED on
-`feat/observability` (cleanup fix); ready to resume remaining observability build
-(O1/O2/O3/O4) from the updated `feat/observability` tip.
+Observability core, cleanup fix, and Neon final-pass code tweaks/docs are on
+`feat/observability`, but **the observability phase is NOT READY**: Stage C
+(`C-rest-sol`: O1/O2/O3/O4 and A2 real-`objnode` proof) never re-ran after the
+erasure catalogue blocker was resolved (see the checkpoint below).
 
 ## Per-chunk pipeline (as run for chunks 1–5; worked examples in each agent_work/<slug>/)
 
@@ -251,7 +252,7 @@ follow-up work read this file, PLAN.md and /root/briefs/objstore-phase2-mission.
 branch and worktree from main (worktrees under /root/Software/object-store-work/).
 `agent_work/orch/launch.sh` names run files `objstore-p2-<run>` unless RUN_PREFIX is set. The full gate on main is `GATE_STAGE=final agent_work/gates/gate.sh <name>`.
 
-## Observability rest build — UNBLOCKED after cleanup fix (2026-11-24)
+## Observability phase — NOT READY (core + tweaks + docs done; Stage C missing, 2026-11-24)
 
 Core was completed at `bd3e01c` (independent review remains separate). The remaining Sol
 build (`C-rest-sol`) stopped under the explicit core-contract blocker rule because
@@ -261,19 +262,60 @@ build (`C-rest-sol`) stopped under the explicit core-contract blocker rule becau
 [REST-BLOCKER](agent_work/10-observability/REST-BLOCKER.md), and
 `/root/runs/objstore-obs-rest-blocked.txt`).
 
-Cleanup fix (Neon, 2026-11-24, on `feat/observability` at `/root/Software/object-store`):
+Cleanup fix (Neon, 2026-11-24, on `feat/observability` at `/root/Software/object-store`, `f5c4538`):
 - Fixed `labelDomains` in `internal/metrics/catalogue.go` so both
   `objstore_erasure_input_bytes_total` and `objstore_erasure_output_bytes_total` allow
-  `operation` in `{"encode", "reconstruct"}` per PLAN section 3. Audited all 84 catalogue
+  `operation` in `{"encode", "reconstruct"}` per PLAN section 3. Audited all 83 catalogue
   descriptors and 25 labeled metrics against PLAN section 3; no other mismatches found.
 - Added regression coverage in `internal/metrics/metrics_test.go`
   (`TestErasureByteOperationDomains` plus full-domain coverage and label-sort checks in
   `TestCatalogueAndClone`).
-- Verified: `gofmt -s -l internal/metrics/` clean; `go build ./...`, `go vet ./...`,
-  `go test -v ./internal/metrics ./internal/telemetry/...`, `go test -short ./...`,
-  coverage (`internal/metrics` 96.6%, `internal/telemetry` 95.7%), and Docker gates
-  `G0,G6` (including `detlint`, `panics`, `deps`, `selfcontained`) all PASS.
 - Done marker: `/root/runs/objstore-obs-cleanup-done.txt`.
+
+Final tweak pass (Neon, 2026-11-24, on `feat/observability` at `/root/Software/object-store`):
+- **Why NOT READY:** `/root/runs/objstore-obs-conductor2.sh` (lines 106–110) ran
+  `neon_cleanup` when `C-rest-sol` blocked without `/root/runs/objstore-obs-rest-done.txt`,
+  then fell straight through to `gate` and `D-neon-final` without re-running `C-rest-sol`
+  or checking for `/root/runs/objstore-obs-rest-done.txt`. Consequently, ALL Stage C
+  deliverables from PLAN.md and Nick's 2026-11-24 amendment remain unbuilt on
+  `feat/observability`:
+  1. O1: component `Snapshot()` methods, `MetricsEnabled` config propagation, `erasure.MeteredCodec`,
+     `storage.StripeCodec`/`EncodeStripeWithCodec`/`DecodeStripeWithCodec`, `node.MetricSources()`.
+  2. O2: `internal/noderuntime/metrics.go` (`MetricsCollector`, metrics-exempt inspection path,
+     `Runtime.Snapshot()`), `httpapi.Server.Snapshot()`, and `cmd/objnode` `observability` JSON/flags.
+  3. A2: real `objnode` → Collector → Prometheus proof (`TestObjnodeOTelPrometheus` / default
+     `check-otel.sh`) and CI hook.
+  4. O3: mandatory direct `prometheus` scrape adapter and first-class `csv` disk-flush adapter +
+     `telemetry.ReadCSVDir` (`internal/telemetry/registry.go` currently registers only `otel`).
+  5. O4: DuckDB-over-CSV analysis layer (`deploy/observability/queries.sql`, `query-csv.sh`,
+     optional pinned `dev-observability` Docker target, and real CSV smoke).
+- **Small tweaks applied to built core/OTel code:**
+  - `internal/telemetry/otel.go`: honored caller context deadlines beyond 2s (removed hardcoded
+    2s `http.Client.Timeout` and `Transport.ResponseHeaderTimeout`; kept 2s fallback when caller
+    passes no deadline), checked `json.Marshal` error before batch byte-limit check, checked
+    `ctx.Err()` on `io.ReadAll` failure in `send`, and checked `ok` from `ctx.Deadline()`.
+  - `internal/telemetry/runner.go`: replaced magic `counts` indices with named constants, removed
+    unused `err` parameter on `report`, removed redundant `shutdownDone` channel/select after
+    synchronous `shutdownOnce.Do`, and guarded non-negative duration/timestamp conversions.
+  - `internal/telemetry/runner_test.go`: fixed data races detected by `go test -race` on test
+    `sink`, `logs`, `calls`, and `r.counts` inside `synctest` tests.
+  - `internal/telemetry/adaptertest/contract.go`: added deterministic label tie-breaker to
+    `projection` sorting for multi-series points sharing a metric name.
+  - `internal/metrics/catalogue.go`: corrected acronym casing in metric `Help` strings
+    (`HTTP`, `RPC`, `OCC`, `LWW`).
+  - `internal/telemetry/otel_test.go`: added `TestOTelHonorsCallerTimeoutBeyondDefault`.
+- **Reader-facing docs written (truthful to current tree):**
+  - `docs/observability.md` and a short `## Observability` section + links in `README.md`,
+    documenting the 83-descriptor catalogue, off-by-default toggle, `otel` adapter, Docker
+    Collector → Prometheus stack, extension guide (one file + one `registry.go` entry), and
+    explicitly noting current wiring status (no false claims about unbuilt adapters or flags).
+- **Verified (all PASS):** `gofmt -s -l`, `go build ./...`, `go vet ./...`,
+  `go test -v -race -cover ./internal/metrics ./internal/telemetry/...` (metrics 96.6%,
+  telemetry 94.9%), `go test -short ./...`, and Docker fast lane
+  `COMPOSE_PROJECT_NAME=objstore-obs-neon-final agent_work/gates/ci-fast.sh` (G0 including
+  `detlint`, `panics`, `deps`, `selfcontained`, `site_lint.py` + selftest; G1 unit + coverage
+  floors; G6 docker).
+- Done marker / owner report: `/root/runs/objstore-obs-neon-done.txt`.
 
 Retained interrupted worktrees from the stopped run remain untouched for inspection:
 `/root/Software/object-store-work/10-obs-{components,adapters,runtime}` on
@@ -281,7 +323,9 @@ Retained interrupted worktrees from the stopped run remain untouched for inspect
 no product changes in components/runtime). Logs/briefs/PIDs/exits:
 `/root/runs/objstore-obs-{components,adapters,runtime}*`.
 
-Next: fresh agents/worktrees based on the updated `feat/observability` tip resume
-O1/O2/O3/O4, independent review, and fast-lane acceptance. No full/race/long gate, push,
-main merge, publication, or independent implementation review was run. DuckDB ruling
-remains CSV analysis over flushed CSV files, no runtime writer.
+Next: fix the Stage C retry/check in `/root/runs/objstore-obs-conductor2.sh` (or dispatch
+fresh O1/O2/O3/O4 + A2 runs from the current `feat/observability` tip), run independent review
+and real-`objnode` / DuckDB-over-CSV checks, then update `docs/observability.md` and `README.md`
+for the newly wired components, flags, Prometheus/CSV adapters, and DuckDB-over-CSV queries
+before marking the observability phase READY. DuckDB ruling remains CSV analysis over flushed
+CSV files, no runtime writer.
