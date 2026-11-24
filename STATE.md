@@ -347,3 +347,5 @@ Next: combine tested implementation commits on feat/observability, run the real 
 proof and CSV/DuckDB smoke, independent cross-company review, required fast lane, then
 record Stage C DONE with SHAs. Neon owns the second final pass and phase readiness.
 No detached process for A2 is running; rerun check-otel.sh after wiring lands.
+
+A2 preparation independent review: NITS addressed/recorded in agent_work/10-observability/A2-REVIEW.md; added Collector-side no-boot-label assertion. Live run remains pending wiring.

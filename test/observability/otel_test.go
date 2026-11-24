@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,4 +78,9 @@ func TestObjnodeOTelPrometheus(t *testing.T) {
 	poll(q, func(n float64) bool { return n > first })
 	poll(`objstore_http_requests_in_flight{node_id="obs-node:7946"}`, func(n float64) bool { return n >= 0 })
 	poll(`count({boot_id!=""}) or vector(0)`, func(n float64) bool { return n == 0 })
+	for line := range strings.SplitSeq(string(request("http://otel-collector:9464/metrics")), "\n") {
+		if strings.HasPrefix(line, "objstore_") && strings.Contains(line, `boot_id=`) {
+			t.Fatalf("Collector metric contains per-boot label: %s", line)
+		}
+	}
 }
