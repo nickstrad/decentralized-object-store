@@ -349,3 +349,5 @@ record Stage C DONE with SHAs. Neon owns the second final pass and phase readine
 No detached process for A2 is running; rerun check-otel.sh after wiring lands.
 
 A2 preparation independent review: NITS addressed/recorded in agent_work/10-observability/A2-REVIEW.md; added Collector-side no-boot-label assertion. Live run remains pending wiring.
+
+Stage C live claims and verification dependencies: agent_work/10-observability/COORDINATION.md. A2 prep on target at 7954bdb + 8f25539; independent review exit/output verified.
