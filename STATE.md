@@ -424,3 +424,5 @@ reruns exact-tree fast lane and A2 proof, and records Stage C completion. O1/O3/
 remain separate owners. Resume from this branch; no command needs relaunching.
 
 O4 independent analysis review: NITS, no blocking defect; static precision smoke and adversarial boot/reset/duplicate/MaxUint64/path probes pass. Real CSV smoke now names and force-cleans its container on all exits, including timeout. All ten components are required because PLAN mandates fixed zero-valued first-batch series.
+
+Stage C checkpoint: O2 code integrated (131b37e, 7b420ad; HTTP a5cbca3 + 01253b5). O3/O4 adapter/HTTP confirm review PASS; archived reports under agent_work/10-observability/reviews/. Completed adapter worktree cleaned; exact O1 dependency checks and real-node proofs remain pending.

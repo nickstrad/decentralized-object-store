@@ -1,0 +1,27 @@
+CONFIRM REVIEW: O3 adapters + O2 HTTP repair round (tree f69ef35, worktree 10-obs-review-adapter-confirm, read-only)
+VERDICT: PASS (nits accepted/documented; no blocking issues)
+
+Validation: gofmt -l clean; go vet ./internal/telemetry/... ./internal/storage/httpapi/... clean;
+go test -race -count=2 on both packages: ok. Throwaway CRLF probe (deleted, tree clean) ok.
+noderuntime/objnode not tested (O1 dependency, per instruction).
+
+Repaired findings
+- HTTP 01253b5: PASS. Status 0 without normal return (panic) is no longer 2xx: counted class "other",
+  in-flight decremented, no recover so panic propagates unchanged (test asserts repanic + no success + no gauge leak).
+  Tag classified only for PUT (test across methods). Real NewHandler tests cover svc errors, cancellation,
+  MaxBytesReader overflow, implicit 200, saturation. Nit: panic after WriteHeader keeps the written status; acceptable.
+- Prom ea0667e: PASS. Encode happens before the write lock; lock only covers closed recheck, ctx recheck, body/time swap;
+  closed re-checked under lock so no publish after Shutdown; failed/cancelled publish keeps previous cache.
+  Race tests clean.
+- CSV d993950: PASS. Corrupted sync tag fixed (vet clean); encoded len > MaxBatchBytes (1MiB) rejected before file write.
+- CSV ba2005f: PASS. Decode capped at 1MiB+1 and rejected if over; \r\n doubled to \r\r\n before encoding/csv so quoted CRLF
+  round-trips exactly. Probe: identities "a\r", "\r\r\n", "\n\r", "a\r\n\r\nb", "\r" all DeepEqual after readback;
+  record terminators are \n so no collision. Test TestCSVPreservesCRLFIdentity covers node/region/boot.
+- O4 f69ef35: PASS. Named container + docker rm -f in EXIT trap (rc preserved, node.log copied) covers timeout; bash -n ok.
+  Not run (needs O1/O2 flags). The all-ten-components assertion is the PLAN-mandated fixed zero-valued first-batch series,
+  so it is a contract check, not brittle; earlier N6b is withdrawn.
+
+Accepted nits (non-blocking, no new scope): Prom path allowlist/slot-before-404 and slow-client shutdown test; CSV filename
+clock ordering, retention-error after finalize, no dir fsync, stale .tmp reaping; O4 fixture breadth (reset/multi-boot not in
+static assertions, count(*)=14 coupling), query-csv no readonly flag, arm64-only optional image; HTTP Snapshot wiring belongs to O2.
+Unresolved blocking issues: none. Remaining dependency: O1/O2 integration and live objnode CSV smoke run.

@@ -1,0 +1,19 @@
+VERDICT: NITS  (no FAIL-level defects in this logical unit)
+Reviewed: git show ca8d9b6 (internal/erasure/metered.go, metered_test.go, internal/storage/stripe.go) in worktree 10-obs-review-erasure. Read-only; no repo files modified (adversarial tests run via go -overlay from /tmp/revx).
+
+TEST EVIDENCE
+- go test ./internal/erasure ./internal/storage -count=1: ok both. go vet clean.
+- Own adversarial erasure tests (overlay): empty data (k3 m2, nil 2 shards) -> restored=2, bytes 0, no error; too-few-shards error -> error counter 1, input/output/restored unchanged; ReconstructData with only parity missing -> restored delta 0; shard-size-mismatch error -> restored/input unchanged; zero-length non-nil shard treated as present (matches Codec nil=missing contract).
+- Own storage test (overlay): *erasure.MeteredCodec and *erasure.Codec both satisfy StripeCodec; EncodeStripeWithCodec/DecodeStripeWithCodec round-trip on MeteredCodec with 2 shards nil: encode ok=1 in=201 out=335; reconstruct ok=1 in=201 out=67 restored=1. Counts exact.
+- Off overhead: BenchmarkOff 5 allocs/1184 B vs raw Codec 5 allocs/1184 B (identical allocations; closure and measure do not escape per -gcflags=-m); state==nil gives a single nil check; Snapshot returns zero Points.
+- Saturation: satAdd is correct (^0-dst<n); test pins operations counter at max and confirms no wrap.
+
+FINDINGS
+1. [NIT] internal/erasure/metered.go:77-85 - output_bytes semantics for encode count ALL n shards (data + parity, 335 for a 200-byte stripe), not just produced parity; reconstruct output counts only restored shards. Plan (PLAN.md ~line 256) says only "bytes only on successful operations". Behaviour is deterministic and tested (encode out=12 for 6 B, k2 m2) but undocumented and asymmetric; decide/document in the catalogue Help or book. No code defect.
+2. [NIT] metered.go:79,86 - output = len(b)*missing is uint64 unsaturated multiplication (not satAdd). Unreachable in practice (shard len < 2^56), but inconsistent with the saturation discipline stated elsewhere. Also `output` for reconstruct picks the first non-nil shard length; correct because Codec requires equal lengths on success.
+3. [NIT] metered.go:96 - objstore_erasure_operations_in_flight is emitted as constant 0 forever. Plan says gauge from facade entry/exit; given owner-loop confinement it is always 0 at snapshot, so acceptable, but dead series; confirm intent.
+4. [NIT] test coverage (metered_test.go): no direct test of failed Reconstruct accounting (only failed Encode(nil)), parity-only ReconstructData (restored must stay 0), empty-data reconstruct, or k-bytes input semantics; no test in storage that MeteredCodec satisfies StripeCodec or that EncodeStripeWithCodec/DecodeStripeWithCodec drive the facade (my overlay checks pass, but are not committed). Test also reads private c.state (implementation-mirroring) for failure/saturation checks.
+5. [NIT/scope note] StripeCodec hooks exist but nothing in storage.Node/node/repair calls the *WithCodec paths or NewMetered yet (grep: no non-test callers). Plan requires normal I/O and inventory repair wiring and node-level aggregation; this is outside this unit's scope but remains open for Stage C. Owner-loop confinement is by documentation only (struct has no mutex, not race-safe); acceptable per plan ("owner-confined").
+6. [INFO] stripe.go: EncodeStripe/DecodeStripe retained with unchanged signatures as thin wrappers; pure *erasure.Codec untouched (embedded pointer, immutable). Compatibility OK. Exported wrapper/StripeCodec lack doc comments (prose is a later Neon phase).
+
+CHECKED OK: exact missing count (data-only counts only i<k nil slots; Reconstruct counts all nil), counts only on success, bytes only on success, failures leave input/output/restored untouched, Snapshot labels valid against catalogue and metrics.Validate, snapshot not aliasing live state, resetting/replacing a Codec not applicable (state lives in facade).

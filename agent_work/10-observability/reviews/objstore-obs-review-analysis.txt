@@ -1,0 +1,74 @@
+O4 REVIEW (DuckDB-over-CSV analysis + real-node CSV smoke)  — worktree 10-obs-review-analysis
+Commits: 44ee96d, 79b35ba.  Reviewer: Claude Sonnet 5.5 (read-only; no product edits, no commits).
+Scope: O4 only, not overall Stage C.
+
+VERDICT: NITS  (no blocking defect; 0 FAIL-class findings)
+
+EVIDENCE RUN
+- bash agent_work/10-observability/check-csv.sh with image object-store-obs-analysis:stagec: PASS
+  (all 6 assertions true; TestWriteCSVAnalysisFixture ran via OBS_CSV_FIXTURE_DIR). 6.5s.
+- go vet ./internal/telemetry + go test ./internal/telemetry -count=1: ok.
+- Image reports DuckDB v1.5.0. go.mod/go.sum unchanged across 44ee96d~1..79b35ba (no Go deps).
+- Image delta arithmetic checked: 320741177-299026663 = 21714514 (matches STATE.md).
+- Own adversarial CSV (/tmp/o4rev, two segments, a dir path containing a space, x.tmp junk file):
+  * .tmp excluded; space-in-path OK; empty dir -> "no finalized segments" rc=2; missing dir rc=2.
+  * Two boots (A,B) same node: deltas partitioned per boot; B seq1 gives NULL (no cross-boot delta). OK.
+  * Counter reset in boot A (20 -> 5): delta NULL (not negative/wrapped), next delta 4 correct. OK.
+  * Exact duplicate row (same sample twice) deduped by DISTINCT, rate 1.0 not inflated. OK.
+  * uint64 18446744073709551615 loads as UBIGINT without error. OK.
+  * Mean latency: 200ns/10 req = 20.0; 50/5=10; 150/4=37.5 (correct per-interval ratio, NULL on first sample).
+  * Gauge view in_flight_v1 returns exact gauge_uint64; labels_json extraction for operation/status_class OK.
+  * Join keys for latency match the real catalogue (internal/metrics/catalogue.go:33-34: duration and
+    count both carry only label "operation"), so the d JOIN r on operation does not fan out.
+
+CHECKLIST
+1 Explicit types, exact >2^53 uint64: PASS. queries.sql:1-8 gives explicit UINTEGER/UBIGINT/BIGINT/VARCHAR,
+  nullstr=''. check-csv.sh asserts min(counter)=9007199254740993::UBIGINT. Matches PLAN section 6 verbatim.
+2 Partition deltas by identity/boot/name/labels: PASS. queries.sql:6-7 (PARTITION BY node_id, boot_id, name,
+  labels_json ORDER BY sequence). Matches PLAN. (component not in key; name is prefix-unique so fine.)
+3 Reset/negative guard: PASS. queries.sql:12-13 CASE counter>=previous ELSE NULL. Verified by probe above.
+4 HTTP rates / mean latency: PASS. Rate = delta/NULLIF(elapsed,0); elapsed uses HUGEINT subtraction (no overflow).
+5 JSON labels / gauges: PASS.
+6 Pinned optional target: PASS. Dockerfile:15-23 `dev-observability` pins DuckDB v1.5.0 + archive SHA256
+  (179a481e...0292) verified with sha256sum -c; final `FROM dev AS default` keeps a plain `docker build` on the
+  normal image. No Go modules/cgo added.
+7 Wrapper safety: PASS. query-csv.sh: path never interpolated into SQL/shell (cd into dir, relative '*.csv',
+  SQL read from stdin file), `cd --`, pinned version check, rejects missing/empty dir, `.tmp` not matched.
+8 Static fixture: PASS (see run). Real-node script reviewed only (not run; observability flags absent here).
+
+FINDINGS (all NITS)
+N1 [nit/test-coverage] agent_work/10-observability/check-csv.sh:66-72 and csv_test.go:179-207.
+   Fixture + assertions never exercise the reset guard, multi-boot partitioning, duplicate dedup, the
+   occ_discards_v1 view, or in_flight_v1 (no assertion on gauges at all in the static check). They hold today
+   (my probe) but a regression in lines queries.sql:12-13 or :6 would pass the smoke. Assertions use max()
+   (e.g. max(delta)=2, max(rate)=2), which would also mask a stray extra/incorrect row. Suggest second boot_id,
+   a decreasing sample, and exact-set assertions.
+N2 [nit] agent_work/10-observability/check-csv.sh:67 hard-codes count(*)=14; couples the check to fixture shape
+   (brittle, but currently correct). Also delta exactness above 2^53 is not asserted (only the raw value).
+N3 [nit] deploy/observability/query-csv.sh:158-163: the "no segments" test counts any entry matching *.csv,
+   including a directory named x.csv or a non-finalized foreign file; DuckDB then errors (acceptable, loud).
+   PLAN says "read-only mode": script uses :memory: but no -readonly/-safe flag; SQL file is trusted so low risk.
+N4 [nit] queries.sql:3 `SELECT DISTINCT *` dedups only exact duplicates; same (series,sequence) with different
+   values (e.g. re-run reusing a boot_id) would give nondeterministic lag order. Boot_id disambiguates, so low.
+N5 [nit] Dockerfile:16 `test "$(uname -m)" = x86_64` makes the optional target fail on arm64 hosts. Acceptable
+   (documented as optional) but should be noted in the N1 docs pass. Archive hash trust is as-recorded (only
+   re-verifiable online; build succeeded in this environment so it matches the downloaded artifact).
+N6 [nit, pre-wiring] agent_work/10-observability/check-objnode-csv.sh (not run):
+   a) :19-21 flags -observability, -observability-adapter, -observability-interval, -observability-timeout,
+      -observability-settings do not exist in cmd/objnode/main.go in this tree (flags at main.go:60-73) — expected
+      pending O1/O2; script cannot pass before wiring and flag names must be confirmed against the final tree.
+   b) :16 assertion count(DISTINCT component)=10 equals the catalogue's 10 prefixes, but requires every
+      component to emit in a 5-request, ~1s run (saga/merkle/gossip with -k 1 -m 0, single node); likely
+      brittle. Suggest >=N including http,node,runtime,telemetry, or assert the exact set emitted.
+   c) :23 `timeout 90s docker run` kills only the client on timeout, leaving the container; add --name and
+      docker kill, or `docker run --stop-timeout`. `wait "$node_pid"` under set -e fails the script if objnode
+      exits non-zero on SIGTERM (main.go:5/243 suggest graceful exit 0; verify after wiring).
+   d) :19 -http 127.0.0.1:8080 and health path /_health exist (httpapi/http.go:290). Evidence copy into
+      agent_work/10-observability/evidence/node-csv writes untracked files into the repo; fine, but ignore/commit deliberately.
+   e) Data dir /tmp/node-data inside container, CSV dir mode 700 root-owned, ro repo mount: consistent.
+   Static review otherwise sound: .tmp residue injected after shutdown, glob ignores it.
+
+NOT VERIFIED (by instruction): actual check-objnode-csv.sh run; real objnode CSV contents; OCC discard rows
+from a real node; O1/O2 wiring. STATE.md already records these as pending and the phase NOT READY.
+
+PASS/NITS/FAIL: NITS

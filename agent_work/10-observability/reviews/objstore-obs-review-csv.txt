@@ -1,0 +1,32 @@
+REVIEW: O3 CSV adapter, commit f2319e0 (worktree 10-obs-review-csv, read-only; scratch copy in /tmp/rv used for probes)
+
+VERDICT: NITS  (one item that I would fix before landing: N1 vet failure)
+
+Validation run:
+- go test ./internal/telemetry -count=1  -> ok (includes TestCSVContract shared suite, csv_test.go cases)
+- gofmt -l internal/telemetry -> clean
+- go vet ./internal/telemetry -> FAILS (see N1)
+- Independent probes in a /tmp copy: roundtrip with odd identity strings, filename/retention behaviour, stale .tmp after restart.
+
+Requirement check
+- Exact uint64/metadata readback: PASS. Counter/gauge via FormatUint/ParseUint, MaxUint64 roundtrips (csv_test.go:~40 DeepEqual on whole Batch); schema/node/region/boot/seq/start/time parsed as exact ints; per-file metadata consistency enforced (csv.go:254-276); kind/value-column exclusivity and unit checked (csv.go:277-299); decode finishes with metrics.Validate (csv.go:311).
+- Private local dir: PASS. MkdirAll 0700, then Lstat (symlink rejected), perm&0077==0, owner==euid, writable probe (csv.go:52-76). Files from CreateTemp are 0600 (asserted in test). Names not derived from labels.
+- Atomic finalized writes: PASS. Temp ".metrics-*.tmp" (never .csv) -> write -> optional Sync -> Close -> ctx recheck -> rename to .csv (csv.go:139-165); deferred os.Remove(tmp) cleans failure paths. One batch per file, header on each file, oversized/identity-mismatch/invalid batches write nothing and do not rotate (tested).
+- Rotation/crash .tmp exclusion: PASS. csvFiles filters on ".csv" suffix only; stray crash.tmp ignored by ReadCSVDir (tested); retention happens only after successful rename (csv.go:166-175).
+- Strict settings: PASS. decodeStrict (unknown keys, trailing JSON), bounds on directory/max_file_bytes(1..64MiB)/keep_files(1..1024); wrong-typed sync rejected (tested). Defaults 16MiB/8/sync=true match plan.
+- Cancel/closed/failure recovery: PASS. ctx checked on entry and before rename; ErrClosed after Shutdown, Shutdown idempotent; contract suite exercises a real filesystem failure (dir replaced by file) and recovery.
+- No retained references: PASS. Adapter keeps only identity/settings; batch is encoded to bytes before any I/O; ReadCSVDir builds fresh values.
+- Registry entry added (registry.go:9); no objnode/component changes.
+
+Findings
+N1 (low-medium, fix before land) csv.go:31-32 - corrupted struct tag: `json:"sync"\n "syscall"` (stray `"syscall"` text inside the backtick literal, with a newline). It compiles and encoding/json still reads key "json", so behaviour is correct today (tests pass), but `go vet` reports "struct field tag ... not compatible with reflect.StructTag.Get", which will fail any vet gate. Fix: tag should be `json:"sync"`; "syscall" is already imported at line 17.
+N2 (low) csv.go:19-22/78-116 + csvDecode - IDENTITY strings containing "\r\n" are not exact: encoding/csv normalizes CR-LF inside quoted fields. Probe: Region "r\r\n" reads back as "r\n", NodeID "a\r\nb" as "a\nb". metrics.Validate permits any valid UTF-8 identity, so Publish succeeds but readback differs silently. Lone "\r", leading/trailing spaces, NUL and U+2028 roundtrip fine. Practically unlikely (config-sourced node/region), but "exact metadata readback" is violated for that input. Fix: reject identity with CR/LF at encode (or newCSV), or escape them. Labels are safe (closed domains and JSON-escaped).
+N3 (low) csv.go:162 - finalized filename is metrics-<time.Now().UnixNano()>-<seq>-<tmp random>.csv; plan example was metrics-<boot_id>-<seq>.csv. Ordering/retention and ReadCSVDir order rely on lexical sort of wall-clock time first. A backwards clock step or a restart (seq resets to 1) after a clock regression makes retention delete the NEWEST segments and ReadCSVDir return out-of-order batches. Prefer boot start/seq ordering or at least include boot_id so runs disambiguate as the plan says.
+N4 (low) csv.go:170-175 - if retention delete fails after the new segment is renamed, Publish returns an error although the batch is durably finalized (caller treats export as failed; retry would write a duplicate sequence). Consider logging/ignoring retention errors or returning a distinct partial error (ErrPartial exists).
+N5 (low) csv.go:163-165 - with sync=true the file is fsynced but the directory is not fsynced after rename, so a power loss can lose the finalized name. Optional durability hardening.
+N6 (low) crash leftovers: ".metrics-*.tmp" files from a crash are never reaped on restart (probe: stale tmp still present after reopen). Excluded from readers, but unbounded accumulation over repeated crashes; reap in newCSV (only dot-prefixed .metrics-*.tmp, regular files).
+N7 (info, owner-known follow-up) MaxBatchBytes: no encoded 1MiB bound exists in csv.go. Only metrics.Validate's conservative estimate (metrics.go:102) and max_file_bytes (<=64MiB) bound size. Still missing as of f2319e0; builder is already implementing it, not a FAIL. Note ReadCSVDir reads up to 64MiB per file but caps points at MaxPoints, OK.
+
+No-point batch rejection: assessed. csvEncode errors "CSV batch contains no points" (csv.go:111). Runner always appends its own "telemetry" snapshot with points, so in production a batch is never point-less; the only consequence is a differing outcome from Prometheus/OTel for an artificial empty batch (error instead of success/no-op), plus a snapshot component with zero points would be dropped on readback (not representable). Acceptable under the frozen schema, but should be documented as a limitation and the shared contract should not require empty-batch acceptance. No material production consequence.
+
+Out of scope noted: O1/O2/O4 incomplete.

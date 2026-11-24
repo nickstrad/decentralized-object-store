@@ -1,0 +1,25 @@
+REVIEW: A2 proof preparation, diff f711468..HEAD (0c51007), worktree 10-obs-review-proof
+VERDICT: NITS (one substantive nit on the boot_id assertion; nothing blocks. Live proof is pending O1/O2, and STATE.md does not claim it ran.)
+
+Checked against PLAN A2 (real objnode->Collector->Prometheus, metric increases in query JSON, gauge, names/labels, isolated Docker cleanup, enabled-skip detection, bounded CI).
+
+Findings
+1. NIT (weak assertion) test/observability/otel_test.go:78 `count({boot_id!=""}) or vector(0)` == 0 is vacuous. deploy/observability/prometheus.yaml (metric_relabel_configs labeldrop boot_id) strips boot_id before storage, so the query returns 0 even if objnode emits boot_id on every series. It proves the drop rule, not "objnode emits no boot_id labels". Context: internal/telemetry/otel.go:216 does send boot_id as an OTel resource attribute, so the drop rule is what keeps it out; the test cannot detect a regression that moves it onto metric series. Fix: also assert on the Collector endpoint (curl otel-collector:9464/metrics has no boot_id= on objstore_* series; target_info may legitimately carry resource attrs), or query with the labeldrop disabled.
+2. NIT (names/labels) otel_test.go:73-77 Labels are checked only through the exact selector node_id/operation/status_class for the counter and node_id for the gauge. No assertion that the series carry no extra or unexpected labels, or that unlisted names exist. Adequate for "required increases"; thin for "names/labels verified".
+3. NIT (bounded) check-otel.sh:27 `timeout 60s` covers only readiness plus the test. `build dev`, collector validate, go build and image pulls are unbounded in the script. Only the CI job's timeout-minutes: 5 (ci.yml:47) bounds them. A cold-cache `go build` plus image pulls on ubuntu-latest could hit 5 min and give a flaky red. Consider 8-10 min, or a script-level overall deadline.
+4. NIT (isolation) check-otel.sh:16-17 `down` has no -v, so with the default per-PID project name (objstore-obs-$$) local runs leave <project>_gomod and <project>_gocache volumes behind. This is intentional per the comment, but it accumulates one pair per local run. CI is unaffected (ephemeral runner). Consider a fixed default project name, or removing those two volumes only when the project name was auto-generated.
+5. INFO CI job ci.yml:45-60 will be red on any branch until O1/O2 land. Expected for preparation. Do not merge A2 ahead of O2.
+
+Confirmed OK
+- Test asserts the real objnode counter objstore_http_requests_total{node_id,operation="health",status_class="2xx"} is >0, then strictly increases after 5 more requests (the first value is read before the second batch, so strict > is sound), and requires the in-flight gauge to be present and >=0. It queries Prometheus JSON, not a fixture.
+- Enabled-skip failure: check-otel.sh:35-38 pipes test through `tee` with pipefail, then jq requires the named test to have Action=pass and no fail/skip actions anywhere. A missing test, or one skipped through OBS_INTEGRATION being unset, fails. The wrapper sets OBS_INTEGRATION=1 for node mode. A plain `go test` without the env var still skips (verified).
+- Isolation: unique project name per run (or CI name objstore-obs-ci), `--profile observability` added to the script, and profiles added to the three observability services in compose.observability.yaml (so the plain `up` / cluster flows do not start them). The `dev` service stays profile-free so `run dev` works. The trap always collects logs, runs down --remove-orphans and removes the project's obs-data volume. Evidence and bin are gitignored; the CI artifact upload uses if-no-files-found: error with if: always().
+- Image digests are pinned, and Prometheus retention is capped.
+- STATE.md addition is honest: the phase is NOT READY, live proof waits, and no process is running.
+
+Validation evidence (static only, no Docker integration run)
+- bash -n agent_work/10-observability/check-otel.sh: ok
+- docker compose -f compose.yaml -f compose.observability.yaml --profile observability config -q: ok
+- go vet ./test/observability: clean
+- go test -count=1 -v ./test/observability: SKIP with the expected message (gated), exit 0
+- git status clean. No product code was modified; this file is the only write.

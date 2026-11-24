@@ -1,0 +1,44 @@
+VERDICT: NITS  (Stage C logical unit "http", commit a5cbca3; reviewer: Sonnet 5.5, read-only)
+
+Evidence
+- go vet ./internal/storage/httpapi: clean. go test -race -count=1 ./internal/storage/httpapi: ok.
+- Extra probes, run on a scratch copy in /tmp (deleted; worktree clean, git status empty):
+  * 50 goroutines x 200 PUT requests plus concurrent Snapshot() under -race: exact totals
+    (10000 2xx, request bytes 30000, response bytes 20000, in-flight 0). Atomic path is sound.
+  * Real httptest server (NewHandler with MetricsEnabled): "/" counted unknown/4xx, bytes counted.
+  * Operation classification probed on 10+ paths: bounded to the 9-value domain, never raw URL.
+- Confirmed OK by reading: bytes are counted from the actual Read/Write n (not Content-Length);
+  partial write counts only accepted bytes (test); 1xx ignored, first final status wins (test);
+  implicit 200 on Write/no-write; status classes map 2-5xx, other for <200 or >=600; saturating
+  CAS add; in-flight decrement in defer; nil-off path: MetricsEnabled=false returns the bare
+  handler, NewServer meter is nil, Snapshot on nil meter is safe and returns no points (test);
+  Snapshot points are fresh slices (aliasing test) and pass metrics.Validate.
+  Unwrap() lets http.ResponseController reach Flush/Hijack.
+
+Findings
+1. NIT (low-medium) internal/storage/httpapi/metrics.go:111-127 - a handler panic is counted as
+   2xx. The deferred recorder treats status 0 as 200. A panic that net/http recovers (or
+   http.ErrAbortHandler) drops the connection with no response, yet it lands in
+   requests_total{...,2xx}. Probe confirmed: panic before any write gives 2xx=1, in-flight 0.
+   Plan row says errors must be tested. Fix: recover/re-panic (or a done flag set after
+   ServeHTTP returns normally) and count status 0 + panic as 5xx or "other". Add a test.
+2. NIT (low) metrics.go:55-57 vs http.go:497-517 - "tag" is classified from q.Has("tag") for any
+   method. The handler only treats PUT ?tag as the tag operation; GET/DELETE/HEAD ?tag=x is an
+   ordinary object request, so it is mislabelled "tag". The plan says to use the routing table.
+   Fix: classify tag only for PUT (or share the router's predicates). Add a case to
+   TestHTTPOperationDomain. Same-class, lower impact: GET ?tags / ?meta count as "object"
+   (reasonable, but undocumented).
+3. NIT (test gap) metrics_test.go - no test goes through the real handler/server for the
+   implicit-200 path, error mapping (404/503 via svc errors), cancellation of the real request
+   context, or request-body read errors (MaxBytesReader overflow, client abort). Tests use
+   hand-built handlers, so they mirror the implementation. Cancellation test cancels a ctx but
+   the fake handler just writes 503; it proves in-flight accounting, not behaviour under a real
+   cancel. Also no test of status >=600/<200 -> "other", or saturation of addMetric.
+   Note: the TestHTTPMetricsInFlight... "disabled" check uses NewServer(":0", nil, Limits{}).
+4. NIT (scope note, not a defect) Limits.MetricsEnabled and Server.Snapshot are not yet wired
+   to objnode/noderuntime config or the collector (grep: no users outside httpapi). Expected
+   for this unit; the later wiring unit must set it, and must treat Snapshot as safe when nil.
+5. NIT (trivial) metrics.go:108 wraps r.Body even when it is http.NoBody; harmless, but
+   the metricBody wrapper hides optional io.WriterTo; no behavioural impact found.
+
+No FAIL-level issues: counters are accurate, bounded, race-free, and off by default.

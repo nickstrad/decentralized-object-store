@@ -1,0 +1,57 @@
+VERDICT: NITS  (reviewer: Sonnet 5.5, read-only; commit 822bb08, branch work/obs-review-prometheus)
+
+Scope: Prometheus adapter + private settings validator only. Cross-checked against PLAN.md
+(settings table ~L365, section 6 "Prometheus (mandatory)").
+
+Plan requirements met (no blockers):
+- Strict settings: decodeStrict rejects unknown fields and trailing JSON (prometheus.go:40,51).
+  Defaults listen 127.0.0.1:9464, path /metrics, stale_after 30s match the plan.
+- stale_after >= 2*interval is enforced at normalize() when Enabled (config.go:122-128,
+  prometheus.go:44), so it fails as ErrConfig before any listener opens. Disabled config never
+  validates or opens a listener (test TestPrometheusStalenessIntervals). The validator is a
+  private map (registry.go), so public interfaces are unchanged.
+- Cache: Publish validates the batch, checks identity, encodes, then replaces body+timestamp
+  under the lock. A failed or cancelled publish leaves the previous cache. Scrape returns 503
+  before the first batch, after stale, and after close (prometheus.go:87), never zeros.
+  Scrapes never call Collect.
+- Escaping/types: label values escape \ \n ", HELP escapes \ \n; HELP/TYPE once per family;
+  rows and labels sorted; counter/gauge kind from the catalogue; exact uint64 via %d; BootID
+  not emitted as a label; exposition bounded by MaxBatchBytes.
+- Bounds/lifecycle: 8 handler slots (503 when full), Read/ReadHeader/Write/Idle timeouts,
+  MaxHeaderBytes 8192, 404/405, HEAD OK. Shutdown marks closed, clears body, calls
+  Shutdown then Close on error, waits on done or ctx. Listener cleanup tested.
+
+Tests run:
+- gofmt -l: clean. go vet ./internal/telemetry/...: clean.
+- go test -race -count=3 ./internal/telemetry/...: ok (5.6s).
+- Shared adaptertest contract passes via real HTTP scrape + independent parser
+  (prometheus_contract_test.go). It parses label values with strconv.Unquote, so it covers
+  escaping beyond a mirror of the encoder.
+- Throwaway probe (deleted; tree clean): "/" and "/a b" paths accepted; Shutdown called twice
+  returns nil/nil; a pre-cancelled Shutdown returns without hanging.
+
+Findings (all non-blocking):
+1. NIT prometheus.go:150-174 — Publish encodes while holding the write lock, so a scrape
+   blocks on RLock for the encoding time (up to 1 MiB). Plan says "atomically replaces the
+   immutable cache". Encode first, then lock only to swap {body, published}. The lock still
+   protects the closed check. Impact is small and bounded.
+2. NIT prometheus.go:56 — path validation accepts values that a client can never request
+   (e.g. "/a b", non-ASCII, or control characters other than \r\n). Tighten with an
+   allowlist of printable URL-path characters. Config-quality only.
+3. NIT prometheus.go:56 vs :44 — the constructor has its own 200ms..2h stale bound, separate
+   from the interval-relative validator. Both are reachable and consistent through Open, so
+   there is no defect. Direct newPrometheus callers are not checked against the interval,
+   but that is private API.
+4. NIT prometheus.go:79 / test L172 — slot acquisition happens after the path/method checks,
+   so 404/405 responses bypass the concurrency bound. They are cheap and the connections are
+   bounded by timeouts. Informational.
+5. NIT prometheus_test.go:215-226 — TestPrometheusShutdownDeadline wraps real network I/O in
+   synctest and only asserts that a pre-cancelled shutdown does not hang. It does not cover
+   a slow-client in-flight request against a deadline. Add a test that holds a connection
+   open with a short Shutdown ctx and asserts the server is force-closed and the listener is
+   released.
+6. NIT coverage — no test that a stalled/slow-header client is dropped by ReadHeaderTimeout,
+   or that a Publish racing scrapes under -race returns coherent bodies (the concurrent
+   publish test only checks that it doesn't crash). The -race runs were clean.
+
+No FAIL-level defects found. Nothing modified in the product tree.
