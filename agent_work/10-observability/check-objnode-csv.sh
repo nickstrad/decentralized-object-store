@@ -24,7 +24,7 @@ SELECT CASE WHEN max(counter_uint64)>0 THEN true ELSE error('missing actual HTTP
 SELECT CASE WHEN count(*)>0 THEN true ELSE error('missing in-flight gauge') END FROM snapshots_v1 WHERE name='objstore_http_requests_in_flight' AND gauge_uint64 IS NOT NULL;
 SQL
 # No Collector/Prometheus or network is required: both node and queries run locally.
-timeout 90s docker run --rm --name "$container" --init --network none -v "$repo:/src:ro" -v "$fixture:/fixture" "$image" bash -euc '
+timeout 90s docker run --rm --name "$container" --init --network none -v objstore-gomod:/go/pkg/mod -v objstore-gocache:/root/.cache/go-build -v "$repo:/src:ro" -v "$fixture:/fixture" "$image" bash -euc '
   go build -o /tmp/objnode ./cmd/objnode
   /tmp/objnode -id 127.0.0.1:7946 -region local -listen 127.0.0.1:7946 -http 127.0.0.1:8080 -data /tmp/node-data -k 1 -m 0 -observability -observability-adapter csv -observability-interval 200ms -observability-timeout 50ms -observability-settings '\''{"directory":"/fixture/metrics","keep_files":8}'\'' > /fixture/node.log 2>&1 &
   node_pid=$!

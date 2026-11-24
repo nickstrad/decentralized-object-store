@@ -492,3 +492,5 @@ record owner-first facade construction, written-layer byte/gauge semantics, HEAD
 private codec invariant and saga terminal-log recovery counting. No additional reusable
 script or VM knowledge was needed. Worktree has no live build/check processes; conductor
 owns integration, confirm review and final exact-tree checks. Phase readiness is unchanged.
+
+Final-check checkpoint: O1 repair confirm PASS. Repeated A2 on 978c322 PASS. The repeated CSV smoke hit its 90s wrapper deadline during a cold Go build before node startup; added the same shared Go cache mounts as Compose, preserving timeout/coverage and container cleanup, then retry once. Runtime reviewer PASS report exists; three self-matching/missing-file polling shells were stopped so its CLI can finish and write its exit file. No product assertion failed.
