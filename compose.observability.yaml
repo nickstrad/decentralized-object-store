@@ -18,7 +18,7 @@ services:
     profiles: [observability]
     image: objstore-dev:local
     working_dir: /src
-    command: ["/src/agent_work/10-observability/bin/objnode", "-config", "/etc/objnode.json"]
+    command: ["${OBS_NODE_BINARY:-/src/bin/objnode}", "-config", "/etc/objnode.json"]
     volumes:
       - .:/src:ro
       - ./deploy/observability/obs-node.json:/etc/objnode.json:ro

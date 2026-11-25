@@ -12,6 +12,7 @@ if [[ ! -d "$csv_dir" || ! -r "$sql_file" ]]; then
   exit 2
 fi
 sql_file=$(realpath -- "$sql_file")
+views_file=$script_dir/views.sql
 shopt -s nullglob
 segments=("$csv_dir"/*.csv)
 if [[ ${#segments[@]} -eq 0 ]]; then
@@ -23,4 +24,5 @@ if [[ $(duckdb --version) != v2.0.0\ * ]]; then
   exit 2
 fi
 cd -- "$csv_dir"
-exec duckdb -bail -init /dev/null :memory: < "$sql_file"
+# views.sql defines the *_v1 views, so SQL_FILE (the report by default) can use them.
+cat -- "$views_file" "$sql_file" | duckdb -bail -init /dev/null :memory:

@@ -3,4 +3,5 @@ _site
 bin
 dist
 kb
+test-artifacts
 *.log

@@ -51,11 +51,11 @@ jobs:
       - name: Verify real objnode metrics through the Docker pipeline
         env:
           COMPOSE_PROJECT_NAME: objstore-obs-ci
-        run: agent_work/10-observability/check-otel.sh
+        run: make test-otel
       - name: Upload observability proof
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: observability-proof
-          path: agent_work/10-observability/evidence/node/
+          path: test-artifacts/otel/objstore-obs-ci/node/
           if-no-files-found: error

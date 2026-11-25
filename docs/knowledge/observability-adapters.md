@@ -24,8 +24,11 @@ CSV metadata and never become Prometheus labels.
 
 `deploy/observability/query-csv.sh DIRECTORY [SQL_FILE]` changes working directory and
 queries relative `*.csv` paths in an in-memory DuckDB process; no directory is interpolated
-into SQL. The default SQL supplies `snapshots_v1`, per-boot counter deltas, HTTP rate and
-mean latency, in-flight gauges and OCC discard diagnostics. Mean latency divides duration
+into SQL. It always runs `views.sql` first, which supplies `snapshots_v1`, per-boot counter
+deltas, HTTP rate and mean latency, in-flight gauges and OCC discard diagnostics; the
+default `queries.sql` is a narrated report over those views that hides idle rows and
+reports how many it left out. The CSV checks add a shared `verdict.sql` that prints
+claim/observed/expected/PASS-FAIL rows before failing with `error()`. Mean latency divides duration
 deltas by duration-count deltas, not an unrelated global request count. Duplicate identical
 CSV observations are removed before computing deltas; boot IDs partition restarts.
 
@@ -33,7 +36,7 @@ The optional Docker target `dev-observability` selects the Linux AMD64 or ARM64
 CLI archive for DuckDB 2.0.0 and verifies its pinned SHA-256 checksum.
 [DuckDB 2.0.0 release assets](https://github.com/duckdb/duckdb/releases/expanded_assets/v2.0.0)
 
-`agent_work/10-observability/check-csv.sh` runs a separate, manual Docker analysis smoke:
+`make test-csv-fixture` runs a separate, manual Docker analysis smoke:
 Go flushes two segments with an exact value above 2^53, then pinned DuckDB asserts JSON
 extraction, temp-file exclusion, exact integers, counter deltas, rate and mean latency.
 This fixture proof does not replace the real objnode CSV smoke or the real OTel pipeline.

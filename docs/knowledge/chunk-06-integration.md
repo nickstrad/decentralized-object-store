@@ -201,7 +201,7 @@ Residuals, stated as the code behaves:
 - `internal/noderuntime/conformance_test.go` runs the same four scenarios on the simulator
   and on loopback sockets; it is the pattern for a test that must hold on both.
 - `internal/testutil/leakcheck`: `Main(m, settle)` as a `TestMain` goroutine-leak check.
-- `agent_work/06-integration/cluster-smoke.sh` is gate G7. It starts the compose `cluster`
+- `test/e2e/cluster-smoke.sh` is gate G7. It starts the compose `cluster`
   profile (three peers in regions a, b, c), waits for three alive members on every node,
   puts on one node, gets on another and checks the conditional-write refusals. It runs under
   its own compose project name and reads back ephemeral loopback ports, so two runs can

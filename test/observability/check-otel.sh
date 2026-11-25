@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Default is the real objnode proof. --fixture is only A1 transport evidence.
+# Default is the real objnode test. --fixture sends controlled metrics.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 mode=${1:-node}
@@ -7,8 +7,9 @@ if [[ "$mode" != node && "$mode" != --fixture ]]; then echo 'usage: check-otel.s
 project=${COMPOSE_PROJECT_NAME:-objstore-obs-$$}
 export COMPOSE_PROJECT_NAME="$project"
 compose=(docker compose -p "$project" -f compose.yaml -f compose.observability.yaml --profile observability)
-logs="agent_work/10-observability/evidence/$mode"
-mkdir -p "$logs" agent_work/10-observability/bin
+logs="test-artifacts/otel/$project/${mode#--}"
+mkdir -p "$logs"
+export OBS_NODE_BINARY="/src/test-artifacts/otel/$project/objnode"
 cleanup() {
   rc=$?
   trap - EXIT
@@ -23,12 +24,12 @@ trap cleanup EXIT
 "${compose[@]}" run --rm -T --no-deps otel-collector validate --config=/etc/otelcol-contrib/config.yaml </dev/null > "$logs/validate.log" 2>&1
 services=(otel-collector prometheus)
 if [[ "$mode" == node ]]; then
-  "${compose[@]}" run --rm -T --no-deps dev go build -o agent_work/10-observability/bin/objnode ./cmd/objnode </dev/null
+  "${compose[@]}" run --rm -T --no-deps dev go build -o "$OBS_NODE_BINARY" ./cmd/objnode </dev/null
   services+=(obs-node)
 fi
 "${compose[@]}" up -d "${services[@]}"
 # One post-start deadline includes readiness and the test; no silent enabled-test skip.
-timeout 60s "${compose[@]}" run --rm -T --no-deps -e OBS_FIXTURE="$([[ "$mode" == --fixture ]] && echo 1 || echo 0)" -e OBS_INTEGRATION="$([[ "$mode" == node ]] && echo 1 || echo 0)" dev bash -euc '
+"${compose[@]}" run --rm -T --no-deps -e OBS_FIXTURE="$([[ "$mode" == --fixture ]] && echo 1 || echo 0)" -e OBS_INTEGRATION="$([[ "$mode" == node ]] && echo 1 || echo 0)" dev timeout -k 5s 60s bash -euc '
   until curl -fsS http://otel-collector:9464/metrics >/dev/null && curl -fsS http://prometheus:9090/-/ready >/dev/null && curl -fsS http://prometheus:9090/api/v1/targets | jq -e '\''.data.activeTargets | any(.health == "up")'\'' >/dev/null; do sleep 0.2; done
   if [[ "$OBS_INTEGRATION" == 1 ]]; then
     until curl -fsS http://obs-node:8080/_health >/dev/null; do sleep 0.2; done

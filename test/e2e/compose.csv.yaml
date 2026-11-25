@@ -1,0 +1,16 @@
+x-csv-entrypoint: &csv-entrypoint
+  entrypoint:
+    - sh
+    - -ec
+    - |
+      go build -o /tmp/objnode "$$3"
+      shift 3
+      exec /tmp/objnode "$$@" -observability -observability-adapter csv \
+        -observability-interval 200ms -observability-timeout 100ms \
+        -observability-settings '{"directory":"/tmp/cluster-metrics","keep_files":256}'
+    - --
+
+services:
+  node-a1: *csv-entrypoint
+  node-b1: *csv-entrypoint
+  node-c1: *csv-entrypoint

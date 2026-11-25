@@ -201,14 +201,15 @@ Segment format and readback:
 
 DuckDB queries finalized `.csv` segments directly in memory — Object Store carries no Go DuckDB dependency, no cgo driver, and no runtime `.duckdb` writer.
 
-- `deploy/observability/queries.sql` defines typed views over `*.csv` (`UBIGINT` columns preserve integers above 2^53):
+- `deploy/observability/views.sql` defines typed views over `*.csv` (`UBIGINT` columns preserve integers above 2^53). The `*_v1` names and columns are a stable interface:
   - `snapshots_v1`: typed rows from `read_csv('*.csv', header=true, nullstr='', columns=...)`.
   - `counter_deltas_v1`: deduplicated counter samples with per-`(node_id, boot_id, name, labels_json)` sequence deltas and elapsed seconds.
   - `occ_discards_v1`: per-sequence `objstore_occ_lww_discards_total` values and deltas.
   - `http_rates_v1`: HTTP requests per second grouped by `operation` and `status_class`.
   - `http_latency_v1`: mean HTTP request latency in nanoseconds per `operation` (`duration_ns / request_count`).
   - `in_flight_v1`: `objstore_http_requests_in_flight` gauge observations.
-- `deploy/observability/query-csv.sh CSV_DIRECTORY [SQL_FILE]` verifies that finalized `.csv` files exist and that pinned DuckDB `v2.0.0` is available, changes into `CSV_DIRECTORY`, and runs `duckdb -bail -init /dev/null :memory:` with `queries.sql` (or a custom SQL file) without interpolating directory paths into SQL.
+- `deploy/observability/queries.sql` is the default report built on those views. It prints a preamble (segments, snapshots, nodes, boots, time span and the measured collection interval) and four sections: OCC last-writer-wins discards, HTTP requests, HTTP latency, and requests in flight. Each section states its question, the metrics and arithmetic behind it, and a one-line legend per column, then the data with readable times (UTC), latency units (ns/µs/ms/s), req/s and 8-digit boot IDs. Rows without activity are left out, and a line reports how many were not shown. An empty section prints a sentence instead of a table. The `report_table` and `report_legend` macros render any view as a text table.
+- `deploy/observability/query-csv.sh CSV_DIRECTORY [SQL_FILE]` verifies that finalized `.csv` files exist and that pinned DuckDB `v2.0.0` is available, changes into `CSV_DIRECTORY`, and runs `views.sql` followed by `queries.sql` (or a custom SQL file, which can use the `*_v1` views directly) through `duckdb -bail -init /dev/null :memory:` without interpolating directory paths into SQL.
 - The optional `dev-observability` Docker target installs DuckDB `v2.0.0` for Linux AMD64 or ARM64 and verifies the archive against the SHA-256 checksum for that architecture.
 
 Use the same Make targets on Linux and macOS with Docker Desktop. Docker selects its default image platform, and the build selects the DuckDB archive for that platform. Run `make observability` to build the analysis image. The query target builds the image and queries a directory of flushed CSV segments.
@@ -217,11 +218,9 @@ Use the same Make targets on Linux and macOS with Docker Desktop. Docker selects
 make query-csv CSV_DIR=/path/to/metrics
 ```
 
-To run the bundled end-to-end CSV smoke (starts a real CSV-enabled `objnode` with `--network none`, issues health requests, verifies all 10 components and clean shutdown, and queries the segments through DuckDB):
+Run `make test-csv` to start a real CSV-enabled `objnode`, send health requests, verify metrics from all ten components, and query the saved segments after a clean shutdown. Run `make test-csv-fixture` to verify exact counter values, rate and latency calculations, and exclusion of unfinished files against controlled data. Both checks print what the run proves and how its data was produced, then the report, then a VERDICT table with one row per check (claim, observed, expected, PASS/FAIL) from the shared `test/observability/verdict.sql`. The verdict prints before the failing statement, and any FAIL makes the script exit non-zero.
 
-```sh
-OBS_ANALYSIS_IMAGE=objstore-dev-observability:local agent_work/10-observability/check-objnode-csv.sh
-```
+For metrics from object reads, writes, and conditional requests across three nodes, run `make test-cluster-csv` with `jq` installed on the host. Each CSV target creates a fresh directory under `test-artifacts/` and prints the matching `make query-csv` command. The cluster run has one metrics directory per node.
 
 ## Running the local OTel Collector and Prometheus stack
 
@@ -237,8 +236,10 @@ OBS_ANALYSIS_IMAGE=objstore-dev-observability:local agent_work/10-observability/
 Run the end-to-end verification script (validates the Collector config, builds `objnode` in Docker, starts `obs-node`, `otel-collector`, and `prometheus`, runs `TestObjnodeOTelPrometheus` inside `dev`, and tears down only that Compose project):
 
 ```sh
-COMPOSE_PROJECT_NAME=objstore-obs-demo agent_work/10-observability/check-otel.sh
+make test-otel
 ```
+
+The target uses `jq` on the host and saves logs under `test-artifacts/otel/`.
 
 `TestObjnodeOTelPrometheus` (`test/observability/otel_test.go`, gated by `OBS_INTEGRATION=1`) sends `GET /_health` requests to `obs-node:8080`, queries `http://prometheus:9090/api/v1/query` to verify that `objstore_http_requests_total{node_id="obs-node:7946",operation="health",status_class="2xx"}` increases across request bursts, checks that `objstore_http_requests_in_flight{node_id="obs-node:7946"}` is present, asserts `count({boot_id!=""}) or vector(0)` is `0`, and confirms Collector `objstore_*` lines carry no `boot_id` label.
 

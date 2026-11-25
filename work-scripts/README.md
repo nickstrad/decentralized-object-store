@@ -1,25 +1,11 @@
 # Reusable work scripts
 
-- [Observability pipeline check](../agent_work/10-observability/check-otel.sh): use
-  `--fixture` for A1's in-memory collector proof; no argument runs A2's real objnode
-  proof using the wired runtime/config path. It validates the pinned Collector config,
-  checks service readiness, enforces a 60-second post-start deadline, archives service
-  logs and query output, rejects enabled-test skips, and cleans up its own Docker project.
-  Results are in `agent_work/10-observability/evidence/` (ignored generated files).
+Run these Make targets from the repository root.
 
-- [CSV analysis smoke](../agent_work/10-observability/check-csv.sh): after building
-  `docker build --target dev-observability -t object-store-obs-analysis:stagec .`, flush
-  two controlled batches through the Go CSV adapter and check the finalized segments
-  with pinned DuckDB. Verifies unsigned precision above 2^53, labels, temp-file exclusion,
-  counter deltas, request rate and mean latency. Set `OBS_ANALYSIS_IMAGE` to override
-  the local image tag. This is a fixture proof, separate from real objnode acceptance.
-- [Query finalized CSV](../deploy/observability/query-csv.sh): run the pinned DuckDB CLI
-  in memory against a supplied CSV directory, optionally using a supplied SQL file.
+- `make test-csv` verifies that a real node emits CSV metrics and that DuckDB can query them. [Node CSV smoke test](../test/observability/check-objnode-csv.sh)
+- `make test-csv-fixture` verifies exact counters above 2^53, label extraction, exclusion of unfinished files, counter deltas, request rates, and mean latency. [CSV fixture test](../test/observability/check-csv.sh)
+- `make test-otel` verifies that real node metrics reach Prometheus through the Collector. The script also accepts `--fixture` for a test with controlled metrics. [OTel pipeline test](../test/observability/check-otel.sh)
+- `make test-cluster` verifies cross-node reads and writes and conditional requests in a three-node Compose cluster. `make test-cluster-csv` also collects each node's CSV metrics. [Cluster smoke test](../test/e2e/cluster-smoke.sh)
+- `make query-csv CSV_DIR=/path/to/metrics` runs the bundled SQL against a directory of finalized segments. The query script also accepts a custom SQL file. [CSV query script](../deploy/observability/query-csv.sh)
 
-- [Real objnode CSV analysis smoke](../agent_work/10-observability/check-objnode-csv.sh):
-  run after building the pinned `dev-observability` Docker target. It starts an actual
-  CSV-enabled objnode with no network, requires multiple finalized batches and all ten
-  components, queries health/gauge series with DuckDB, ignores crash temp files, and
-  verifies clean node shutdown. Uses the shared Go cache volumes; its named container is
-  removed on every exit, including timeout. Logs and segments are under
-  `agent_work/10-observability/evidence/node-csv/`.
+The CSV targets print a query command for the artifacts they save under `test-artifacts/`.

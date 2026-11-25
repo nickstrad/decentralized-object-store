@@ -5,6 +5,7 @@
 /dist/
 /_site/
 /agent_work/ci/
+/test-artifacts/
 
 # Observability local checks (evidence is archived deliberately in build notes).
 agent_work/10-observability/bin/

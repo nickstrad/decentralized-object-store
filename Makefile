@@ -2,7 +2,7 @@ OBS_ANALYSIS_IMAGE ?= objstore-dev-observability:local
 
 export OBS_ANALYSIS_IMAGE CSV_DIR
 
-.PHONY: dev test observability query-csv
+.PHONY: dev test observability query-csv test-csv test-csv-fixture test-otel test-cluster test-cluster-csv
 
 dev:
 	docker compose build dev
@@ -12,6 +12,21 @@ test: dev
 
 observability:
 	docker build --target dev-observability -t "$$OBS_ANALYSIS_IMAGE" .
+
+test-csv: observability
+	test/observability/check-objnode-csv.sh
+
+test-csv-fixture: observability
+	test/observability/check-csv.sh
+
+test-otel:
+	test/observability/check-otel.sh
+
+test-cluster: dev
+	test/e2e/cluster-smoke.sh
+
+test-cluster-csv: dev
+	test/e2e/cluster-smoke.sh --csv
 
 query-csv:
 	@if [ -z "$$CSV_DIR" ] || [ ! -d "$$CSV_DIR" ]; then \

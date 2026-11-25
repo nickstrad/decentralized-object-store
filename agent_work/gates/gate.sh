@@ -104,7 +104,7 @@ if [ "$in_container" = false ] && [ "${GATE_NO_DOCKER:-}" != 1 ]; then
   # it after a FULL container run and writes its verdict into the same result. Once the
   # node binary exists a full run without this check does not count for landing.
   outdir=${GATE_OUT:-agent_work/$chunk/gates}
-  smoke=${GATE_CLUSTER_SMOKE-agent_work/06-integration/cluster-smoke.sh}
+  smoke=${GATE_CLUSTER_SMOKE-test/e2e/cluster-smoke.sh}
   if [ -z "${GATE_ONLY:-}" ] && [ -d cmd/objnode ] && [ -f "$outdir/result.json" ]; then
     t0=$SECONDS; status=pass; note=
     if [ -n "$smoke" ] && [ -x "$smoke" ]; then

@@ -42,6 +42,8 @@ Use Docker with Compose v2 on Linux or Docker Desktop on macOS, along with `make
 make test
 ```
 
+Run `make test-cluster` to check cross-node object reads, writes, and conditional requests in a three-node Compose cluster. Run `make test-cluster-csv` to keep a separate set of metrics for each node. Both targets use `jq` on the host.
+
 Run the same quick checks as CI (about 3 minutes). They check formatting and builds, run `go test -short` with minimum coverage requirements, and verify that the checks ran in the dev container.
 
 ```sh
@@ -90,6 +92,8 @@ docker compose --profile cluster down
 ## Observability
 
 Metrics are defined as plain standard-library value types in `internal/metrics` (83 catalogue descriptors across all 10 components) and collected on demand without framework lock-in. Telemetry is off by default and configured in `objnode`'s JSON config or via `-observability`, `-observability-adapter`, `-observability-interval`, `-observability-timeout`, and `-observability-settings`. Three stdlib-only adapters are built in: OTLP/HTTP JSON (`otel`, with a pinned Docker Compose Collector → Prometheus stack in `compose.observability.yaml`), direct Prometheus HTTP scraping (`prometheus`), and atomic local CSV segments (`csv`, paired with offline DuckDB SQL queries in `deploy/observability/queries.sql` and `query-csv.sh`). See [docs/observability.md](docs/observability.md) for the full catalogue, flag reference, adapter settings, DuckDB analysis setup, and adapter extension guide.
+
+`make test-csv` runs a CSV-enabled node and prints the `make query-csv` command for that run. `make test-csv-fixture` checks DuckDB queries against controlled data, and `make test-otel` checks that real node metrics reach Prometheus through the Collector.
 
 ## Where things are
 
