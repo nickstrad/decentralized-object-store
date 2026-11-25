@@ -37,6 +37,7 @@ const (
 	DefaultIdleTimeout        = 60 * time.Second
 	DefaultHTTPRequestTimeout = 30 * time.Second
 	MaxListLimit              = 10000
+	MaxContentType            = 255
 	HeaderVersion             = "X-Object-Version"
 	HeaderContentSHA          = "X-Content-Sha256"
 )
@@ -147,7 +148,8 @@ func NewHandler(svc Service, l Limits, extra ...storage.StatusRow) http.Handler 
 	return h
 }
 
-type errorBody struct {
+// ErrorBody is the JSON body of every error response.
+type ErrorBody struct {
 	Error  string `json:"error"`
 	Status int    `json:"status"`
 }
@@ -156,7 +158,7 @@ func (h *handler) fail(w http.ResponseWriter, err error) {
 	status := StatusOf(h.table, err)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(errorBody{Error: err.Error(), Status: status})
+	_ = json.NewEncoder(w).Encode(ErrorBody{Error: err.Error(), Status: status})
 }
 
 func (h *handler) json(w http.ResponseWriter, status int, v any) {
@@ -335,7 +337,8 @@ func (h *handler) members(ctx context.Context, w http.ResponseWriter, r *http.Re
 	h.json(w, http.StatusOK, ms)
 }
 
-type migrationRequest struct {
+// MigrationRequest is the JSON body of POST /_migrations.
+type MigrationRequest struct {
 	Bucket string `json:"bucket"`
 	To     string `json:"to"`
 }
@@ -348,7 +351,7 @@ func (h *handler) migrations(ctx context.Context, w http.ResponseWriter, r *http
 			h.fail(w, err)
 			return
 		}
-		var req migrationRequest
+		var req MigrationRequest
 		if err := json.Unmarshal(b, &req); err != nil {
 			h.fail(w, fmt.Errorf("storage: migration request: %v: %w", err, storage.ErrInvalid))
 			return
@@ -386,7 +389,8 @@ func uintParam(q map[string][]string, name string) (uint64, error) {
 	return n, nil
 }
 
-type quotaRequest struct {
+// QuotaRequest is the JSON body of PUT /<bucket>?quota.
+type QuotaRequest struct {
 	Bytes   uint64 `json:"bytes"`
 	Objects uint64 `json:"objects"`
 }
@@ -402,7 +406,7 @@ func (h *handler) bucket(ctx context.Context, w http.ResponseWriter, r *http.Req
 			h.fail(w, err)
 			return
 		}
-		var req quotaRequest
+		var req QuotaRequest
 		if err := json.Unmarshal(b, &req); err != nil {
 			h.fail(w, fmt.Errorf("storage: quota request: %v: %w", err, storage.ErrInvalid))
 			return
@@ -490,8 +494,8 @@ func (h *handler) bucket(ctx context.Context, w http.ResponseWriter, r *http.Req
 }
 
 func (h *handler) object(ctx context.Context, w http.ResponseWriter, r *http.Request, bucket, key string) {
-	if key == "" || len(key) > storage.MaxKeyLen {
-		h.fail(w, fmt.Errorf("storage: object key length %d: %w", len(key), storage.ErrInvalid))
+	if err := storage.ValidKey(key); err != nil {
+		h.fail(w, err)
 		return
 	}
 	q := r.URL.Query()
@@ -544,7 +548,7 @@ func (h *handler) object(ctx context.Context, w http.ResponseWriter, r *http.Req
 			return
 		}
 		ct := r.Header.Get("Content-Type")
-		if len(ct) > 255 {
+		if len(ct) > MaxContentType {
 			h.fail(w, fmt.Errorf("storage: content type of %d bytes: %w", len(ct), storage.ErrInvalid))
 			return
 		}

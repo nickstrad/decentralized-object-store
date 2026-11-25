@@ -2,6 +2,9 @@ package storage
 
 import (
 	"errors"
+	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/nickstrad/object-store/internal/env"
 )
@@ -45,6 +48,31 @@ type Condition struct {
 	IfMatchList bool
 	IfMatchAny  []string
 	IfNoneMatch bool
+}
+
+// Canonical returns the precondition c selects in one of four shapes: the
+// zero Condition (unconditional), IfNoneMatch alone, IfMatch "*", or
+// IfMatchList with IfMatchAny holding every unquoted strong tag (IfMatchAny
+// plus IfMatch with surrounding quotes trimmed). IfMatchAny counts only when
+// IfMatch is set or IfMatchList is true. It returns ErrInvalid when c sets
+// both If-Match and If-None-Match.
+func (c Condition) Canonical() (Condition, error) {
+	ifMatch := c.IfMatch != "" || c.IfMatchList
+	switch {
+	case c.IfNoneMatch && ifMatch:
+		return Condition{}, fmt.Errorf("storage: both If-Match and If-None-Match: %w", ErrInvalid)
+	case c.IfNoneMatch:
+		return Condition{IfNoneMatch: true}, nil
+	case !ifMatch:
+		return Condition{}, nil
+	case c.IfMatch == "*":
+		return Condition{IfMatch: "*"}, nil
+	}
+	tags := slices.Clone(c.IfMatchAny)
+	if c.IfMatch != "" {
+		tags = append(tags, strings.Trim(c.IfMatch, `"`))
+	}
+	return Condition{IfMatchList: true, IfMatchAny: tags}, nil
 }
 
 // ObjectInfo describes the metadata of a single object version returned by

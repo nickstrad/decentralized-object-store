@@ -7,6 +7,24 @@ import (
 	"testing"
 )
 
+func TestImportcheckExtra(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "a.go")
+	if err := os.WriteFile(p, []byte("package a\nimport (\n_ \"github.com/spf13/cobra\"\n_ \"github.com/spf13/cobrax\"\n_ \"pgregory.net/rapid\"\n)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := run([]string{p}, "example.com/proj", []string{"github.com/spf13/cobra"}, []string{"pgregory.net/rapid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(got, "\n")
+	if len(got) != 2 || !strings.Contains(joined, "github.com/spf13/cobrax") || !strings.Contains(joined, "pgregory.net/rapid") {
+		t.Fatalf("want findings for the cobra lookalike and rapid in a product file only, got %v", got)
+	}
+	if got, _ := run([]string{p}, "example.com/proj", nil, nil); len(got) != 3 {
+		t.Fatalf("without -extra every outside import is a finding, got %v", got)
+	}
+}
+
 func TestImportcheck(t *testing.T) {
 	const module = "example.com/proj"
 	cases := []struct {
@@ -34,7 +52,7 @@ func TestImportcheck(t *testing.T) {
 			if err := os.WriteFile(p, []byte(c.src), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			got, err := run([]string{p}, module, []string{"pgregory.net/rapid"})
+			got, err := run([]string{p}, module, nil, []string{"pgregory.net/rapid"})
 			if err != nil {
 				t.Fatal(err)
 			}

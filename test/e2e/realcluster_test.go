@@ -80,11 +80,12 @@ func moduleRoot() (string, error) {
 	}
 }
 
-// buildObjnode compiles ./cmd/objnode once per (race, tags) combination for the
-// lifetime of the test binary; TestMain deletes all temporary binary dirs.
-func buildObjnode(t testing.TB, race bool, tags string) string {
+// buildBinary compiles pkg (with extra go build flags) once per (name, flags)
+// combination for the lifetime of the test binary; TestMain deletes all
+// temporary binary dirs.
+func buildBinary(t testing.TB, name, pkg string, extra ...string) string {
 	t.Helper()
-	key := fmt.Sprintf("%v|%s", race, tags)
+	key := name + "|" + strings.Join(extra, " ")
 	binMu.Lock()
 	defer binMu.Unlock()
 	if p, ok := binPath[key]; ok {
@@ -94,26 +95,33 @@ func buildObjnode(t testing.TB, race bool, tags string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir, err := os.MkdirTemp("", "e2e-objnode-bin-")
+	dir, err := os.MkdirTemp("", "e2e-"+name+"-bin-")
 	if err != nil {
 		t.Fatal(err)
 	}
 	binDirs = append(binDirs, dir)
-	out := filepath.Join(dir, "objnode")
-	args := []string{"build", "-o", out}
-	if race {
-		args = append(args, "-race")
-	}
-	if tags != "" {
-		args = append(args, "-tags", tags)
-	}
-	cmd := exec.Command("go", append(args, "./cmd/objnode")...)
+	out := filepath.Join(dir, name)
+	args := append(append([]string{"build", "-o", out}, extra...), pkg)
+	cmd := exec.Command("go", args...)
 	cmd.Dir = root
 	if b, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build objnode: %v\n%s", err, b)
+		t.Fatalf("build %s: %v\n%s", name, err, b)
 	}
 	binPath[key] = out
 	return out
+}
+
+// buildObjnode compiles ./cmd/objnode once per (race, tags) combination.
+func buildObjnode(t testing.TB, race bool, tags string) string {
+	t.Helper()
+	var extra []string
+	if race {
+		extra = append(extra, "-race")
+	}
+	if tags != "" {
+		extra = append(extra, "-tags", tags)
+	}
+	return buildBinary(t, "objnode", "./cmd/objnode", extra...)
 }
 
 func removeBinaries() {

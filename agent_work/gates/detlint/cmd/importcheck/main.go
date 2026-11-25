@@ -1,6 +1,7 @@
 // Command importcheck reads Go file paths on stdin and checks every import in every file,
 // whatever its build tags: product files may import only the standard library and the
-// project's own module; _test.go files may also import the paths given with -test-extra.
+// project's own module (plus the paths given with -extra, for every file); _test.go files may
+// also import the paths given with -test-extra.
 // It closes the hole a tag-guarded file would leave in a `go list -deps` check.
 package main
 
@@ -11,6 +12,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,7 +20,8 @@ import (
 
 func main() {
 	module := flag.String("module", "", "module path of the project")
-	extra := flag.String("test-extra", "", "comma-separated import paths (and their sub-packages) allowed in _test.go files")
+	extra := flag.String("extra", "", "comma-separated import paths (and their sub-packages) allowed in every file")
+	testExtra := flag.String("test-extra", "", "comma-separated import paths (and their sub-packages) allowed in _test.go files")
 	flag.Parse()
 	if *module == "" {
 		fmt.Fprintln(os.Stderr, "importcheck: -module is required")
@@ -31,7 +34,7 @@ func main() {
 			files = append(files, p)
 		}
 	}
-	findings, err := run(files, *module, splitList(*extra))
+	findings, err := run(files, *module, splitList(*extra), splitList(*testExtra))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "importcheck:", err)
 		os.Exit(2)
@@ -69,7 +72,7 @@ func stdlib(path string) bool {
 	return !strings.Contains(first, ".")
 }
 
-func run(files []string, module string, testExtra []string) ([]string, error) {
+func run(files []string, module string, extra, testExtra []string) ([]string, error) {
 	fset := token.NewFileSet()
 	var findings []string
 	for _, name := range files {
@@ -78,19 +81,18 @@ func run(files []string, module string, testExtra []string) ([]string, error) {
 			findings = append(findings, fmt.Sprintf("%s:1:1: import: cannot parse: %v", name, err))
 			continue
 		}
-		isTest := strings.HasSuffix(name, "_test.go")
+		allowed := extra
+		if strings.HasSuffix(name, "_test.go") {
+			allowed = append(slices.Clone(extra), testExtra...)
+		}
 		for _, imp := range f.Imports {
 			path, err := strconv.Unquote(imp.Path.Value)
 			if err != nil {
 				return nil, fmt.Errorf("%s: bad import literal %s", name, imp.Path.Value)
 			}
 			ok := stdlib(path) || within(path, module)
-			if !ok && isTest {
-				for _, e := range testExtra {
-					if within(path, e) {
-						ok = true
-					}
-				}
+			for _, e := range allowed {
+				ok = ok || within(path, e)
 			}
 			if !ok {
 				pos := fset.Position(imp.Pos())

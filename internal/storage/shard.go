@@ -73,6 +73,15 @@ func ValidBucket(b string) error {
 	return nil
 }
 
+// ValidKey checks that an object key is 1 to MaxKeyLen bytes. It returns
+// ErrInvalid otherwise.
+func ValidKey(key string) error {
+	if key == "" || len(key) > MaxKeyLen {
+		return fmt.Errorf("storage: object key length %d: %w", len(key), ErrInvalid)
+	}
+	return nil
+}
+
 // Validate checks that id's bucket name is valid, returning ErrInvalid if not.
 func (id ShardID) Validate() error { return ValidBucket(id.Bucket) }
 

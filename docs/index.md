@@ -1,6 +1,6 @@
 # Object Store
 
-A leaderless, multi-region object store written in Go on the standard library alone, with `pgregory.net/rapid` restricted to test files. It uses optimistic concurrency control for conditional metadata writes and settles concurrent writes across partitions by last-writer-wins (highest hybrid logical clock, node ID breaking ties) with every discarded write counted and logged.
+A leaderless, multi-region object store written in Go. The platform uses the standard library alone, with `pgregory.net/rapid` restricted to test files; only the separate `objctl` client CLI (`cmd/objctl`) also uses `github.com/spf13/cobra`. It uses optimistic concurrency control for conditional metadata writes and settles concurrent writes across partitions by last-writer-wins (highest hybrid logical clock, node ID breaking ties) with every discarded write counted and logged.
 
 ## Start here
 

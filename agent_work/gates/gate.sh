@@ -91,7 +91,7 @@ if [ "$in_container" = false ] && [ "${GATE_NO_DOCKER:-}" != 1 ]; then
   echo "gate: building the dev image (G6)"
   docker compose build -q dev || { echo "gate: image build failed" >&2; exit 2; }
   image_id=$(docker image inspect objstore-dev:local --format '{{.Id}}' 2>/dev/null || echo unknown)
-  docker compose run --rm -T "${mount[@]}" \
+  docker compose run --rm -T ${mount[@]+"${mount[@]}"} \
     -e GATE_SHA="$sha" -e GATE_DIRTY="$dirty" -e GATE_IMAGE_ID="$image_id" \
     -e GATE_ONLY="${GATE_ONLY:-}" -e GATE_STAGE="${GATE_STAGE:-build}" \
     -e FUZZ_SECONDS="${FUZZ_SECONDS:-30}" -e GATE_OUT="${GATE_OUT:-}" \
@@ -227,15 +227,27 @@ g0_deps() {
   [ -z "$bad" ] || { echo "assembly, C or object files in the product tree (no check can read them):"; echo "$bad"; rc=1; }
   bad=$(find . -type l "${not_product[@]}")
   [ -z "$bad" ] || { echo "symlinks in the product tree:"; echo "$bad"; rc=1; }
-  req=$(go mod edit -json | jq -c '[.Require[]?.Path]') || rc=1
-  [ "$req" = '["pgregory.net/rapid"]' ] || { echo "go.mod must require exactly pgregory.net/rapid, has: $req"; rc=1; }
+  # The exemption, stated once: the objctl client CLI (cli_dir, nothing else) may also use
+  # these modules, cobra and the modules cobra itself needs. The platform (every other
+  # package, internal/ included) stays on the standard library and this module.
+  local cli_dir=cmd/objctl cli_mods=(github.com/spf13/cobra github.com/spf13/pflag github.com/inconshreveable/mousetrap)
+  local cli_list cli_re want
+  cli_list=$(IFS=,; echo "${cli_mods[*]}")
+  cli_re="^($(IFS='|'; echo "${cli_mods[*]}" | sed 's/[.]/\\./g'))(/|\$)"
+  want=$(printf '%s\n' pgregory.net/rapid "${cli_mods[@]}" | jq -R . | jq -sc sort)
+  req=$(go mod edit -json | jq -c '[.Require[]?.Path] | sort') || rc=1
+  [ "$req" = "$want" ] || { echo "go.mod must require exactly pgregory.net/rapid plus $cli_list ($cli_dir only), has: $req"; rc=1; }
   [ "$(go mod edit -json | jq -c '[(.Replace // [])[], (.Tool // [])[]] | length')" = 0 ] || { echo "go.mod has replace or tool directives"; rc=1; }
-  deps=$(go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./...) || { echo "go list -deps failed"; return 1; }
+  deps=$(go list ./... | grep -vx "$module/$cli_dir" | xargs go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}') || { echo "go list -deps failed"; return 1; }
   bad=$(grep -v "^$module\(/\|$\)" <<<"$deps" || true)
   [ -z "$bad" ] || { echo "non-test build reaches packages outside the standard library and this module:"; echo "$bad"; rc=1; }
+  deps=$(go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' "./$cli_dir") || { echo "go list -deps ./$cli_dir failed"; return 1; }
+  bad=$(grep -v "^$module\(/\|$\)" <<<"$deps" | grep -vE "$cli_re" || true)
+  [ -z "$bad" ] || { echo "./$cli_dir reaches packages outside the standard library, this module and $cli_list:"; echo "$bad"; rc=1; }
   # Every file, whatever its build tags: product files import the standard library and this
-  # module only; test files may also import rapid.
-  product_go_files | "$bin/importcheck" -module "$module" -test-extra pgregory.net/rapid || rc=1
+  # module only; test files may also import rapid. Files under $cli_dir/ may also import $cli_list.
+  product_go_files | { grep -v "^\./$cli_dir/" || true; } | "$bin/importcheck" -module "$module" -test-extra pgregory.net/rapid || rc=1
+  product_go_files | { grep "^\./$cli_dir/" || true; } | "$bin/importcheck" -module "$module" -test-extra pgregory.net/rapid -extra "$cli_list" || rc=1
   return $rc
 }
 g0_comments() {

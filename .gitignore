@@ -10,3 +10,6 @@
 # Observability local checks (evidence is archived deliberately in build notes).
 agent_work/10-observability/bin/
 agent_work/10-observability/evidence/
+
+# objctl test transcripts (OBJCTL_TRANSCRIPT)
+objctl-transcript*.txt
