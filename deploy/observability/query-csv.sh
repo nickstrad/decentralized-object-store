@@ -18,8 +18,8 @@ if [[ ${#segments[@]} -eq 0 ]]; then
   echo "CSV directory contains no finalized segments" >&2
   exit 2
 fi
-if [[ $(duckdb --version) != v1.5.0\ * ]]; then
-  echo "DuckDB v1.5.0 required; build Docker target dev-observability" >&2
+if [[ $(duckdb --version) != v2.0.0\ * ]]; then
+  echo "DuckDB v2.0.0 required. Build Docker target dev-observability." >&2
   exit 2
 fi
 cd -- "$csv_dir"

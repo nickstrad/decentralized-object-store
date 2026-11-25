@@ -13,11 +13,17 @@ WORKDIR /src
 CMD ["bash"]
 
 FROM dev AS dev-observability
-RUN test "$(uname -m)" = x86_64 \
- && curl -fLsS https://github.com/duckdb/duckdb/releases/download/v1.5.0/duckdb_cli-linux-amd64.zip -o /tmp/duckdb.zip \
- && echo '179a481edf048dd1fef0f097d66933b4b5f5a5737d4034c645e415ec722c0292  /tmp/duckdb.zip' | sha256sum -c - \
- && python3 -m zipfile -e /tmp/duckdb.zip /usr/local/bin \
- && chmod 0755 /usr/local/bin/duckdb \
- && rm /tmp/duckdb.zip
+RUN set -eu; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) checksum=c6507206baf7793c6013dbd82368469a45f20dc0e17a6f92f204602f652ed2bc ;; \
+        arm64) checksum=859e1875d2a9515fbb4bf8871061437a14af82320da68c753f094c4b776348fe ;; \
+        *) echo "DuckDB CLI is unavailable for Linux architecture: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fLsS "https://github.com/duckdb/duckdb/releases/download/v2.0.0/duckdb-cli-linux-${arch}.tar.gz" -o /tmp/duckdb.tar.gz; \
+    printf '%s  %s\n' "$checksum" /tmp/duckdb.tar.gz | sha256sum -c -; \
+    tar -xzf /tmp/duckdb.tar.gz -C /usr/local/bin duckdb; \
+    chmod 0755 /usr/local/bin/duckdb; \
+    rm /tmp/duckdb.tar.gz
 
 FROM dev AS default

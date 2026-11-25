@@ -29,12 +29,9 @@ mean latency, in-flight gauges and OCC discard diagnostics. Mean latency divides
 deltas by duration-count deltas, not an unrelated global request count. Duplicate identical
 CSV observations are removed before computing deltas; boot IDs partition restarts.
 
-The optional Docker target `dev-observability` pins the [DuckDB 1.5.0 release](https://github.com/duckdb/duckdb/releases/tag/v1.5.0)
-and the downloaded linux-amd64 CLI archive SHA256
-`179a481edf048dd1fef0f097d66933b4b5f5a5737d4034c645e415ec722c0292`.
-Measured local image size: normal dev 299026663 bytes, analysis 320741177 bytes,
-delta 21714514 bytes (about 20.7 MiB). The default Docker target remains the normal dev
-image. The analysis target explicitly rejects other CPU architectures.
+The optional Docker target `dev-observability` selects the Linux AMD64 or ARM64
+CLI archive for DuckDB 2.0.0 and verifies its pinned SHA-256 checksum.
+[DuckDB 2.0.0 release assets](https://github.com/duckdb/duckdb/releases/expanded_assets/v2.0.0)
 
 `agent_work/10-observability/check-csv.sh` runs a separate, manual Docker analysis smoke:
 Go flushes two segments with an exact value above 2^53, then pinned DuckDB asserts JSON

@@ -208,18 +208,13 @@ DuckDB queries finalized `.csv` segments directly in memory — Object Store car
   - `http_rates_v1`: HTTP requests per second grouped by `operation` and `status_class`.
   - `http_latency_v1`: mean HTTP request latency in nanoseconds per `operation` (`duration_ns / request_count`).
   - `in_flight_v1`: `objstore_http_requests_in_flight` gauge observations.
-- `deploy/observability/query-csv.sh CSV_DIRECTORY [SQL_FILE]` verifies that finalized `.csv` files exist and that pinned DuckDB `v1.5.0` is available, changes into `CSV_DIRECTORY`, and runs `duckdb -bail -init /dev/null :memory:` with `queries.sql` (or a custom SQL file) without interpolating directory paths into SQL.
-- `Dockerfile` defines an optional `dev-observability` target on top of the standard `dev` image that installs the pinned DuckDB `v1.5.0` `linux/amd64` CLI verified by SHA-256 (leaving the default `dev` image unchanged).
+- `deploy/observability/query-csv.sh CSV_DIRECTORY [SQL_FILE]` verifies that finalized `.csv` files exist and that pinned DuckDB `v2.0.0` is available, changes into `CSV_DIRECTORY`, and runs `duckdb -bail -init /dev/null :memory:` with `queries.sql` (or a custom SQL file) without interpolating directory paths into SQL.
+- The optional `dev-observability` Docker target installs DuckDB `v2.0.0` for Linux AMD64 or ARM64 and verifies the archive against the SHA-256 checksum for that architecture.
 
-Build the optional analysis image and query a directory of flushed CSV segments:
+Use the same Make targets on Linux and macOS with Docker Desktop. Docker selects its default image platform, and the build selects the DuckDB archive for that platform. Run `make observability` to build the analysis image. The query target builds the image and queries a directory of flushed CSV segments.
 
 ```sh
-docker build --target dev-observability -t objstore-dev-observability:local .
-docker run --rm --network none \
-  -v "$PWD:/src:ro" \
-  -v /path/to/metrics:/metrics:ro \
-  objstore-dev-observability:local \
-  /src/deploy/observability/query-csv.sh /metrics
+make query-csv CSV_DIR=/path/to/metrics
 ```
 
 To run the bundled end-to-end CSV smoke (starts a real CSV-enabled `objnode` with `--network none`, issues health requests, verifies all 10 components and clean shutdown, and queries the segments through DuckDB):

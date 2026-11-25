@@ -22,7 +22,7 @@ Read the book at [nickstrad.github.io/object-store](https://nickstrad.github.io/
 
 | Part | Scope |
 | --- | --- |
-| Environment and checks | Docker Go 1.26.11 image, check suite (G0–G7, G5R), canaries, site build |
+| Environment and checks | Docker image with Go 1.26.11, automated tests, and documentation site build |
 | Deterministic simulator | `internal/env`, event loop and nemesis (`internal/sim`, `simtest`), `cmd/objsim` |
 | SWIM gossip membership | Direct/indirect probing, suspicion, refutation, tombstones, push-pull sync (`internal/gossip`) |
 | Reed-Solomon erasure coding | GF(2^8) Cauchy codec (`internal/erasure`, `4+2` default), chunk store, striping, placement (`internal/storage`) |
@@ -31,41 +31,30 @@ Read the book at [nickstrad.github.io/object-store](https://nickstrad.github.io/
 | Sagas | Checksummed log, crash recovery, five-step bucket migration (`internal/saga`, `sagasim`) |
 | Node, runtime, and API | Wired node (`internal/node`), real runtime (`internal/noderuntime`), object API (`httpapi`), `cmd/objnode` |
 | Observability | Framework-free metric catalogue (`internal/metrics`), wired component/runtime/HTTP snapshots, off-by-default runner and `otel`/`prometheus`/`csv` adapters (`internal/telemetry`), `objnode` flags, pinned Docker Collector/Prometheus stack (`compose.observability.yaml`), and DuckDB-over-CSV queries (`deploy/observability/`) |
-| E2E suite and hardening | Simulated and real-process scenarios (E1–E9), continuous oracles, nemesis, `FuzzClusterNemesis` (`test/e2e`) |
+| End-to-end tests | Simulated clusters and real node processes, with network and storage failures injected during tests (`test/e2e`) |
 | Book | Preface, topic map, eight chapters, C4 diagrams, published site (`book/`, `docs/`) |
 
 ## Run the tests through Docker
 
-Host prerequisites are Docker with Compose v2, `git`, `curl`, and a POSIX shell; Go runs inside the container. Build the image and run the whole test suite (about 7 minutes on a 4-core machine):
+Use Docker with Compose v2 on Linux or Docker Desktop on macOS, along with `make`, `git`, `curl`, and a POSIX shell. The same commands use Docker's default platform, including ARM64 on Apple Silicon. Go runs inside the container. Run `make dev` to build the dev image or `make test` to build it and run the whole test suite (about 7 minutes on a 4-core machine).
 
 ```sh
-docker compose build dev
-docker compose run --rm dev go test ./...
+make test
 ```
 
-Run the fast lane (G0 hygiene, G1 `go test -short` with coverage floors, and G6 container check; about 3 minutes):
+Run the same quick checks as CI (about 3 minutes). They check formatting and builds, run `go test -short` with minimum coverage requirements, and verify that the checks ran in the dev container.
 
 ```sh
 agent_work/gates/ci-fast.sh
 ```
 
-Run the full check suite on demand (G0–G7 including real processes; also needs `jq` and `sha256sum` on the host; about 2.5 hours on a 4-core machine; `demo` labels the output directory):
+Run the full verification suite on demand (about 2.5 hours on a 4-core machine). It requires `jq` and `sha256sum` on the host. The `demo` argument names the output directory.
 
 ```text
 GATE_STAGE=final agent_work/gates/gate.sh demo
 ```
 
-Checks run in order:
-
-- **G0 (hygiene):** check tools, `gofmt`, `go vet`, `go build`, determinism lint, panic allowlist, stdlib-only dependency check, comment check (skipped in `final`), self-containment, and site lint.
-- **G5R (real-process end-to-end):** runs first; runs end-to-end scenarios on real `-race` `objnode` processes (`E2E_TIER_R=1`).
-- **G1 (unit):** `go test -count=1 -cover ./...` with an 85% statement coverage floor on core packages.
-- **G2 (property):** `pgregory.net/rapid` property tests at 2,000 checks per property, seeded from the commit.
-- **G3 (fuzz):** 30-second run for each of the 15 fuzz targets.
-- **G4 (race):** `go test -race ./...` plus `-race -count=3` on `internal/node`, `internal/noderuntime`, `internal/storage/...`, `cmd/objnode`, and `test/e2e`.
-- **G5 (simulation):** 500-seed sweep from the commit seed, with replay meta-tests and canaries.
-- **G6 (environment):** verifies execution inside the project `dev` image.
-- **G7 (cluster smoke):** host-side check: starts the three-node cluster, puts/gets a 1.5 MB object across nodes, verifies 412s, and tears it down.
+The suite runs end-to-end scenarios against real `objnode` processes, checks unit test coverage, runs property tests, fuzzes inputs, and checks for data races. It also sweeps 500 simulation seeds and starts a three-node cluster to verify cross-node reads and writes and HTTP 412 responses for failed preconditions.
 
 ## Replay a seed
 

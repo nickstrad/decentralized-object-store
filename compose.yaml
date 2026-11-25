@@ -13,7 +13,9 @@ x-node: &node
 
 services:
   dev:
-    build: .
+    build:
+      context: .
+      target: dev
     image: objstore-dev:local
     working_dir: /src
     init: true
