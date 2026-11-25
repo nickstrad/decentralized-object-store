@@ -5,6 +5,7 @@ CLUSTER_NODES = node-a1 node-b1 node-c1
 export OBS_ANALYSIS_IMAGE CSV_DIR
 
 .PHONY: dev shell build cluster-up cluster-down fuzz test observability query-csv test-csv test-csv-fixture test-otel test-cluster test-cluster-csv test-objctl
+.PHONY: help metrics-up metrics-urls metrics-logs metrics-down load
 
 dev:
 	docker compose build dev
@@ -13,7 +14,7 @@ shell: dev
 	docker compose run --rm dev bash
 
 build: dev
-	docker compose run --rm -T dev go build -o bin/ ./cmd/objnode ./cmd/objsim ./cmd/objctl
+	docker compose run --rm -T dev go build -o bin/ ./cmd/objnode ./cmd/objsim ./cmd/objctl ./cmd/objload
 
 cluster-up: dev
 	docker compose --profile cluster up -d $(CLUSTER_NODES)
@@ -66,3 +67,59 @@ query-csv:
 			-v "$$PWD:/src:ro" \
 			-v "$$csv_dir:/metrics:ro" \
 			"$$OBS_ANALYSIS_IMAGE" /src/deploy/observability/query-csv.sh /metrics
+
+# Interactive metrics stack and load generator (deploy/observability/metrics-stack.sh): three
+# nodes exporting through the Collector to Prometheus on 127.0.0.1:$(PROMETHEUS_PORT), and
+# objload in the dev container on the stack's network. Variables mirror objload's flags;
+# empty ones keep objload's defaults.
+PROMETHEUS_PORT ?= 9090
+METRICS_INTERVAL ?= 1s
+ADDR ?= node-a1:8080,node-b1:8080,node-c1:8080
+RATE ?= 20
+PROFILE ?= simple
+DURATION ?=
+WORKERS ?=
+KEYS ?=
+SIZE ?=
+SEED ?=
+METRICS_STACK = PROMETHEUS_PORT=$(PROMETHEUS_PORT) METRICS_INTERVAL=$(METRICS_INTERVAL) deploy/observability/metrics-stack.sh
+
+metrics-up: build
+	$(METRICS_STACK) up
+
+metrics-urls:
+	@$(METRICS_STACK) urls
+
+metrics-logs:
+	$(METRICS_STACK) logs
+
+metrics-down:
+	$(METRICS_STACK) down
+
+load: build
+	$(METRICS_STACK) load -addr '$(ADDR)' -rate '$(RATE)' -profile '$(PROFILE)' \
+		$(if $(DURATION),-duration '$(DURATION)') $(if $(WORKERS),-workers '$(WORKERS)') \
+		$(if $(KEYS),-keys '$(KEYS)') $(if $(SIZE),-size '$(SIZE)') $(if $(SEED),-seed '$(SEED)')
+
+help:
+	@echo 'Build and run (README.md has the details):'
+	@echo '  dev                  build the dev image (Go toolchain); most targets do this first'
+	@echo '  shell                open a shell in the dev container'
+	@echo '  build                build objnode, objsim, objctl and objload into bin/'
+	@echo '  cluster-up           start the three-node cluster and wait until it is ready'
+	@echo '  cluster-down         stop the cluster'
+	@echo '  observability        build the DuckDB analysis image'
+	@echo '  query-csv            DuckDB report over CSV metrics (CSV_DIR=<dir>)'
+	@echo '  metrics-up           three nodes, Collector and Prometheus; prints the Prometheus URLs'
+	@echo '  metrics-urls         print the Prometheus URLs and node addresses again'
+	@echo '  metrics-logs         follow the metrics stack logs'
+	@echo '  metrics-down         stop the metrics stack'
+	@echo '  load                 constant random load on the metrics stack until Ctrl-C'
+	@echo '                       (RATE=20 PROFILE=simple|mixed DURATION= WORKERS= KEYS= SIZE= SEED= ADDR=)'
+	@echo 'Tests:'
+	@echo '  test                 the whole Go test suite'
+	@echo '  test-cluster         three-node Compose cluster smoke test (test-cluster-csv: with CSV metrics)'
+	@echo '  test-objctl          objctl against three real nodes'
+	@echo '  test-csv             objnode CSV metrics read back by DuckDB (test-csv-fixture: controlled data)'
+	@echo '  test-otel            objnode metrics reach Prometheus through the Collector'
+	@echo '  fuzz                 one fuzz target (PKG=<pkg> FUZZ=<target> [FUZZTIME=30s])'

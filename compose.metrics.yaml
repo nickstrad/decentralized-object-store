@@ -1,0 +1,24 @@
+# Interactive metrics stack (make metrics-up), merged after compose.yaml and
+# compose.observability.yaml under its own project name (see
+# deploy/observability/metrics-stack.sh). The three cluster nodes run the
+# objnode binary from `make build` with the otel adapter on and join the
+# observability network, so they reach the Collector and the dev container
+# (`make load`) reaches them. Prometheus publishes its UI on the host.
+services:
+  node-a1:
+    networks: [cluster, observability]
+    command: ["bin/objnode", "-id", "node-a1:7946", "-region", "a", "-listen", ":7946", "-data", "/data", "-http", ":8080", "-k", "2", "-m", "1", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946",
+      "-observability", "-observability-adapter", "otel", "-observability-interval", "${METRICS_INTERVAL:-1s}", "-observability-timeout", "${METRICS_TIMEOUT:-500ms}",
+      "-observability-settings", "{\"endpoint\":\"http://otel-collector:4318/v1/metrics\",\"insecure\":true}"]
+  node-b1:
+    networks: [cluster, observability]
+    command: ["bin/objnode", "-id", "node-b1:7946", "-region", "b", "-listen", ":7946", "-data", "/data", "-http", ":8080", "-k", "2", "-m", "1", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946",
+      "-observability", "-observability-adapter", "otel", "-observability-interval", "${METRICS_INTERVAL:-1s}", "-observability-timeout", "${METRICS_TIMEOUT:-500ms}",
+      "-observability-settings", "{\"endpoint\":\"http://otel-collector:4318/v1/metrics\",\"insecure\":true}"]
+  node-c1:
+    networks: [cluster, observability]
+    command: ["bin/objnode", "-id", "node-c1:7946", "-region", "c", "-listen", ":7946", "-data", "/data", "-http", ":8080", "-k", "2", "-m", "1", "-seeds", "node-a1:7946,node-b1:7946,node-c1:7946",
+      "-observability", "-observability-adapter", "otel", "-observability-interval", "${METRICS_INTERVAL:-1s}", "-observability-timeout", "${METRICS_TIMEOUT:-500ms}",
+      "-observability-settings", "{\"endpoint\":\"http://otel-collector:4318/v1/metrics\",\"insecure\":true}"]
+  prometheus:
+    ports: ["127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"]

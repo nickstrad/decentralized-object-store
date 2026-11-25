@@ -31,6 +31,7 @@ Read the book at [nickstrad.github.io/object-store](https://nickstrad.github.io/
 | Sagas | Checksummed log, crash recovery, five-step bucket migration (`internal/saga`, `sagasim`) |
 | Node, runtime, and API | Wired node (`internal/node`), real runtime (`internal/noderuntime`), object API (`httpapi`), `cmd/objnode` |
 | CLI client | `objctl` (`cmd/objctl`, `internal/objctl`) over a typed HTTP client (`internal/storage/httpclient`) |
+| Load generator | `objload` (`cmd/objload`, `internal/objload`): a constant, seeded random request rate against the HTTP API, for watching metrics |
 | Observability | Framework-free metric catalogue (`internal/metrics`), wired component/runtime/HTTP snapshots, off-by-default runner and `otel`/`prometheus`/`csv` adapters (`internal/telemetry`), `objnode` flags, pinned Docker Collector/Prometheus stack (`compose.observability.yaml`), and DuckDB-over-CSV queries (`deploy/observability/`) |
 | End-to-end tests | Simulated clusters and real node processes, with network and storage failures injected during tests (`test/e2e`) |
 | Book | Preface, topic map, eight chapters, C4 diagrams, published site (`book/`, `docs/`) |
@@ -38,6 +39,8 @@ Read the book at [nickstrad.github.io/object-store](https://nickstrad.github.io/
 ## Development
 
 You need Docker with Compose v2 on Linux or Docker Desktop on macOS, along with `make`, `git`, `curl`, and a POSIX shell. `make test-cluster`, `make test-cluster-csv` and the full gate also need `jq` on the host. Go runs inside the container, so the host needs no Go toolchain. The same commands use Docker's default platform, including ARM64 on Apple Silicon.
+
+`make help` lists the Make targets.
 
 Build the dev image (Go 1.26.11 on Debian bookworm). Every other target that needs the image builds it first, so you rarely run this by hand:
 
@@ -61,7 +64,7 @@ docker compose run --rm dev go version
 
 ## Build
 
-Build the three binaries, `objnode` (the storage node), `objsim` (the deterministic simulator) and `objctl` (the CLI client), into `bin/`, which git ignores:
+Build the four binaries, `objnode` (the storage node), `objsim` (the deterministic simulator), `objctl` (the CLI client) and `objload` (the load generator), into `bin/`, which git ignores:
 
 ```sh
 make build
@@ -238,10 +241,41 @@ make cluster-down
 
 Metrics are defined as plain standard-library value types in `internal/metrics` (83 catalogue descriptors across all 10 components) and collected on demand without framework lock-in. Telemetry is off by default and configured in `objnode`'s JSON config or via `-observability`, `-observability-adapter`, `-observability-interval`, `-observability-timeout`, and `-observability-settings`. Three stdlib-only adapters are built in: OTLP/HTTP JSON (`otel`, with a pinned Docker Compose Collector → Prometheus stack in `compose.observability.yaml`), direct Prometheus HTTP scraping (`prometheus`), and atomic local CSV segments (`csv`, paired with offline DuckDB SQL queries in `deploy/observability/queries.sql` and `query-csv.sh`). See [docs/observability.md](docs/observability.md) for the full catalogue, flag reference, adapter settings, DuckDB analysis setup, and adapter extension guide. The [Test](#test) section lists the observability checks.
 
+### Watch metrics under load
+
+`make metrics-up` builds the binaries and starts a stack you can look at in a browser: the three cluster nodes with the `otel` adapter on, the OpenTelemetry Collector, and Prometheus. It waits until Prometheus scrapes all three nodes, then prints the Prometheus UI address, its targets page, graph links for request rate, mean latency and requests in flight over the last five minutes, and the nodes' API addresses. Prometheus listens on `127.0.0.1:9090`; set `PROMETHEUS_PORT` to use another port. Nodes export every second (`METRICS_INTERVAL`, default `1s`) and Prometheus scrapes every second, so the graphs follow a change within a few seconds. The stack is its own Compose project, `objstore-metrics` (or `$COMPOSE_PROJECT_NAME-metrics`), so it leaves a `make cluster-up` cluster alone.
+
+```text
+make metrics-up
+```
+
+Then start the load in a second terminal. `make load` runs `objload` in the dev container on the stack's network. It creates two buckets if they are missing and sends 20 requests per second, round-robin over the three nodes, until you press Ctrl-C. The default `simple` profile is mostly GET and PUT with some HEAD, LIST and DELETE over 100 keys per bucket, with payloads of 1 KiB to 16 KiB:
+
+```text
+make load
+make load RATE=100 PROFILE=mixed DURATION=2m
+```
+
+`objload` prints one line per second with the achieved rate, counts by status class and the mean and maximum latency, and a summary by operation when it stops. The rate is open loop: request *n* is due at *n*/rate seconds whatever the latency of earlier requests, so a slow cluster shows up as higher latency and, once every worker is busy, as requests reported `MISSED`, never as a quietly lower rate. 404 and 412 responses are expected outcomes of random requests, not failures; network errors and timeouts are counted and the run goes on, so you can stop and start a node under load. The start line prints the seed; `SEED=<n>` repeats the same request sequence. The variables `RATE`, `DURATION`, `PROFILE`, `WORKERS`, `KEYS`, `SIZE` (for example `512-64K`), `SEED` and `ADDR` map to `objload`'s flags; `docker compose run --rm dev bin/objload -h` describes them.
+
+What to look at in the printed graphs:
+
+- **Request rate**, `sum by (operation, status_class) (rate(objstore_http_requests_total[15s]))`: `object` requests in `2xx` and `4xx`, and `bucket` (listings) in `2xx`. The 404s are reads of keys not written yet, so they fall as the key space fills. Summed over all series, the rate matches the rate `objload` reports.
+- **Mean latency**, the rate of `objstore_http_request_duration_nanoseconds_total` divided by the rate of `objstore_http_request_duration_count_total`, per operation, in milliseconds.
+- **Requests in flight**, `objstore_http_requests_in_flight` per node. A gauge sampled once a second; at the default rate it is mostly zero, and it rises as `RATE` approaches what the workers can sustain.
+
+`PROFILE=mixed` adds `tag` requests, `health` and `members` requests, create-only writes (`If-None-Match: *`) and writes with an `If-Match` tag that never matches, which get 412, and reads of keys that never exist, which get 404. The metrics have one `4xx` class; the summary of `objload` splits it by status code.
+
+`make metrics-urls` prints the addresses again, `make metrics-logs` follows the containers' logs, and `make metrics-down` stops the stack and discards its data:
+
+```text
+make metrics-down
+```
+
 ## Where things are
 
 - **Book:** [book/manifest.json](book/manifest.json) (front matter in `book/front/`, chapters in `book/chapters/`).
 - **C4 diagrams:** [docs/c4/README.md](docs/c4/README.md) (system, container, and component views).
 - **Observability:** [docs/observability.md](docs/observability.md) (metric catalogue, `objnode` flags, `otel`/`prometheus`/`csv` adapters, DuckDB-over-CSV analysis, Collector → Prometheus setup, and adapter extension guide).
-- **Make targets:** [Makefile](Makefile) (dev image, build, cluster, and every test target).
+- **Make targets:** [Makefile](Makefile) (dev image, build, cluster, metrics stack, load generator, and every test target); `make help` lists them.
 - **Gate scripts:** `agent_work/gates/` (`ci-fast.sh`, `gate.sh`, `fuzz-short.sh`, and `readme-commands.sh`, which runs every `sh` block of this README on a clean clone).
