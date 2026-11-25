@@ -267,7 +267,7 @@ g0_selfcontained() {
 }
 
 # ---- G1 unit + coverage floor
-floor_pkgs='internal/metrics internal/telemetry internal/sim internal/gossip internal/erasure internal/storage internal/merkle internal/occ internal/saga internal/node internal/noderuntime internal/storage/httpapi'
+floor_pkgs='internal/metrics internal/telemetry internal/sim internal/gossip internal/erasure internal/storage internal/merkle internal/occ internal/saga internal/node internal/noderuntime internal/storage/httpapi internal/objload'
 g1_unit() {
   local rc=0 p line pct
   [ "$short" = false ] || echo "NOTE: short run (go test -short); does not count for landing"

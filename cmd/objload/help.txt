@@ -1,0 +1,22 @@
+usage: objload [flags]
+
+objload sends a constant, randomized load to the object store's HTTP API and
+prints one status line per second and a summary at the end. Request i is sent
+at start + i/rate whatever the latency (open loop); requests that find every
+worker busy are reported as missed, not delayed. Statuses 404 and 412 are
+expected outcomes, not failures. Exit status: 0, 1 when no request succeeded,
+2 for invalid flags.
+
+addr      comma-separated node addresses, host:port; requests go round-robin
+          (default $OBJLOAD_ADDR, else 127.0.0.1:8080)
+rate      target requests per second (20)
+duration  how long to run, e.g. 60s or 5m; 0 runs until interrupted (0)
+workers   most requests in flight at once (8)
+profile   operation mix: simple (GET and PUT, some HEAD, LIST and DELETE) or
+          mixed (adds tags, If-None-Match and stale If-Match writes that get
+          412, reads of missing keys that get 404, health and members) (simple)
+keys      distinct object keys per bucket (100)
+buckets   buckets to use, created if missing, named objload-0, objload-1, ... (2)
+size      PUT payload size in bytes, N or MIN-MAX, with optional K or M (1K-16K)
+seed      seed of the request sequence; printed at start (random)
+timeout   per-request timeout (5s)
